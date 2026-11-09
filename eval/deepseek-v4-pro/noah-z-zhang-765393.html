@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MOTION – Kinetic UI Motion</title>
+<style>
+  body { margin: 0; padding: 0; background: #000; display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+  canvas { display: block; box-shadow: 0 0 60px rgba(0,0,0,0.9); }
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+(function() {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const W = 1280, H = 720;
+  const DUR = 30;
+  window.DUR = DUR;
+
+  // --- URL parameters ---
+  const params = new URLSearchParams(window.location.search);
+  let startOffset = parseFloat(params.get('t') || '0') || 0;
+  if (startOffset < 0) startOffset = 0;
+
+  // --- Responsive canvas scaling ---
+  function fitCanvas() {
+    const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+    canvas.style.width = (W * s) + 'px';
+    canvas.style.height = (H * s) + 'px';
+  }
+  fitCanvas();
+  window.addEventListener('resize', fitCanvas);
+
+  // --- Utility functions ---
+  function easeOutBack(t) {
+    const c1 = 1.70158, c3 = c1 + 1;
+    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+  }
+  function easeOutExpo(t) { return t === 1 ? 1 : 1 - Math.pow(2, -10 * t); }
+  function easeInOutCubic(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+  function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function clamp(v, mn, mx) { return Math.max(mn, Math.min(mx, v)); }
+  function smoothstep(t) { return t * t * (3 - 2 * t); }
+
+  // --- Spring camera ---
+  const cam = {
+    x: 640, y: 360, zoom: 1,
+    vx: 0, vy: 0, vz: 0,
+    tx: 640, ty: 360, tz: 1
+  };
+  function setCamTarget(x, y, z) { cam.tx = x; cam.ty = y; cam.tz = z; }
+
+  function updateCamSpring() {
+    const k = 0.22, d = 0.85;
+    cam.vx += (cam.tx - cam.x) * k - cam.vx * d;
+    cam.vy += (cam.ty - cam.y) * k - cam.vy * d;
+    cam.vz += (cam.tz - cam.zoom) * k - cam.vz * d;
+    cam.x += cam.vx;
+    cam.y += cam.vy;
+    cam.zoom += cam.vz;
+  }
+
+  function applyCamera() {
+    ctx.save();
+    ctx.translate(W / 2, H / 2);
+    ctx.scale(cam.zoom, cam.zoom);
+    ctx.translate(-cam.x, -cam.y);
+  }
+
+  function restoreCamera() { ctx.restore(); }
+
+  // --- Camera timeline ---
+  function updateCameraTarget(t) {
+    if (t < 7.0) setCamTarget(640, 360, 1.0);
+    else if (t < 9.0) setCamTarget(260, 470, 2.0);
+    else if (t < 11.0) setCamTarget(1020, 470, 2.0);
+    else if (t < 13.0) setCamTarget(640, 620, 2.0);
+    else if (t < 15.0) setCamTarget(640, 360, 1.0);
+    else if (t < 17.0) setCamTarget(640, 220, 1.4);
+    else if (t < 19.0) setCamTarget(640, 360, 1.0);
+    else if (t < 21.0) setCamTarget(640, 360, 0.92);
+    else if (t < 23.0) setCamTarget(640, 360, 1.0);
+    else if (t < 25.5) setCamTarget(640, 290, 1.1);
+    else setCamTarget(640, 360, 1.0);
+  }
+
+  // --- Beat energy ---
+  function beatEnergy(t) {
+    const beatDur = 0.5;
+    const phase = (t % beatDur) / beatDur;
+    return Math.exp(-phase * 6.0);
+  }
+
+  // --- Drawing helpers ---
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.arcTo(x + w, y, x + w, y + r, r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+    ctx.lineTo(x + r, y + h);
+    ctx.arcTo(x, y + h, x, y + h - r, r);
+    ctx.lineTo(x, y + r);
+    ctx.arcTo(x, y, x + r, y, r);
+    ctx.closePath();
+  }
+
+  function drawGlowText(text, x, y, size, color, align, glow, glowColor, blur) {
+    ctx.save();
+    ctx.font = 'bold ' + size + 'px Arial, sans-serif';
+    ctx.textAlign = align || 'center';
+    ctx.textBaseline = 'middle';
+    if (glow) {
+      ctx.shadowColor = glowColor || color;
+      ctx.shadowBlur = blur || 18;
+    }
+    ctx.fillStyle = color;
+    ctx.fillText(text, x, y);
+    ctx.restore();
+  }
+
+  function drawCardBg(cx, cy, w, h) {
+    const x = cx - w / 2, y = cy - h / 2;
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.6)';
+    ctx.shadowBlur = 20;
+    ctx.shadowOffsetY = 6;
+    ctx.fillStyle = '#0a0a0a';
+    roundRect(ctx, x, y, w, h, 14);
+    ctx.fill();
+    ctx.restore();
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = 1.2;
+    roundRect(ctx, x, y, w, h, 14);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawCardTitle(cx, cy, text) {
+    drawGlowText(text, cx, cy, 14, 'rgba(255,255,255,0.6)', 'center', false, null, 0);
+  }
+
+  // --- Grid texture (world space) ---
+  function drawGrid() {
+    const step = 60;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.035)';
+    ctx.lineWidth = 0.5;
+    for (let x = -600; x < W + 800; x += step) {
+      ctx.beginPath();
+      ctx.moveTo(x, -400);
+      ctx.lineTo(x, H + 800);
+      ctx.stroke();
+    }
+    for (let y = -400; y < H + 800; y += step) {
+      ctx.beginPath();
+      ctx.moveTo(-600, y);
+      ctx.lineTo(W + 800, y);
+      ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.07)';
+    for (let x = -600; x < W + 800; x += step) {
+      for (let y = -400; y < H + 800; y += step) {
+        ctx.fillRect(x - 1, y - 1, 2, 2);
+      }
+    }
+    ctx.restore();
+  }
+
+  // --- Particles ---
+  const particles = [];
+  (function initParticles() {
+    const seed = 42;
+    let s = seed;
+    function rand() { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; }
+    for (let i = 0; i < 35; i++) {
+      particles.push({
+        x: rand() * (W + 400) - 200,
+        y: rand() * (H + 400) - 200,
+        s: 1 + rand() * 2.5,
+        phase: rand() * Math.PI * 2,
+        speed: 0.2 + rand() * 0.5,
+        alphaBase: 0.08 + rand() * 0.2,
+        color: rand() > 0.5 ? '#00e5ff' : '#ff00aa'
+      });
+    }
+  })();
+
+  function drawParticles(t, beatE) {
+    ctx.save();
+    for (let i = 0; i < particles.length; i++) {
+      const p = particles[i];
+      const twinkle = 0.7 + 0.3 * Math.sin(t * p.speed + p.phase);
+      const boost = 1 + beatE * 1.5;
+      const alpha = p.alphaBase * twinkle * boost;
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = clamp(alpha, 0, 0.8);
+      ctx.fillRect(p.x, p.y, p.s, p.s);
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  // --- Title "MOTION" ---
+  const titleText = 'MOTION';
+  const titleFontSize = 96;
+  const titleLetterSpacing = 18;
+  const titleY = 220;
+  const titleCenterX = 640;
+  const letterStarts = [2.0, 2.5, 3.0, 3.5, 4.0, 4.5];
+  const letterOffsets = [0, 15, -10, 25, -20, 10];
+  const letterRots = [0, -8, 6, -4, 10, -6];
+
+  function drawTitle(t, beatE) {
+    ctx.save();
+    ctx.font = 'bold ' + titleFontSize + 'px Arial, sans-serif';
+    ctx.textBaseline = 'middle';
+    let totalWidth = 0;
+    const widths = [];
+    for (let i = 0; i < titleText.length; i++) {
+      const w = ctx.measureText(titleText[i]).width;
+      widths.push(w);
+      totalWidth += w;
+    }
+    totalWidth += titleLetterSpacing * (titleText.length - 1);
+    let currX = titleCenterX - totalWidth / 2;
+
+    for (let i = 0; i < titleText.length; i++) {
+      const start = letterStarts[i];
+      const dt = t - start;
+      let progress = 0;
+      if (dt >= 0) {
+        progress = dt > 0.7 ? 1 : easeOutBack(dt / 0.7);
+      }
+      const ox = letterOffsets[i] * (1 - progress);
+      const oy = 80 * (1 - progress);
+      const rot = letterRots[i] * (1 - progress);
+      const scale = 0.3 + 0.7 * progress;
+      const opacity = progress;
+      const charX = currX + widths[i] / 2;
+
+      // Pulse during title focus (t 15-17)
+      let pulseScale = 1;
+      let color = 'rgba(255,255,255,1)';
+      if (t >= 15.0 && t < 17.0) {
+        const beatDur = 0.5;
+        const beatIndex = Math.floor((t - 15.0) / beatDur);
+        if (beatIndex % titleText.length === i) {
+          const bp = ((t - 15.0) % beatDur) / beatDur;
+          pulseScale = 1 + 0.4 * Math.exp(-bp * 6);
+          color = '#00e5ff';
+        }
+      } else if (t >= 17.0 && t < 19.0) {
+        const bp = ((t - 17.0) % 0.5) / 0.5;
+        pulseScale = 1 + 0.2 * Math.exp(-bp * 5);
+        color = '#ffffff';
+      } else if (t >= 25.5) {
+        const bp = ((t - 25.5) % 0.5) / 0.5;
+        pulseScale = 1 + 0.35 * Math.exp(-bp * 5);
+      }
+
+      ctx.save();
+      ctx.translate(charX + ox, titleY + oy);
+      ctx.rotate((rot * Math.PI) / 180);
+      ctx.scale(scale * pulseScale, scale * pulseScale);
+      ctx.globalAlpha = opacity;
+      ctx.font = 'bold ' + titleFontSize + 'px Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = '#00e5ff';
+      ctx.shadowBlur = 25 * progress;
+      ctx.fillStyle = color;
+      ctx.fillText(titleText[i], 0, 0);
+      ctx.restore();
+
+      currX += widths[i] + titleLetterSpacing;
+    }
+    ctx.restore();
+  }
+
+  // --- Subtitle ---
+  function drawSubtitle(t) {
+    const start = 5.0;
+    const dt = t - start;
+    if (dt < 0) return;
+    const progress = dt > 0.6 ? 1 : easeOutCubic(dt / 0.6);
+    const alpha = progress;
+    const yOff = 40 * (1 - progress);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    drawGlowText('INTERFACE DESIGN', 640, 310 + yOff, 26, 'rgba(255,255,255,0.85)', 'center', true, '#7b00ff', 20);
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  // --- Left card (waveform) ---
+  const leftCard = { x: 260, y: 470, w: 280, h: 200 };
+  function drawLeftCard(t, beatE) {
+    const start = 6.0;
+    const dt = t - start;
+    if (dt < 0) return;
+    const progress = dt > 0.7 ? 1 : easeOutBack(dt / 0.7);
+    const cx = leftCard.x - 300 * (1 - progress);
+    const cy = leftCard.y;
+
+    ctx.save();
+    ctx.globalAlpha = progress;
+    drawCardBg(cx, cy, leftCard.w, leftCard.h);
+    drawCardTitle(cx, cy - leftCard.h / 2 + 24, 'WAVEFORM');
+
+    // Waveform drawing
+    const waveTop = cy - 30;
+    const waveBottom = cy + 50;
+    const waveHeight = waveBottom - waveTop;
+    ctx.save();
+    ctx.globalAlpha = 0.9 * progress;
+    ctx.shadowColor = '#00e5ff';
+    ctx.shadowBlur = 14;
+    ctx.strokeStyle = '#00e5ff';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    const steps = 80;
+    const halfW = leftCard.w / 2 - 15;
+    for (let i = 0; i <= steps; i++) {
+      const xLocal = -halfW + (i / steps) * (halfW * 2);
+      const freq1 = Math.sin(xLocal * 0.07 + t * 4.5) * 22 * (0.5 + beatE * 0.5);
+      const freq2 = Math.sin(xLocal * 0.13 - t * 2.5) * 12;
+      const freq3 = Math.sin(xLocal * 0.22 + t * 1.5) * 6;
+      const yVal = cy + 10 + freq1 + freq2 + freq3;
+      if (i === 0) ctx.moveTo(cx + xLocal, yVal);
+      else ctx.lineTo(cx + xLocal, yVal);
+    }
+    ctx.stroke();
+    ctx.restore();
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  // --- Right card (progress ring) ---
+  const rightCard = { x: 1020, y: 470, w: 280, h: 200 };
+  function drawRightCard(t) {
+    const start = 6.5;
+    const dt = t - start;
+    if (dt < 0) return;
+    const progress = dt > 0.7 ? 1 : easeOutBack(dt / 0.7);
+    const cx = rightCard.x + 300 * (1 - progress);
+    const cy = rightCard.y;
+    ctx.save();
+    ctx.globalAlpha = progress;
+    drawCardBg(cx, cy, rightCard.w, rightCard.h);
+    drawCardTitle(cx, cy - rightCard.h / 2 + 24, 'PROGRESS');
+
+    // Ring progress
+    let ringProgress = 0;
+    if (t >= 9.0) {
+      const rp = t - 9.0;
+      ringProgress = clamp(rp > 1.5 ? 0.85 : easeInOutCubic(rp / 1.5) * 0.85, 0, 0.85);
+    }
+    const ringR = 58;
+    const ringX = cx;
+    const ringY = cy + 12;
+    const startAngle = -Math.PI / 2;
+    const endAngle = startAngle + ringProgress * Math.PI * 2;
+
+    ctx.save();
+    ctx.lineWidth = 10;
+    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+    ctx.beginPath();
+    ctx.arc(ringX, ringY, ringR, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
+    ctx.lineWidth = 10;
+    const grad = ctx.createLinearGradient(ringX - ringR, ringY, ringX + ringR, ringY + ringR);
+    grad.addColorStop(0, '#00e5ff');
+    grad.addColorStop(1, '#ff00aa');
+    ctx.strokeStyle = grad;
+    ctx.shadowColor = '#00e5ff';
+    ctx.shadowBlur = 18;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(ringX, ringY, ringR, startAngle, endAngle);
+    ctx.stroke();
+    ctx.restore();
+
+    const pct = Math.round(ringProgress * 100);
+    drawGlowText(pct + '%', ringX, ringY, 30, '#ffffff', 'center', true, '#00e5ff', 20);
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  // --- Bottom card (bar chart) ---
+  const bottomCard = { x: 640, y: 620, w: 500, h: 120 };
+  function drawBottomCard(t, beatE) {
+    const start = 7.0;
+    const dt = t - start;
+    if (dt < 0) return;
+    const progress = dt > 0.7 ? 1 : easeOutBack(dt / 0.7);
+    const cx = bottomCard.x;
+    const cy = bottomCard.y + 220 * (1 - progress);
+    ctx.save();
+    ctx.globalAlpha = progress;
+    drawCardBg(cx, cy, bottomCard.w, bottomCard.h);
+    drawCardTitle(cx, cy - bottomCard.h / 2 + 20, 'ANALYTICS');
+
+    // Bars
+    const barYStart = cy + 12;
+    const barYBottom = cy + bottomCard.h / 2 - 10;
+    const barMaxHeight = barYBottom - barYStart;
+    const barCount = 8;
+    const barW = 32;
+    const barGap = 18;
+    const barsTotalWidth = barCount * barW + (barCount - 1) * barGap;
+    const barsXStart = cx - barsTotalWidth / 2;
+    const barHeights = [0.25, 0.5, 0.35, 0.8, 0.55, 0.9, 0.65, 0.42];
+
+    ctx.save();
+    for (let i = 0; i < barCount; i++) {
+      let barProgress = 0;
+      const barStart = 11.0 + i * 0.1;
+      const bdt = t - barStart;
+      if (bdt >= 0) {
+        barProgress = bdt > 0.8 ? 1 : easeOutBack(bdt / 0.8);
+      }
+      const bh = barHeights[i] * barMaxHeight * barProgress;
+      const bX = barsXStart + i * (barW + barGap);
+      const bY = barYBottom - bh;
+      const grad = ctx.createLinearGradient(0, bY, 0, barYBottom);
+      grad.addColorStop(0, '#00e5ff');
+      grad.addColorStop(1, '#ff00aa');
+      ctx.fillStyle = grad;
+      ctx.shadowColor = '#00e5ff';
+      ctx.shadowBlur = 12;
+      ctx.fillRect(bX, bY, barW, bh);
+    }
+    ctx.restore();
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  // --- Button ---
+  function drawButton(t, beatE) {
+    const start = 19.0;
+    const dt = t - start;
+    if (dt < 0) return;
+    const progress = dt > 0.5 ? 1 : easeOutBack(dt / 0.5);
+    const bx = 640;
+    const by = 510;
+    const bw = 200;
+    const bh = 54;
+    const x = bx - bw / 2;
+    const y = by - bh / 2;
+
+    ctx.save();
+    ctx.globalAlpha = progress;
+
+    // Pulse ring
+    const pulseR = 50 + beatE * 80;
+    ctx.globalAlpha = progress * (0.6 * beatE);
+    ctx.strokeStyle = '#00e5ff';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = '#00e5ff';
+    ctx.shadowBlur = 20;
+    ctx.beginPath();
+    ctx.arc(bx, by, pulseR, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = progress;
+
+    // Button background
+    const gradBtn = ctx.createLinearGradient(x, y, x + bw, y);
+    gradBtn.addColorStop(0, '#00e5ff');
+    gradBtn.addColorStop(1, '#ff00aa');
+    ctx.fillStyle = gradBtn;
+    ctx.shadowColor = '#00e5ff';
+    ctx.shadowBlur = 25;
+    ctx.shadowOffsetY = 4;
+    roundRect(ctx, x, y, bw, bh, 27);
+    ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
+
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 16px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('GET STARTED', bx, by + 1);
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  // --- Small pulse dot (logo) ---
+  function drawLogoDot(t) {
+    const start = 1.0;
+    const dt = t - start;
+    if (dt < 0) return;
+    const progress = dt > 0.6 ? 1 : easeOutBack(dt / 0.6);
+    const dotX = 640;
+    const dotY = 135;
+    const dotR = 8;
+    ctx.save();
+    ctx.globalAlpha = progress;
+    ctx.fillStyle = '#00e5ff';
+    ctx.shadowColor = '#00e5ff';
+    ctx.shadowBlur = 30;
+    ctx.beginPath();
+    ctx.arc(dotX, dotY, dotR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  // --- Vignette (screen space) ---
+  function drawVignette() {
+    const grad = ctx.createRadialGradient(W / 2, H / 2, H * 0.4, W / 2, H / 2, H * 0.95);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.55)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // --- Global fade ---
+  function globalFade(t) {
+    let fade = 1;
+    if (t < 0.5) fade = t / 0.5;
+    if (t > DUR - 2.0) fade = clamp((DUR - t) / 2.0, 0, 1);
+    return fade;
+  }
+
+  // --- Main render ---
+  function render(t) {
+    // Update camera
+    updateCameraTarget(t);
+    updateCamSpring();
+
+    // Compute beat energy
+    const beatE = beatEnergy(t);
+
+    // Clear
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, W, H);
+
+    // Apply camera
+    applyCamera();
+
+    // World-space elements
+    drawGrid();
+    drawParticles(t, beatE);
+    drawLeftCard(t, beatE);
+    drawRightCard(t);
+    drawBottomCard(t, beatE);
+    drawLogoDot(t);
+    drawTitle(t, beatE);
+    drawSubtitle(t);
+    drawButton(t, beatE);
+
+    restoreCamera();
+
+    // Screen-space overlay
+    drawVignette();
+
+    // Global fade
+    const gFade = globalFade(t);
+    if (gFade < 1) {
+      ctx.fillStyle = 'rgba(0,0,0,' + (1 - gFade) + ')';
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
+
+  // --- Animation loop ---
+  let prevT = -1;
+  function frame(now) {
+    const elapsed = now / 1000;
+    let t = (startOffset + elapsed) % DUR;
+
+    // Reset camera at loop point to avoid discontinuity
+    if (prevT >= 0 && t < prevT) {
+      cam.x = cam.tx;
+      cam.y = cam.ty;
+      cam.zoom = cam.tz;
+      cam.vx = 0; cam.vy = 0; cam.vz = 0;
+    }
+    prevT = t;
+
+    render(t);
+    requestAnimationFrame(frame);
+  }
+
+  // --- Initialize camera at starting offset ---
+  updateCameraTarget(startOffset);
+  cam.x = cam.tx;
+  cam.y = cam.ty;
+  cam.zoom = cam.tz;
+
+  // Start
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

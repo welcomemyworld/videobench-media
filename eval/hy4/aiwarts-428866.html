@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>opus5.5 · 自举技术栈</title>
+<style>
+html,body{margin:0;background:#000;width:100%;height:100%;overflow:hidden;display:flex;align-items:center;justify-content:center}
+#stage{width:1280px;height:720px;transform-origin:center center;position:relative;background:#000}
+canvas{display:block;width:1280px;height:720px}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c"></canvas></div>
+<script>
+(()=>{'use strict';
+const W=1280,H=720,DUR=24;window.DUR=DUR;
+const cv=document.getElementById('c'),ctx=cv.getContext('2d',{alpha:false});
+const dpr=Math.min(2,window.devicePixelRatio||1);
+cv.width=W*dpr;cv.height=H*dpr;cv.style.width=W+'px';cv.style.height=H+'px';
+ctx.setTransform(dpr,0,0,dpr,0,0);
+const stage=document.getElementById('stage');
+function fit(){stage.style.transform='scale('+Math.min(innerWidth/W,innerHeight/H)+')';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);
+const off=Math.max(0,parseFloat(q.get('t'))||0);
+const t0=performance.now();
+const C={v:'#a78bfa',c:'#57e6ff',a:'#ffc36b',g:'#6ee7a8',p:'#ff8fb1',s:'#8ea3c7',w:'#e8f0ff',m:'#8ea0bd'};
+const TAU=Math.PI*2;
+const cl=(x,a,b)=>x<a?a:x>b?b:x;
+const e=x=>{x=cl(x,0,1);return x*x*(3-2*x);};
+function hexA(h,a){const n=parseInt(h.slice(1),16);return 'rgba('+(n>>16&255)+','+(n>>8&255)+','+(n&255)+','+a+')';}
+function T(s,x,y,z,col,w=500,al='left',mono=false,blur=0){
+  ctx.save();
+  ctx.font=w+' '+z+'px '+(mono?'ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace':'"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC",system-ui,sans-serif');
+  ctx.fillStyle=col;ctx.textAlign=al;ctx.textBaseline='middle';
+  if(blur){ctx.shadowColor=col;ctx.shadowBlur=blur;}
+  ctx.fillText(s,x,y);ctx.restore();
+}
+function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+function withA(a,fn){if(a<=.002)return;ctx.save();ctx.globalAlpha*=a;fn();ctx.restore();}
+function panel(x,y,w,h,ac,title){
+  rr(x,y,w,h,13);ctx.fillStyle='rgba(9,15,27,.80)';ctx.fill();
+  ctx.lineWidth=1;ctx.strokeStyle=hexA(ac,.28);ctx.stroke();
+  ctx.strokeStyle=hexA(ac,.8);ctx.lineWidth=2;const L=13;
+  [[x,y,1,1],[x+w,y,-1,1],[x,y+h,1,-1],[x+w,y+h,-1,-1]].forEach(p=>{
+    ctx.beginPath();ctx.moveTo(p[0]+p[2]*L,p[1]+p[3]*3);ctx.lineTo(p[0]+p[2]*3,p[1]+p[3]*3);ctx.lineTo(p[0]+p[2]*3,p[1]+p[3]*L);ctx.stroke();
+  });
+  if(title)T(title,x+16,y+17,11,hexA(ac,.92),700,'left',true);
+}
+function pill(x,y,w,h,s,col,z=11){
+  rr(x,y,w,h,h/2);ctx.fillStyle=hexA(col,.12);ctx.fill();ctx.lineWidth=1;ctx.strokeStyle=hexA(col,.42);ctx.stroke();
+  T(s,x+w/2,y+h/2+.5,z,hexA(col,.96),700,'center',true);
+}
+function head(kick,title,sub,ac){
+  T(kick,72,68,12,hexA(ac,.85),700,'left',true);
+  T(title,72,101,33,C.w,700);
+  T(sub,72,132,14,C.m,450);
+  T('OPUS 5.5 / SELF-LISTING STACK',72,26,11,'rgba(170,195,230,.55)',600,'left',true);
+  ctx.fillStyle='rgba(140,175,225,.16)';ctx.fillRect(72,44,1136,1);
+}
+const S=[[0,2.8],[2.8,6.8],[6.8,11.2],[11.2,15.4],[15.4,19.6],[19.6,24]];
+const B=[2.8,6.8,11.2,15.4,19.6];
+function win(t,i){const a=S[i][0],b=S[i][1];return e((t-a)/.30)*e((b-t)/.30);}
+function segIdx(t){for(let i=0;i<S.length;i++)if(t<S[i][1])return i;return 5;}
+function drawBG(t){
+  let g=ctx.createRadialGradient(640,290,30,640,360,780);
+  g.addColorStop(0,'#0c1424');g.addColorStop(.55,'#070c17');g.addColorStop(1,'#03050b');
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  [[C.v,.055,.23],[C.c,.045,.17],[C.a,.030,.11]].forEach((b,i)=>{
+    const x=640+Math.sin(t*b[2]+i*2.1)*430,y=350+Math.cos(t*b[2]*.8+i)*210;
+    const rg=ctx.createRadialGradient(x,y,0,x,y,310);
+    rg.addColorStop(0,hexA(b[0],b[1]));rg.addColorStop(1,hexA(b[0],0));
+    ctx.fillStyle=rg;ctx.fillRect(x-310,y-310,620,620);
+  });
+  ctx.lineWidth=1;ctx.strokeStyle='rgba(125,170,240,.055)';ctx.beginPath();
+  for(let x=0;x<=W;x+=40){ctx.moveTo(x+.5,0);ctx.lineTo(x+.5,H);}
+  for(let y=0;y<=H;y+=40){ctx.moveTo(0,y+.5);ctx.lineTo(W,y+.5);}ctx.stroke();
+  ctx.strokeStyle='rgba(125,170,240,.10)';ctx.beginPath();
+  for(let x=0;x<=W;x+=160){ctx.moveTo(x+.5,0);ctx.lineTo(x+.5,H);}
+  for(let y=0;y<=H;y+=160){ctx.moveTo(0,y+.5);ctx.lineTo(W,y+.5);}ctx.stroke();
+  const sy=(t*80)%(H+200)-100;
+  const lg=ctx.createLinearGradient(0,sy-45,0,sy+45);
+  lg.addColorStop(0,'rgba(90,160,255,0)');lg.addColorStop(.5,'rgba(90,160,255,.035)');lg.addColorStop(1,'rgba(90,160,255,0)');
+  ctx.fillStyle=lg;ctx.fillRect(0,sy-45,W,90);
+  const vg=ctx.createRadialGradient(640,360,170,640,360,790);
+  vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(0,0,0,.74)');
+  ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);
+}
+function bez(p,u){const m=1-u;return [m*m*m*p[0][0]+3*m*m*u*p[1][0]+3*m*u*u*p[2][0]+u*u*u*p[3][0],m*m*m*p[0][1]+3*m*m*u*p[1][1]+3*m*u*u*p[2][1]+u*u*u*p[3][1]];}
+/* ---------- 01 BOOT ---------- */
+function sc0(s,t){
+  const cx=640,cy=268,beat=Math.pow(1-((t*2)%1),3);
+  ctx.save();ctx.translate(cx,cy);
+  for(let i=0;i<4;i++){
+    const r=52+i*26+Math.sin(t*2-i*.8)*2.5;
+    ctx.beginPath();ctx.setLineDash([2+i*3,9+i*2]);ctx.lineDashOffset=-t*(9+i*5)*(i%2?1:-1);
+    ctx.arc(0,0,r,0,TAU);ctx.strokeStyle=hexA(i%2?C.c:C.v,.34-i*.055);ctx.lineWidth=1.4;ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.rotate(t*.7);
+  for(let k=0;k<6;k++){
+    ctx.beginPath();ctx.arc(0,0,104+beat*3,k*TAU/6,k*TAU/6+.42);
+    ctx.strokeStyle=hexA(k%2?C.c:C.v,.85);ctx.lineWidth=3;ctx.lineCap='round';
+    ctx.shadowColor=C.v;ctx.shadowBlur=14;ctx.stroke();
+  }
+  ctx.shadowBlur=0;ctx.restore();
+  const og=ctx.createRadialGradient(cx-12,cy-14,2,cx,cy,56);
+  og.addColorStop(0,'rgba(220,205,255,.95)');og.addColorStop(.35,hexA(C.v,.65));og.addColorStop(1,hexA(C.v,0));
+  ctx.fillStyle=og;ctx.beginPath();ctx.arc(cx,cy,56+beat*3,0,TAU);ctx.fill();
+  T('opus',cx,cy-9,25,C.w,800,'center',false,10);
+  T('5.5',cx,cy+17,13,hexA(C.v,.95),700,'center',true);
+  T('正在推断并列出全部技术栈',640,362,18,hexA(C.w,.88),600,'center',false,8);
+  const dots='·'.repeat(1+Math.floor(t*4)%4);
+  T(dots,640,390,16,hexA(C.v,.9),700,'center');
+  panel(250,418,780,212,C.v,'opus5.5 · stack-agent');
+  [[266,434,'#ff6b7d'],[282,434,'#ffc36b'],[298,434,'#6ee7a8']].forEach(d=>{ctx.fillStyle=d[2];ctx.beginPath();ctx.arc(d[0],d[1],4,0,TAU);ctx.fill();});
+  ctx.fillStyle='rgba(140,175,225,.14)';ctx.fillRect(266,450,748,1);
+  const L=[
+    '> opus5.5 --list-stack --film "1080p / 25fps"',
+    '[ok] 影片工程：Remotion 4.0.528',
+    '[ok] 补全描述：「这是一个用 React 写时间轴的影片工程」',
+    '[ok] 推断依赖：Python · ffmpeg · Node.js',
+    '[..] 生成清单中 … 7 层依赖已解析'
+  ];
+  for(let i=0;i<L.length;i++){
+    const n=cl(Math.floor((s-.28-i*.40)*44),0,L[i].length);
+    if(n<=0)continue;
+    const str=L[i].slice(0,n);
+    T(str,270,476+i*29,14.5,i===0?hexA(C.c,.95):i===2?hexA(C.a,.92):'rgba(196,214,240,.86)',500,'left',true);
+    if(n<L[i].length&&Math.floor(t*4)%2===0){ctx.fillStyle=hexA(C.v,.9);ctx.fillRect(270+n*8.7,469+i*29,7,15);}
+  }
+  for(let i=0;i<7;i++){
+    const on=e((s-.3-i*.26)/.35);
+    rr(270+i*106,600,96,5,3);ctx.fillStyle='rgba(255,255,255,.07)';ctx.fill();
+    rr(270+i*106,600,96*on,5,3);ctx.fillStyle=hexA(i<3?C.v:i<5?C.c:C.g,.85);ctx.fill();
+  }
+}
+/* ---------- 02 STACK ---------- */
+const ROWS=[
+  ['opus 5.5','ORCHESTRATOR','编排 · 自动列出全部技术栈',C.v,0],
+  ['Remotion 4.0.528','RENDERER','画面工程 · 用 React 写时间轴',C.c,1],
+  ['React 18.3.1 / TypeScript 5.6','UI + TYPES','逐帧 UI · 类型安全',C.c,2],
+  ['Node.js 20','RUNTIME','bundle / renderMedia() 调度',C.s,3],
+  ['Python 3.12 · numpy · scipy · mido','SCORE','配乐合成 → score.wav',C.a,4],
+  ['ffmpeg 6.1 · libx264 · AAC','MUX','音画合成 → final_1080p.mp4',C.g,5],
+  ['Canvas 2D / WebGL','DRAW','程序化绘制 · 零外部素材',C.p,6]
+];
+function glyph(x,y,k,col){
+  ctx.save();ctx.translate(x,y);ctx.strokeStyle=col;ctx.fillStyle=hexA(col,.22);ctx.lineWidth=1.6;
+  if(k===0){for(let i=0;i<3;i++){ctx.beginPath();ctx.ellipse(0,0,11,5,i*1.05,0,TAU);ctx.stroke();}ctx.beginPath();ctx.arc(0,0,3,0,TAU);ctx.fillStyle=col;ctx.fill();}
+  else if(k===1){ctx.beginPath();ctx.moveTo(-7,-9);ctx.lineTo(9,0);ctx.lineTo(-7,9);ctx.closePath();ctx.fill();ctx.stroke();}
+  else if(k===2){ctx.beginPath();ctx.arc(0,0,10,0,TAU);ctx.stroke();ctx.beginPath();ctx.arc(0,0,3.5,0,TAU);ctx.fillStyle=col;ctx.fill();}
+  else if(k===3){ctx.beginPath();for(let i=0;i<6;i++){const a=i*TAU/6-Math.PI/2;const px=Math.cos(a)*10,py=Math.sin(a)*10;i?ctx.lineTo(px,py):ctx.moveTo(px,py);}ctx.closePath();ctx.fill();ctx.stroke();}
+  else if(k===4){ctx.beginPath();for(let i=-12;i<=12;i++){const yy=Math.sin(i*.55)*6;i===-12?ctx.moveTo(i,yy):ctx.lineTo(i,yy);}ctx.stroke();}
+  else if(k===5){for(let i=0;i<4;i++){const h=4+i*3;ctx.fillRect(-11+i*6,8-h,4,h);ctx.strokeRect(-11+i*6,8-h,4,h);}}
+  else{ctx.strokeRect(-10,-10,20,20);ctx.beginPath();ctx.moveTo(-10,0);ctx.lineTo(10,0);ctx.moveTo(0,-10);ctx.lineTo(0,10);ctx.stroke();}
+  ctx.restore();
+}
+function sc1(s){
+  head('02 / STACK','技术栈清单','由 opus5.5 自行推断、自行列出 · 无需人工指定',C.v);
+  pill(1000,84,208,26,'7 LAYERS · 1080p · 25fps',C.v,11);
+  for(let i=0;i<ROWS.length;i++){
+    const p=e((s-.14-i*.30)/.48);
+    if(p<=0)continue;
+    withA(p,()=>{
+      const R=ROWS[i],y=158+i*68,dx=(1-p)*38;
+      rr(72+dx,y,1136,60,10);ctx.fillStyle='rgba(255,255,255,.026)';ctx.fill();
+      ctx.strokeStyle=hexA(R[3],.16);ctx.lineWidth=1;ctx.stroke();
+      rr(72+dx,y+10,3,40,2);ctx.fillStyle=R[3];ctx.shadowColor=R[3];ctx.shadowBlur=10;ctx.fill();ctx.shadowBlur=0;
+      T('0'+(i+1),96+dx,y+30,13,hexA(R[3],.7),700,'center',true);
+      glyph(146+dx,y+30,i,R[3]);
+      T(R[0],180+dx,y+22,19.5,C.w,700);
+      T(R[2],180+dx,y+44,13.5,C.m,450);
+      pill(996+dx,y+16,176,27,R[1],R[3],10.5);
+      T('✓',1192+dx,y+30,15,hexA(C.g,.9),700,'center');
+    });
+  }
+  T('本片「自称」由以上栈渲染；实际由浏览器 <canvas> 逐帧绘制 —— 这正是清单的第 7 层。',72,676,13,'rgba(150,170,200,.72)',400);
+}
+/* ---------- 03 VISUALS ---------- */
+const CODE=[
+  '<Composition',
+  '  id="OpusStack"',
+  '  durationInFrames={600}',
+  '  fps={25} width={1920} height={1080}',
+  '>',
+  '  <Series>',
+  '    <Sequence dur={70}><Boot /></Sequence>',
+  '    <Sequence dur={100}><StackList /></Sequence>',
+  '    <Sequence dur={110}><Visuals /></Sequence>',
+  '    <Sequence dur={105}><Score /></Sequence>',
+  '    <Sequence dur={105}><Mux /></Sequence>',
+  '    <Sequence dur={110}><Final /></Sequence>',
+  '  </Series>',
+  '</Composition>'
+];
+const CLIPS=[70,100,110,105,105,110];
+const CLIPC=[C.v,C.c,C.c,C.a,C.g,C.p];
+function sc2(s,t){
+  head('03 / VISUALS','画面 · Remotion 4.0.528','用 React 组件描述时间轴：frame → pixels 的纯函数',C.c);
+  panel(72,160,452,470,C.c,'Composition.tsx');
+  const act=6+segIdx(t);
+  for(let i=0;i<CODE.length;i++){
+    const y=208+i*27;
+    if(i===act){rr(86,y-12,424,25,5);ctx.fillStyle=hexA(C.c,.13);ctx.fill();rr(86,y-12,3,25,2);ctx.fillStyle=C.c;ctx.fill();}
+    T(String(i+1).padStart(2,'0'),90,y,10,'rgba(130,155,190,.45)',400,'left',true);
+    const col=i===act?C.w:CODE[i].indexOf('Sequence')>=0?hexA(C.c,.85):CODE[i].indexOf('<')>=0?'#9fb6d8':'rgba(160,182,212,.8)';
+    T(CODE[i],112,y,13,col,i===act?700:400,'left',true);
+  }
+  const fr=Math.floor((t/DUR)*600);
+  pill(88,592,196,24,'useCurrentFrame() → '+String(fr).padStart(4,'0'),C.c,10.5);
+  /* preview */
+  const px=548,py=160,pw=660,ph=372;
+  ctx.save();rr(px,py,pw,ph,12);ctx.clip();
+  ctx.fillStyle='#060b14';ctx.fillRect(px,py,pw,ph);
+  ctx.strokeStyle='rgba(90,150,220,.10)';ctx.lineWidth=1;ctx.beginPath();
+  for(let x=px;x<px+pw;x+=33){ctx.moveTo(x,py);ctx.lineTo(x,py+ph);}
+  for(let y=py;y<py+ph;y+=33){ctx.moveTo(px,y);ctx.lineTo(px+pw,y);}ctx.stroke();
+  const ccx=px+330,ccy=py+168;
+  ctx.save();ctx.translate(ccx,ccy);ctx.rotate(t*.55);
+  for(let k=0;k<5;k++){ctx.beginPath();ctx.arc(0,0,38+k*20,k*TAU/5,k*TAU/5+1.05);ctx.strokeStyle=hexA(k%2?C.c:C.v,.65);ctx.lineWidth=2.4;ctx.shadowColor=C.c;ctx.shadowBlur=9;ctx.stroke();}
+  ctx.restore();ctx.shadowBlur=0;
+  for(let i=0;i<28;i++){
+    const h=8+Math.abs(Math.sin(t*2.6+i*.42))*54;
+    ctx.fillStyle=hexA(i%3===0?C.v:C.c,.45);ctx.fillRect(px+22+i*23,py+ph-24-h,13,h);
+    ctx.fillStyle=hexA(C.c,.12);ctx.fillRect(px+22+i*23,py+ph-22,13,4);
+  }
+  for(let i=0;i<26;i++){
+    const hx=px+((i*197+Math.sin(t*.6+i)*40)%pw+pw)%pw,hy=py+((i*113+t*22)%ph+ph)%ph;
+    ctx.fillStyle=hexA(C.w,.20);ctx.fillRect(hx,hy,1.6,1.6);
+  }
+  T('OPUS 5.5',px+330,py+262,13,hexA(C.w,.72),700,'center',true);
+  ctx.fillStyle='#ff5f6d';ctx.beginPath();ctx.arc(px+20,py+20,4,0,TAU);ctx.fill();
+  T('REC',px+32,py+20,11,'#ff9aa4',700,'left',true);
+  T('1920×1080 · 25fps',px+pw-18,py+20,11,'rgba(190,212,240,.7)',500,'right',true);
+  T('f '+String(fr).padStart(4,'0'),px+pw-18,py+ph-18,12,hexA(C.c,.9),700,'right',true);
+  ctx.restore();
+  rr(px,py,pw,ph,12);ctx.strokeStyle=hexA(C.c,.45);ctx.lineWidth=1.5;ctx.stroke();
+  /* timeline */
+  panel(548,548,660,76,C.c,'TIMELINE · 600 frames');
+  let cx=564;const tw=628;
+  for(let i=0;i<6;i++){
+    const w=tw*CLIPS[i]/600;
+    rr(cx,578,w-3,26,4);ctx.fillStyle=hexA(CLIPC[i],.30);ctx.fill();
+    ctx.strokeStyle=hexA(CLIPC[i],.7);ctx.lineWidth=1;ctx.stroke();
+    T(String(i+1),cx+7,591,10,hexA(C.w,.85),700,'left',true);
+    cx+=w;
+  }
+  const play=564+tw*(t/DUR);
+  ctx.strokeStyle=C.w;ctx.lineWidth=2;ctx.shadowColor=C.c;ctx.shadowBlur=12;
+  ctx.beginPath();ctx.moveTo(play,570);ctx.lineTo(play,612);ctx.stroke();ctx.shadowBlur=0;
+  ctx.fillStyle=C.w;ctx.beginPath();ctx.moveTo(play-5,570);ctx.lineTo(play+5,570);ctx.lineTo(play,577);ctx.fill();
+  T('frame '+String(fr).padStart(4,'0')+' / 0600',1208,648,12,hexA(C.c,.9),700,'right',true);
+  T('每一帧都是纯函数 · 相同输入 → 相同像素',548,676,13,'rgba(150,170,200,.72)',400);
+}
+/* ---------- 04 SCORE ---------- */
+const PY=[
+  'import numpy as np',
+  'from scipy.io import wavfile',
+  '',
+  'sr, bpm, DUR = 44100, 120, 24',
+  't = np.linspace(0, DUR, sr*DUR)',
+  '',
+  'pad = sum(np.sin(2*np.pi*f*t)',
+  '          for f in [220, 277.2, 329.6])',
+  'lead = np.sin(2*np.pi*440*t)*env(t)',
+  'kick = np.exp(-8*(t % .5))*55',
+  '',
+  'mix = .45*pad + .35*lead + .2*kick',
+  'wavfile.write("score.wav", sr, mix)'
+];
+function sc3(s,t){
+  head('04 / SCORE','配乐 · Python 3.12','numpy + scipy + mido → score.wav · 120 BPM · 44.1 kHz',C.a);
+  const beat=Math.pow(1-((t*2)%1),4);
+  panel(72,160,700,222,C.a,'WAVEFORM · score.wav');
+  ctx.save();rr(80,190,684,180,6);ctx.clip();
+  const wg=ctx.createLinearGradient(0,210,0,350);
+  wg.addColorStop(0,hexA(C.a,.95));wg.addColorStop(.5,hexA(C.p,.75));wg.addColorStop(1,hexA(C.a,.95));
+  ctx.strokeStyle=wg;ctx.lineWidth=1.6;ctx.beginPath();
+  for(let i=0;i<=340;i++){
+    const x=80+i*2.01;
+    const env=.28+.72*Math.abs(Math.sin(i*.0092));
+    const v=(Math.sin(i*.075+t*5)*.52+Math.sin(i*.023-t*2.4)*.31+Math.sin(i*.19+t*9)*.13)*env;
+    const y=280-v*72;i?ctx.lineTo(x,y):ctx.moveTo(x,y);
+  }
+  ctx.stroke();
+  ctx.beginPath();
+  for(let i=0;i<=340;i++){
+    const x=80+i*2.01;
+    const env=.28+.72*Math.abs(Math.sin(i*.0092));
+    const v=(Math.sin(i*.075+t*5)*.52+Math.sin(i*.023-t*2.4)*.31+Math.sin(i*.19+t*9)*.13)*env;
+    const y=280+v*72;i?ctx.lineTo(x,y):ctx.moveTo(x,y);
+  }
+  ctx.stroke();
+  ctx.strokeStyle='rgba(255,195,107,.20)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(80,280);ctx.lineTo(764,280);ctx.stroke();
+  const ph=80+684*(t/DUR);
+  ctx.strokeStyle=hexA(C.w,.85);ctx.lineWidth=1.4;ctx.shadowColor=C.a;ctx.shadowBlur=12;
+  ctx.beginPath();ctx.moveTo(ph,192);ctx.lineTo(ph,368);ctx.stroke();ctx.shadowBlur=0;
+  ctx.restore();
+  T('00:00',80,368,10,C.m,400,'left',true);T('00:06',251,368,10,C.m,400,'center',true);
+  T('00:12',422,368,10,C.m,400,'center',true);T('00:18',593,368,10,C.m,400,'center',true);
+  T('00:24',764,368,10,C.m,400,'right',true);
+  panel(72,398,700,228,C.a,'SPECTRUM · 44 bands');
+  ctx.strokeStyle='rgba(255,195,107,.10)';ctx.lineWidth=1;ctx.beginPath();
+  for(let k=1;k<4;k++){ctx.moveTo(88,560-k*40);ctx.lineTo(756,560-k*40);}ctx.stroke();
+  for(let i=0;i<44;i++){
+    const x=88+i*15.2;
+    const h=12+Math.abs(Math.sin(i*.47+t*3.1))*82+Math.abs(Math.sin(i*.13-t*1.7))*40+beat*26*(1-i/50);
+    const g=ctx.createLinearGradient(0,560-h,0,560);
+    g.addColorStop(0,hexA(C.p,.95));g.addColorStop(1,hexA(C.a,.55));
+    ctx.fillStyle=g;ctx.fillRect(x,560-h,10,h);
+    ctx.fillStyle=hexA(C.a,.14);ctx.fillRect(x,562,10,Math.min(30,h*.32));
+  }
+  panel(796,160,412,296,C.a,'score.py');
+  for(let i=0;i<PY.length;i++){
+    T(PY[i],812,204+i*20.5,12.2,PY[i].indexOf('import')>=0||PY[i].indexOf('from')>=0?hexA(C.v,.95):PY[i].indexOf('wavfile.write')>=0?hexA(C.g,.95):'rgba(194,212,238,.82)',400,'left',true);
+  }
+  panel(796,470,412,158,C.a,'PIANO ROLL · 16 steps');
+  const NOTES=['C5','A4','G4','E4','D4','C4'];
+  for(let r=0;r<6;r++){
+    T(NOTES[r],804,510+r*19,9.5,hexA(C.m,.85),500,'left',true);
+    for(let c=0;c<16;c++){
+      const x=842+c*22,y=501+r*19;
+      rr(x,y,20,17,3);ctx.fillStyle=((c*3+r*5)%11<3)?'rgba(255,195,107,.075)':'rgba(255,255,255,.028)';ctx.fill();
+      const step=Math.floor(t*4)%16;
+      const on=(c===step&&((c*7+r*3)%5<3))||((c+r*2)%16===(step+8)%16&&(c%4===0));
+      if(on){rr(x,y,20,17,3);ctx.fillStyle=hexA(c===step?C.p:C.a,.72);ctx.fill();ctx.strokeStyle=hexA(C.w,.5);ctx.lineWidth=1;ctx.stroke();}
+    }
+  }
+  T('无采样文件 · 无外部音源 · 全部由正弦叠加合成（画面内为配乐可视化）',72,676,13,'rgba(150,170,200,.72)',400);
+}
+/* ---------- 05 MUX ---------- */
+function node(cx,cy,r,col,big,label,sub){
+  const g=ctx.createRadialGradient(cx,cy,4,cx,cy,r*2.1);
+  g.addColorStop(0,hexA(col,.30));g.addColorStop(1,hexA(col,0));
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(cx,cy,r*2.1,0,TAU);ctx.fill();
+  ctx.save();ctx.translate(cx,cy);ctx.rotate(performance.now()*0+cy*.001);ctx.setLineDash([5,8]);
+  ctx.beginPath();ctx.arc(0,0,r+12,0,TAU);ctx.strokeStyle=hexA(col,.45);ctx.lineWidth=1.4;ctx.stroke();ctx.setLineDash([]);ctx.restore();
+  const ig=ctx.createRadialGradient(cx-r*.3,cy-r*.35,2,cx,cy,r);
+  ig.addColorStop(0,hexA(col,.42));ig.addColorStop(1,'rgba(8,14,25,.95)');
+  ctx.fillStyle=ig;ctx.beginPath();ctx.arc(cx,cy,r,0,TAU);ctx.fill();
+  ctx.strokeStyle=hexA(col,.9);ctx.lineWidth=2;ctx.shadowColor=col;ctx.shadowBlur=16;ctx.stroke();ctx.shadowBlur=0;
+  T(big,cx,cy,big.length>3?20:26,C.w,800,'center',true,8);
+  T(label,cx,cy+r+22,14,C.w,700,'center');
+  T(sub,cx,cy+r+42,11.5,C.m,400,'center',true);
+}
+function flow(p,col,t,off){
+  ctx.beginPath();ctx.moveTo(p[0][0],p[0][1]);ctx.bezierCurveTo(p[1][0],p[1][1],p[2][0],p[2][1],p[3][0],p[3][1]);
+  ctx.strokeStyle=hexA(col,.28);ctx.lineWidth=2;ctx.stroke();
+  ctx.beginPath();ctx.moveTo(p[0][0],p[0][1]);ctx.bezierCurveTo(p[1][0],p[1][1],p[2][0],p[2][1],p[3][0],p[3][1]);
+  ctx.setLineDash([3,12]);ctx.lineDashOffset=-t*38;ctx.strokeStyle=hexA(col,.55);ctx.lineWidth=2;ctx.stroke();ctx.setLineDash([]);
+  for(let k=0;k<7;k++){
+    const u=((t*.32+off+k/7)%1),q=bez(p,u);
+    ctx.fillStyle=hexA(col,.9);ctx.shadowColor=col;ctx.shadowBlur=10;
+    ctx.beginPath();ctx.arc(q[0],q[1],2.8,0,TAU);ctx.fill();ctx.shadowBlur=0;
+  }
+}
+function sc4(s,t){
+  head('05 / MUX','合成 · ffmpeg 6.1','Remotion 调 renderMedia() → ffmpeg 把画面与配乐合成成片',C.g);
+  const chips=['libx264','aac','crf 18','yuv420p','+faststart'];
+  let cxx=470;chips.forEach(c=>{const w=c.length*8+24;pill(cxx,180,w,24,c,C.g,10.5);cxx+=w+10;});
+  const P1=[[196,286],[380,286],[470,378],[640,378]];
+  const P2=[[196,470],[380,470],[470,378],[640,378]];
+  const P3=[[640,378],[800,322],[920,434],[1084,378]];
+  flow(P1,C.c,t,0);flow(P2,C.a,t,.33);flow(P3,C.g,t,.66);
+  node(196,286,52,C.c,'V','VIDEO','frames/%04d.png · 600 帧');
+  node(196,470,52,C.a,'A','AUDIO','score.wav · 24.0 s');
+  node(640,378,74,C.g,'ffmpeg','MUX','-c:v libx264 -c:a aac');
+  node(1084,378,58,C.g,'MP4','OUTPUT','final_1080p.mp4 · 1920×1080');
+  panel(72,556,1136,112,C.g,'render.log');
+  const pr=e(s/3.5);
+  T(Math.round(pr*100)+'%',1192,574,12,hexA(C.g,.95),700,'right',true);
+  rr(88,586,1104,6,3);ctx.fillStyle='rgba(255,255,255,.08)';ctx.fill();
+  rr(88,586,1104*pr,6,3);ctx.fillStyle=hexA(C.g,.9);ctx.shadowColor=C.g;ctx.shadowBlur=10;ctx.fill();ctx.shadowBlur=0;
+  const LOG=[
+    '[Remotion] bundled → rendered 600 frames / 1920x1080 / 25 fps',
+    '[ffmpeg] Stream #0:0: Video: h264 (libx264), yuv420p(progressive)',
+    '[ffmpeg] Stream #0:1: Audio: aac (LC), 44100 Hz, stereo, fltp',
+    '[mux]   frame=  600 fps= 25 Lsize=   18432kB time=00:00:24.00'
+  ];
+  for(let i=0;i<4;i++){
+    const a=e((s-.25-i*.55)/.4);
+    withA(a,()=>T(LOG[i],88,608+i*20,12.3,i===3?hexA(C.g,.95):'rgba(180,202,232,.82)',400,'left',true));
+  }
+  T('frame= 600  fps=25  bitrate=6280kbits/s  speed=1.0x   ✓  muxing complete',72,684,12.5,hexA(C.g,.85),600,'left',true);
+}
+/* ---------- 06 FINAL ---------- */
+function sc5(s,t){
+  head('06 / FINAL','成片 · final_1080p.mp4','清单列完，管道跑通，剩下的就是循环播放',C.v);
+  const X=210,Y=146,PW=860,PH=484;
+  ctx.save();
+  rr(X,Y,PW,PH,12);ctx.fillStyle='#050a13';ctx.fill();
+  ctx.save();rr(X,Y,PW,PH,12);ctx.clip();
+  const bg=ctx.createRadialGradient(X+430,Y+240,20,X+430,Y+260,600);
+  bg.addColorStop(0,'#101a2e');bg.addColorStop(1,'#04070e');ctx.fillStyle=bg;ctx.fillRect(X,Y,PW,PH);
+  ctx.strokeStyle='rgba(120,170,240,.07)';ctx.beginPath();
+  for(let x=X;x<X+PW;x+=28){ctx.moveTo(x,Y+30);ctx.lineTo(x,Y+PH);}
+  for(let y=Y+30;y<Y+PH;y+=28){ctx.moveTo(X,y);ctx.lineTo(X+PW,y);}ctx.stroke();
+  ctx.translate(X,Y);
+  ctx.fillStyle='rgba(255,255,255,.045)';ctx.fillRect(0,0,PW,30);
+  [[18,'#ff6b7d'],[35,'#ffc36b'],[52,'#6ee7a8']].forEach(d=>{ctx.fillStyle=d[1];ctx.beginPath();ctx.arc(d[0],15,4,0,TAU);ctx.fill();});
+  T('final_1080p.mp4  ·  OpusStack',430,15,11,'rgba(205,222,245,.8)',600,'center',true);
+  T('00:00:24 / 00:00:24',PW-16,15,10.5,'rgba(180,202,232,.7)',400,'right',true);
+  const ocx=150,ocy=205,bt=Math.pow(1-((t*2)%1),3);
+  for(let i=0;i<3;i++){
+    ctx.beginPath();ctx.setLineDash([3,6]);ctx.lineDashOffset=-t*(10+i*4);
+    ctx.arc(ocx,ocy,28+i*13+bt*2,0,TAU);ctx.strokeStyle=hexA(i%2?C.c:C.v,.5);ctx.lineWidth=1.4;ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  const og=ctx.createRadialGradient(ocx-8,ocy-9,1,ocx,ocy,40);
+  og.addColorStop(0,hexA(C.w,.8));og.addColorStop(.4,hexA(C.v,.55));og.addColorStop(1,hexA(C.v,0));
+  ctx.fillStyle=og;ctx.beginPath();ctx.arc(ocx,ocy,40,0,TAU);ctx.fill();
+  T('opus5.5',ocx,ocy,11,C.w,800,'center',true);
+  T('自动列出',ocx,ocy+58,10,hexA(C.v,.85),600,'center');
+  const MR=[['Remotion 4.0.528','画面 · 组件式时间轴',C.c],['React + TypeScript','逐帧 UI · 类型安全',C.c],['Python 3.12','配乐合成 → score.wav',C.a],['ffmpeg 6.1','音画合成 → MP4',C.g],['Canvas 2D','程序化绘制 · 零素材',C.p]];
+  MR.forEach((r,i)=>{
+    const y=80+i*52;
+    rr(240,y,580,40,7);ctx.fillStyle='rgba(255,255,255,.035)';ctx.fill();
+    ctx.strokeStyle=hexA(r[2],.28);ctx.lineWidth=1;ctx.stroke();
+    rr(240,y+8,3,24,2);ctx.fillStyle=r[2];ctx.fill();
+    T(r[0],256,y+15,12.5,C.w,700);
+    T(r[1],256,y+31,10,C.m,400);
+    T('✓',806,y+20,12,hexA(C.g,.9),700,'center');
+  });
+  ctx.strokeStyle=hexA(C.a,.75);ctx.lineWidth=1.3;ctx.shadowColor=C.a;ctx.shadowBlur=8;ctx.beginPath();
+  for(let i=0;i<=190;i++){
+    const x=40+i*4.1,v=(Math.sin(i*.09+t*4)*.55+Math.sin(i*.031-t*2)*.3)*Math.min(1,i/12);
+    const yy=390-v*26;i?ctx.lineTo(x,yy):ctx.moveTo(x,yy);
+  }
+  ctx.stroke();ctx.shadowBlur=0;
+  ctx.strokeStyle='rgba(255,195,107,.18)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(40,390);ctx.lineTo(820,390);ctx.stroke();
+  T('score.wav · 可视化',40,420,10,hexA(C.a,.8),500,'left',true);
+  rr(40,452,780,8,4);ctx.fillStyle='rgba(255,255,255,.09)';ctx.fill();
+  const p=t/DUR;rr(40,452,780*p,8,4);ctx.fillStyle=hexA(C.v,.9);ctx.fill();
+  ctx.fillStyle=C.w;ctx.beginPath();ctx.arc(40+780*p,456,5,0,TAU);ctx.fill();
+  T('▶  RECURSIVE PLAYBACK',40,472,9.5,'rgba(160,182,212,.65)',500,'left',true);
+  ctx.restore();
+  rr(X,Y,PW,PH,12);ctx.strokeStyle=hexA(C.v,.55);ctx.lineWidth=1.6;ctx.shadowColor=C.v;ctx.shadowBlur=18;ctx.stroke();ctx.shadowBlur=0;
+  ctx.restore();
+  T('所有技术栈，都让 opus5.5 自己列出来！',640,662,28,C.w,800,'center',false,14);
+  T('Remotion 4.0.528 画面 · Python 配乐 · 最后由 Remotion 调 ffmpeg 合成成片 · 24s 循环',640,692,13,'rgba(160,182,212,.78)',450,'center');
+}
+/* ---------- HUD / FX ---------- */
+function hud(t){
+  const ss=Math.floor(t),ff=Math.floor((t%1)*25);
+  T('00:'+String(ss).padStart(2,'0')+':'+String(ff).padStart(2,'0'),1208,26,11,'rgba(170,195,230,.7)',700,'right',true);
+  ctx.fillStyle='rgba(140,175,225,.13)';ctx.fillRect(72,708,1136,2);
+  ctx.fillStyle=hexA(C.v,.85);ctx.fillRect(72,708,1136*(t/DUR),2);
+  B.forEach(b=>{ctx.fillStyle='rgba(180,205,240,.35)';ctx.fillRect(72+1136*(b/DUR),704,1,10);});
+}
+function cuts(t){
+  B.forEach(b=>{const k=1-Math.abs(t-b)/.16;if(k<=0)return;
+    ctx.fillStyle='rgba(210,230,255,'+(.045*k)+')';ctx.fillRect(0,0,W,H);
+    const g=ctx.createLinearGradient(0,0,W,0);
+    g.addColorStop(0,'rgba(120,200,255,0)');g.addColorStop(.5,'rgba(200,230,255,'+(.30*k)+')');g.addColorStop(1,'rgba(120,200,255,0)');
+    ctx.fillStyle=g;ctx.fillRect(0,358,W,2.5);
+  });
+}
+function grain(t){
+  const n=Math.floor(t*25);
+  for(let i=0;i<170;i++){
+    let h=Math.sin(i*127.1+n*311.7)*43758.5453;h-=Math.floor(h);
+    let h2=Math.sin(i*311.7+n*127.1)*24634.6345;h2-=Math.floor(h2);
+    let h3=Math.sin(i*57.3+n*71.9)*12741.2411;h3-=Math.floor(h3);
+    ctx.fillStyle='rgba(255,255,255,'+(.015+h3*.045)+')';
+    ctx.fillRect(h*W,h2*H,1.3,1.3);
+  }
+}
+const SC=[sc0,sc1,sc2,sc3,sc4,sc5];
+function draw(t){
+  drawBG(t);
+  for(let i=0;i<SC.length;i++){const a=win(t,i);if(a>.002)withA(a,()=>SC[i](t-S[i][0],t));}
+  hud(t);cuts(t);grain(t);
+  const lf=e(t/.6)*e((DUR-t)/.6);
+  if(lf<1){ctx.fillStyle='rgba(0,0,0,'+(1-lf)+')';ctx.fillRect(0,0,W,H);}
+}
+function frame(now){let t=((now-t0)/1000+off)%DUR;draw(t);requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

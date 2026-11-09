@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>タイルが、物語になる。</title>
+<style>
+  html,body{margin:0;background:#000;width:100%;height:100%;overflow:hidden;display:flex;align-items:center;justify-content:center;font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif}
+  #s{width:1280px;height:720px;position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(var(--sc,1));transform-origin:center;background:#000;overflow:hidden}
+  canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+  #ui{position:absolute;inset:0;pointer-events:none;color:#fff}
+  #toast{position:absolute;left:50%;top:5.5%;transform:translateX(-50%);background:rgba(14,16,20,.88);border:1px solid rgba(255,255,255,.18);padding:9px 20px;border-radius:7px;font-size:13px;letter-spacing:.04em;white-space:nowrap;box-shadow:0 6px 24px rgba(0,0,0,.5)}
+  #toast b{color:#ffd38a}
+  #cur{position:absolute;left:var(--cx,85%);top:var(--cy,92%);display:none;transform:translate(-10%,-8%)}
+</style>
+</head>
+<body>
+<div id="s">
+  <canvas id="c"></canvas>
+  <div id="ui">
+    <div id="toast">🎧 効果音生成（着地 / 裏返し / クリック）— 推定クレジット消費: <b>3.0</b> / ElevenLabs</div>
+    <div id="cur"><svg width="26" height="34" viewBox="0 0 26 34"><path d="M2 2 L2 27 L8.5 21 L13.5 31 L18.5 28.5 L13.5 19 L22.5 19 Z" fill="#fff" stroke="#151515" stroke-width="2" stroke-linejoin="round"/></svg></div>
+  </div>
+</div>
+<script>
+window.DUR = 30;
+const W=576, H=324, N=W*H, CW=1280, CH=720;
+const qs=new URLSearchParams(location.search);
+let t0=Math.max(0,Math.min(window.DUR-0.001,parseFloat(qs.get('t')||'0')));
+
+function fit(){document.documentElement.style.setProperty('--sc',Math.min(innerWidth/CW,innerHeight/CH));}
+addEventListener('resize',fit); fit();
+
+// ── 添付画像の代わりに生成するエンドフレーム（色抽出専用・テクスチャ貼付はしない）──
+const off=document.createElement('canvas'); off.width=W; off.height=H;
+const x=off.getContext('2d');
+x.translate(0,H); x.scale(1,-1); // WebGLの行順と最終表示を一致させる
+const g=x.createLinearGradient(0,0,W,H);
+g.addColorStop(0,'#f6f1e8'); g.addColorStop(1,'#e7ddcd');
+x.fillStyle=g; x.fillRect(0,0,W,H);
+const rg=x.createRadialGradient(W*.2,H*.2,10,W*.5,H*.5,W*.85);
+rg.addColorStop(0,'rgba(255,255,255,.45)'); rg.addColorStop(1,'rgba(115,95,75,.16)');
+x.fillStyle=rg; x.fillRect(0,0,W,H);
+x.textAlign='center'; x.textBaseline='middle'; x.lineJoin='round';
+// 見出し（白ぶち込み）
+x.font='bold 46px sans-serif'; x.lineWidth=7; x.strokeStyle='#fff';
+x.strokeText('タイルが、物語になる。',W/2,H*.34);
+x.fillStyle='#2b3037'; x.fillText('タイルが、物語になる。',W/2,H*.34);
+// サブ
+x.font='20px sans-serif'; x.lineWidth=5;
+x.strokeText('一枚ずつ、光を集めて。',W/2,H*.46);
+x.fillStyle='#a9583b'; x.fillText('一枚ずつ、光を集めて。',W/2,H*.46);
+// ロゴ＝「組み始める場所（目）」 j=52 付近
+x.strokeStyle='#fff'; x.lineWidth=3.5;
+x.beginPath(); x.arc(W/2,H*.16,15,0,7); x.stroke();
+x.fillStyle='#3b6b73'; x.beginPath(); x.arc(W/2,H*.16,6.5,0,7); x.fill();
+x.font='bold 14px sans-serif'; x.fillStyle='#2b3037';
+x.fillText('T I L E   W O R K S',W/2,H*.16+32);
+// ボタン
+const bx=W/2-88, by=H*.74, bw=176, bh=38;
+x.beginPath(); x.roundRect(bx,by,bw,bh,19);
+x.lineWidth=6; x.strokeStyle='#fff'; x.stroke();
+x.fillStyle='#d9483b'; x.fill();
+x.font='bold 17px sans-serif'; x.fillStyle='#fff';
+x.fillText('無料体験はこちら',W/2,by+bh/2+1);
+const img=x.getImageData(0,0,W,H).data;
+
+// ── WebGL2 ──
+const cv=document.getElementById('c'); cv.width=CW; cv.height=CH;
+const gl=cv.getContext('webgl2',{preserveDrawingBuffer:true,antialias:false,alpha:false});
+function sh(ty,src){let s=gl.createShader(ty);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))console.error(gl.getShaderInfoLog(s));return s;}
+function P(v,f){let p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,v));gl.attachShader(p,sh(gl.FRAGMENT_SHADER,f));gl.linkProgram(p);return p;}
+function U(p,n){return gl.getUniformLocation(p,n);}
+
+const qVS=`#version 300 es
+in vec2 aPos; void main(){gl_Position=vec4(aPos,0.,1.);}`;
+
+const bgFS=`#version 300 es
+precision highp float;
+uniform vec3 uCam,uDir,uRight,uUp; uniform float uTan,uAsp,uT; uniform vec2 uStart,uRes;
+out vec4 o;
+void main(){
+  vec2 uv=gl_FragCoord.xy/uRes; vec2 nd=uv*2.-1.;
+  vec3 ray=normalize(uDir+uRight*nd.x*uTan*uAsp+uUp*nd.y*uTan);
+  float hit=-uCam.z/min(ray.z,-.0001);
+  vec2 w=(uCam+ray*max(hit,0.)).xy;
+  float nz=fract(sin(dot(w,vec2(12.9,78.2)))*43758.5);
+  vec3 plaster=vec3(.82,.80,.76)+nz*.035;                       // 漆喰
+  float chalk=exp(-pow((w.y-180.)/15.,2.))*.65;                 // 奥の赤チョーク線
+  plaster=mix(plaster,vec3(.76,.16,.13),chalk);
+  vec2 cell=floor(w+vec2(288.,162.));
+  float d=length(cell-uStart), r=clamp(d/330.,0.,1.);
+  float lt=r<.002?0.:(r<.18?3.+7.*pow(r/.18,.8):10.+11.*((r-.18)/.82));
+  vec3 col=plaster;
+  if(uT>lt && hit>0.){
+    vec2 f=fract(w+vec2(288.5,162.5));
+    float inCell=step(.02,f.x)*step(f.x,.98)*step(.02,f.y)*step(f.y,.98);
+    col=mix(plaster,vec3(.10,.095,.09),inCell*.93);             // 着地マスだけ暗い下地
+  }
+  o=vec4(col,mix(.85,0.,smoothstep(0.,26.,uT)));               // 背景も最初はピンぼけ
+}`;
+
+const tileVS=`#version 300 es
+precision highp float;
+in vec2 aPos;
+uniform sampler2D uAd; uniform mat4 uVP;
+uniform vec3 uCam,uDir; uniform float uT,uFocus,uAper; uniform vec2 uStart;
+out vec3 vCol,vN,vW; out vec2 vUv; out float vCoc,vMat,vDark;
+mat3 rotY(float a){float c=cos(a),s=sin(a);return mat3(c,0,s,0,1,0,-s,0,c);}
+mat3 rotX(float a){float c=cos(a),s=sin(a);return mat3(1,0,0,0,c,-s,0,s,c);}
+void main(){
+  int id=gl_InstanceID; float i=float(id%576), j=float(id/576);
+  vec2 grid=vec2(i-288.,j-162.);
+  vec3 tgt=texelFetch(uAd,ivec2(int(i),int(j)),0).rgb;
+  // 背景色：外側から内側へ塗り広げて決める
+  vec3 eT=texelFetch(uAd,ivec2(int(i),0),0).rgb, eB=texelFetch(uAd,ivec2(int(i),323),0).rgb;
+  vec3 eL=texelFetch(uAd,ivec2(0,int(j)),0).rgb, eR=texelFetch(uAd,ivec2(575,int(j)),0).rgb;
+  vec3 bg=mix(mix(eT,eB,j/324.),mix(eL,eR,i/576.),.35);
+  float isFeat=step(.09,length(tgt-bg));                        // 白ぶちも一緒に検出
+  float flipT=24.+2.*(i/576.);
+
+  float d=length(vec2(i,j)-uStart), r=clamp(d/330.,0.,1.);
+  float lt=r<.002?0.:(r<.18?3.+7.*pow(r/.18,.8):10.+11.*((r-.18)/.82));
+  float dt=uT-lt; vec3 pos=vec3(grid,0.);
+  float ang=atan(j-uStart.y,i-uStart.x)+d*.05;
+  if(dt<0.){float f=-dt; pos.z=45.*pow(f,1.5); pos.xy+=vec2(cos(ang),sin(ang))*f*2.5;} // 渦を巻いて落ちる
+  else pos.z=exp(-dt*8.)*sin(dt*32.)*.35;
+
+  float L=dot(tgt,vec3(.299,.587,.114));
+  float S=max(max(tgt.r,tgt.g),tgt.b)-min(min(tgt.r,tgt.g),tgt.b);
+  vMat=mod(floor(L*6.+S*6.),12.);                              // 明るさ×彩度で12種
+
+  mat3 rot=mat3(1.); vCol=bg;                                  // 文字も最初は周りと同じ淡い色
+  if(isFeat>.5 && uT>=flipT){
+    float fp=smoothstep(flipT,flipT+.38,uT);
+    rot=rotY(6.28318*fp);                                     // 0→360°：端で色が入れ替わり、向きは元に戻る
+    vCol=fp>.5?tgt:bg;
+  }
+  float isBtn=step(200.,i)*step(i,376.)*step(240.,j)*step(j,282.);
+  float ct=uT-27.5;
+  if(ct>0.) pos.z-=isBtn*.28*smoothstep(0.,.12,ct)*(1.-.3*exp(-ct*4.)); // クリックで沈む
+
+  float sd=fract(sin(float(id)*12.9898)*43758.5453);
+  float thick=.6+sd*.5; pos.z+=thick*.5;
+  rot=rot*rotX((sd-.5)*.06)*rotY((fract(sd*7.3)-.5)*.06);    // 1枚ずつ向き・厚みを変える
+  vec2 q=aPos;
+  vec3 local=vec3(q*.46,0.);
+  local.z+=(1.-max(abs(q.x),abs(q.y)))*.04*thick;             // 面取りのふくらみ
+  vec3 world=rot*local+pos;
+  gl_Position=uVP*vec4(world,1.);
+  vUv=q; vN=rot*vec3(0,0,1); vW=world; vCol=vCol;
+  float dist=max(dot(world-uCam,uDir),1.);
+  vCoc=clamp(abs(dist-uFocus)/dist*uAper*20.,0.,1.);
+  vDark=(r<.002&&uT<3.)?1.:0.;
+}`;
+
+const tileFS=`#version 300 es
+precision highp float;
+in vec3 vCol,vN,vW; in vec2 vUv; in float vCoc,vMat,vDark;
+out vec4 o;
+void main(){
+  float e=max(abs(vUv.x),abs(vUv.y));
+  if(e>.995) discard;                                          // 目地は空き（線を引かない）
+  vec3 n=normalize(vN+vec3(vUv*smoothstep(.82,1.,e)*.6,0.));
+  vec3 L=normalize(vec3(-.6,.7,.8));                           // 左上の硬い太陽1つ
+  float df=max(dot(n,L),0.);
+  float spec=pow(max(dot(reflect(-L,n),vec3(0,0,1)),0.),mix(8.,128.,fract(vMat/12.)));
+  vec3 c=vCol; float m=vMat;
+  float gr=fract(sin(dot(vW.xy,vec2(12.9,78.2)))*43758.5);
+  if(m<2.) c+=spec*.9;                                        // 釉薬 / ガラス
+  else if(m<4.) c*=.88+.12*gr;                               // スレート / テラコッタ
+  else if(m<6.) c+=vec3(.12,.06,.16)*sin(vUv.x*8.+m);        // 真珠貝
+  else if(m<8.) c=mix(c,vec3(1.),spec*.6);                   // 白磁
+  else if(m<10.) c*=.93+.07*sin(vW.y*24.);                   // 縞石
+  else c=mix(c,c*vec3(1.05,.98,.92),.5+.5*gr);              // 暖色石
+  c=c*(.45+.65*df)+spec*.25;
+  c*=1.-.35*smoothstep(.85,1.,e);                            // 面取りの影
+  c=mix(c,vec3(.08,.09,.10),vDark);                          // 0-3s 最初の1枚は暗い
+  o=vec4(c,vCoc);                                            // アルファに円形ボケ量を詰める
+}`;
+
+const postFS=`#version 300 es
+precision highp float;
+uniform sampler2D uTex; uniform vec2 uRes; uniform float uT;
+out vec4 o;
+void main(){
+  vec2 uv=gl_FragCoord.xy/uRes;
+  vec4 ct=texture(uTex,uv); float coc=ct.a;
+  vec3 sum=ct.rgb; float ws=1.;
+  for(int k=0;k<16;k++){                                      // 自作・円形ボケ(黄金角)
+    float f=float(k), a=f*2.39996, rad=sqrt(f/16.)*coc*14.;
+    vec4 s=texture(uTex,uv+vec2(cos(a),sin(a))*rad/uRes);
+    float w=s.a<=coc+.1?1.:.3; sum+=s.rgb*w; ws+=w;
+  }
+  vec3 col=sum/ws;
+  float mt=smoothstep(24.,26.,uT);
+  col=mix(col,pow(col,vec3(.98))*1.04,mt);                   // 最後の露出・彩度・色味合わせ
+  col*=1.-.12*dot(uv-.5,uv-.5);
+  o=vec4(col,1.);
+}`;
+
+const pBG=P(qVS,bgFS), pTile=P(tileVS,tileFS), pPost=P(qVS,postFS);
+const vbo=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+
+const adTex=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,adTex);
+gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,W,H,0,gl.RGBA,gl.UNSIGNED_BYTE,new Uint8Array(img));
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+
+const fbo=gl.createFramebuffer(), ftex=gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D,ftex);
+gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,CW,CH,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);
+gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,ftex,0);
+const rb=gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER,rb);
+gl.renderbufferStorage(gl.RENDERBUFFER,gl.DEPTH_COMPONENT16,CW,CH);
+gl.framebufferRenderbuffer(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.RENDERBUFFER,rb);
+
+// ── 行列（最小実装）──
+const mul=(a,b)=>{let o=new Float32Array(16);for(let i=0;i<4;i++)for(let j=0;j<4;j++)for(let k=0;k<4;k++)o[j*4+i]+=a[k*4+i]*b[j*4+k];return o;};
+const persp=(f,n,fa)=>{let t=1/Math.tan(f/2),a=CW/CH;return new Float32Array([t/a,0,0,0,0,t,0,0,0,0,(fa+n)/(n-fa),-1,0,0,2*fa*n/(n-fa),0]);};
+const look=(e,c,u)=>{
+  let z=[e[0]-c[0],e[1]-c[1],e[2]-c[2]],zl=Math.hypot(...z);z=z.map(v=>v/zl);
+  let xx=[u[1]*z[2]-u[2]*z[1],u[2]*z[0]-u[0]*z[2],u[0]*z[1]-u[1]*z[0]],xl=Math.hypot(...xx);xx=xx.map(v=>v/xl);
+  let y=[z[1]*xx[2]-z[2]*xx[1],z[2]*xx[0]-z[0]*xx[2],z[0]*xx[1]-z[1]*xx[0]];
+  return new Float32Array([xx[0],y[0],z[0],0,xx[1],y[1],z[1],0,xx[2],y[2],z[2],0,-xx[0]*e[0]-xx[1]*e[1]-xx[2]*e[2],-y[0]*e[0]-y[1]*e[1]-y[2]*e[2],-z[0]*e[0]-z[1]*e[1]-z[2]*e[2],1]);
+};
+const eo=k=>1-Math.pow(1-Math.min(1,Math.max(0,k)),5); // 終端で速度ゼロ
+
+function camera(t){
+  let R,ang,cx=.001;
+  if(t<3){R=160;ang=.015;}
+  else if(t<10){let k=(t-3)/7;R=160-60*k;ang=.015+.15*k;}
+  else if(t<21){let k=(t-10)/11;R=100+120*k;ang=.165+.75*k;}
+  else{let k=eo((t-21)/5);R=220+110*k;ang=.915+(Math.PI/2-.0001-.915)*k;cx=.001+.4*Math.sin(t*.1)*(1-k);}
+  const pos=[cx,-R*Math.cos(ang),R*Math.sin(ang)];         // 真上ぴったりにしない（90°回りを回避）
+  const tgt=[0,t<10?-110:0,0];
+  const up=[0,1,.001];                                      // 特異点を跨がないup
+  let dir=[tgt[0]-pos[0],tgt[1]-pos[1],tgt[2]-pos[2]],dl=Math.hypot(...dir);dir=dir.map(v=>v/dl);
+  let u=[...up],ul=Math.hypot(...u);u=u.map(v=>v/ul);
+  let z=dir.map(v=>-v);
+  let rt=[u[1]*z[2]-u[2]*z[1],u[2]*z[0]-u[0]*z[2],u[0]*z[1]-u[1]*z[0]],rl=Math.hypot(...rt);rt=rt.map(v=>v/rl);
+  let uu=[z[1]*rt[2]-z[2]*rt[1],z[2]*rt[0]-z[0]*rt[2],z[0]*rt[1]-z[1]*rt[0]];
+  return {pos,dir,rt,uu,VP:mul(persp(.72,1,900),look(pos,tgt,up)),R};
+}
+
+// ── 音（外部素材なし・Web Audioで合成、tに同期）──
+let actx=null,lastT=t0,landPtr=0,flipPtr=0,clicked=false;
+const landEv=[];
+for(let r=0;r<=1;r+=1/240) landEv.push(r<.002?0:(r<.18?3+7*Math.pow(r/.18,.8):10+11*((r-.18)/.82)));
+landEv.sort((a,b)=>a-b);
+while(landPtr<landEv.length&&landEv[landPtr]<=t0)landPtr++;
+flipPtr=Math.max(0,Math.floor((t0-24)/2*576)*2); clicked=t0>=27.5;
+
+function beep(ty,pan,vol){
+  if(!actx)return;
+  const o=actx.createOscillator(),g=actx.createGain(),p=actx.createStereoPanner(),n=actx.currentTime;
+  p.pan.value=Math.max(-1,Math.min(1,pan));o.connect(g);g.connect(p);p.connect(actx.destination);
+  if(ty==='land'){o.type='sine';o.frequency.setValueAtTime(700+Math.random()*300,n);o.frequency.exponentialRampToValueAtTime(200,n+.05);g.gain.setValueAtTime(vol*.15,n);g.gain.exponentialRampToValueAtTime(.001,n+.06);o.start(n);o.stop(n+.07);}
+  else if(ty==='flip'){o.type='square';o.frequency.setValueAtTime(1300,n);o.frequency.exponentialRampToValueAtTime(500,n+.07);g.gain.setValueAtTime(vol*.22,n);g.gain.exponentialRampToValueAtTime(.001,n+.09);o.start(n);o.stop(n+.1);}
+  else{o.type='triangle';o.frequency.setValueAtTime(2400,n);g.gain.setValueAtTime(vol*.3,n);g.gain.exponentialRampToValueAtTime(.001,n+.03);o.start(n);o.stop(n+.04);}
+}
+function audioTick(t){
+  if(!actx){try{actx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){}}
+  if(actx&&actx.state==='suspended')actx.resume();
+  if(t<=lastT){lastT=t;return;}
+  const rain=t>10?Math.max(.15,1-(t-10)/15):1;            // 遠いほど小さく、雨のようにまとめる
+  while(landPtr<landEv.length&&landEv[landPtr]<=t&&landEv[landPtr]>lastT){beep('land',(Math.random()-.5)*1.5,rain*(landPtr%5===0?1:.4));landPtr++;}
+  while(flipPtr<576&&(24+2*flipPtr/576)<=t&&(24+2*flipPtr/576)>lastT){beep('flip',(flipPtr/576)*1.6-.8,1.);flipPtr+=2;} // 24-26を一番目立たせる
+  if(!clicked&&t>=27.5&&lastT<27.5){beep('click',0,1.);clicked=true;}
+  lastT=t;
+}
+
+const toast=document.getElementById('toast'),cur=document.getElementById('cur'),ui=document.getElementById('ui');
+function render(t){
+  const C=camera(t),focus=15+(C.R-15)*eo((t-2)/24),aper=.09+(.0015-.09)*(1-Math.pow(1-Math.min(1,t/26),3));
+  gl.bindFramebuffer(gl.FRAMEBUFFER,fbo); gl.viewport(0,0,CW,CH);
+  gl.disable(gl.DEPTH_TEST); gl.depthMask(false);
+  gl.useProgram(pBG);
+  gl.uniform3fv(U(pBG,'uCam'),C.pos);gl.uniform3fv(U(pBG,'uDir'),C.dir);
+  gl.uniform3fv(U(pBG,'uRight'),C.rt);gl.uniform3fv(U(pBG,'uUp'),C.uu);
+  gl.uniform1f(U(pBG,'uTan'),Math.tan(.72/2));gl.uniform1f(U(pBG,'uAsp'),CW/CH);
+  gl.uniform1f(U(pBG,'uT'),t);gl.uniform2f(U(pBG,'uStart'),288,52);gl.uniform2f(U(pBG,'uRes'),CW,CH);
+  gl.drawArrays(gl.TRIANGLES,0,6);
+
+  gl.enable(gl.DEPTH_TEST);gl.depthMask(true);gl.clear(gl.DEPTH_BUFFER_BIT);
+  gl.useProgram(pTile);
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,adTex);gl.uniform1i(U(pTile,'uAd'),0);
+  gl.uniformMatrix4fv(U(pTile,'uVP'),false,C.VP);
+  gl.uniform3fv(U(pTile,'uCam'),C.pos);gl.uniform3fv(U(pTile,'uDir'),C.dir);
+  gl.uniform1f(U(pTile,'uT'),t);gl.uniform1f(U(pTile,'uFocus'),focus);gl.uniform1f(U(pTile,'uAper'),aper);
+  gl.uniform2f(U(pTile,'uStart'),288,52);
+  gl.drawArraysInstanced(gl.TRIANGLES,0,6,N);              // 576×324 = 186,624枚
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.disable(gl.DEPTH_TEST);
+  gl.useProgram(pPost);gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,ftex);
+  gl.uniform1i(U(pPost,'uTex'),0);gl.uniform2f(U(pPost,'uRes'),CW,CH);gl.uniform1f(U(pPost,'uT'),t);
+  gl.drawArrays(gl.TRIANGLES,0,6);
+
+  // DOMオーバーレイ（CSSアニメ禁止・すべてtから決定）
+  toast.style.opacity=t<2.5?Math.min(1,t*3,(2.5-t)*2):0;
+  if(t>26.6){
+    const k=eo((t-26.8)/.6);
+    ui.style.setProperty('--cx',(85-35*k)+'%');
+    ui.style.setProperty('--cy',(92-12.15*k)+'%');        // ボタン中心 top≈79.85%
+    const press=t>27.5?1-.16*Math.max(0,Math.sin((t-27.5)*20))*Math.exp(-(t-27.5)*8):1;
+    cur.style.display='block';cur.style.transform=`translate(-10%,-8%) scale(${press})`;
+  }else cur.style.display='none';
+}
+
+let start=performance.now()-t0*1000;
+window.seek=s=>{start=performance.now()-s*1000;lastT=s;landPtr=0;flipPtr=0;clicked=false;while(landPtr<landEv.length&&landEv[landPtr]<=s)landPtr++;flipPtr=Math.max(0,Math.floor((s-24)/2*576)*2);clicked=s>=27.5;};
+function frame(now){
+  let t=(now-start)/1000;
+  if(t>=window.DUR){t=t%window.DUR;start=now-t*1000;landPtr=0;flipPtr=0;clicked=false;lastT=t;}
+  render(t);audioTick(t);requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

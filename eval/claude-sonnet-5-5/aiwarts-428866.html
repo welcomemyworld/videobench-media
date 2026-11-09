@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000;height:100%;overflow:hidden}#w{position:fixed;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}canvas{display:block}</style></head><body><div id="w"><canvas id="c" width="1280" height="720"></canvas></div><script>
+const c=document.getElementById('c'),x=c.getContext('2d'),w=document.getElementById('w');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);w.style.transform=`scale(${s})`;w.style.left=(innerWidth-1280*s)/2+'px';w.style.top=(innerHeight-720*s)/2+'px'}
+fit();onresize=fit;
+window.DUR=32;
+const t0=parseFloat(new URLSearchParams(location.search).get('t'))||0,st=performance.now();
+const clamp=(v,a=0,b=1)=>Math.min(b,Math.max(a,v)),ease=v=>1-Math.pow(1-clamp(v),3);
+// stack items: [layer, title, techs, color]
+const items=[
+["画面","Remotion 4.0.528",["React 18","TypeScript","Remotion Player","Chromium 渲染","Node.js"],"#4aa8ff"],
+["配乐","Python",["NumPy 合成波形","SciPy 滤波","wave 写入 WAV","节拍与和弦生成"],"#ffd24a"],
+["合成","ffmpeg",["H.264 编码","AAC 音频","音画同步混流","Remotion 调用 renderMedia"],"#ff6b8a"]];
+const seg=[2,8,14,20,26];
+function bg(t){
+ const g=x.createLinearGradient(0,0,1280,720);g.addColorStop(0,'#0a0f24');g.addColorStop(1,'#1b0f2e');
+ x.fillStyle=g;x.fillRect(0,0,1280,720);
+ for(let i=0;i<70;i++){const px=(i*197.3+t*(10+i%5*6))%1280,py=(i*91.7)%720,r=1+i%3;
+  x.fillStyle=`rgba(255,255,255,${.15+.15*Math.sin(t*2+i)})`;x.beginPath();x.arc(px,py,r,0,7);x.fill()}
+}
+function txt(s,px,py,sz,col,al='left',a=1,wt='bold'){x.globalAlpha=clamp(a);x.fillStyle=col;x.font=`${wt} ${sz}px "Microsoft YaHei",PingFang SC,sans-serif`;x.textAlign=al;x.fillText(s,px,py);x.globalAlpha=1}
+function rr(a,b,w,h,r){x.beginPath();x.roundRect(a,b,w,h,r)}
+function frame(t){
+ bg(t);
+ // title
+ txt("影片技术栈全景",640,70,40,"#fff","center",ease(t/1.2));
+ txt("Remotion 画面 · Python 配乐 · ffmpeg 合成",640,104,20,"#9fb0d0","center",ease((t-.5)/1.2),'normal');
+ // pipeline cards
+ items.forEach((it,i)=>{
+  const s=seg[i]-0,k=ease((t-(1.5+i*.5))/1),cx=60+i*410,cy=160;
+  const act=t>=seg[i]&&t<seg[i]+6?1:0;
+  const pulse=act?.5+.5*Math.sin(t*5):0;
+  x.save();x.translate(0,(1-k)*40);x.globalAlpha=k;
+  rr(cx,cy,380,430,22);x.fillStyle='rgba(255,255,255,.06)';x.fill();
+  x.lineWidth=2+act*2;x.strokeStyle=act?it[3]:'rgba(255,255,255,.2)';x.shadowColor=it[3];x.shadowBlur=act*(15+10*pulse);x.stroke();x.shadowBlur=0;
+  x.fillStyle=it[3];rr(cx+24,cy+24,70,32,16);x.fill();
+  txt(it[0],cx+59,cy+47,20,"#0a0f24","center");
+  txt(it[1],cx+24,cy+110,32,"#fff");
+  it[2].forEach((s,j)=>{const kk=ease((t-seg[i]-.3-j*.35)/.6);const on=t>seg[i]?kk:0;
+   const y=cy+165+j*52;
+   x.globalAlpha=.25+.75*on;x.fillStyle=it[3];x.beginPath();x.arc(cx+34,y-7,6,0,7);x.fill();x.globalAlpha=1;
+   txt(s,cx+52+(1-on)*-20,y,22,"#e8eefc","left",.35+.65*on,'normal')});
+  x.restore();
+  // visual icon bottom
+  const iy=cy+390;
+  if(i==0){for(let b=0;b<14;b++){x.fillStyle=it[3];x.globalAlpha=.6;const hh=8+8*Math.abs(Math.sin(t*3+b*.5));x.fillRect(cx+30+b*24,iy-hh+10,14,hh);}}
+  if(i==1){x.strokeStyle=it[3];x.lineWidth=2.5;x.beginPath();for(let p=0;p<=320;p+=4){const yy=iy+4+Math.sin(p*.07+t*6)*10*Math.sin(p*.012+1);p?x.lineTo(cx+30+p,yy):x.moveTo(cx+30,yy)}x.stroke()}
+  if(i==2){x.fillStyle=it[3];for(let b=0;b<8;b++){const q=(t*2+b*.4)%3.2;x.globalAlpha=.8;x.fillRect(cx+30+q*95,iy-6,28,16)}}
+  x.globalAlpha=1;
+  // arrows
+  if(i<2){const ak=ease((t-(seg[i+1]-1))/1);x.strokeStyle=`rgba(255,255,255,${.6*ak})`;x.lineWidth=3;
+   const ax=cx+384,ay=cy+215;x.beginPath();x.moveTo(ax,ay);x.lineTo(ax+22,ay);x.lineTo(ax+14,ay-8);x.moveTo(ax+22,ay);x.lineTo(ax+14,ay+8);x.stroke()}
+ });
+ // final bar
+ const pk=clamp((t-20)/10);
+ rr(60,620,1160,16,8);x.fillStyle='rgba(255,255,255,.1)';x.fill();
+ rr(60,620,1160*pk,16,8);const g=x.createLinearGradient(60,0,1220,0);g.addColorStop(0,'#4aa8ff');g.addColorStop(.5,'#ffd24a');g.addColorStop(1,'#ff6b8a');x.fillStyle=g;x.fill();
+ txt(t>=26?"成片输出：output.mp4  (1080p · H.264 + AAC)":"渲染流水线进行中…",640,675,24,"#fff","center",ease((t-20)/1),'normal');
+ if(t>28){x.fillStyle=`rgba(0,0,0,${clamp((t-30)/2)})`;x.fillRect(0,0,1280,720)}
+ if(t<1){x.fillStyle=`rgba(0,0,0,${1-t})`;x.fillRect(0,0,1280,720)}
+}
+function loop(){const t=((performance.now()-st)/1000+t0)%DUR;frame(t);requestAnimationFrame(loop)}
+loop();
+</script></body></html>

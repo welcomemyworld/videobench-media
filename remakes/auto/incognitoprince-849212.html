@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Black Holes — Kinetic Explainer</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=60;
+const c=document.getElementById('c'),x=c.getContext('2d'),W=1280,H=720;
+function fit(){const s=Math.min(innerWidth/W,innerHeight/H);c.style.width=W*s+'px';c.style.height=H*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t'))||0,T0=performance.now();
+const cl=v=>Math.max(0,Math.min(1,v)),eo=v=>1-Math.pow(1-cl(v),3),
+eb=v=>{v=cl(v);const a=1.70158;return 1+(a+1)*Math.pow(v-1,3)+a*Math.pow(v-1,2)},
+ei=v=>{v=cl(v);return v<.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2};
+const F='"Arial Black","Helvetica Neue",Arial,sans-serif';
+const ACC='#ffb020',ACC2='#ff4d6d',CY='#4de1ff';
+// stars bg
+const stars=[];for(let i=0;i<220;i++)stars.push([Math.random()*W,Math.random()*H,Math.random()*1.6+.3,Math.random()*6]);
+// kinetic text: per-char stagger in, stagger out
+function kin(s,cx,cy,size,lt,len,o={}){
+ const col=o.col||'#fff',st=o.st??.04,mode=o.mode||'rise',sp=o.sp||0;
+ x.font=`900 ${size}px ${F}`;x.textBaseline='middle';
+ const ws=[...s].map(ch=>x.measureText(ch).width+sp);let tw=ws.reduce((a,b)=>a+b,0)-sp;
+ let px=cx-(o.align==='left'?0:tw/2);
+ [...s].forEach((ch,i)=>{
+  const a=lt-i*st,b=lt-(len-.6)-i*st*.5;
+  const pin=mode==='slam'?eb(a/.45):eo(a/.6),pout=ei(b/.5);
+  const al=cl(a/.25)*(1-pout);if(al<=0){px+=ws[i];return}
+  x.save();x.globalAlpha=al;
+  let dy=0,sc=1,rot=0;
+  if(mode==='rise'){dy=(1-pin)*size*.9}
+  else if(mode==='slam'){sc=3-2*pin;}
+  else if(mode==='drop'){dy=-(1-eb(a/.5))*size*1.5;rot=(1-pin)*.6*(i%2?1:-1)}
+  dy-=pout*size*.8;
+  x.translate(px+ws[i]/2,cy+dy);x.rotate(rot);x.scale(sc,sc);
+  if(o.glow){x.shadowColor=col;x.shadowBlur=30}
+  x.fillStyle=col;x.textAlign='center';x.fillText(ch,0,0);x.restore();px+=ws[i];
+ });
+ return tw;
+}
+function bar(cx,cy,w,lt,len,col){const p=eo((lt)/.6)*(1-ei((lt-len+.6)/.5));
+ x.fillStyle=col;x.fillRect(cx-w/2*p,cy,w*p,6);}
+function star(cx,cy,r,col,glow){const g=x.createRadialGradient(cx,cy,0,cx,cy,r*glow);
+ g.addColorStop(0,'#fff');g.addColorStop(.25,col);g.addColorStop(1,'rgba(0,0,0,0)');
+ x.fillStyle=g;x.beginPath();x.arc(cx,cy,r*glow,0,7);x.fill();}
+function hole(cx,cy,r,t,a){x.save();x.globalAlpha=a;
+ for(let i=0;i<60;i++){const an=t*(1.2+i%5*.2)+i*.7,rr=r*(1.5+(i%7)*.18);
+  x.strokeStyle=`hsla(${30+i%4*8},100%,${55+i%3*10}%,.5)`;x.lineWidth=2;
+  x.beginPath();x.ellipse(cx,cy,rr,rr*.28,-.2,an,an+.9);x.stroke();}
+ x.shadowColor=ACC;x.shadowBlur=40;x.fillStyle='#000';x.beginPath();x.arc(cx,cy,r,0,7);x.fill();
+ x.shadowBlur=0;x.strokeStyle='rgba(255,180,60,.9)';x.lineWidth=3;x.beginPath();x.arc(cx,cy,r+3,0,7);x.stroke();x.restore();}
+const S=[
+ {s:0,e:7,d(l,n){const p=eo(l/1.5);
+   kin('HOW DO',W/2,230,48,l-.2,n,{col:ACC,sp:14});
+   kin('BLACK',W/2,330,150,l-.6,n,{mode:'slam',st:.07});
+   kin('HOLES',W/2,470,150,l-1,n,{mode:'slam',st:.07,col:ACC2});
+   kin('FORM?',W/2,590,48,l-1.8,n,{sp:14});bar(W/2,630,300*p,l-2,n,ACC);}},
+ {s:7,e:14,d(l,n,t){const r=eo((l-.3)/1.5)*90;star(960,360,r,ACC,2.2);
+   kin('IT ALL',380,250,60,l,n);kin('STARTS',380,340,110,l-.3,n,{col:ACC});
+   kin('WITH A STAR',380,450,60,l-.8,n);bar(380,500,420,l-1.2,n,'#fff');}},
+ {s:14,e:21,d(l,n){const v=Math.floor(eo((l-.5)/2)*20);star(1000,360,140+Math.sin(l*3)*4,ACC2,1.8);
+   kin('A GIANT',440,210,56,l,n);
+   x.save();x.globalAlpha=cl(l/.4)*(1-cl((l-n+.5)/.5));x.font=`900 240px ${F}`;x.textAlign='center';x.textBaseline='middle';
+   x.fillStyle=ACC;x.fillText(v+'×',440,370);x.restore();
+   kin('HEAVIER THAN THE SUN',440,530,40,l-1,n,{st:.025,col:'#ddd'});}},
+ {s:21,e:28,d(l,n){const p=ei((l-2.5)/2.5),r=150*(1-p)+8;star(W/2,360,r,p>.5?CY:ACC2,1.5+p*2);
+   kin('FUEL RUNS OUT',W/2,140,64,l,n,{st:.03});
+   kin('GRAVITY',W/2,590,120,l-2,n,{mode:'drop',col:CY});
+   kin('WINS',W/2,680,40,l-2.6,n,{col:'#fff',sp:20});}},
+ {s:28,e:35,d(l,n){const f=Math.max(0,1-Math.abs(l-1.2)/1.2);
+   if(l>1.2){const rr=eo((l-1.2)/3)*900;x.strokeStyle=`rgba(255,160,60,${1-cl((l-1.2)/3)})`;x.lineWidth=30;x.beginPath();x.arc(W/2,360,rr,0,7);x.stroke();}
+   x.fillStyle=`rgba(255,240,220,${f*.9})`;x.fillRect(0,0,W,H);
+   const sh=(1-cl((l-1.2)/1))*14;x.save();x.translate((Math.random()-.5)*sh,(Math.random()-.5)*sh);
+   kin('SUPER',W/2,300,170,l-1.1,n,{mode:'slam',col:ACC2,glow:1});
+   kin('NOVA',W/2,470,170,l-1.4,n,{mode:'slam',col:ACC,glow:1});x.restore();
+   kin('THE CORE CRUSHES INTO A POINT',W/2,620,32,l-2.5,n,{st:.02,col:'#ddd'});}},
+ {s:35,e:43,d(l,n,t){hole(880,360,eo(l/1.5)*110,t,cl(l/.6)*(1-cl((l-n+.5)/.5)));
+   kin('EVENT',320,260,100,l-.3,n,{align:'left',mode:'rise'});
+   kin('HORIZON',320,370,100,l-.6,n,{col:ACC});
+   kin('NOTHING ESCAPES.',320,480,38,l-1.6,n,{st:.03});
+   kin('NOT EVEN LIGHT.',320,540,38,l-2.6,n,{st:.03,col:ACC2});}},
+ {s:43,e:51,d(l,n,t){hole(W/2,360,70,t*.4,.35);
+   x.save();x.translate(W/2,330);const sx=1+eo((l-1)/3)*.9;x.scale(sx,1/(1+(sx-1)*.4));
+   kin('TIME',0,-40,140,l-.2,n,{col:CY,sp:6*sx});x.restore();
+   kin('S L O W S   D O W N',W/2,470,50,l-1,n,{st:.06});
+   kin('NEAR THE EDGE',W/2,560,34,l-2,n,{st:.04,col:ACC});}},
+ {s:51,e:60,d(l,n,t){hole(W/2,360,eo(l/2)*60+10,t,.5);
+   kin("THE UNIVERSE'S",W/2,220,50,l,n,{st:.03});
+   kin('ULTIMATE',W/2,330,120,l-.6,n,{mode:'drop',col:ACC});
+   kin('TRAP',W/2,470,170,l-1.2,n,{mode:'slam',col:ACC2,glow:1});
+   bar(W/2,570,360,l-2,n,'#fff');}},
+];
+function frame(){
+ const t=(((performance.now()-T0)/1000+off)%DUR+DUR)%DUR;
+ x.setTransform(1,0,0,1,0,0);
+ const g=x.createRadialGradient(W/2,H/2,50,W/2,H/2,800);g.addColorStop(0,'#141026');g.addColorStop(1,'#000');
+ x.fillStyle=g;x.fillRect(0,0,W,H);
+ for(const s of stars){x.globalAlpha=.4+.4*Math.sin(t*2+s[3]);x.fillStyle='#fff';
+  x.fillRect((s[0]-t*s[2]*8+W*10)%W,s[1],s[2],s[2]);}x.globalAlpha=1;
+ for(const sc of S){if(t>=sc.s&&t<sc.e){x.save();sc.d(t-sc.s,sc.e-sc.s,t);x.restore();}}
+ // wipe transitions
+ for(const sc of S){const d=t-sc.s;if(sc.s>0&&d>-.45&&d<.45){const p=(d+.45)/.9;
+  x.save();x.translate(W/2,H/2);x.rotate(-.3);
+  [ACC,ACC2].forEach((cc,i)=>{const pp=ei(p-i*.08);x.fillStyle=cc;x.fillRect(-1100+pp*2200-500,-700+i*40,140,1400);});x.restore();}}
+ // progress + letterbox
+ x.fillStyle='rgba(255,255,255,.12)';x.fillRect(40,690,W-80,3);x.fillStyle=ACC;x.fillRect(40,690,(W-80)*t/DUR,3);
+ x.font=`700 14px ${F}`;x.fillStyle='rgba(255,255,255,.5)';x.textAlign='left';x.textBaseline='alphabetic';x.fillText('ASTRO EXPLAINED',40,676);
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></body></html>

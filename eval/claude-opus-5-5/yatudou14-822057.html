@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Lumen 灵感笔记 · 产品介绍</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#0b0d12}
+#tip{position:absolute;left:10px;bottom:8px;color:#556;font:12px sans-serif}
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<div id="tip">点击画面开启配乐</div>
+<script>
+window.DUR=38;
+const cv=document.getElementById('c'),x=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px'}
+fit();addEventListener('resize',fit);
+const q=new URLSearchParams(location.search);const T0=parseFloat(q.get('t')||0);
+const start=performance.now()-T0*1000;
+const F='"PingFang SC","Microsoft YaHei","Noto Sans SC",sans-serif';
+const cl=v=>Math.max(0,Math.min(1,v));
+const eo=t=>1-Math.pow(1-cl(t),3);
+const eio=t=>{t=cl(t);return t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2};
+const lerp=(a,b,t)=>a+(b-a)*t;
+const A1='#7c6cff',A2='#3ee0c8';
+function rr(X,Y,w,h,r){x.beginPath();x.roundRect(X,Y,w,h,r)}
+function txt(s,X,Y,size,col,al,w,align){x.globalAlpha=al??1;x.fillStyle=col;x.font=(w||500)+' '+size+'px '+F;x.textAlign=align||'center';x.textBaseline='middle';x.fillText(s,X,Y);x.globalAlpha=1}
+function grad(X,Y,w){const g=x.createLinearGradient(X,Y,X+w,Y);g.addColorStop(0,A1);g.addColorStop(1,A2);return g}
+function logo(cx,cy,s,a){x.save();x.globalAlpha=a;x.translate(cx,cy);x.scale(s,s);rr(-40,-40,80,80,22);x.fillStyle=grad(-40,0,80);x.fill();
+x.fillStyle='#fff';x.beginPath();x.moveTo(-12,-22);x.lineTo(-12,18);x.lineTo(16,18);x.lineTo(16,8);x.lineTo(-2,8);x.lineTo(-2,-22);x.fill();
+x.beginPath();x.arc(14,-14,6,0,7);x.fill();x.restore()}
+function cursor(X,Y,click){x.save();x.translate(X,Y);if(click>0){x.strokeStyle='rgba(124,108,255,'+(1-click)+')';x.lineWidth=2;x.beginPath();x.arc(0,0,6+click*22,0,7);x.stroke()}
+x.fillStyle='#fff';x.strokeStyle='#000';x.lineWidth=1.5;x.beginPath();x.moveTo(0,0);x.lineTo(0,20);x.lineTo(5,15);x.lineTo(9,24);x.lineTo(12,22);x.lineTo(8,14);x.lineTo(15,14);x.closePath();x.fill();x.stroke();x.restore()}
+function path(t,pts){// pts [time,x,y]
+for(let i=pts.length-1;i>=0;i--)if(t>=pts[i][0]){const a=pts[i],b=pts[i+1];if(!b)return[a[1],a[2]];const k=eio((t-a[0])/(b[0]-a[0]));return[lerp(a[1],b[1],k),lerp(a[2],b[2],k)]}return[pts[0][1],pts[0][2]]}
+function win(X,Y,w,h,title,dark){x.save();x.shadowColor='rgba(0,0,0,.5)';x.shadowBlur=40;x.shadowOffsetY=20;rr(X,Y,w,h,14);x.fillStyle=dark?'#1e1f26':'#fbfbfd';x.fill();x.restore();
+rr(X,Y,w,36,[14,14,0,0]);x.fillStyle=dark?'#16171d':'#eef0f4';x.fill();['#ff5f57','#febc2e','#28c840'].forEach((c,i)=>{x.fillStyle=c;x.beginPath();x.arc(X+20+i*18,Y+18,5.5,0,7);x.fill()});
+txt(title,X+w/2,Y+18,13,dark?'#889':'#778',1,500)}
+function caption(t,dur,a,b){const al=cl(t/.6)*cl((dur-t)/.5);txt(a,640,70,34,'#fff',al,700);if(b)txt(b,640,112,18,'#9aa3b5',al,400)}
+function bg(T){const g=x.createRadialGradient(640,360,0,640,360,800);g.addColorStop(0,'#141826');g.addColorStop(1,'#07080c');x.fillStyle=g;x.fillRect(0,0,1280,720);
+for(let i=0;i<40;i++){const px=(i*137.5+T*8*(1+i%3))%1300-10,py=(i*89.3+Math.sin(T*.3+i)*20)%720;x.fillStyle='rgba(124,108,255,'+(.08+.08*(i%3))+')';x.beginPath();x.arc(px,py,1+(i%3),0,7);x.fill()}}
+
+// Scenes
+function s1(t,d){const k=eo(t/1.2);logo(640,300-20*(1-k),lerp(.6,1.2,k),k);
+txt('Lumen 灵感笔记',640,410,52,'#fff',eo((t-.6)/1),700);
+txt('让每一个想法，都被好好记住',640,470,22,'#9aa3b5',eo((t-1.2)/1),400);
+x.fillStyle=grad(540,0,200);x.globalAlpha=eo((t-1.6)/1);x.fillRect(640-100*eo((t-1.6)/1),505,200*eo((t-1.6)/1),3);x.globalAlpha=1}
+function s2(t,d){caption(t,d,'想法总是散落各处？','聊天记录、截图、便签、网页收藏……找起来总是很费劲');
+const items=['📌 周末旅行计划','💡 新项目点子','📖 读书摘抄','🛒 购物清单','🎵 想听的歌','📝 会议记录','🍳 菜谱收藏','✈️ 签证材料'];
+const g=eio((t-2.4)/1.4);
+items.forEach((s,i)=>{const a=i*.785,r=260+30*Math.sin(i*2);const sx=640+Math.cos(a)*r*1.4,sy=400+Math.sin(a)*r*.75+Math.sin(t*1.5+i)*8;
+const tx=470+(i%2)*190,ty=230+Math.floor(i/2)*70;const X=lerp(sx,tx,g),Y=lerp(sy,ty,g),rot=lerp((i%2?.12:-.1),0,g);
+x.save();x.translate(X,Y);x.rotate(rot);x.globalAlpha=eo((t-i*.12)/.6);rr(-85,-24,170,48,12);x.fillStyle='#1d2130';x.fill();x.strokeStyle=g>.9?'rgba(62,224,200,.5)':'#2c3246';x.stroke();
+txt(s,0,0,16,'#dfe3ee',1,500);x.restore()});
+txt('Lumen 帮你一处收好，自动整理',640,640,22,A2,eo((t-3.6)/.8),600)}
+function s3(t,d){caption(t,d,'网页版 & 桌面端：随手写，一键整理','不用学任何复杂操作，打开就能用');
+const X=190,Y=150,w=900,h=520;win(X,Y,w,h,'Lumen — 网页 / 桌面端');
+// sidebar
+x.fillStyle='#f2f3f7';x.fillRect(X,Y+36,180,h-36);['📥 收件箱','⭐ 收藏','🏷️ 标签','🗂️ 全部笔记'].forEach((s,i)=>{if(i==0){rr(X+10,Y+52,160,32,8);x.fillStyle='#e6e3ff';x.fill()}txt(s,X+26,Y+68+i*40,15,'#444',1,500,'left')});
+const typed='明天下午3点和小林开会讨论新品发布，需要准备海报、预算表，还要订会议室。周五前给客户回邮件。';
+const n=Math.floor(cl((t-1)/3.2)*typed.length);
+txt('今天的想法',X+210,Y+80,26,'#222',1,700,'left');
+x.font='400 18px '+F;x.fillStyle='#333';x.textAlign='left';let line='',ly=Y+130;const s=typed.slice(0,n);
+for(const ch of s){if(x.measureText(line+ch).width>420){x.fillText(line,X+210,ly);line='';ly+=30}line+=ch}x.fillText(line,X+210,ly);
+if(t<4.5&&Math.floor(t*2.5)%2==0){const lw=x.measureText(line).width;x.fillRect(X+212+lw,ly-11,2,22)}
+// button
+const bx=X+210,by=Y+260;const hov=t>4.6&&t<5.4;rr(bx,by,150,42,21);x.fillStyle=hov?'#6a59ff':A1;x.fill();txt('✨ 一键整理',bx+75,by+21,16,'#fff',1,600);
+// result
+const r=cl((t-5.4)/.6);if(r>0){x.globalAlpha=r;rr(X+640,Y+60+20*(1-eo(r)),240,h-90,12);x.fillStyle='#f6f5ff';x.fill();x.globalAlpha=1;
+txt('自动生成的待办',X+660,Y+90,17,'#4b3fd1',r,700,'left');
+['☐ 准备新品海报','☐ 制作预算表','☐ 预订会议室','☐ 周五前回复客户'].forEach((s,i)=>{const a=eo((t-5.8-i*.3)/.5);txt(s,X+660+10*(1-a),Y+130+i*36,16,'#333',a,500,'left')});
+txt('📅 已加入日程：明天 15:00',X+660,Y+290,15,'#1a9c88',eo((t-7.2)/.5),600,'left');
+['#工作','#新品','#会议'].forEach((s,i)=>{const a=eo((t-7.6-i*.2)/.4);x.globalAlpha=a;rr(X+660+i*70,Y+320,62,28,14);x.fillStyle='#e0f8f4';x.fill();x.globalAlpha=1;txt(s,X+691+i*70,Y+334,14,'#1a9c88',a,600)})}
+const [cx,cy]=path(t,[[0,1000,600],[4.3,1000,600],[5,bx+90,by+25],[7,bx+90,by+25],[8,1050,500]]);
+cursor(cx,cy,t>5.1&&t<5.6?(t-5.1)/.5:0)}
+function s4(t,d){caption(t,d,'Obsidian 插件：在你熟悉的地方也能用','已经在用 Obsidian？装上插件，笔记自动连成知识网');
+const X=190,Y=150,w=900,h=520;win(X,Y,w,h,'Obsidian — 我的知识库',1);
+x.fillStyle='#191a20';x.fillRect(X,Y+36,170,h-36);['读书笔记','旅行','工作','灵感'].forEach((s,i)=>txt('📄 '+s,X+20,Y+66+i*32,14,'#aab',1,400,'left'));
+txt('《原子习惯》读后感',X+200,Y+80,24,'#e8e8f0',1,700,'left');
+['微小的改变，长期坚持会带来巨大差异。','好习惯要“显而易见、有吸引力、简单易行”。'].forEach((s,i)=>txt(s,X+200,Y+125+i*30,16,'#b8b9c8',1,400,'left'));
+// palette
+const p=eo((t-1.2)/.4)*(1-eo((t-3.6)/.3));
+if(p>0){x.globalAlpha=p;x.fillStyle='rgba(0,0,0,.4)';x.fillRect(X,Y+36,w,h-36);rr(X+220,Y+90-10*(1-p),460,190,12);x.fillStyle='#2a2b34';x.fill();x.strokeStyle='#3d3e4a';x.stroke();
+const cmd='Lumen'.slice(0,Math.floor(cl((t-1.7)/.6)*5));txt('> '+cmd+(Math.floor(t*3)%2?'|':''),X+240,Y+120,17,'#fff',p,500,'left');
+['Lumen: 智能关联相关笔记','Lumen: 自动生成摘要','Lumen: 一键打标签'].forEach((s,i)=>{if(cmd.length>2){if(i==0){rr(X+230,Y+148,440,36,8);x.fillStyle='rgba(124,108,255,.35)';x.fill()}txt(s,X+245,Y+166+i*40,15,'#dde',p,500,'left')}});x.globalAlpha=1}
+// graph
+const g=cl((t-3.9)/.6);if(g>0){const cxg=X+640,cyg=Y+330;const nodes=[[0,0,'本笔记',A1],[-140,-70,'自律'],[130,-80,'时间管理'],[-150,90,'晨间日记'],[150,80,'健身计划'],[0,-150,'心理学'],[0,150,'目标设定']];
+nodes.forEach((n,i)=>{if(!i)return;const a=eo((t-4-i*.2)/.6);x.strokeStyle='rgba(62,224,200,'+.6*a+')';x.lineWidth=1.5;x.beginPath();x.moveTo(cxg,cyg);x.lineTo(cxg+n[0]*a,cyg+n[1]*a);x.stroke()});
+nodes.forEach((n,i)=>{const a=i?eo((t-4-i*.2)/.6):g;const px=cxg+n[0]*a,py=cyg+n[1]*a;x.globalAlpha=a;x.fillStyle=i?A2:A1;x.beginPath();x.arc(px,py,i?7:11+Math.sin(t*4)*1.5,0,7);x.fill();x.globalAlpha=1;txt(n[2],px,py+22,13,'#ccd',a,500)});
+txt('✨ 找到 6 篇相关笔记',X+200,Y+230,16,A2,eo((t-5.5)/.5),600,'left');txt('原来这些想法，彼此都有联系',X+200,Y+262,15,'#99a',eo((t-6)/.5),400,'left')}
+const [cx,cy]=path(t,[[0,800,600],[3,800,600],[3.4,X+450,Y+166],[4,X+450,Y+166],[5,1100,640]]);cursor(cx,cy,t>3.4&&t<3.9?(t-3.4)/.5:0)}
+function device(X,Y,w,h,r,lbl,a,pulse){x.save();x.globalAlpha=a;rr(X,Y,w,h,r);x.fillStyle='#1a1d29';x.fill();x.strokeStyle='#3a3f55';x.lineWidth=3;x.stroke();
+rr(X+10,Y+10,w-20,h-20,r/2);x.fillStyle='#f6f6fa';x.fill();for(let i=0;i<4;i++){x.fillStyle=i==3?'rgba(124,108,255,'+(.3+.7*pulse)+')':'#dde';rr(X+22,Y+30+i*((h-60)/5),(w-44)*(i==0?.6:.9),8,4);x.fill()}
+x.restore();txt(lbl,X+w/2,Y+h+28,16,'#aab',a,500)}
+function s5(t,d){caption(t,d,'手机、电脑、Obsidian，实时同步','在哪里记下，就能在哪里找到');
+const pulse=(Math.sin(t*3)+1)/2;
+device(200,260,330,220,12,'桌面端',eo(t/.6),pulse);device(590,280,110,200,18,'手机 / 网页',eo((t-.3)/.6),pulse);device(760,260,330,220,12,'Obsidian 插件',eo((t-.6)/.6),pulse);
+for(let i=0;i<3;i++){const k=((t*.6+i/3)%1);[[530,370,590,380],[700,380,760,370]].forEach(L=>{x.fillStyle=A2;x.globalAlpha=Math.sin(k*Math.PI)*cl(t-1);x.beginPath();x.arc(lerp(L[0],L[2],k),lerp(L[1],L[3],k),4,0,7);x.fill();x.globalAlpha=1})}
+const items=['🔒 数据加密，隐私安全','☁️ 离线也能写，联网自动同步','🆓 基础功能免费使用'];items.forEach((s,i)=>txt(s,320+i*320,590,18,'#dfe3ee',eo((t-1.5-i*.3)/.6),500))}
+function s6(t,d){const k=eo(t/1);logo(640,250,lerp(.8,1,k),k);txt('Lumen 灵感笔记',640,360,48,'#fff',k,700);
+txt('记下想法，剩下的交给 Lumen',640,415,22,'#9aa3b5',eo((t-.5)/.8),400);
+const b=eo((t-1)/.8);x.globalAlpha=b;rr(500,470,280,56,28);x.fillStyle=grad(500,0,280);x.fill();x.globalAlpha=1;txt('立即免费体验',640,498,20,'#fff',b,700);
+txt('网页版 · Windows · macOS · Obsidian 插件',640,570,16,'#778',eo((t-1.5)/.8),400)}
+const SC=[[0,5,s1],[5,11,s2],[11,20,s3],[20,28.5,s4],[28.5,33,s5],[33,38,s6]];
+
+// Music
+let ac=null,mStart=0,sched=0;
+function initAudio(){if(ac)return;try{ac=new (window.AudioContext||window.webkitAudioContext)();const now=(performance.now()-start)/1000%DUR;mStart=ac.currentTime-now;sched=Math.floor(now/0.25)*0.25;}catch(e){}document.getElementById('tip').style.display='none'}
+addEventListener('pointerdown',initAudio);addEventListener('keydown',initAudio);try{initAudio();if(ac.state!=='running')document.getElementById('tip').style.display='block'}catch(e){}
+const BPM=120,B=60/BPM;const chords=[[57,60,64,69],[53,57,60,65],[48,52,55,60],[55,59,62,67]];
+const hz=m=>440*Math.pow(2,(m-69)/12);
+function note(f,tm,dur,type,vol,cut){const o=ac.createOscillator(),g=ac.createGain(),fl=ac.createBiquadFilter();o.type=type;o.frequency.value=f;fl.type='lowpass';fl.frequency.value=cut;
+g.gain.setValueAtTime(0,tm);g.gain.linearRampToValueAtTime(vol,tm+Math.min(.02+dur*.2,.4));g.gain.exponentialRampToValueAtTime(.0001,tm+dur);o.connect(fl);fl.connect(g);g.connect(ac.destination);o.start(tm);o.stop(tm+dur+.05)}
+function kick(tm,v){const o=ac.createOscillator(),g=ac.createGain();o.frequency.setValueAtTime(140,tm);o.frequency.exponentialRampToValueAtTime(40,tm+.15);g.gain.setValueAtTime(v,tm);g.gain.exponentialRampToValueAtTime(.001,tm+.3);o.connect(g);g.connect(ac.destination);o.start(tm);o.stop(tm+.35)}
+function hat(tm,v){const n=ac.sampleRate*.05,bf=ac.createBuffer(1,n,ac.sampleRate),d=bf.getChannelData(0);for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*(1-i/n);const s=ac.createBufferSource(),f=ac.createBiquadFilter(),g=ac.createGain();f.type='highpass';f.frequency.value=7000;g.gain.value=v;s.buffer=bf;s.connect(f);f.connect(g);g.connect(ac.destination);s.start(tm)}
+function music(){if(!ac||ac.state!=='running')return;const now=ac.currentTime-mStart;while(sched<now+.3){const step=Math.round(sched/(B/2)),tm=mStart+sched,song=sched%DUR;
+const bar=Math.floor(song/(B*4)),ch=chords[bar%4],end=song>DUR-3;
+if(!end){const st=step%8;if(st==0)ch.forEach(m=>note(hz(m),tm,B*4,'triangle',.035,1800));if(st==0)note(hz(ch[0]-24),tm,B*2,'sine',.18,400);
+if(song>5){const arp=[0,1,2,3,2,1,3,2][st];note(hz(ch[arp]+12),tm,B*.45,'sine',.05,3000);if(st%2==0)kick(tm,st==0||st==4?.35:.0);if(st%2==1)hat(tm,.04)}}
+else if(Math.abs(song-(DUR-3))<.01)ch.forEach(m=>note(hz(m),tm,2.8,'triangle',.05,1500));
+sched+=B/2;if(sched%DUR<B/2&&sched>0)mStart+=0}}
+
+function frame(){let T=((performance.now()-start)/1000)%DUR;bg(T);
+for(const [a,b,f] of SC){const fi=.5;if(T>=a-0.01&&T<b){const al=cl((T-a)/fi)*cl((b-T)/fi);x.save();x.globalAlpha=1;f(T-a,b-a);x.restore();
+x.fillStyle='rgba(7,8,12,'+(1-al)+')';x.fillRect(0,0,1280,720)}}
+const p=T/DUR;x.fillStyle='rgba(255,255,255,.08)';x.fillRect(0,716,1280,4);x.fillStyle=grad(0,0,1280);x.fillRect(0,716,1280*p,4);
+music();requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

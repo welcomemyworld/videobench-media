@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+window.DUR=15;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)||0;
+const t0=performance.now();
+const E=v=>v<0?0:v>1?1:1-Math.pow(1-v,3);
+const EB=v=>{v=Math.max(0,Math.min(1,v));const s=1.7;return 1+(s+1)*Math.pow(v-1,3)+s*Math.pow(v-1,2);};
+const P=[];for(let i=0;i<60;i++)P.push({x:Math.random()*1280,y:Math.random()*720,r:1+Math.random()*3,s:10+Math.random()*30});
+function txt(s,X,Y,sz,col,a,al){x.globalAlpha=Math.max(0,Math.min(1,a));x.fillStyle=col;x.font='bold '+sz+'px Helvetica,Arial,sans-serif';x.textAlign=al||'center';x.textBaseline='middle';x.fillText(s,X,Y);x.globalAlpha=1;}
+function person(X,Y,s,col){x.fillStyle=col;x.beginPath();x.arc(X,Y-28*s,18*s,0,7);x.fill();x.beginPath();x.ellipse(X,Y+20*s,30*s,26*s,0,Math.PI,0);x.fill();}
+function rr(X,Y,w,h,r){x.beginPath();x.roundRect(X,Y,w,h,r);}
+function win(t,a,b){return E((t-a)/0.5)*(1-E((t-b+0.4)/0.4));}
+function frame(){
+const t=((performance.now()-t0)/1000+off)%DUR;
+const g=x.createLinearGradient(0,0,1280,720);
+const h=230+t*6;g.addColorStop(0,`hsl(${h},70%,14%)`);g.addColorStop(1,`hsl(${h+50},70%,22%)`);
+x.fillStyle=g;x.fillRect(0,0,1280,720);
+for(const p of P){x.fillStyle='rgba(255,255,255,.12)';x.beginPath();x.arc(p.x,(p.y-t*p.s+720)%720,p.r,0,7);x.fill();}
+// Scene1 0-3.5 intro
+if(t<3.6){const a=win(t,0.1,3.6),k=EB((t-0.1)/0.7);
+x.save();x.translate(640,300);x.scale(k,k);x.rotate((1-k)*0.5);
+x.fillStyle='#ffcc33';rr(-90,-50,180,120,16);x.fill();x.fillStyle='#ff5d73';x.fillRect(-14,-50,28,120);rr(-105,-80,210,40,10);x.fill();
+x.strokeStyle='#ff5d73';x.lineWidth=12;x.beginPath();x.ellipse(-30,-92,30,16,0.4,0,7);x.ellipse(30,-92,30,16,-0.4,0,7);x.stroke();x.restore();
+txt('Share the love.',640-(1-E((t-0.6)/0.6))*200,470,72,'#fff',a*E((t-0.6)/0.5));
+txt('Introducing our Referral Program',640+(1-E((t-1)/0.6))*200,545,34,'#ffcc33',a*E((t-1)/0.5));}
+// Scene2 3.5-7.5 how it works
+if(t>3.4&&t<7.7){const a=win(t,3.4,7.7);
+txt('How it works',640,110,54,'#fff',a);
+const steps=[['1','Share your link','#4dd2ff'],['2','Friend signs up','#ffcc33'],['3','You both get rewarded','#ff5d73']];
+steps.forEach((s,i)=>{const st=3.8+i*0.8,k=EB((t-st)/0.6),X=260+i*380;
+x.globalAlpha=Math.max(0,a);x.save();x.translate(X,330);x.scale(k,k);
+x.fillStyle=s[2];x.beginPath();x.arc(0,0,95,0,7);x.fill();
+person(0,10,1.4,'#1a1636');x.restore();x.globalAlpha=1;
+txt(s[0],X-75,255,36,'#fff',a*k);
+txt(s[1],X,480,30,'#fff',a*E((t-st-0.3)/0.5));
+if(i<2){const pr=E((t-st-0.4)/0.6);x.strokeStyle='rgba(255,255,255,'+a*.7+')';x.lineWidth=5;x.setLineDash([12,10]);x.lineDashOffset=-t*40;x.beginPath();x.moveTo(X+115,330);x.lineTo(X+115+150*pr,330);x.stroke();x.setLineDash([]);}
+});}
+// Scene3 7.5-11.5 reward
+if(t>7.5&&t<11.7){const a=win(t,7.5,11.7);
+const k=EB((t-7.7)/0.7);
+person(380,360,2.2*k,'#4dd2ff');person(900,360,2.2*k,'#ffcc33');
+const v=Math.round(50*E((t-8.2)/1.3));
+x.save();x.translate(640,330);x.scale(k,k);x.fillStyle='#ff5d73';x.beginPath();x.arc(0,0,110+6*Math.sin(t*6),0,7);x.fill();x.restore();
+txt('$'+v,640,330,80,'#fff',a*k);
+txt('for you',380,500,34,'#fff',a*E((t-8.6)/0.5));txt('for them',900,500,34,'#fff',a*E((t-8.8)/0.5));
+txt('Everyone wins.',640,120,60,'#fff',a*E((t-7.8)/0.5));
+txt('No limits — refer as many friends as you like',640,610,30,'#ffcc33',a*E((t-9.4)/0.5));
+for(let i=0;i<40;i++){const tt=t-8.3;if(tt<0)break;const an=i*2.4,d=tt*300*(0.6+(i%5)/5);x.fillStyle=['#ffcc33','#4dd2ff','#ff5d73','#fff'][i%4];x.globalAlpha=Math.max(0,a*(1-tt/2.5));x.fillRect(640+Math.cos(an)*d,330+Math.sin(an)*d+tt*tt*80,10,10);}x.globalAlpha=1;}
+// Scene4 11.5-15 CTA
+if(t>11.5){const a=E((t-11.5)/0.5)*(1-E((t-14.6)/0.4));
+txt('Start referring today',640,240,72,'#fff',a);
+const k=EB((t-12.1)/0.6);x.save();x.translate(640,390);x.scale(k,k);x.globalAlpha=Math.max(0,a);
+x.fillStyle='#ffcc33';rr(-210,-45,420,90,45);x.fill();x.globalAlpha=1;x.restore();
+txt('Get my referral link →',640,392,34,'#1a1636',a*k);
+const sh=(t-12.8)*400;if(sh>0&&sh<500){x.save();rr(430,345,420,90,45);x.clip();x.fillStyle='rgba(255,255,255,.4)';x.fillRect(400+sh,340,40,100);x.restore();}
+txt('Find it in your account dashboard',640,520,28,'rgba(255,255,255,.8)',a*E((t-12.7)/0.5));}
+requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

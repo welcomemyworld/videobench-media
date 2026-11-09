@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8"><title>タイル広告</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=30;
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const buf=document.createElement('canvas');buf.width=1280;buf.height=720;const b=buf.getContext('2d');
+const GW=256,GH=144,N=GW*GH;
+// ---- 目標画像（色を取るためだけ）
+function mk(){const c=document.createElement('canvas');c.width=GW;c.height=GH;return c;}
+const bgC=mk(),bx=bgC.getContext('2d');
+let g=bx.createLinearGradient(0,0,GW,GH);g.addColorStop(0,'#f6ebdd');g.addColorStop(1,'#ecd5c2');
+bx.fillStyle=g;bx.fillRect(0,0,GW,GH);
+bx.fillStyle='rgba(240,170,120,.35)';bx.beginPath();bx.arc(195,70,70,0,7);bx.fill();
+bx.fillStyle='#3d6f9a';bx.beginPath();bx.ellipse(192,150,58,34,0,0,7);bx.fill();
+bx.fillStyle='#e6b393';bx.fillRect(182,100,20,22);
+bx.fillStyle='#4a2c1f';bx.beginPath();bx.ellipse(192,74,44,54,0,0,7);bx.fill();
+bx.fillRect(150,74,84,52);
+bx.fillStyle='#f2c6a6';bx.beginPath();bx.ellipse(192,78,30,38,0,0,7);bx.fill();
+bx.fillStyle='#4a2c1f';bx.beginPath();bx.ellipse(192,44,34,16,-.2,0,7);bx.fill();
+bx.fillStyle='rgba(240,120,120,.45)';[[176,90],[208,90]].forEach(p=>{bx.beginPath();bx.arc(p[0],p[1],6,0,7);bx.fill();});
+bx.strokeStyle='#2a1a14';bx.lineWidth=2.5;bx.lineCap='round';
+[[180,72],[204,72]].forEach(p=>{bx.beginPath();bx.arc(p[0],p[1]+2,5,Math.PI*1.1,Math.PI*1.9);bx.stroke();});
+bx.fillStyle='#b8323c';bx.beginPath();bx.arc(192,94,10,0.1,Math.PI-0.1);bx.fill();
+bx.fillStyle='#fff';bx.fillRect(184,95,16,3);
+const txC=mk(),tx=txC.getContext('2d');
+tx.lineJoin='round';
+function T(s,x,y,f,col,sw){tx.font=f;tx.lineWidth=sw;tx.strokeStyle='#fff';tx.strokeText(s,x,y);tx.fillStyle=col;tx.fillText(s,x,y);}
+T('TILE&CO',10,16,'bold 11px sans-serif','#c2502f',3);
+T('暮らしに、',9,52,'bold 22px sans-serif','#3a2a24',3);
+T('彩りを。',9,78,'bold 22px sans-serif','#c2502f',3);
+T('一枚ずつ、あなたの色で。',10,94,'bold 10px sans-serif','#5a4a42',2);
+tx.fillStyle='#fff';tx.beginPath();tx.roundRect(7,103,110,26,7);tx.fill();
+tx.fillStyle='#e0603a';tx.beginPath();tx.roundRect(9,105,106,22,6);tx.fill();
+tx.font='bold 12px sans-serif';tx.fillStyle='#fff';tx.fillText('無料体験はこちら ▶',13,121);
+const bgD=bx.getImageData(0,0,GW,GH).data,txD=tx.getImageData(0,0,GW,GH).data;
+// ---- タイルごとの属性
+let seed=7;const R=()=>(seed=(seed*16807)%2147483647)/2147483647;
+const EX=180,EY=72;
+const cBg=[],cFin=[],isT=new Uint8Array(N),isBtn=new Uint8Array(N),arr=new Float32Array(N),flip=new Float32Array(N),jx=new Float32Array(N),jy=new Float32Array(N),jr=new Float32Array(N),gl=new Uint8Array(N);
+const dmax=Math.hypot(EX,EY+72);
+function col(d,i,j){let r=d[i],gg=d[i+1],bb=d[i+2];return[r*j,gg*j,bb*j];}
+const rs=a=>`rgb(${a[0]|0},${a[1]|0},${a[2]|0})`;
+for(let y=0;y<GH;y++)for(let x=0;x<GW;x++){
+ const k=y*GW+x,i=k*4,a=txD[i+3]/255;
+ const B=[bgD[i],bgD[i+1],bgD[i+2]],F=[B[0]*(1-a)+txD[i]*a,B[1]*(1-a)+txD[i+1]*a,B[2]*(1-a)+txD[i+2]*a];
+ const mx=Math.max(...F),mn=Math.min(...F),L=(mx+mn)/510,S=(mx-mn)/255;
+ const mat=(L>.8?0:L<.3?1:S>.4?2:3);gl[k]=mat;
+ const jv=[.03,.1,.05,.07][mat],jj=1+(R()-.5)*2*jv;
+ cBg.push(rs(B.map(v=>Math.min(255,v*jj))));cFin.push(rs(F.map(v=>Math.min(255,v*jj))));
+ if(a>.05){isT[k]=1;flip[k]=24+1.8*x/120+R()*.1;}
+ if(x>=7&&x<=117&&y>=103&&y<=129)isBtn[k]=1;
+ const d=Math.hypot(x-EX,y-EY),an=Math.atan2(y-EY,x-EX)/6.283+.5;
+ arr[k]=d<1?3:Math.min(20.5,3.6+17*Math.pow(d/dmax,.8)+.5*((an+d*.04)%1));
+ jx[k]=(R()-.5)*.08;jy[k]=(R()-.5)*.08;jr[k]=(R()-.5)*.06;
+}
+// 漆喰
+const pl=document.createElement('canvas');pl.width=pl.height=256;const px=pl.getContext('2d');
+px.fillStyle='#d8d0c3';px.fillRect(0,0,256,256);
+for(let i=0;i<3000;i++){px.fillStyle=`rgba(${R()<.5?255:90},${R()<.5?250:80},240,${R()*.08})`;px.fillRect(R()*256,R()*256,1+R()*3,1+R()*3);}
+const ease=u=>u<=0?0:u>=1?1:u*u*(3-2*u);
+const lerp=(a,c,u)=>a+(c-a)*u;
+function cam(t){
+ const u1=ease((t-3)/7),u2=ease((t-10)/11);
+ let Z=t<3?lerp(90,70,t/3):lerp(70,26,u1);Z=Math.exp(lerp(Math.log(Z),Math.log(5),u2));
+ const cx=lerp(EX,128,u2),cy=lerp(EY,72,u2);
+ const sy=lerp(.42,1,ease((t-2)/20));
+ const rot=lerp(.18,.0004,ease((t-1)/21));
+ return{Z,cx,cy,sy,rot};
+}
+let t0=performance.now()-(parseFloat(new URLSearchParams(location.search).get('t'))||0)*1000;
+function draw(t){
+ const C=cam(t);const{Z,cx,cy,sy,rot}=C;
+ b.setTransform(1,0,0,1,0,0);b.fillStyle=b.createPattern(pl,'repeat');b.fillRect(0,0,1280,720);
+ b.setTransform(1,0,0,1,0,0);b.translate(640,360);b.rotate(rot);b.scale(Z,Z*sy);b.translate(-cx,-cy);
+ // チョーク線（ぼかし）
+ b.save();b.strokeStyle='rgba(190,40,35,.55)';b.lineWidth=.6;b.filter=`blur(${Math.max(1,Z*.15)}px)`;
+ b.beginPath();b.moveTo(-200,-14);b.lineTo(460,-6);b.stroke();b.restore();
+ const hw=900/Z,hh=900/(Z*sy);
+ const x0=Math.max(0,Math.floor(cx-hw)),x1=Math.min(GW-1,Math.ceil(cx+hw)),y0=Math.max(0,Math.floor(cy-hh)),y1=Math.min(GH-1,Math.ceil(cy+hh));
+ const big=Z>3.5,press=t>28?ease((t-28)/.15)*(1-ease((t-28.6)/.4))*0.6+ (t>29?0.25:0):0;
+ const fall=[];
+ // 下地（着地したマスのみ）
+ b.fillStyle='#2a2420';
+ for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){const k=y*GW+x;if(t>=arr[k]+.6)b.fillRect(x,y,1,1);}
+ for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
+  const k=y*GW+x,a=arr[k];
+  if(t<a)continue;
+  if(t<a+.6){fall.push(k);continue;}
+  let c=t<3.0&&k===EY*GW+EX?'#3a3330':cBg[k],w=1;
+  if(isT[k]){const p=(t-flip[k])/.35;if(p>=1)c=cFin[k];else if(p>0){w=Math.abs(Math.cos(Math.PI*p));c=p<.5?cBg[k]:cFin[k];}}
+  let ox=x+jx[k],oy=y+jy[k];
+  if(isBtn[k]&&press){oy+=press*.15;}
+  const m=.06,s=1-2*m;
+  b.fillStyle=c;b.fillRect(ox+m+(1-w)*s/2,oy+m,s*w,s);
+  if(isBtn[k]&&press){b.fillStyle=`rgba(0,0,0,${press*.25})`;b.fillRect(ox+m,oy+m,s,s);}
+  if(big){b.fillStyle=gl[k]===0||gl[k]===2?'rgba(255,255,255,.35)':'rgba(255,255,255,.18)';b.fillRect(ox+m,oy+m,s*w,.08);b.fillRect(ox+m,oy+m,.08,s);
+   b.fillStyle='rgba(0,0,0,.22)';b.fillRect(ox+m,oy+m+s-.08,s*w,.08);b.fillRect(ox+m+s*w-.08,oy+m,.08,s);
+   if(gl[k]===0||gl[k]===2){b.fillStyle='rgba(255,255,255,.25)';b.fillRect(ox+.2,oy+.2,.15,.15);}}
+ }
+ // 落下中（渦）
+ for(const k of fall){
+  const x=k%GW,y=(k/GW)|0,h=1-ease((t-arr[k])/.6),sc=1+h*1.4,an=h*2.5+jr[k];
+  b.fillStyle=`rgba(0,0,0,${.25*(1-h)+.1})`;b.fillRect(x+.06+h*1.5,y+.06+h*1.5,.88,.88);
+  b.save();b.translate(x+.5-h*1.2,y+.5-h*2);b.rotate(an);b.scale(sc,sc);
+  b.globalAlpha=Math.min(1,(1-h)*3);b.fillStyle=t<3.6&&k===EY*GW+EX?'#3a3330':cBg[k];b.fillRect(-.44,-.44,.88,.88);
+  b.fillStyle='rgba(255,255,255,.3)';b.fillRect(-.44,-.44,.88,.1);b.restore();
+ }
+ // 被写界深度（しぼり：大→小）
+ const bl=lerp(5,0,ease((t-2)/19));
+ ctx.setTransform(1,0,0,1,0,0);ctx.filter=bl>.3?`blur(${bl}px)`:'none';ctx.drawImage(buf,0,0);ctx.filter='none';
+ if(bl>.3){ctx.save();ctx.beginPath();ctx.ellipse(640,360,260,150,0,0,7);ctx.clip();ctx.drawImage(buf,0,0);ctx.restore();}
+ // ビネット
+ const vg=ctx.createRadialGradient(640,360,300,640,360,800);vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,`rgba(0,0,0,${lerp(.6,.0,ease((t-18)/5))})`);
+ ctx.fillStyle=vg;ctx.fillRect(0,0,1280,720);
+ // カーソル
+ if(t>26){
+  const bx2=(62-cx)*Z+640,by2=(116-cy)*Z*sy+360,u=ease((t-26)/1.8);
+  const mx=lerp(1150,bx2,u),my=lerp(650,by2,u);
+  if(t>28&&t<28.8){ctx.strokeStyle=`rgba(255,255,255,${1-(t-28)/.8})`;ctx.lineWidth=3;ctx.beginPath();ctx.arc(mx,my,8+(t-28)*50,0,7);ctx.stroke();}
+  const s=t>28&&t<28.25?.85:1;
+  ctx.save();ctx.translate(mx,my);ctx.scale(s,s);ctx.fillStyle='#fff';ctx.strokeStyle='#111';ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,30);ctx.lineTo(8,23);ctx.lineTo(14,36);ctx.lineTo(19,34);ctx.lineTo(13,21);ctx.lineTo(23,21);ctx.closePath();ctx.fill();ctx.stroke();ctx.restore();
+ }
+}
+window.seek=t=>draw(((t%DUR)+DUR)%DUR);
+function loop(){const t=((performance.now()-t0)/1000)%DUR;draw(t);requestAnimationFrame(loop);}
+requestAnimationFrame(loop);
+</script></body></html>

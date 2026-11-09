@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Showreel</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#s{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+canvas{display:block}
+</style></head><body>
+<div id="s"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+window.DUR=15;
+const W=1280,H=720,c=document.getElementById('c'),x=c.getContext('2d'),st=document.getElementById('s');
+function fit(){const k=Math.min(innerWidth/W,innerHeight/H);st.style.transform=`scale(${k}) translate(-50%,-50%)`;st.style.left='50%';st.style.top='50%';st.style.transformOrigin='0 0';st.style.translate=`${-W*k/2}px ${-H*k/2}px`;st.style.transform=`scale(${k})`;}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t')||0)||0,t0=performance.now();
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),E=v=>{v=cl(v);return v<.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2},EO=v=>1-Math.pow(1-cl(v),3);
+function R(s){return()=>(s=(s*16807)%2147483647)/2147483647}
+const r=R(7),P=[...Array(160)].map(()=>({x:r()*W,y:r()*H,z:r()*2+.3,h:r()*360}));
+const HUE=[265,195,320,160];
+function bg(t,h){const g=x.createLinearGradient(0,0,W,H);g.addColorStop(0,`hsl(${h},60%,7%)`);g.addColorStop(1,`hsl(${h+60},70%,4%)`);x.fillStyle=g;x.fillRect(0,0,W,H);
+for(let i=0;i<3;i++){const cx=W/2+Math.cos(t*.4+i*2)*380,cy=H/2+Math.sin(t*.5+i*2.3)*200,rg=x.createRadialGradient(cx,cy,0,cx,cy,420);rg.addColorStop(0,`hsla(${h+i*50},90%,55%,.22)`);rg.addColorStop(1,'transparent');x.fillStyle=rg;x.fillRect(0,0,W,H)}
+for(const p of P){const px=(p.x+t*30*p.z)%W,py=(p.y-t*12*p.z+H)%H;x.fillStyle=`hsla(${h+p.h/6},90%,80%,${.15*p.z})`;x.fillRect(px,py,p.z*1.5,p.z*1.5)}}
+function txt(s,X,Y,sz,a,col='#fff',wt=800,al='center'){x.globalAlpha=cl(a);x.fillStyle=col;x.font=`${wt} ${sz}px Helvetica,Arial,sans-serif`;x.textAlign=al;x.textBaseline='middle';x.fillText(s,X,Y);x.globalAlpha=1}
+function rr(X,Y,w,h,r){x.beginPath();x.roundRect(X,Y,w,h,r)}
+function browser(X,Y,w,h,t,h0,kind){x.save();x.shadowColor=`hsla(${h0},90%,60%,.5)`;x.shadowBlur=60;rr(X,Y,w,h,16);x.fillStyle='#0d0f17';x.fill();x.shadowBlur=0;
+x.strokeStyle=`hsla(${h0},80%,70%,.35)`;x.lineWidth=1.5;x.stroke();x.clip();
+x.fillStyle='#161a26';x.fillRect(X,Y,w,40);['#ff5f57','#febc2e','#28c840'].forEach((cc,i)=>{x.fillStyle=cc;x.beginPath();x.arc(X+22+i*20,Y+20,6,0,7);x.fill()});
+rr(X+w/2-160,Y+10,320,20,10);x.fillStyle='#232838';x.fill();txt('yourwebsite.com',X+w/2,Y+20,12,1,'#9aa3bb',500);
+const iy=Y+40,ih=h-40;
+if(kind==0){const g=x.createLinearGradient(X,iy,X+w,iy+ih);g.addColorStop(0,`hsl(${h0},70%,22%)`);g.addColorStop(1,`hsl(${h0+70},70%,12%)`);x.fillStyle=g;x.fillRect(X,iy,w,ih);
+txt('Build something',X+60,iy+ih*.35,w*.065,EO(t*2),'#fff',800,'left');txt('remarkable.',X+60,iy+ih*.35+w*.07,w*.065,EO(t*2-.3),`hsl(${h0+40},100%,75%)`,800,'left');
+rr(X+60,iy+ih*.7,170*cl(t*2-.6),46,23);x.fillStyle=`hsl(${h0+40},90%,62%)`;x.fill();
+for(let i=0;i<6;i++){const a=t*1.2+i;x.fillStyle=`hsla(${h0+i*25},90%,65%,.7)`;x.beginPath();x.arc(X+w*.75+Math.cos(a)*90,iy+ih*.5+Math.sin(a*1.3)*80,18+i*4,0,7);x.fill()}}
+else if(kind==1){x.fillStyle='#0f1220';x.fillRect(X,iy,w,ih);for(let i=0;i<3;i++){const k=EO(t*2.5-i*.25),cx=X+30+i*(w-60)/3;rr(cx+8,iy+30+(1-k)*60,(w-60)/3-16,ih-60,14);x.globalAlpha=k;x.fillStyle=`hsl(${h0+i*40},50%,16%)`;x.fill();x.fillStyle=`hsl(${h0+i*40},90%,62%)`;x.beginPath();x.arc(cx+44,iy+80+(1-k)*60,18,0,7);x.fill();
+for(let j=0;j<4;j++){x.fillStyle='rgba(255,255,255,.18)';x.fillRect(cx+26,iy+125+j*22+(1-k)*60,((w-60)/3-60)*(1-j*.18),8)}x.globalAlpha=1}}
+else{x.fillStyle='#0f1220';x.fillRect(X,iy,w,ih);const n=12;for(let i=0;i<n;i++){const v=(.3+.6*Math.abs(Math.sin(i*1.7+1)))*EO(t*2-i*.05),bw=(w-120)/n;x.fillStyle=`hsl(${h0+i*6},90%,${50+i*2}%)`;rr(X+60+i*bw,iy+ih-40-v*(ih-100),bw-10,v*(ih-100),6);x.fill()}
+x.strokeStyle='#fff';x.lineWidth=3;x.beginPath();for(let i=0;i<=60*cl(t*1.5);i++){const px=X+60+i*(w-120)/60,py=iy+ih*.45+Math.sin(i*.3)*40-i*1.5;i?x.lineTo(px,py):x.moveTo(px,py)}x.stroke()}
+x.restore()}
+function scene(T){
+const h=HUE[Math.floor(T/3.75)%4]+T*4;bg(T,h);
+if(T<3){// intro
+const k=E(T/1.2);x.save();x.translate(W/2,H/2);x.rotate((1-k)*-.5);x.scale(.4+k*.6,.4+k*.6);
+for(let i=0;i<3;i++){x.strokeStyle=`hsla(${h+i*40},90%,65%,${.8-i*.2})`;x.lineWidth=6;x.beginPath();x.arc(0,-40,60+i*18,T*2+i,T*2+i+Math.PI*1.4*k);x.stroke()}x.restore();
+txt('YOUR WEBSITE',W/2,H/2+90,72,EO((T-.6)*2),'#fff',900);txt('A SHOWREEL',W/2,H/2+150,20,EO((T-1)*2),`hsl(${h+40},90%,75%)`,600);
+}else if(T<11.5){const seg=Math.floor((T-3)/2.83),lt=(T-3)-seg*2.83,k=E(lt/.7),out=E((lt-2.4)/.43);
+const labels=[['DESIGN','Interfaces that feel alive.'],['FEATURES','Everything you need, nothing you don\'t.'],['RESULTS','Growth you can measure.']];
+const dx=(1-k)*W*.6-out*W*.6;x.save();x.translate(dx,0);
+const tilt=Math.sin(T*.6)*.04;x.translate(W*.62,H/2);x.rotate(tilt);browser(-300,-210,600,420,lt,h,seg);x.restore();
+txt('0'+(seg+1),80+dx*.5,240,22,k-out,`hsl(${h+40},90%,70%)`,700,'left');txt(labels[seg][0],80+dx*.5,300,64,k-out,'#fff',900,'left');
+txt(labels[seg][1],80+dx*.5,355,20,k-out,'#b8c0d8',400,'left');
+x.fillStyle=`hsl(${h+40},90%,65%)`;x.globalAlpha=cl(k-out);x.fillRect(80+dx*.5,390,120*k,4);x.globalAlpha=1;
+}else{const lt=T-11.5,k=E(lt/.8);
+const stats=[['10k+','visitors'],['99%','uptime'],['24/7','support']];
+stats.forEach((s,i)=>{const a=EO(lt*2-i*.2);txt(s[0],W/2+(i-1)*300,250,56,a*(1-E((lt-1.6)/.4)),`hsl(${h+i*40},90%,72%)`,900);txt(s[1],W/2+(i-1)*300,300,18,a*(1-E((lt-1.6)/.4)),'#aab',500)});
+const b=EO((lt-1.8)*1.5);txt('yourwebsite.com',W/2,H/2+20,80*(0.8+.2*b),b,'#fff',900);
+txt('Visit today →',W/2,H/2+100,24,EO((lt-2.3)*2),`hsl(${h+40},90%,75%)`,600);}
+// flash on cuts
+[3,5.83,8.66,11.5].forEach(c=>{const d=T-c;if(d>0&&d<.25){x.fillStyle=`rgba(255,255,255,${.35*(1-d/.25)})`;x.fillRect(0,0,W,H)}});
+// letterbox + vignette + progress
+const v=x.createRadialGradient(W/2,H/2,H*.3,W/2,H/2,H*.9);v.addColorStop(0,'transparent');v.addColorStop(1,'rgba(0,0,0,.65)');x.fillStyle=v;x.fillRect(0,0,W,H);
+x.fillStyle='#000';x.fillRect(0,0,W,40);x.fillRect(0,H-40,W,40);
+x.fillStyle=`hsl(${h+40},90%,65%)`;x.fillRect(0,H-42,W*T/15,2);
+const fi=1-cl(T/.4),fo=cl((T-14.5)/.5);x.fillStyle=`rgba(0,0,0,${Math.max(fi,fo)})`;x.fillRect(0,0,W,H)}
+function loop(){const T=((performance.now()-t0)/1000+off)%DUR;scene(T);requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+</script></body></html>

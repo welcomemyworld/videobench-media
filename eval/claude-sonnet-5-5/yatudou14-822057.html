@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Lumen 灵记</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}canvas{position:absolute;left:50%;top:50%;transform-origin:center;background:#000}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+const DUR=48;window.DUR=DUR;
+const cv=document.getElementById('c'),g=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.transform='translate(-50%,-50%) scale('+s+')'}
+fit();addEventListener('resize',fit);
+const F='"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif';
+const cl=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const seg=(t,a,b)=>cl((t-a)/(b-a));
+const eio=x=>x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2;
+const eo=x=>1-Math.pow(1-x,3);
+const eb=x=>{const c=1.70158+1;return 1+c*Math.pow(x-1,3)+1.70158*Math.pow(x-1,2)};
+const lerp=(a,b,t)=>a+(b-a)*t;
+function rnd(i){const s=Math.sin(i*127.1+311.7)*43758.5453;return s-Math.floor(s)}
+function rr(x,y,w,h,r){g.beginPath();g.roundRect(x,y,w,h,r)}
+function tx(s,x,y,sz,col,al='left',wt=500,a=1){g.globalAlpha*=a;g.font=wt+' '+sz+'px '+F;g.fillStyle=col;g.textAlign=al;g.textBaseline='middle';g.fillText(s,x,y);g.globalAlpha/=a||1}
+const AC1='#7c5cff',AC2='#22d3ee';
+function grad(x0,y0,x1,y1){const l=g.createLinearGradient(x0,y0,x1,y1);l.addColorStop(0,AC1);l.addColorStop(1,AC2);return l}
+function logo(x,y,s,rot=0){g.save();g.translate(x,y);g.scale(s,s);g.rotate(rot);
+ g.fillStyle=grad(-30,-30,30,30);rr(-30,-30,60,60,18);g.fill();
+ g.fillStyle='#fff';g.beginPath();g.arc(0,0,11,0,7);g.fill();
+ g.globalAlpha*=.7;g.beginPath();g.arc(14,-14,5,0,7);g.fill();g.restore()}
+function bg(t){const l=g.createLinearGradient(0,0,1280,720);l.addColorStop(0,'#f7f6f2');l.addColorStop(1,'#eceaf5');g.fillStyle=l;g.fillRect(0,0,1280,720);
+ for(let i=0;i<3;i++){const x=640+Math.cos(t*.2+i*2.1)*420,y=360+Math.sin(t*.25+i*1.7)*220;
+ const r=g.createRadialGradient(x,y,0,x,y,320);r.addColorStop(0,i%2?'rgba(34,211,238,.13)':'rgba(124,92,255,.14)');r.addColorStop(1,'rgba(255,255,255,0)');g.fillStyle=r;g.fillRect(0,0,1280,720)}}
+function win(x,y,w,h,dark,title,sc=1,al=1){g.save();g.globalAlpha=al;g.translate(x+w/2,y+h/2);g.scale(sc,sc);g.translate(-x-w/2,-y-h/2);
+ g.shadowColor='rgba(40,30,90,.25)';g.shadowBlur=50;g.shadowOffsetY=20;g.fillStyle=dark?'#1c1d24':'#fff';rr(x,y,w,h,14);g.fill();g.shadowColor='transparent';
+ ['#ff5f57','#febc2e','#28c840'].forEach((c,i)=>{g.fillStyle=c;g.beginPath();g.arc(x+20+i*18,y+19,5,0,7);g.fill()});
+ if(title)tx(title,x+w/2,y+19,12,dark?'#8a8d9a':'#9a9aa5','center');
+ g.save();rr(x,y,w,h,14);g.clip();}
+function wend(){g.restore();g.restore()}
+function cap(s,sub,u,y=76){const a=eo(seg(u,0,.8));g.save();g.globalAlpha=a;tx(s,640,y+(1-a)*14,38,'#17151f','center',700);if(sub)tx(sub,640,y+40,18,'#6b6880','center',400);g.restore()}
+function cursor(x,y,click){g.save();g.translate(x,y);if(click>0&&click<1){g.strokeStyle=AC1;g.globalAlpha=1-click;g.lineWidth=3;g.beginPath();g.arc(0,0,click*34,0,7);g.stroke();g.globalAlpha=1}
+ g.shadowColor='rgba(0,0,0,.3)';g.shadowBlur=6;g.fillStyle='#111';g.strokeStyle='#fff';g.lineWidth=1.5;g.beginPath();g.moveTo(0,0);g.lineTo(0,19);g.lineTo(5,15);g.lineTo(9,23);g.lineTo(12,21.5);g.lineTo(8,14);g.lineTo(14,14);g.closePath();g.fill();g.stroke();g.restore()}
+function chip(s,x,y,sc,col){if(sc<=0)return 0;g.save();g.font='600 14px '+F;const w=g.measureText(s).width+22;g.translate(x+w/2,y);g.scale(sc,sc);g.fillStyle=col+'26';rr(-w/2,-14,w,28,14);g.fill();tx(s,0,1,14,col,'center',600);g.restore();return w+8}
+function typ(s,u,sp){return s.slice(0,Math.floor(cl(u)*s.length))}
+
+// ---- scenes ----
+function S0(u,t){const a=eo(seg(u,0,.35));
+ for(let i=0;i<26;i++){const an=i/26*6.283+t*.3,r=(1-eo(seg(u,.05,.6)))*400+90;g.fillStyle=i%2?AC1:AC2;g.globalAlpha=.5*a;g.beginPath();g.arc(640+Math.cos(an)*r,270+Math.sin(an)*r*.6,4,0,7);g.fill()}
+ g.globalAlpha=1;const s=eb(seg(u,.3,.7));logo(640,260,1.5*s,(1-s)*-1);
+ const b=eo(seg(u,.45,.8));tx('Lumen 灵记',640,360+(1-b)*20,64,'#17151f','center',800,b);
+ const c=eo(seg(u,.6,1));tx('随手记下，自动成网',640,425+(1-c)*16,28,'#5b5873','center',400,c)}
+function S1(u,t){const o=eio(seg(u,.5,.78));
+ const tt=['会议记录','读书摘录','灵感','待办','旅行计划','菜谱','账单','文章链接','课程笔记'];
+ tt.forEach((s,i)=>{const gx=640+((i%3)-1)*230,gy=370+(Math.floor(i/3)-1)*110;
+  const fx=640+(rnd(i)-.5)*1000+Math.sin(t*.8+i)*18,fy=380+(rnd(i+9)-.5)*400+Math.cos(t*.7+i)*14;
+  const x=lerp(fx,gx,o),y=lerp(fy,gy,o),rot=(rnd(i+3)-.5)*.6*(1-o);
+  const a=eo(seg(u,i*.03,i*.03+.2));g.save();g.globalAlpha=a;g.translate(x,y);g.rotate(rot);g.shadowColor='rgba(60,40,120,.18)';g.shadowBlur=20;g.shadowOffsetY=8;
+  g.fillStyle='#fff';rr(-90,-36,180,72,12);g.fill();g.shadowColor='transparent';
+  g.fillStyle=i%2?AC1:AC2;rr(-90,-36,6,72,3);g.fill();tx(s,-68,-8,17,'#2a2838','left',600);
+  g.fillStyle='#e4e2ee';rr(-68,10,110,6,3);g.fill();g.restore()});
+ const a1=1-eo(seg(u,.4,.5)),a2=eo(seg(u,.55,.7));
+ g.save();g.globalAlpha=a1*eo(seg(u,.05,.2));tx('笔记越记越多，却越来越难找？',640,80,40,'#17151f','center',700);g.restore();
+ g.save();g.globalAlpha=a2;tx('Lumen 帮你自动整理',640,80,40,'#17151f','center',700);tx('不用自己动手分类，也不用记住放哪了',640,120,18,'#6b6880','center');g.restore()}
+function S2(u){
+ cap('在 Obsidian 里，一键整理','安装插件后，写笔记的习惯完全不用改',u);
+ const e=eo(seg(u,0,.08)),X=140,Y=150,W=1000,H=500;
+ win(X,Y+(1-e)*40,W,H,true,'周一产品会议 — Obsidian',lerp(.95,1,e),e);
+ const oy=Y+(1-e)*40;
+ g.fillStyle='#15161c';g.fillRect(X,oy+38,44,H);
+ for(let i=0;i<4;i++){g.fillStyle='#3a3c48';rr(X+13,oy+60+i*40,18,18,5);g.fill()}
+ const hl=seg(u,.52,.58)*(1-seg(u,.9,.95));
+ g.fillStyle=grad(X,oy,X+40,oy+300);rr(X+9,oy+226,26,26,8);g.fill();
+ tx('✦',X+22,oy+240,16,'#fff','center');
+ g.fillStyle='#1c1d24';g.fillRect(X+44,oy+38,230,H);
+ ['全部笔记','周一产品会议','读书摘录','旅行计划','用户访谈记录','首页设计稿'].forEach((s,i)=>{if(i==1){g.fillStyle='#2a2b36';rr(X+54,oy+70+i*34-14,210,30,8);g.fill()}tx((i?'📄 ':'📁 ')+s,X+68,oy+70+i*34,14,i==1?'#fff':'#8a8d9a')});
+ const ex=X+290,lines=['周一产品会议','新版首页下周三上线','需要和设计确认配色','小王负责用户访谈'];
+ const tp=seg(u,.08,.46);let n=tp*lines.join('').length,k=0;
+ lines.forEach((s,i)=>{const part=s.slice(0,Math.max(0,Math.min(s.length,Math.floor(n-k))));k+=s.length;
+  if(i==0)tx(part,ex,oy+100,28,'#fff','left',700);else tx(part?'•  '+part:'',ex,oy+160+i*44,19,'#c8cad4');
+  if(part.length<s.length&&part.length>0||(i==3&&tp>=1&&Math.floor(u*30)%2)){const w=(g.measureText(part).width);g.fillStyle=AC2;g.fillRect(ex+w+(i?26:3),oy+(i?160+i*44:100)-12,2,24)}});
+ // panel
+ const p=eo(seg(u,.6,.7)),px=X+W-340+(1-p)*340;
+ g.fillStyle='#20212a';g.fillRect(px,oy+38,340,H);g.fillStyle='#2c2d38';g.fillRect(px,oy+38,1,H);
+ if(p>0){tx('✦ Lumen 助手',px+24,oy+74,16,'#fff','left',700);
+  tx('一句话摘要',px+24,oy+118,13,'#8a8d9a');
+  g.fillStyle='#2a2b38';rr(px+20,oy+134,300,70,10);g.fill();
+  const sm='新版首页将在下周三上线，配色还需和设计确认。';const st=typ(sm,seg(u,.7,.78));
+  const l1=st.slice(0,14),l2=st.slice(14,28),l3=st.slice(28);tx(l1,px+34,oy+154,14,'#e6e7ee');tx(l2,px+34,oy+175,14,'#e6e7ee');tx(l3,px+34,oy+196,14,'#e6e7ee');
+  tx('自动标签',px+24,oy+244,13,'#8a8d9a');
+  let cx=px+24;[['#会议','#7c5cff'],['#产品','#22d3ee'],['#待办','#f59e0b']].forEach((c,i)=>{cx+=chip(c[0],cx,oy+276,eb(seg(u,.78+i*.03,.84+i*.03)),c[1])});
+  tx('相关笔记',px+24,oy+328,13,'#8a8d9a');
+  ['用户访谈记录','首页设计稿'].forEach((s,i)=>{const a=eo(seg(u,.86+i*.04,.92+i*.04));g.save();g.globalAlpha=a;g.fillStyle='#2a2b38';rr(px+20,oy+346+i*46+(1-a)*10,300,38,10);g.fill();tx('🔗 '+s,px+36,oy+366+i*46+(1-a)*10,14,'#e6e7ee');g.restore()});
+  tx('待办提醒：与设计确认配色',px+24,oy+462,13,'#22d3ee','left',600,eo(seg(u,.94,1)))}
+ wend();
+ // cursor path
+ const m=eio(seg(u,.46,.52)),cx=lerp(X+760,X+22,m),cy=lerp(oy+380,oy+240,m)+Math.sin(m*3.14)*-30;
+ const away=eio(seg(u,.72,.82));
+ cursor(lerp(cx,X+560,away),lerp(cy,oy+300,away),seg(u,.52,.62));
+ if(u<.46){}
+}
+function S3(u,t){
+ cap('网页版、桌面版，随时随地','在电脑、手机浏览器上同样好用，内容自动同步',u);
+ const a=eo(seg(u,0,.12)),b=eo(seg(u,.08,.2));
+ // browser
+ const bx=70,by=170;
+ win(bx,by+(1-a)*40,620,420,false,'',lerp(.94,1,a),a);
+ const oy=by+(1-a)*40;
+ g.fillStyle='#f1f0f6';rr(bx+80,oy+8,460,22,11);g.fill();tx('🔒 app.lumen.cn',bx+310,oy+19,12,'#7a7890','center');
+ g.fillStyle='#f6f5fa';rr(bx+30,oy+60,560,46,23);g.fill();
+ const q=typ('上周的会议',seg(u,.2,.38));tx(q?'🔍  '+q:'🔍  搜索你的所有笔记',bx+54,oy+83,17,q?'#17151f':'#a5a3b5');
+ const rs=[['周一产品会议','新版首页下周三上线…'],['会议纪要：设计评审','配色方案已确定…'],['周会待办清单','3 项任务未完成']];
+ rs.forEach((r,i)=>{const e=eb(seg(u,.4+i*.05,.5+i*.05));if(e<=0)return;g.save();g.globalAlpha=cl(e);g.translate(0,(1-e)*16);
+  g.fillStyle='#fff';g.strokeStyle='#ebe9f3';g.lineWidth=1.5;rr(bx+30,oy+132+i*84,560,70,14);g.fill();g.stroke();
+  g.fillStyle=grad(0,0,60,60);g.globalAlpha*=.15;rr(bx+46,oy+148+i*84,38,38,10);g.fill();g.globalAlpha=cl(e);
+  tx('📄',bx+65,oy+168+i*84,18,'#000','center');tx(r[0],bx+100,oy+154+i*84,17,'#17151f','left',700);tx(r[1],bx+100,oy+182+i*84,14,'#8a88a0');g.restore()});
+ wend();
+ // desktop
+ const dx=740,dy=210;win(dx,dy+(1-b)*40,470,350,true,'Lumen 桌面版',lerp(.94,1,b),b);
+ const dy2=dy+(1-b)*40;g.fillStyle='#15161c';g.fillRect(dx,dy2+38,130,350);
+ ['全部','最近','收藏','标签'].forEach((s,i)=>tx(s,dx+22,dy2+74+i*34,14,i==1?'#fff':'#7d808c'));
+ const ns=['周一产品会议','读书摘录','旅行计划','首页设计稿'];
+ const sy=seg(u,.55,.7);
+ const rows=['新建：灵感记录'].concat(ns);
+ rows.forEach((s,i)=>{const sh=i==0?eo(sy):1;const yy=dy2+78+(i-1)*52+eo(sy)*52*(i==0?0:1)+ (i==0?0:0);
+  g.save();g.globalAlpha=(i==0?sh:1);g.fillStyle=i==0?'#2d2748':'#23242d';rr(dx+146,dy2+60+i*52*(sy>0||i>0?1:1)-(i==0?0:0)+ (i==0?0:0),300,44,10);
+  g.restore()});
+ // simpler redraw list
+ g.fillStyle='#1c1d24';g.fillRect(dx+138,dy2+50,330,300);
+ rows.forEach((s,i)=>{const y=dy2+66+i*52+(i>0?eo(sy)*0:0);let al=1,off=0;if(i==0){al=eo(sy);off=-(1-al)*20}
+  if(i>0&&sy<1&&false)0;g.save();g.globalAlpha=al;g.fillStyle=i==0?'#2d2748':'#262731';rr(dx+148,y+off,300,42,10);g.fill();
+  tx((i==0?'✨ ':'📄 ')+s,dx+166,y+21+off,14,'#e6e7ee','left',i==0?700:500);g.restore()});
+ wend();
+ // sync pulse
+ const sp=seg(u,.46,.62);if(sp>0&&sp<1){const e=eio(sp),x=lerp(bx+590,dx+148,e),y=lerp(oy+160,dy2+90,e)-Math.sin(e*3.14)*90;
+  for(let k=0;k<8;k++){const e2=cl(e-k*.03),x2=lerp(bx+590,dx+148,eio(e2)),y2=lerp(oy+160,dy2+90,eio(e2))-Math.sin(eio(e2)*3.14)*90;g.fillStyle=AC2;g.globalAlpha=.6*(1-k/8);g.beginPath();g.arc(x2,y2,7-k*.6,0,7);g.fill()}g.globalAlpha=1}
+ const lb=eo(seg(u,.7,.85));g.save();g.globalAlpha=lb;g.fillStyle='#17151f';rr(540,620,200,40,20);g.fill();tx('● 已自动同步',640,640,15,'#fff','center',600);g.restore();
+}
+function S4(u,t){
+ cap('笔记之间，自动连成知识网','想不起来放哪了？顺着关联，一点就找到',u);
+ const N=26,P=[];for(let i=0;i<N;i++){const an=i*2.399+t*.08,r=40+Math.sqrt(i/N)*270;P.push([640+Math.cos(an)*r*1.35,420+Math.sin(an)*r*.78+Math.sin(t+i)*5])}
+ const gr=eo(seg(u,.05,.7));
+ g.lineWidth=1.5;for(let i=0;i<N;i++)for(let j=i+1;j<N;j++){const d=Math.hypot(P[i][0]-P[j][0],P[i][1]-P[j][1]);if(d<170&&(i*j)%3!=1){const a=cl(gr*N-Math.max(i,j))*.35;if(a<=0)continue;g.strokeStyle=grad(P[i][0],P[i][1],P[j][0],P[j][1]);g.globalAlpha=a;g.beginPath();g.moveTo(...P[i]);g.lineTo(...P[j]);g.stroke()}}
+ g.globalAlpha=1;
+ for(let i=0;i<N;i++){const s=eb(cl(gr*N-i));if(s<=0)continue;const r=(5+rnd(i)*9)*s;g.fillStyle=i%3?AC1:AC2;g.shadowColor=i%3?AC1:AC2;g.shadowBlur=16;g.beginPath();g.arc(P[i][0],P[i][1],r,0,7);g.fill();g.shadowBlur=0}
+ const lab=['会议','读书','旅行','灵感'];lab.forEach((s,i)=>{const k=i*5+2,a=eo(seg(u,.5+i*.06,.6+i*.06));g.save();g.globalAlpha=a;g.fillStyle='#fff';g.shadowColor='rgba(60,40,120,.2)';g.shadowBlur=14;rr(P[k][0]+14,P[k][1]-34,64,28,14);g.fill();g.shadowBlur=0;tx(s,P[k][0]+46,P[k][1]-20,14,'#17151f','center',600);g.restore()})
+}
+function S5(u,t){
+ const a=eo(seg(u,0,.3));logo(640,230,1.3*eb(seg(u,0,.35)),Math.sin(t)*.05);
+ tx('Lumen 灵记',640,320,56,'#17151f','center',800,a);
+ tx('让每个想法，都有处安放',640,376,26,'#5b5873','center',400,eo(seg(u,.2,.5)));
+ const items=['Obsidian 插件','网页版','桌面版'];
+ items.forEach((s,i)=>{const e=eb(seg(u,.4+i*.08,.6+i*.08));g.save();g.translate(640+(i-1)*210,455);g.scale(Math.max(e,0),Math.max(e,0));g.fillStyle='#fff';g.shadowColor='rgba(60,40,120,.18)';g.shadowBlur=20;g.shadowOffsetY=6;rr(-90,-24,180,48,24);g.fill();g.shadowBlur=0;g.shadowOffsetY=0;tx(s,0,1,17,'#17151f','center',600);g.restore()});
+ const c=eb(seg(u,.7,.9));g.save();g.translate(640,550);g.scale(Math.max(c,0),Math.max(c,0));g.fillStyle=grad(-120,0,120,0);rr(-120,-26,240,52,26);g.fill();tx('免费开始使用',0,1,20,'#fff','center',700);g.restore()}
+
+// ---- audio ----
+let AC=null,master=null,lastRun=null;
+function startAudio(){if(AC){if(AC.state!=='running')AC.resume();return}
+ try{AC=new (window.AudioContext||window.webkitAudioContext)()}catch(e){return}
+ AC.resume();lastWrap=-1}
+['pointerdown','keydown','click'].forEach(e=>addEventListener(e,startAudio));
+function mf(n){return 440*Math.pow(2,(n-69)/12)}
+function note(out,f,t0,d,type,v,att=.01){const o=AC.createOscillator(),gn=AC.createGain();o.type=type;o.frequency.value=f;
+ gn.gain.setValueAtTime(0,t0);gn.gain.linearRampToValueAtTime(v,t0+att);gn.gain.exponentialRampToValueAtTime(.0001,t0+d);o.connect(gn);gn.connect(out);o.start(t0);o.stop(t0+d+.05)}
+function schedule(from){
+ if(lastRun){try{lastRun.gain.cancelScheduledValues(0);lastRun.gain.value=0;lastRun.disconnect()}catch(e){}}
+ const out=AC.createGain();out.gain.value=.5;
+ const dl=AC.createDelay(1);dl.delayTime.value=.375;const fb=AC.createGain();fb.gain.value=.35;const wet=AC.createGain();wet.gain.value=.3;
+ out.connect(dl);dl.connect(fb);fb.connect(dl);dl.connect(wet);
+ const mst=AC.createDynamicsCompressor();out.connect(mst);wet.connect(mst);mst.connect(AC.destination);lastRun=out;
+ const beat=.6,ch=[[57,60,64],[53,57,60],[48,55,64],[55,59,62]],bass=[45,41,36,43];
+ const base=AC.currentTime+.08;
+ for(let bar=0;bar*beat*4<DUR;bar++){
+  const c=ch[bar%4],bt=bar*beat*4;
+  const fadeOut=seg(bt,DUR-5,DUR),vol=1-fadeOut*.9;
+  const sched=(tm,fn)=>{if(tm>=from)fn(base+tm-from)};
+  sched(bt,T=>{c.forEach(n=>note(out,mf(n),T,beat*4.2,'triangle',.07*vol,.6));note(out,mf(bass[bar%4]),T,beat*3.8,'sine',.22*vol,.05)});
+  for(let s=0;s<8;s++){const tm=bt+s*beat/2,n=c[[0,1,2,1,2,1,0,2][s]]+12+(s%4==3?12:0);
+   if(bar>=1)sched(tm,T=>note(out,mf(n),T,.5,'sine',.1*vol,.005))}
+  if(bar>=3)for(let b=0;b<4;b++){sched(bt+b*beat,T=>note(out,90,T,.25,'sine',.35*vol,.003));
+   const k=AC.currentTime}
+  if(bar>=3)for(let s=0;s<8;s++)sched(bt+s*beat/2+beat/4*(s%2),T=>{if(s%2==1)note(out,8000+rnd(s)*2000,T,.05,'square',.012*vol,.001)});
+  if(bar>=5)sched(bt,T=>note(out,mf(c[0]+24),T,1.4,'sine',.06*vol,.02));
+ }
+}
+// ---- main loop ----
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t'))||0;
+const T0=performance.now()-off*1000;let lastWrap=-1,prevT=-1,started=false;
+const SC=[[0,5,S0],[5,11,S1],[11,24,S2],[24,35,S3],[35,42,S4],[42,48,S5]];
+function frame(now){
+ const el=(now-T0)/1000,t=el%DUR,run=Math.floor(el/DUR);
+ if(AC&&AC.state==='running'&&run!==lastWrap){lastWrap=run;schedule(t)}
+ bg(t);
+ for(const [a,b,fn] of SC){if(t>=a-.5&&t<b+.5){
+  const fi=eo(seg(t,a-.5,a+.1)),fo=1-eo(seg(t,b-.1,b+.5));
+  const al=a==0?Math.min(1,t/.3+.0)*fo:fi*fo;
+  if(al<=0)continue;g.save();g.globalAlpha=al;const dy=(1-fi)*14*(a?1:0);g.translate(0,dy);
+  fn(cl((t-a)/(b-a)),t);g.restore()}}
+ g.globalAlpha=1;
+ // progress bar
+ g.fillStyle='rgba(23,21,31,.08)';g.fillRect(0,714,1280,6);g.fillStyle=grad(0,0,1280,0);g.fillRect(0,714,1280*t/DUR,6);
+ if(!AC){tx('点击页面以开启音乐',1250,694,13,'rgba(23,21,31,.4)','right')}
+ requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

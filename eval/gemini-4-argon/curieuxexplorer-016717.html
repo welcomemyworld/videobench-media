@@ -1,0 +1,1260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>THE BROKEN MESSAGE — Type 1 Diabetes</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    user-select: none;
+  }
+  #stage {
+    width: 1280px; height: 720px;
+    position: relative; overflow: hidden;
+    background: #060a12;
+    box-shadow: 0 0 60px rgba(0, 180, 255, 0.15);
+    transform-origin: center center;
+  }
+  canvas {
+    width: 1280px; height: 720px; display: block;
+  }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+// --- SETUP & SCALING ---
+const stage = document.getElementById('stage');
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  const s = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+  stage.style.transform = `scale(${s})`;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// --- TIMELINE & CONFIG ---
+window.DUR = 54;
+const urlParams = new URLSearchParams(window.location.search);
+const startOffset = parseFloat(urlParams.get('t')) || 0;
+let startTime = null;
+
+// --- MATH & HELPERS ---
+const PI = Math.PI, TAU = PI * 2;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * clamp(t, 0, 1);
+const smooth = t => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
+const easeOut = t => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
+const easeInOut = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+function rotX(p, a) { const c = Math.cos(a), s = Math.sin(a); return [p[0], p[1]*c - p[2]*s, p[1]*s + p[2]*c]; }
+function rotY(p, a) { const c = Math.cos(a), s = Math.sin(a); return [p[0]*c + p[2]*s, p[1], -p[0]*s + p[2]*c]; }
+function rotZ(p, a) { const c = Math.cos(a), s = Math.sin(a); return [p[0]*c - p[1]*s, p[0]*s + p[1]*c, p[2]]; }
+
+function proj(p, cam) {
+  let x = p[0] - cam.x, y = p[1] - cam.y, z = p[2] - cam.z;
+  let r = rotY([x, y, z], -cam.ry);
+  r = rotX(r, -cam.rx);
+  const fov = cam.fov || 700;
+  const dist = r[2] + (cam.dist || 500);
+  if (dist < 10) return null;
+  const scale = fov / dist;
+  return {
+    x: (cam.cx || 640) + r[0] * scale,
+    y: (cam.cy || 360) + r[1] * scale,
+    z: dist,
+    s: scale
+  };
+}
+
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, r);
+}
+
+// --- PROCEDURAL 3D GEOMETRY ---
+// 1. Background bokeh particles
+const bgStars = Array.from({length: 90}, (_, i) => ({
+  x: (Math.sin(i * 12.9898) * 43758.5453 % 1) * 1600 - 800,
+  y: (Math.sin(i * 78.233) * 43758.5453 % 1) * 1000 - 500,
+  z: (Math.sin(i * 39.346) * 43758.5453 % 1) * 800 - 400,
+  r: 1.5 + (i % 4) * 1.2,
+  c: i % 3 === 0 ? '#00f2fe' : (i % 3 === 1 ? '#4facfe' : '#a18cd1')
+}));
+
+// 2. Pancreas & Islet 3D Cluster
+const pancreasPts = [];
+for (let i = 0; i < 260; i++) {
+  const t = i / 260; // 0 = head, 1 = tail
+  const spineX = (t - 0.45) * 340;
+  const spineY = Math.sin(t * PI * 1.3) * 35 - t * 40;
+  const spineZ = Math.cos(t * PI) * 25;
+  const radius = (1 - t * 0.68) * 58 + 14;
+  const a1 = i * 2.39996;
+  const a2 = (i % 13) / 13 * PI;
+  pancreasPts.push({
+    x: spineX + Math.cos(a1) * Math.sin(a2) * radius,
+    y: spineY + Math.sin(a1) * Math.sin(a2) * radius * 0.75,
+    z: spineZ + Math.cos(a2) * radius * 0.6,
+    isIslet: (i % 18 === 0)
+  });
+}
+
+// 3. Detailed Islet Beta Cells + T-Cells
+const betaCells = [];
+for (let i = 0; i < 42; i++) {
+  const phi = Math.acos(1 - 2 * (i + 0.5) / 42);
+  const theta = PI * (1 + Math.sqrt(5)) * i;
+  const rad = 75 * Math.cbrt(((i * 7) % 42 + 10) / 52);
+  betaCells.push({
+    x: rad * Math.sin(phi) * Math.cos(theta),
+    y: rad * Math.sin(phi) * Math.sin(theta),
+    z: rad * Math.cos(phi),
+    r: 16 + (i % 4) * 2.5,
+    killOrder: (i * 13) % 42 / 42 // 0 to 1
+  });
+}
+
+const tCells = Array.from({length: 10}, (_, i) => ({
+  angle: i * TAU / 10,
+  elev: (i % 3 - 1) * 0.55,
+  dist: 210 + (i % 4) * 25,
+  target: i * 4
+}));
+
+// 4. Molecular Receptor & Channel (Scene 3)
+const membraneLipids = [];
+for (let gx = -8; gx <= 8; gx++) {
+  for (let gz = -4; gz <= 4; gz++) {
+    if (Math.abs(gx) < 2 && Math.abs(gz) < 2) continue; // gap for GLUT4 channel
+    membraneLipids.push({ x: gx * 28, z: gz * 28, phase: gx * 0.4 + gz * 0.7 });
+  }
+}
+
+const streamParticles = Array.from({length: 65}, (_, i) => ({
+  seed: i / 65,
+  offset: (i * 1.618) % 1,
+  laneY: ((i % 9) - 4) * 18,
+  laneZ: ((i % 5) - 2) * 22,
+  type: i < 38 ? 'glucose' : (i < 52 ? 'insulin' : 'ketone')
+}));
+
+// --- DRAWING PRIMITIVES ---
+function drawGlowSphere(x, y, r, colorCore, colorGlow, alpha = 1) {
+  if (r <= 0.5 || alpha <= 0.01) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const g = ctx.createRadialGradient(x - r * 0.25, y - r * 0.25, r * 0.05, x, y, r * 1.5);
+  g.addColorStop(0, colorCore);
+  g.addColorStop(0.55, colorGlow);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(x, y, r * 1.5, 0, TAU);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawHexGlucose(x, y, r, alpha = 1, highlight = false) {
+  if (r <= 1 || alpha <= 0.01) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  if (highlight) {
+    drawGlowSphere(x, y, r * 2.2, '#ffffff', 'rgba(255, 200, 50, 0.75)', alpha);
+  } else {
+    drawGlowSphere(x, y, r * 1.4, '#fff4cc', 'rgba(245, 166, 35, 0.45)', alpha * 0.8);
+  }
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const a = i * PI / 3 + PI / 6;
+    const px = x + Math.cos(a) * r;
+    const py = y + Math.sin(a) * r;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fillStyle = highlight ? '#ffe680' : '#f5a623';
+  ctx.fill();
+  ctx.lineWidth = Math.max(1.5, r * 0.18);
+  ctx.strokeStyle = '#ffffff';
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawInsulinKey(x, y, r, alpha = 1) {
+  if (r <= 1 || alpha <= 0.01) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  drawGlowSphere(x, y, r * 1.7, '#ffffff', 'rgba(0, 242, 254, 0.75)', alpha);
+  ctx.beginPath();
+  for (let i = 0; i < 4; i++) {
+    const a = i * PI / 2;
+    const px = x + Math.cos(a) * r;
+    const py = y + Math.sin(a) * r;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fillStyle = '#00f2fe';
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawHUDHeader(sectionNum, sectionTitle, brokenPct) {
+  ctx.save();
+  // Top bar glass
+  ctx.fillStyle = 'rgba(8, 15, 28, 0.78)';
+  roundRect(32, 22, 1216, 52, 12);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(100, 180, 255, 0.22)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Left: Brand + Section
+  ctx.fillStyle = '#00f2fe';
+  ctx.font = '700 13px sans-serif';
+  ctx.letterSpacing = '1.5px';
+  ctx.fillText(`THE BROKEN MESSAGE  //  0${sectionNum}`, 54, 53);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '600 16px sans-serif';
+  ctx.fillText(sectionTitle, 310, 53);
+
+  // Right: Interactive Slider "SIGNAL INTEGRITY: INTACT <-> BROKEN"
+  const sx = 860, sy = 48, sw = 240;
+  ctx.font = '700 11px sans-serif';
+  ctx.fillStyle = brokenPct < 0.5 ? '#00f2fe' : '#64748b';
+  ctx.textAlign = 'right';
+  ctx.fillText('INTACT', sx - 12, sy + 4);
+
+  ctx.fillStyle = brokenPct >= 0.5 ? '#ff3366' : '#64748b';
+  ctx.textAlign = 'left';
+  ctx.fillText('BROKEN', sx + sw + 12, sy + 4);
+
+  // Track
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  roundRect(sx, sy - 4, sw, 8, 4);
+  ctx.fill();
+
+  const grad = ctx.createLinearGradient(sx, 0, sx + sw, 0);
+  grad.addColorStop(0, '#00f2fe');
+  grad.addColorStop(1, '#ff3366');
+  ctx.fillStyle = grad;
+  roundRect(sx, sy - 4, sw * brokenPct, 8, 4);
+  ctx.fill();
+
+  // Knob
+  const kx = sx + sw * brokenPct;
+  drawGlowSphere(kx, sy, 11, '#fff', brokenPct > 0.5 ? '#ff3366' : '#00f2fe', 1);
+  ctx.beginPath();
+  ctx.arc(kx, sy, 6, 0, TAU);
+  ctx.fillStyle = '#fff';
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawCaptionCard(x, y, w, h, tag, title, lines, accent = '#00f2fe', alpha = 1) {
+  if (alpha <= 0.01) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = 'rgba(10, 18, 34, 0.84)';
+  roundRect(x, y, w, h, 14);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(140, 200, 255, 0.22)';
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  // Left accent bar
+  ctx.fillStyle = accent;
+  roundRect(x, y + 16, 4, h - 32, 2);
+  ctx.fill();
+
+  ctx.fillStyle = accent;
+  ctx.font = '700 12px sans-serif';
+  ctx.fillText(tag.toUpperCase(), x + 22, y + 32);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '700 22px sans-serif';
+  ctx.fillText(title, x + 22, y + 62);
+
+  ctx.fillStyle = '#cbd5e1';
+  ctx.font = '400 15px sans-serif';
+  lines.forEach((ln, idx) => {
+    ctx.fillText(ln, x + 22, y + 92 + idx * 23);
+  });
+  ctx.restore();
+}
+
+// --- SCENE 1: WHOLE BODY -> PANCREAS -> ISLETS -> AUTOIMMUNE ATTACK (0 - 11s) ---
+function renderScene1(t) {
+  const pZoom = smooth((t - 2.0) / 3.2);       // Zoom into islet
+  const pAttack = smooth((t - 5.2) / 4.5);     // Autoimmune destruction
+
+  const cam = {
+    x: lerp(0, 65, pZoom),
+    y: lerp(0, -15, pZoom),
+    z: 0,
+    rx: 0.15 * Math.sin(t * 0.5),
+    ry: t * 0.28,
+    dist: lerp(520, 220, pZoom),
+    fov: 700,
+    cx: 740,
+    cy: 370
+  };
+
+  // Draw Body Silhouette (fades out as we zoom into pancreas)
+  const bodyAlpha = clamp(1 - pZoom * 1.6, 0, 1);
+  if (bodyAlpha > 0.01) {
+    ctx.save();
+    ctx.globalAlpha = bodyAlpha * 0.35;
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth = 2;
+    // Torso outline around (740, 370)
+    ctx.beginPath();
+    ctx.arc(740, 145, 34, 0, TAU); // Head
+    ctx.moveTo(695, 190);
+    ctx.quadraticCurveTo(640, 200, 635, 270);
+    ctx.lineTo(635, 420);
+    ctx.moveTo(785, 190);
+    ctx.quadraticCurveTo(840, 200, 845, 270);
+    ctx.lineTo(845, 420);
+    ctx.moveTo(665, 240);
+    ctx.lineTo(660, 560);
+    ctx.moveTo(815, 240);
+    ctx.lineTo(820, 560);
+    ctx.stroke();
+
+    // Vascular network hint
+    ctx.strokeStyle = 'rgba(255, 70, 100, 0.35)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(740, 190); ctx.lineTo(740, 520);
+    ctx.moveTo(740, 320); ctx.lineTo(680, 375);
+    ctx.moveTo(740, 340); ctx.lineTo(800, 365);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Draw Pancreas Point Cloud (fades slightly at max zoom)
+  const pancAlpha = clamp(1 - pZoom * 0.78, 0.12, 1);
+  const drawList = [];
+
+  pancreasPts.forEach(pt => {
+    const scaleDown = lerp(0.42, 1.0, smooth(t / 2.2));
+    const pr = proj([pt.x * scaleDown, pt.y * scaleDown, pt.z * scaleDown], cam);
+    if (pr) {
+      drawList.push({
+        z: pr.z,
+        fn: () => {
+          if (pt.isIslet) {
+            const alive = 1 - pAttack * 0.85;
+            drawGlowSphere(pr.x, pr.y, 7 * pr.s, '#ffffff', alive > 0.4 ? '#00f2fe' : '#ff3366', pancAlpha);
+          } else {
+            drawGlowSphere(pr.x, pr.y, 5.5 * pr.s, '#fb7185', 'rgba(225, 29, 72, 0.35)', pancAlpha * 0.65);
+          }
+        }
+      });
+    }
+  });
+
+  // Draw Detailed Islet Cluster at (65, -15, 0) when zooming in
+  if (pZoom > 0.05) {
+    const isletAlpha = smooth((pZoom - 0.05) / 0.5);
+    betaCells.forEach((bc, idx) => {
+      const deadProgress = clamp((pAttack - bc.killOrder * 0.7) / 0.3, 0, 1);
+      const wx = 65 + bc.x * 0.55;
+      const wy = -15 + bc.y * 0.55;
+      const wz = bc.z * 0.55;
+      const pr = proj([wx, wy, wz], cam);
+      if (pr) {
+        drawList.push({
+          z: pr.z,
+          fn: () => {
+            const r = bc.r * 0.55 * pr.s * (1 - deadProgress * 0.55);
+            if (deadProgress < 0.5) {
+              drawGlowSphere(pr.x, pr.y, r, '#e0f2fe', '#0284c7', isletAlpha);
+              // Insulin granules pulsing inside healthy beta cell
+              if (idx % 3 === 0) {
+                drawInsulinKey(pr.x + Math.sin(t * 3 + idx) * r * 0.3, pr.y, r * 0.35, isletAlpha);
+              }
+            } else {
+              // Destroyed / greyed out beta cell with crimson flare
+              drawGlowSphere(pr.x, pr.y, r, '#fca5a5', 'rgba(239, 68, 68, 0.25)', isletAlpha * (1 - deadProgress * 0.65));
+            }
+          }
+        });
+      }
+    });
+
+    // Draw Autoimmune T-Cells attacking
+    if (pAttack > 0.01) {
+      tCells.forEach((tc, i) => {
+        const approach = smooth(clamp(pAttack * 1.4 - i * 0.05, 0, 1));
+        const tgt = betaCells[tc.target];
+        const curDist = lerp(tc.dist, 42, approach);
+        const a = tc.angle + t * 0.6;
+        const wx = 65 + lerp(Math.cos(a) * curDist, tgt.x * 0.58, approach * 0.7);
+        const wy = -15 + lerp(Math.sin(tc.elev) * curDist, tgt.y * 0.58, approach * 0.7);
+        const wz = lerp(Math.sin(a) * curDist, tgt.z * 0.58, approach * 0.7);
+        const pr = proj([wx, wy, wz], cam);
+        if (pr) {
+          drawList.push({
+            z: pr.z - 2,
+            fn: () => {
+              const r = 11 * pr.s;
+              drawGlowSphere(pr.x, pr.y, r * 1.3, '#fff', '#ff1e56', approach);
+              // Spiky T-cell corona
+              ctx.save();
+              ctx.strokeStyle = '#ff4d79';
+              ctx.lineWidth = 1.8;
+              ctx.globalAlpha = approach;
+              ctx.beginPath();
+              for (let s = 0; s < 8; s++) {
+                const sa = s * PI / 4 + t * 2;
+                ctx.moveTo(pr.x, pr.y);
+                ctx.lineTo(pr.x + Math.cos(sa) * r * 1.45, pr.y + Math.sin(sa) * r * 1.45);
+              }
+              ctx.stroke();
+              ctx.restore();
+            }
+          });
+        }
+      });
+    }
+  }
+
+  drawList.sort((a, b) => b.z - a.z);
+  drawList.forEach(item => item.fn());
+
+  // Callout label pointing to Islet
+  if (pZoom > 0.25) {
+    const centerPr = proj([65, -15, 0], cam);
+    if (centerPr) {
+      ctx.save();
+      ctx.strokeStyle = pAttack > 0.4 ? '#ff3366' : '#00f2fe';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(centerPr.x, centerPr.y, 115, -0.6, 0.8);
+      ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.font = '700 13px sans-serif';
+      ctx.fillText(
+        pAttack > 0.4 ? 'AUTOIMMUNE ATTACK: T-CELLS DESTROY BETA CELLS' : 'ISLET OF LANGERHANS (1–2% OF PANCREAS)',
+        centerPr.x + 95, centerPr.y - 75
+      );
+      ctx.restore();
+    }
+  }
+
+  drawHUDHeader(1, 'AUTOIMMUNE ORIGIN: FROM WHOLE BODY TO THE ISLET', pAttack);
+
+  if (t < 5.3) {
+    drawCaptionCard(48, 490, 490, 175,
+      'Not Sugar, Weight or Lifestyle',
+      'Inside the Pancreas: Islet Clusters',
+      [
+        'Beta cells live in tiny clusters called islets (1–2% of the',
+        'pancreas). After a meal, they sense rising glucose and',
+        'release insulin — the chemical message for fuel uptake.'
+      ],
+      '#00f2fe', smooth(t / 0.8)
+    );
+  } else {
+    drawCaptionCard(48, 490, 510, 175,
+      'Autoimmune Destruction',
+      'The Immune System Destroys Beta Cells',
+      [
+        'In Type 1 diabetes, rogue immune T-cells mistake insulin-',
+        'producing beta cells for threats and destroy them.',
+        'The factory that writes the insulin message is lost.'
+      ],
+      '#ff3366', smooth((t - 5.3) / 0.8)
+    );
+  }
+}
+
+// --- SCENE 2: THE INTERACTIVE SLIDER (INTACT -> BROKEN) & ORGAN SIGNALING (11 - 22s) ---
+function renderScene2(t) {
+  const st = t - 11; // 0 to 11s
+  // Slider sweeps from 0 (INTACT) to 1 (BROKEN) between st=2.2 and st=6.8
+  const broken = smooth((st - 2.0) / 4.5);
+
+  const cam = { x: 0, y: 0, z: 0, rx: 0.22, ry: Math.sin(st * 0.35) * 0.25, dist: 540, fov: 700, cx: 700, cy: 330 };
+
+  // Draw 3D Bloodstream Tube + 3 Key Organ Nodes (Pancreas, Liver, Muscle & Fat)
+  const nodes = [
+    { name: 'PANCREAS (ISLETS)', sub: broken > 0.6 ? 'Signal Output: LOST' : 'Senses Glucose -> Releases Insulin', pos: [-260, -70, 0], c: broken > 0.6 ? '#64748b' : '#00f2fe' },
+    { name: 'LIVER', sub: broken > 0.6 ? 'Unchecked Glucose & Ketones!' : 'Insulin Tells Liver: Release Less', pos: [10, -135, -30], c: broken > 0.6 ? '#ff9f43' : '#38bdf8' },
+    { name: 'MUSCLE & FAT CELLS', sub: broken > 0.6 ? 'Doors Locked -> Rapid Fat Breakdown' : 'Insulin Opens Doors for Glucose', pos: [260, -65, 20], c: broken > 0.6 ? '#ff3366' : '#10b981' }
+  ];
+
+  // Vessel spline across screen
+  ctx.save();
+  ctx.strokeStyle = 'rgba(225, 29, 72, 0.28)';
+  ctx.lineWidth = 54;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(260, 390);
+  ctx.bezierCurveTo(520, 420, 860, 420, 1160, 385);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255, 100, 130, 0.45)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.restore();
+
+  // Signal arcs from Pancreas to Liver and Muscle/Fat (fade as broken -> 1)
+  const p0 = proj(nodes[0].pos, cam);
+  const p1 = proj(nodes[1].pos, cam);
+  const p2 = proj(nodes[2].pos, cam);
+
+  if (p0 && p1 && p2) {
+    const sigAlpha = clamp(1 - broken * 1.15, 0, 1);
+    if (sigAlpha > 0.02) {
+      ctx.save();
+      ctx.globalAlpha = sigAlpha;
+      ctx.strokeStyle = '#00f2fe';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([8, 6]);
+      ctx.lineDashOffset = -st * 45;
+      ctx.beginPath();
+      ctx.moveTo(p0.x, p0.y);
+      ctx.quadraticCurveTo((p0.x + p1.x)/2, p0.y - 60, p1.x, p1.y);
+      ctx.moveTo(p0.x, p0.y);
+      ctx.quadraticCurveTo((p0.x + p2.x)/2, p0.y - 95, p2.x, p2.y);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Draw Organ Nodes
+    [nodes[0], nodes[1], nodes[2]].forEach((nd, idx) => {
+      const pr = [p0, p1, p2][idx];
+      drawGlowSphere(pr.x, pr.y, 34, '#ffffff', nd.c, 0.9);
+      ctx.save();
+      ctx.fillStyle = 'rgba(10, 18, 34, 0.88)';
+      roundRect(pr.x - 115, pr.y - 88, 230, 48, 8);
+      ctx.fill();
+      ctx.strokeStyle = nd.c;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.font = '700 12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(nd.name, pr.x, pr.y - 68);
+      ctx.fillStyle = nd.c;
+      ctx.font = '600 11px sans-serif';
+      ctx.fillText(nd.sub, pr.x, pr.y - 50);
+      ctx.restore();
+    });
+  }
+
+  // Stream Particles inside Bloodstream & into Muscle/Liver
+  streamParticles.forEach((sp, idx) => {
+    const flow = (sp.seed + st * (sp.type === 'glucose' ? lerp(0.18, 0.07, broken) : 0.22)) % 1;
+    let wx = lerp(-380, 420, flow);
+    let wy = 75 + sp.laneY + Math.sin(flow * TAU + idx) * 12;
+    let wz = sp.laneZ;
+
+    if (sp.type === 'glucose') {
+      // When intact, half the glucose branches up into Muscle/Fat node
+      if (broken < 0.5 && idx % 2 === 0 && flow > 0.65) {
+        const up = (flow - 0.65) / 0.35;
+        wx = lerp(140, 260, up);
+        wy = lerp(75, -65, up);
+      }
+      // When broken, extra glucose pours down from Liver & crowds the vessel
+      const pr = proj([wx, wy, wz], cam);
+      if (pr) drawHexGlucose(pr.x, pr.y, 8.5 * pr.s, 0.95, false);
+    } else if (sp.type === 'insulin') {
+      const insAlpha = clamp(1 - broken * 1.3, 0, 1);
+      if (insAlpha > 0.02) {
+        const pr = proj([wx, wy - 35, wz], cam);
+        if (pr) drawInsulinKey(pr.x, pr.y, 7 * pr.s, insAlpha);
+      }
+    } else if (sp.type === 'ketone') {
+      // Acidic ketone bodies released from fat breakdown & liver when broken > 0.55
+      const ketAlpha = smooth((broken - 0.55) / 0.35);
+      if (ketAlpha > 0.02) {
+        const kx = lerp(10, 380, flow);
+        const ky = lerp(-120, 85 + sp.laneY, smooth(flow * 2));
+        const pr = proj([kx, ky, wz], cam);
+        if (pr) {
+          drawGlowSphere(pr.x, pr.y, 8 * pr.s, '#fff', '#ff2a55', ketAlpha);
+        }
+      }
+    }
+  });
+
+  // Prominent Center Interactive Slider Widget
+  const sx = 590, sy = 525, sw = 560;
+  ctx.save();
+  ctx.fillStyle = 'rgba(10, 18, 34, 0.9)';
+  roundRect(sx - 30, sy - 48, sw + 60, 96, 14);
+  ctx.fill();
+  ctx.strokeStyle = broken > 0.5 ? 'rgba(255, 51, 102, 0.5)' : 'rgba(0, 242, 254, 0.5)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  ctx.font = '700 13px sans-serif';
+  ctx.fillStyle = '#94a3b8';
+  ctx.textAlign = 'center';
+  ctx.fillText('DRAG SIGNAL SLIDER: WATCH INSULIN FADE & GLUCOSE BUILD UP', sx + sw / 2, sy - 22);
+
+  ctx.font = '800 15px sans-serif';
+  ctx.fillStyle = '#00f2fe';
+  ctx.textAlign = 'left';
+  ctx.fillText('INTACT SIGNAL', sx, sy + 32);
+  ctx.fillStyle = '#ff3366';
+  ctx.textAlign = 'right';
+  ctx.fillText('BROKEN SIGNAL (TYPE 1)', sx + sw, sy + 32);
+
+  // Bar
+  ctx.fillStyle = '#1e293b';
+  roundRect(sx, sy - 6, sw, 12, 6);
+  ctx.fill();
+  const g = ctx.createLinearGradient(sx, 0, sx + sw, 0);
+  g.addColorStop(0, '#00f2fe');
+  g.addColorStop(1, '#ff3366');
+  ctx.fillStyle = g;
+  roundRect(sx, sy - 6, sw * broken, 12, 6);
+  ctx.fill();
+
+  const handleX = sx + sw * broken;
+  drawGlowSphere(handleX, sy, 18, '#ffffff', broken > 0.5 ? '#ff3366' : '#00f2fe', 1);
+  ctx.restore();
+
+  // DKA Warning Banner when broken is high
+  if (broken > 0.75) {
+    const dkaAlpha = smooth((broken - 0.75) / 0.2);
+    ctx.save();
+    ctx.globalAlpha = dkaAlpha;
+    ctx.fillStyle = 'rgba(127, 29, 29, 0.88)';
+    roundRect(560, 610, 620, 68, 12);
+    ctx.fill();
+    ctx.strokeStyle = '#ff4d6d';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#fecdd3';
+    ctx.font = '800 15px sans-serif';
+    ctx.fillText('EMERGENCY RISK: DIABETIC KETOACIDOSIS (DKA)', 585, 636);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '400 13.5px sans-serif';
+    ctx.fillText('With almost no insulin, fat breaks down fast and the liver makes acidic ketones.', 585, 660);
+    ctx.restore();
+  }
+
+  drawHUDHeader(2, 'THE MISSING MESSAGE: SIGNAL FADES, FUEL BUILDS UP', broken);
+
+  drawCaptionCard(48, 490, 475, 190,
+    'The Fuel Is There. The Message Is Missing.',
+    broken < 0.5 ? 'Intact: Balanced Fuel Delivery' : 'Broken: Starving in Plenty',
+    [
+      'Insulin signals muscle & fat to take glucose in, and',
+      'tells the liver to release less.',
+      'In Type 1, that signal disappears — glucose builds up',
+      'in the blood while cells break down fat into ketones.'
+    ],
+    broken < 0.5 ? '#00f2fe' : '#ff3366', 1
+  );
+}
+
+// --- SCENE 3: FOLLOW A SINGLE GLUCOSE MOLECULE DOWN TO THE CELL MEMBRANE (22 - 32s) ---
+function renderScene3(t) {
+  const st = t - 22; // 0 to 10s
+  // First half (0 - 5s): Without Insulin, hero molecule bounces off closed GLUT4 channel
+  // Second half (5 - 10s): Insulin binds receptor -> intracellular cascade -> GLUT4 opens -> hero molecule enters!
+  const hasInsulin = smooth((st - 4.4) / 1.2);
+  const channelOpen = smooth((st - 5.4) / 1.0);
+
+  const cam = {
+    x: 0, y: -25, z: 0,
+    rx: 0.38,
+    ry: Math.sin(st * 0.4) * 0.32,
+    dist: 420, fov: 720, cx: 740, cy: 380
+  };
+
+  const drawList = [];
+
+  // 1. Cell Membrane Phospholipid Bilayer
+  membraneLipids.forEach(lp => {
+    const wave = Math.sin(st * 2.2 + lp.phase) * 4;
+    // Upper & lower leaflets
+    [-18, 22].forEach(yOff => {
+      const pr = proj([lp.x, yOff + wave, lp.z], cam);
+      if (pr) {
+        drawList.push({
+          z: pr.z,
+          fn: () => {
+            drawGlowSphere(pr.x, pr.y, 7.5 * pr.s, '#cbd5e1', 'rgba(56, 189, 248, 0.35)', 0.75);
+          }
+        });
+      }
+    });
+  });
+
+  // 2. Insulin Receptor Tower (left of center at x = -110)
+  const recX = -110;
+  for (let y = -75; y <= 20; y += 16) {
+    const pr = proj([recX, y, 0], cam);
+    if (pr) {
+      drawList.push({
+        z: pr.z,
+        fn: () => drawGlowSphere(pr.x, pr.y, 14 * pr.s, '#c084fc', '#7e22ce', 0.95)
+      });
+    }
+  }
+  // Receptor Y-arms
+  [-24, 24].forEach(dx => {
+    const pr = proj([recX + dx, -92, 0], cam);
+    if (pr) {
+      drawList.push({
+        z: pr.z,
+        fn: () => drawGlowSphere(pr.x, pr.y, 13 * pr.s, hasInsulin > 0.5 ? '#00f2fe' : '#e879f9', '#9333ea', 0.95)
+      });
+    }
+  });
+
+  // Docking Insulin Key molecule at st > 4.2
+  if (st > 3.8) {
+    const dockP = smooth((st - 3.8) / 1.1);
+    const iy = lerp(-220, -102, dockP);
+    const pr = proj([recX, iy, 0], cam);
+    if (pr) {
+      drawList.push({
+        z: pr.z - 5,
+        fn: () => drawInsulinKey(pr.x, pr.y, 15 * pr.s, dockP)
+      });
+    }
+  }
+
+  // Intracellular Signal Spark from Receptor (-110, 25) to GLUT4 Channel (0, 25)
+  if (hasInsulin > 0.2) {
+    for (let i = 0; i < 6; i++) {
+      const sp = ((st * 1.8 + i / 6) % 1);
+      const sx = lerp(recX, 0, sp);
+      const sy = 35 + Math.sin(sp * PI) * 28;
+      const pr = proj([sx, sy, 0], cam);
+      if (pr) {
+        drawList.push({
+          z: pr.z - 5,
+          fn: () => drawGlowSphere(pr.x, pr.y, 8 * pr.s, '#fff', '#00f2fe', hasInsulin)
+        });
+      }
+    }
+  }
+
+  // 3. GLUT4 Glucose Channel Gate at (0, 0, 0)
+  const gateSpread = lerp(16, 48, channelOpen);
+  for (let side = -1; side <= 1; side += 2) {
+    for (let y = -32; y <= 32; y += 16) {
+      const pr = proj([side * gateSpread, y, 0], cam);
+      if (pr) {
+        drawList.push({
+          z: pr.z - 2,
+          fn: () => drawGlowSphere(pr.x, pr.y, 16 * pr.s, channelOpen > 0.5 ? '#6ee7b7' : '#fda4af', channelOpen > 0.5 ? '#059669' : '#e11d48', 0.95)
+        });
+      }
+    }
+  }
+
+  // 4. THE HERO GLUCOSE MOLECULE
+  let gx = 0, gy = -140;
+  if (st < 4.5) {
+    // Approaches gate and bounces back because channel is locked
+    const cycle = (st / 2.25) % 1;
+    const bounce = Math.abs(Math.sin(cycle * PI));
+    gy = -46 - bounce * 105;
+    gx = Math.sin(st * 2.5) * 25;
+  } else {
+    // Channel unlocks! Hero molecule glides smoothly through into the cell interior
+    const enterP = smooth((st - 5.6) / 2.8);
+    gy = lerp(-120, 145, enterP);
+    gx = Math.sin(enterP * PI) * 10;
+  }
+
+  const heroPr = proj([gx, gy, 0], cam);
+  if (heroPr) {
+    drawList.push({
+      z: heroPr.z - 10,
+      fn: () => {
+        drawHexGlucose(heroPr.x, heroPr.y, 22 * heroPr.s, 1, true);
+        // Tracker reticle around the single glucose molecule
+        ctx.save();
+        ctx.strokeStyle = '#fde047';
+        ctx.lineWidth = 1.8;
+        ctx.setLineDash([6, 4]);
+        ctx.beginPath();
+        ctx.arc(heroPr.x, heroPr.y, 38 * heroPr.s, 0, TAU);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#fef08a';
+        ctx.font = '700 12px sans-serif';
+        ctx.fillText('SINGLE GLUCOSE MOLECULE (C₆H₁₂O₆)', heroPr.x + 44 * heroPr.s, heroPr.y - 6);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '600 11px sans-serif';
+        ctx.fillText(
+          channelOpen < 0.5 ? 'STATUS: BLOCKED AT CELL MEMBRANE' : 'STATUS: ENTERING CELL FOR ENERGY!',
+          heroPr.x + 44 * heroPr.s, heroPr.y + 12
+        );
+        ctx.restore();
+      }
+    });
+  }
+
+  drawList.sort((a, b) => b.z - a.z);
+  drawList.forEach(d => d.fn());
+
+  // Labels for Receptor & Channel
+  const recLabelPr = proj([recX, -115, 0], cam);
+  if (recLabelPr) {
+    ctx.fillStyle = '#e879f9';
+    ctx.font = '700 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('INSULIN RECEPTOR', recLabelPr.x, recLabelPr.y - 26);
+  }
+
+  drawHUDHeader(3, 'MOLECULAR SCALE: FOLLOWING ONE GLUCOSE MOLECULE', 1 - channelOpen);
+
+  drawCaptionCard(48, 490, 490, 185,
+    'Down to a Single Molecule',
+    channelOpen < 0.5 ? 'Without Insulin: The Gate Stays Shut' : 'Insulin Replaces the Key: Gate Opens',
+    [
+      'Follow one glucose molecule to a muscle cell membrane.',
+      'Without insulin on the receptor, the GLUT4 transport',
+      'channel stays locked. Once insulin binds, the gate opens',
+      'and glucose flows inside to power the cell.'
+    ],
+    channelOpen < 0.5 ? '#f59e0b' : '#10b981', 1
+  );
+}
+
+// --- SCENE 4: SAME MEAL COMPARISON + DAILY BALANCE CHALLENGE (32 - 43s) ---
+function renderScene4(t) {
+  const st = t - 32; // 0 to 11s
+  const drawProg = clamp(st / 6.5, 0, 1);
+
+  drawHUDHeader(4, 'SAME MEAL COMPARISON & THE DAILY BALANCE CHALLENGE', 0.35);
+
+  // Left/Center Main Chart Panel: Healthy vs Type 1 vs Type 1 + Insulin
+  const gx = 54, gy = 104, gw = 740, gh = 430;
+  ctx.save();
+  ctx.fillStyle = 'rgba(10, 18, 34, 0.86)';
+  roundRect(gx, gy, gw, gh, 16);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(140, 200, 255, 0.22)';
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  // Title
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '700 19px sans-serif';
+  ctx.fillText('BLOOD GLUCOSE RESPONSE ON THE EXACT SAME MEAL', gx + 26, gy + 38);
+
+  // Target Range Band (70 - 180 mg/dL)
+  const plotX = gx + 72, plotY = gy + 70, plotW = gw - 104, plotH = gh - 125;
+  const valToY = val => plotY + plotH - ((val - 40) / 300) * plotH;
+
+  const y180 = valToY(180), y70 = valToY(70);
+  ctx.fillStyle = 'rgba(16, 185, 129, 0.13)';
+  ctx.fillRect(plotX, y180, plotW, y70 - y180);
+
+  // Grid lines & Y-axis labels
+  [300, 240, 180, 120, 70].forEach(v => {
+    const yy = valToY(v);
+    ctx.strokeStyle = (v === 180 || v === 70) ? 'rgba(16, 185, 129, 0.45)' : 'rgba(255,255,255,0.07)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(plotX, yy); ctx.lineTo(plotX + plotW, yy);
+    ctx.stroke();
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '600 11px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(`${v}`, plotX - 10, yy + 4);
+  });
+
+  // Meal Marker at X = 15%
+  const mealX = plotX + plotW * 0.15;
+  ctx.strokeStyle = '#f59e0b';
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.moveTo(mealX, plotY); ctx.lineTo(mealX, plotY + plotH);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = '#fbbf24';
+  ctx.font = '700 12px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('MEAL (60g CARBS)', mealX + 8, plotY + 18);
+
+  // 3 Curves
+  const curves = [
+    {
+      name: 'Type 1 (Untreated)',
+      color: '#ff3366',
+      fn: p => p < 0.15 ? 110 : 110 + 205 * (1 - Math.exp(-(p - 0.15) * 4.2))
+    },
+    {
+      name: 'Type 1 + Insulin Therapy',
+      color: '#00f2fe',
+      fn: p => p < 0.15 ? 105 : 105 + 88 * Math.sin(clamp((p - 0.15) / 0.72, 0, 1) * PI)
+    },
+    {
+      name: 'Healthy (Intact Beta Cells)',
+      color: '#10b981',
+      fn: p => p < 0.15 ? 90 : 90 + 38 * Math.sin(clamp((p - 0.15) / 0.50, 0, 1) * PI)
+    }
+  ];
+
+  curves.forEach(c => {
+    ctx.strokeStyle = c.color;
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    const steps = Math.floor(100 * drawProg);
+    for (let i = 0; i <= steps; i++) {
+      const p = i / 100;
+      const xx = plotX + p * plotW;
+      const yy = valToY(c.fn(p));
+      if (i === 0) ctx.moveTo(xx, yy); else ctx.lineTo(xx, yy);
+    }
+    ctx.stroke();
+
+    // Glowing leading dot
+    const endP = drawProg;
+    const ex = plotX + endP * plotW;
+    const ey = valToY(c.fn(endP));
+    drawGlowSphere(ex, ey, 8, '#fff', c.color, 1);
+  });
+
+  // Legend inside chart
+  curves.forEach((c, idx) => {
+    const lx = plotX + idx * 215, ly = gy + gh - 24;
+    ctx.fillStyle = c.color;
+    ctx.beginPath(); ctx.arc(lx, ly - 4, 5, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#e2e8f0';
+    ctx.font = '600 12.5px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(c.name, lx + 12, ly);
+  });
+  ctx.restore();
+
+  // Right Panel: THE DAILY BALANCE CHALLENGE
+  const bx = 822, by = 104, bw = 404, bh = 572;
+  ctx.save();
+  ctx.fillStyle = 'rgba(10, 18, 34, 0.86)';
+  roundRect(bx, by, bw, bh, 16);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(140, 200, 255, 0.22)';
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+
+  ctx.fillStyle = '#00f2fe';
+  ctx.font = '700 12px sans-serif';
+  ctx.fillText('REPLACING A BIOLOGICAL SIGNAL', bx + 24, by + 34);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '700 21px sans-serif';
+  ctx.fillText('The Daily Challenge Is Balance', bx + 24, by + 62);
+
+  // Dynamic Balance Gauge (oscillates with Food, Exercise, Stress, Timing)
+  const factors = [
+    { label: 'FOOD / CARBS', effect: '+ Glucose Rises Fast', dir: 0.65, c: '#f59e0b' },
+    { label: 'EXERCISE', effect: '- Drops Glucose Sensitivity', dir: -0.6, c: '#10b981' },
+    { label: 'STRESS & ILLNESS', effect: '+ Hormones Raise Glucose', dir: 0.55, c: '#ec4899' },
+    { label: 'INSULIN TIMING', effect: 'Perfect Match Keeps Balance', dir: 0.0, c: '#00f2fe' }
+  ];
+  const activeIdx = Math.floor((st / 2.6) % 4);
+  const needleTilt = Math.sin(st * 1.7) * 0.45;
+
+  // Draw Gauge Arc
+  const cx = bx + bw / 2, cy = by + 185, rad = 88;
+  ctx.lineWidth = 14;
+  ctx.lineCap = 'round';
+  // Low zone (left)
+  ctx.strokeStyle = '#ff3366';
+  ctx.beginPath(); ctx.arc(cx, cy, rad, PI, PI * 1.28); ctx.stroke();
+  // In-range zone (middle)
+  ctx.strokeStyle = '#10b981';
+  ctx.beginPath(); ctx.arc(cx, cy, rad, PI * 1.32, PI * 1.68); ctx.stroke();
+  // High zone (right)
+  ctx.strokeStyle = '#f59e0b';
+  ctx.beginPath(); ctx.arc(cx, cy, rad, PI * 1.72, TAU); ctx.stroke();
+
+  // Needle
+  const na = PI * 1.5 + needleTilt;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + Math.cos(na) * (rad - 8), cy + Math.sin(na) * (rad - 8));
+  ctx.stroke();
+  drawGlowSphere(cx, cy, 10, '#fff', '#00f2fe', 1);
+
+  ctx.font = '700 11px sans-serif';
+  ctx.fillStyle = '#ff3366'; ctx.textAlign = 'left';
+  ctx.fillText('TOO MUCH INSULIN', bx + 24, cy + 28);
+  ctx.fillText('(DANGEROUSLY LOW)', bx + 24, cy + 43);
+
+  ctx.fillStyle = '#f59e0b'; ctx.textAlign = 'right';
+  ctx.fillText('TOO LITTLE INSULIN', bx + bw - 24, cy + 28);
+  ctx.fillText('(GLUCOSE RISES)', bx + bw - 24, cy + 43);
+
+  // Factor Cards
+  factors.forEach((f, idx) => {
+    const fy = by + 265 + idx * 70;
+    const isAct = idx === activeIdx;
+    ctx.fillStyle = isAct ? 'rgba(0, 242, 254, 0.14)' : 'rgba(255,255,255,0.04)';
+    roundRect(bx + 24, fy, bw - 48, 56, 10);
+    ctx.fill();
+    ctx.strokeStyle = isAct ? f.c : 'rgba(255,255,255,0.1)';
+    ctx.lineWidth = isAct ? 2 : 1;
+    ctx.stroke();
+
+    ctx.fillStyle = f.c;
+    ctx.font = '700 12px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(f.label, bx + 40, fy + 23);
+
+    ctx.fillStyle = '#e2e8f0';
+    ctx.font = '500 13px sans-serif';
+    ctx.fillText(f.effect, bx + 40, fy + 43);
+  });
+  ctx.restore();
+
+  // Bottom Left Summary Note
+  drawCaptionCard(54, 552, 740, 124,
+    'Insulin Therapy Replaces a Signal — It Does Not Cure Type 1',
+    'Delivered via Injections or an Insulin Pump',
+    [
+      'Every meal, workout, stressful hour, and dose timing shifts blood glucose.',
+      'Managing Type 1 means manually or algorithmically balancing this signal 24/7.'
+    ],
+    '#00f2fe', 1
+  );
+}
+
+// --- SCENE 5: TECHNOLOGY HELPS (CGM, PUMPS & AID) + HUMAN CLOSING (43 - 54s) ---
+function renderScene5(t) {
+  const st = t - 43; // 0 to 11s
+  const finaleFade = smooth((st - 6.8) / 1.4);
+
+  drawHUDHeader(5, 'TECHNOLOGY HELPS: CGM, INSULIN PUMPS & AUTOMATED INSULIN DELIVERY (AID)', 0.1);
+
+  // 3D Closed-Loop Body + CGM + AID Pump Visualization
+  const cam = {
+    x: 0, y: 0, z: 0,
+    rx: 0.12,
+    ry: Math.sin(st * 0.45) * 0.28,
+    dist: 480, fov: 700,
+    cx: lerp(780, 640, finaleFade),
+    cy: 380
+  };
+
+  // Generate 3D Torso Mesh Rings
+  for (let row = -6; row <= 6; row++) {
+    const y = row * 28;
+    const rx = 105 - Math.abs(row) * 3.5 + (row > 2 ? 12 : 0);
+    const rz = 62 - Math.abs(row) * 2;
+    for (let i = 0; i < 18; i++) {
+      const a = (i / 18) * TAU + st * 0.15;
+      const px = Math.cos(a) * rx;
+      const pz = Math.sin(a) * rz;
+      const pr = proj([px, y, pz], cam);
+      if (pr) {
+        drawGlowSphere(pr.x, pr.y, 4.2 * pr.s, '#38bdf8', 'rgba(14, 165, 233, 0.28)', 0.7);
+      }
+    }
+  }
+
+  // CGM Sensor on Upper Arm (-125, -75, 20)
+  const cgmPos = [-125, -75, 20];
+  // AID Insulin Pump on Belt (-85, 85, 45)
+  const pumpPos = [-85, 85, 45];
+  // Subcutaneous Infusion Site (75, 70, 48)
+  const sitePos = [75, 70, 48];
+
+  const pCGM = proj(cgmPos, cam);
+  const pPump = proj(pumpPos, cam);
+  const pSite = proj(sitePos, cam);
+
+  if (pCGM && pPump && pSite && finaleFade < 0.85) {
+    const techAlpha = 1 - finaleFade;
+    ctx.save();
+    ctx.globalAlpha = techAlpha;
+
+    // 1. Wireless Bluetooth Wave from CGM -> Pump
+    ctx.strokeStyle = '#00f2fe';
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([6, 6]);
+    ctx.lineDashOffset = -st * 50;
+    ctx.beginPath();
+    ctx.moveTo(pCGM.x, pCGM.y);
+    ctx.quadraticCurveTo(pCGM.x - 70, (pCGM.y + pPump.y)/2, pPump.x, pPump.y);
+    ctx.stroke();
+
+    // 2. Insulin Infusion Tubing from Pump -> Infusion Site
+    ctx.strokeStyle = '#10b981';
+    ctx.setLineDash([10, 5]);
+    ctx.lineDashOffset = -st * 40;
+    ctx.beginPath();
+    ctx.moveTo(pPump.x, pPump.y);
+    ctx.quadraticCurveTo((pPump.x + pSite.x)/2, pPump.y + 55, pSite.x, pSite.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Draw Nodes & Callout Badges
+    drawGlowSphere(pCGM.x, pCGM.y, 22, '#ffffff', '#00f2fe', 1);
+    drawGlowSphere(pPump.x, pPump.y, 26, '#ffffff', '#8b5cf6', 1);
+    drawGlowSphere(pSite.x, pSite.y, 20, '#ffffff', '#10b981', 1);
+
+    // CGM Badge
+    ctx.fillStyle = 'rgba(10, 18, 34, 0.9)';
+    roundRect(pCGM.x + 24, pCGM.y - 36, 265, 58, 10);
+    ctx.fill();
+    ctx.strokeStyle = '#00f2fe'; ctx.stroke();
+    ctx.fillStyle = '#00f2fe'; ctx.font = '700 12px sans-serif';
+    ctx.fillText('1. CGM SENSOR (EVERY 5 MIN)', pCGM.x + 38, pCGM.y - 14);
+    ctx.fillStyle = '#fff'; ctx.font = '600 14px sans-serif';
+    ctx.fillText('Reading: 112 mg/dL → Steady', pCGM.x + 38, pCGM.y + 8);
+
+    // AID Pump Badge
+    ctx.fillStyle = 'rgba(10, 18, 34, 0.9)';
+    roundRect(pPump.x - 295, pPump.y - 25, 270, 62, 10);
+    ctx.fill();
+    ctx.strokeStyle = '#a855f7'; ctx.stroke();
+    ctx.fillStyle = '#c084fc'; ctx.font = '700 12px sans-serif';
+    ctx.fillText('2. AID ALGORITHM & PUMP', pPump.x - 280, pPump.y - 3);
+    ctx.fillStyle = '#fff'; ctx.font = '500 13px sans-serif';
+    ctx.fillText('Auto-adjusts micro-doses of insulin', pPump.x - 280, pPump.y + 18);
+
+    // Infusion Site Badge
+    ctx.fillStyle = 'rgba(10, 18, 34, 0.9)';
+    roundRect(pSite.x + 24, pSite.y - 25, 245, 56, 10);
+    ctx.fill();
+    ctx.strokeStyle = '#10b981'; ctx.stroke();
+    ctx.fillStyle = '#10b981'; ctx.font = '700 12px sans-serif';
+    ctx.fillText('3. INSULIN DELIVERY CANNULA', pSite.x + 38, pSite.y - 3);
+    ctx.fillStyle = '#fff'; ctx.font = '500 13px sans-serif';
+    ctx.fillText('Replaces the missing signal', pSite.x + 38, pSite.y + 17);
+
+    ctx.restore();
+  }
+
+  if (finaleFade < 0.95) {
+    drawCaptionCard(48, 125, 430, 210,
+      'Smart Closed-Loop Technology',
+      'CGM + Automated Insulin Delivery',
+      [
+        'A Continuous Glucose Monitor (CGM) tracks glucose',
+        'every few minutes.',
+        'Automated Insulin Delivery (AID) reads those values',
+        'and continuously adjusts insulin output to help keep',
+        'levels balanced day and night.'
+      ],
+      '#00f2fe', 1 - finaleFade
+    );
+  }
+
+  // FINAL CLOSING STATEMENT CARD (st > 6.5s)
+  if (finaleFade > 0.01) {
+    ctx.save();
+    ctx.globalAlpha = finaleFade;
+
+    ctx.fillStyle = 'rgba(6, 10, 18, 0.82)';
+    ctx.fillRect(0, 80, 1280, 640);
+
+    // Glowing centerpiece halo
+    drawGlowSphere(640, 340, 220, 'rgba(0, 242, 254, 0.18)', 'rgba(139, 92, 246, 0.06)', finaleFade);
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#00f2fe';
+    ctx.font = '700 14px sans-serif';
+    ctx.fillText('THE BROKEN MESSAGE  —  WHOLE BODY TO SINGLE MOLECULE', 640, 245);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '800 44px sans-serif';
+    ctx.fillText('Type 1 diabetes changes the system.', 640, 320);
+
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = '800 44px sans-serif';
+    ctx.fillText("It doesn't define the person.", 640, 382);
+
+    // Pill tags summarizing all interactive concepts
+    const pills = ['AUTOIMMUNE BETA-CELL LOSS', 'INSULIN KEY & GLUT4 GATE', 'DKA PREVENTION', 'CGM + AID CLOSED LOOP'];
+    pills.forEach((pl, i) => {
+      const px = 205 + i * 225, py = 460;
+      ctx.fillStyle = 'rgba(255,255,255,0.06)';
+      roundRect(px, py, 210, 36, 18);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0, 242, 254, 0.35)';
+      ctx.stroke();
+      ctx.fillStyle = '#cbd5e1';
+      ctx.font = '700 11px sans-serif';
+      ctx.fillText(pl, px + 105, py + 22);
+    });
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '500 14px sans-serif';
+    ctx.fillText('Built in 3D Web Canvas. Educational visualization, not medical advice.', 640, 645);
+    ctx.restore();
+  }
+}
+
+// --- MAIN RENDER LOOP ---
+function renderBackground(t) {
+  const bgGrad = ctx.createRadialGradient(640, 360, 50, 640, 360, 780);
+  bgGrad.addColorStop(0, '#0c192c');
+  bgGrad.addColorStop(0.6, '#070d19');
+  bgGrad.addColorStop(1, '#03060c');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, 1280, 720);
+
+  // Subtle 3D drifting bokeh
+  const cam = { x: 0, y: 0, z: 0, rx: 0, ry: t * 0.04, dist: 600, fov: 700 };
+  bgStars.forEach(s => {
+    const pr = proj([s.x, s.y, s.z], cam);
+    if (pr) {
+      drawGlowSphere(pr.x, pr.y, s.r * pr.s, s.c, 'rgba(0, 180, 255, 0.1)', 0.35);
+    }
+  });
+}
+
+function renderProgressBar(t) {
+  const p = (t % window.DUR) / window.DUR;
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  ctx.fillRect(0, 715, 1280, 5);
+  const g = ctx.createLinearGradient(0, 0, 1280, 0);
+  g.addColorStop(0, '#00f2fe');
+  g.addColorStop(0.5, '#ff3366');
+  g.addColorStop(1, '#10b981');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 715, 1280 * p, 5);
+}
+
+function frame(now) {
+  if (startTime === null) startTime = now;
+  const elapsed = (now - startTime) / 1000 + startOffset;
+  const t = elapsed % window.DUR;
+
+  renderBackground(t);
+
+  if (t < 11) {
+    renderScene1(t);
+  } else if (t < 22) {
+    renderScene2(t);
+  } else if (t < 32) {
+    renderScene3(t);
+  } else if (t < 43) {
+    renderScene4(t);
+  } else {
+    renderScene5(t);
+  }
+
+  renderProgressBar(t);
+  requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

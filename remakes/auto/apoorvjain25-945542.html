@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>One Photon</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(100vw,177.78vh);height:min(56.25vw,100vh)}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=20;
+const c=document.getElementById('c'),x=c.getContext('2d'),W=1280,H=720;
+const q=new URLSearchParams(location.search),T0=parseFloat(q.get('t')||0)||0;
+let s=12345;const R=()=>(s=(s*16807)%2147483647)/2147483647;
+// random walk in core, drifting outward to escape
+const N=600,P=[];let wx=0,wy=0;
+for(let i=0;i<N;i++){const a=R()*6.283,l=18+R()*30;wx+=Math.cos(a)*l;wy+=Math.sin(a)*l;const f=i/(N-1);P.push([wx*(1-f*.6)+f*f*330*0.8,wy*(1-f*.6)-f*f*330*0.6]);}
+// clamp inside radius
+for(const p of P){const d=Math.hypot(p[0],p[1]),m=330;if(d>m){p[0]*=m/d;p[1]*=m/d;}}
+const stars=[];for(let i=0;i<300;i++)stars.push([R()*W,R()*H,R()*1.6,R()]);
+const ease=t=>t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2,cl=v=>Math.max(0,Math.min(1,v));
+function txt(t,X,Y,sz,col,al='center',w=700){x.font=w+' '+sz+'px Helvetica,Arial,sans-serif';x.textAlign=al;x.fillStyle=col;x.fillText(t,X,Y);}
+function glow(X,Y,r,col){const g=x.createRadialGradient(X,Y,0,X,Y,r);g.addColorStop(0,col);g.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=g;x.beginPath();x.arc(X,Y,r,0,7);x.fill();}
+function sceneSun(t){ // 0..9
+  const p=cl(t/8),k=Math.floor(Math.pow(p,1.6)*(N-1));
+  const shake=(1-p)*0+ (t>7.6?Math.sin(t*90)*4*cl((t-7.6)/.6):0);
+  x.save();x.translate(W/2+shake,H/2);
+  const z=1+0.15*Math.sin(t*.7);x.scale(z,z);
+  // plasma
+  for(let r=420;r>0;r-=14){const v=r/420;x.fillStyle=`rgb(${255},${Math.floor(220-v*150+20*Math.sin(r*.3+t*3))},${Math.floor(120-v*120)})`;
+    x.beginPath();for(let a=0;a<6.3;a+=.1){const rr=r+6*Math.sin(a*7+t*2+r*.05);x.lineTo(Math.cos(a)*rr,Math.sin(a)*rr);}x.fill();}
+  x.globalCompositeOperation='lighter';
+  x.lineWidth=2;x.strokeStyle='rgba(120,200,255,.55)';x.beginPath();
+  for(let i=Math.max(0,k-120);i<=k;i++)x.lineTo(P[i][0],P[i][1]);x.stroke();
+  for(let i=Math.max(0,k-8);i<=k;i++){const a=1-(k-i)/8;x.strokeStyle=`rgba(255,255,255,${a})`;x.beginPath();x.arc(P[i][0],P[i][1],(1-a)*40+3,0,7);x.stroke();}
+  glow(P[k][0],P[k][1],40,'rgba(200,240,255,1)');
+  x.globalCompositeOperation='source-over';x.restore();
+  const yrs=Math.floor(Math.pow(p,2.2)*170000);
+  x.fillStyle='rgba(0,0,0,.45)';x.fillRect(0,0,W,90);
+  txt('BORN IN THE CORE OF THE SUN',40,55,30,'#fff','left');
+  txt(yrs.toLocaleString('en-US')+' YEARS',W-40,55,38,'#9ef','right',800);
+  txt('bounce #'+(k*283).toLocaleString('en-US'),W-40,700,22,'#fff','right',400);
+  txt('absorbed · re-emitted · random direction',40,700,22,'#fff','left',400);
+  if(t>8){x.fillStyle=`rgba(255,255,255,${1-cl((t-8))})`;x.fillRect(0,0,W,H);}
+}
+function sceneSpace(t){ // 9..17
+  const p=cl((t-9.3)/7.2),sec=Math.floor(p*499);
+  const Y=380,X0=90,X1=1190,px=X0+(X1-X0)*p;
+  for(const st of stars){x.fillStyle=`rgba(255,255,255,${.3+.7*st[3]})`;x.fillRect((st[0]-p*400*st[3]+W*2)%W,st[1],st[2]+p*20*st[3],st[2]);}
+  glow(X0,Y,260,'rgba(255,180,60,.9)');x.fillStyle='#ffd27a';x.beginPath();x.arc(X0,Y,70,0,7);x.fill();
+  const pl=[['MERCURY',193,'3 min 13 s',8,'#bba'],['VENUS',361,'6 min 01 s',14,'#eca'],['EARTH',499,'8 min 19 s',16,'#4af']];
+  for(const [n,s2,lab,r,col] of pl){const X=X0+(X1-X0)*s2/499;x.fillStyle=col;x.beginPath();x.arc(X,Y,r,0,7);x.fill();
+    const pass=sec>=s2;txt(n,X,Y-50,20,pass?'#fff':'#777');
+    if(pass){const a=cl((p*499-s2)/30);txt(lab,X,Y+60,22,`rgba(158,238,255,${a})`);x.strokeStyle=`rgba(158,238,255,${1-a})`;x.lineWidth=3;x.beginPath();x.arc(X,Y,r+a*80,0,7);x.stroke();}}
+  x.strokeStyle='rgba(158,238,255,.8)';x.lineWidth=3;x.beginPath();x.moveTo(Math.max(X0,px-200),Y);x.lineTo(px,Y);x.stroke();
+  x.globalCompositeOperation='lighter';glow(px,Y,30,'rgba(220,250,255,1)');x.globalCompositeOperation='source-over';
+  txt('ESCAPED. NOW AT 299,792 km/s',40,60,30,'#fff','left');
+  txt(Math.floor(sec/60)+' min '+String(sec%60).padStart(2,'0')+' s',W-40,60,40,'#9ef','right',800);
+  if(t<9.6){x.fillStyle=`rgba(255,255,255,${1-cl((t-9)/.6)})`;x.fillRect(0,0,W,H);}
+}
+function sceneEye(t){ // 17..20
+  const p=cl((t-17)/2.4),cx=W/2,cy=H/2,z=.6+ease(p)*0.7;
+  x.save();x.translate(cx,cy);x.scale(z,z);
+  x.fillStyle='#eee8e0';x.beginPath();x.ellipse(0,0,560,250,0,0,7);x.fill();
+  const ir=200;x.save();x.beginPath();x.arc(0,0,ir,0,7);x.clip();
+  const g=x.createRadialGradient(0,0,40,0,0,ir);g.addColorStop(0,'#3a7');g.addColorStop(.6,'#1a5a7a');g.addColorStop(1,'#071a2a');x.fillStyle=g;x.fillRect(-ir,-ir,ir*2,ir*2);
+  s=777;for(let i=0;i<260;i++){const a=R()*6.283;x.strokeStyle=`rgba(${150+R()*100},${200+R()*55},255,.25)`;x.lineWidth=1+R()*2;x.beginPath();x.moveTo(Math.cos(a)*70,Math.sin(a)*70);x.lineTo(Math.cos(a+R()*.2)*ir,Math.sin(a)*ir);x.stroke();}
+  x.restore();
+  const pr=75-30*cl((p-.8)/.2);x.fillStyle='#000';x.beginPath();x.arc(0,0,pr,0,7);x.fill();
+  glow(-40,-50,40,'rgba(255,255,255,.8)');
+  // photon approaching
+  const a=ease(cl(p/.85)),phx=-700*(1-a),phy=-120*(1-a);
+  x.globalCompositeOperation='lighter';x.strokeStyle='rgba(158,238,255,.8)';x.lineWidth=3;x.beginPath();x.moveTo(phx-300,phy-50);x.lineTo(phx,phy);x.stroke();
+  glow(phx,phy,40,'rgba(220,250,255,1)');x.globalCompositeOperation='source-over';
+  x.restore();
+  x.fillStyle='rgba(0,0,0,.55)';x.fillRect(0,620,W,100);
+  txt('170,000 years in the dark. 8 min 19 s in the light.',W/2,668,30,'#fff');
+  txt('…and it ends in your pupil.',W/2,705,22,'#9ef','center',400);
+  if(p>=.85){x.fillStyle=`rgba(255,255,255,${(1-cl((t-19.05)/.9))*.9})`;x.fillRect(0,0,W,H);}
+}
+const st0=performance.now();
+function f(now){const t=((now-st0)/1000+T0)%DUR;x.fillStyle='#000';x.fillRect(0,0,W,H);
+  if(t<9)sceneSun(t);else if(t<17)sceneSpace(t);else sceneEye(t);
+  requestAnimationFrame(f);}
+requestAnimationFrame(f);
+</script></body></html>

@@ -1,0 +1,1265 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Tile Mosaic Ad - 30s Deterministic WebGL</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    user-select: none; -webkit-user-select: none;
+  }
+  #stage {
+    position: relative;
+    width: 1280px; height: 720px;
+    background: #111; overflow: hidden;
+    box-shadow: 0 0 40px rgba(0,0,0,0.9);
+  }
+  canvas {
+    position: absolute; top: 0; left: 0;
+    width: 1280px; height: 720px; display: block;
+  }
+  #ui { pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="gl" width="1280" height="720"></canvas>
+  <canvas id="ui" width="1280" height="720"></canvas>
+</div>
+<script>
+window.DUR = 30.0;
+
+// Fit 1280x720 stage to window
+function fitStage() {
+  const st = document.getElementById('stage');
+  const scale = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+  st.style.transform = `scale(${scale})`;
+  st.style.transformOrigin = 'center center';
+}
+window.addEventListener('resize', fitStage);
+fitStage();
+
+const TW = 576, TH = 324;
+
+// --- 1. Generate Procedural Reference Image & Dilated Background ---
+function createReferenceCanvases() {
+  const cBg = document.createElement('canvas');
+  cBg.width = TW; cBg.height = TH;
+  const ctx = cBg.getContext('2d');
+
+  // Rich warm twilight sky gradient
+  const sky = ctx.createLinearGradient(0, 0, 0, TH);
+  sky.addColorStop(0.0, '#102542');
+  sky.addColorStop(0.42, '#2d5a7b');
+  sky.addColorStop(0.75, '#d48c70');
+  sky.addColorStop(1.0, '#f4d090');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, TW, TH);
+
+  // Soft sun glow on left
+  const sun = ctx.createRadialGradient(TW * 0.25, TH * 0.55, 5, TW * 0.25, TH * 0.55, 190);
+  sun.addColorStop(0, 'rgba(255, 245, 200, 0.95)');
+  sun.addColorStop(0.4, 'rgba(255, 190, 110, 0.45)');
+  sun.addColorStop(1, 'rgba(255, 140, 80, 0)');
+  ctx.fillStyle = sun;
+  ctx.fillRect(0, 0, TW, TH);
+
+  // Distant mountains & architectural terrace
+  ctx.fillStyle = '#243b55';
+  ctx.beginPath();
+  ctx.moveTo(0, TH * 0.72);
+  ctx.lineTo(TW * 0.18, TH * 0.56);
+  ctx.lineTo(TW * 0.38, TH * 0.68);
+  ctx.lineTo(TW * 0.62, TH * 0.52);
+  ctx.lineTo(TW, TH * 0.66);
+  ctx.lineTo(TW, TH);
+  ctx.lineTo(0, TH);
+  ctx.fill();
+
+  // Warm bokeh dots in background
+  const bokeh = [
+    [90, 90, 24, 'rgba(255,220,150,0.22)'],
+    [160, 60, 18, 'rgba(255,230,180,0.28)'],
+    [70, 210, 32, 'rgba(255,180,120,0.20)'],
+    [250, 110, 22, 'rgba(255,240,190,0.18)'],
+    [520, 80, 28, 'rgba(255,210,160,0.22)']
+  ];
+  for (const [bx, by, br, bc] of bokeh) {
+    ctx.fillStyle = bc;
+    ctx.beginPath(); ctx.arc(bx, by, br, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // --- Illustrated Smiling Woman on the Right (Center around 0.64, 0.44) ---
+  const cx = TW * 0.65, cy = TH * 0.43;
+
+  // Back hair
+  ctx.fillStyle = '#1b131a';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + 25, 76, 105, -0.06, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Shoulders / Teal & Terracotta jacket over cream shirt
+  ctx.fillStyle = '#d95b43';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + 165, 115, 85, 0, Math.PI, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#fff5e8';
+  ctx.beginPath();
+  ctx.moveTo(cx - 38, cy + 82);
+  ctx.lineTo(cx + 38, cy + 82);
+  ctx.lineTo(cx, cy + 165);
+  ctx.closePath();
+  ctx.fill();
+
+  // Neck & shadow
+  ctx.fillStyle = '#e29e7e';
+  ctx.fillRect(cx - 17, cy + 40, 34, 52);
+  ctx.fillStyle = '#c87d5c';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy + 52, 18, 12, 0, 0, Math.PI);
+  ctx.fill();
+
+  // Face oval
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(-0.04);
+  ctx.fillStyle = '#fcd2b8';
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 50, 62, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Rosy cheeks
+  ctx.fillStyle = 'rgba(235, 105, 95, 0.45)';
+  ctx.beginPath(); ctx.arc(-27, 13, 14, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(25, 13, 14, 0, Math.PI * 2); ctx.fill();
+
+  // Eyebrows
+  ctx.strokeStyle = '#2a1b24';
+  ctx.lineWidth = 3.2;
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.arc(-20, -10, 14, Math.PI * 1.18, Math.PI * 1.82); ctx.stroke();
+  ctx.beginPath(); ctx.arc(20, -10, 14, Math.PI * 1.18, Math.PI * 1.82); ctx.stroke();
+
+  // Eyes (Origin point for the tile spiral!)
+  // White sclera
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.ellipse(-20, -4, 10.5, 6.8, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(20, -4, 10.5, 6.8, 0, 0, Math.PI * 2); ctx.fill();
+  // Dark iris
+  ctx.fillStyle = '#23151c';
+  ctx.beginPath(); ctx.arc(-19, -4, 5.8, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(19, -4, 5.8, 0, Math.PI * 2); ctx.fill();
+  // Bright eye catchlights
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.arc(-21, -6, 2.3, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(17, -6, 2.3, 0, Math.PI * 2); ctx.fill();
+  // Upper lash line
+  ctx.strokeStyle = '#180d14';
+  ctx.lineWidth = 2.8;
+  ctx.beginPath(); ctx.arc(-20, -3, 11, Math.PI * 1.12, Math.PI * 1.88); ctx.stroke();
+  ctx.beginPath(); ctx.arc(20, -3, 11, Math.PI * 1.12, Math.PI * 1.88); ctx.stroke();
+
+  // Nose highlight & shadow
+  ctx.strokeStyle = '#d99b7e';
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.moveTo(-1, -4);
+  ctx.lineTo(-4, 11);
+  ctx.lineTo(2, 13);
+  ctx.stroke();
+
+  // Bright expressive smile
+  ctx.fillStyle = '#c83e4b';
+  ctx.beginPath();
+  ctx.arc(0, 21, 18, 0.08, Math.PI - 0.08, false);
+  ctx.closePath();
+  ctx.fill();
+  // White teeth
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.arc(0, 21, 14, 0.18, Math.PI - 0.18, false);
+  ctx.closePath();
+  ctx.fill();
+
+  // Front sweeping bangs
+  ctx.fillStyle = '#1f161e';
+  ctx.beginPath();
+  ctx.moveTo(-54, -12);
+  ctx.quadraticCurveTo(-20, -45, 18, -20);
+  ctx.quadraticCurveTo(45, -35, 55, -5);
+  ctx.quadraticCurveTo(50, -68, 0, -68);
+  ctx.quadraticCurveTo(-52, -68, -54, -12);
+  ctx.fill();
+
+  // Hair gloss band
+  ctx.strokeStyle = '#48384a';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(0, -24, 42, Math.PI * 1.15, Math.PI * 1.75);
+  ctx.stroke();
+
+  // Pearl earring on right side
+  ctx.fillStyle = '#fffef8';
+  ctx.beginPath();
+  ctx.arc(52, 16, 5.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // --- Copy cBg to cFinal and draw Ad Typography / Logo / CTA Button ---
+  const cFinal = document.createElement('canvas');
+  cFinal.width = TW; cFinal.height = TH;
+  const fctx = cFinal.getContext('2d');
+  fctx.drawImage(cBg, 0, 0);
+
+  // Helper for roundRect
+  function rRect(context, x, y, w, h, r) {
+    context.beginPath();
+    context.moveTo(x + r, y);
+    context.arcTo(x + w, y, x + w, y + h, r);
+    context.arcTo(x + w, y + h, x, y + h, r);
+    context.arcTo(x, y + h, x, y, r);
+    context.arcTo(x, y, x + w, y, r);
+    context.closePath();
+  }
+
+  // Brand Emblem + Name (Top Left)
+  fctx.lineJoin = 'round';
+  fctx.lineCap = 'round';
+
+  // White outline around emblem
+  fctx.fillStyle = '#ffffff';
+  rRect(fctx, 32, 29, 34, 34, 7); fctx.fill();
+  fctx.fillStyle = '#e04836';
+  rRect(fctx, 35, 32, 28, 28, 5); fctx.fill();
+  fctx.fillStyle = '#ffd166';
+  rRect(fctx, 41, 38, 16, 16, 2); fctx.fill();
+
+  const fontStack = '900 22px "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif';
+  fctx.font = fontStack;
+  fctx.strokeStyle = '#ffffff';
+  fctx.lineWidth = 7;
+  fctx.strokeText('KRAFTSCAPE', 76, 54);
+  fctx.fillStyle = '#182432';
+  fctx.fillText('KRAFTSCAPE', 76, 54);
+
+  // Main Headline Copy (Large & Bold so it is 100% legible in 576x324 tile grid)
+  fctx.font = '900 44px "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif';
+  fctx.strokeStyle = '#ffffff';
+  fctx.lineWidth = 11;
+  fctx.strokeText('暮らしを彩る', 34, 124);
+  fctx.fillStyle = '#142030';
+  fctx.fillText('暮らしを彩る', 34, 124);
+
+  fctx.strokeText('クラフトタイル', 30, 178);
+  fctx.fillStyle = '#c83228';
+  fctx.fillText('クラフトタイル', 30, 178);
+
+  // Subtitle
+  fctx.font = '900 21px "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif';
+  fctx.lineWidth = 7;
+  fctx.strokeStyle = '#ffffff';
+  fctx.strokeText('19万枚の輝きで作る空間', 36, 215);
+  fctx.fillStyle = '#1d2d44';
+  fctx.fillText('1d2d44' ? '#1d2d44' : '#000', 36, 215);
+
+  // CTA Button [ 無料体験はこちら ]
+  // Button bounds in 576x324: x=[34..306], y=[238..298]
+  fctx.fillStyle = '#ffffff';
+  rRect(fctx, 31, 235, 278, 66, 33);
+  fctx.fill();
+
+  const btnGrad = fctx.createLinearGradient(35, 239, 35, 297);
+  btnGrad.addColorStop(0, '#ff6242');
+  btnGrad.addColorStop(1, '#d82e20');
+  fctx.fillStyle = btnGrad;
+  rRect(fctx, 35, 239, 270, 58, 29);
+  fctx.fill();
+
+  fctx.font = '900 26px "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif';
+  fctx.fillStyle = '#ffffff';
+  fctx.fillText('無料体験はこちら ▸', 54, 277);
+
+  // --- Compute Mask & Inward Background Dilation (Crucial Spec Requirement) ---
+  // Any pixel that differs between cFinal and cBg (including white outlines!) is marked as mask=255.
+  // For masked pixels, we dilate surrounding unmasked background colors inward so there is zero silhouette leak before 24s.
+  const bgData = ctx.getImageData(0, 0, TW, TH);
+  const fnData = fctx.getImageData(0, 0, TW, TH);
+  const bPix = bgData.data;
+  const fPix = fnData.data;
+
+  const mask = new Uint8Array(TW * TH);
+  const filled = new Uint8Array(TW * TH);
+  for (let i = 0; i < TW * TH; i++) {
+    const idx = i * 4;
+    const diff = Math.abs(bPix[idx] - fPix[idx]) +
+                 Math.abs(bPix[idx + 1] - fPix[idx + 1]) +
+                 Math.abs(bPix[idx + 2] - fPix[idx + 2]);
+    if (diff > 6) {
+      mask[i] = 255;
+      filled[i] = 0;
+    } else {
+      mask[i] = 0;
+      filled[i] = 1;
+    }
+  }
+
+  // Multi-pass inward dilation from outside of text/button into the mask interior
+  const tempPix = new Uint8ClampedArray(bPix);
+  for (let pass = 0; pass < 45; pass++) {
+    let changed = 0;
+    for (let y = 0; y < TH; y++) {
+      for (let x = 0; x < TW; x++) {
+        const i = y * TW + x;
+        if (filled[i]) continue;
+        let sr = 0, sg = 0, sb = 0, cnt = 0;
+        if (x > 0 && filled[i - 1]) { const k = (i - 1) * 4; sr += bPix[k]; sg += bPix[k+1]; sb += bPix[k+2]; cnt++; }
+        if (x < TW - 1 && filled[i + 1]) { const k = (i + 1) * 4; sr += bPix[k]; sg += bPix[k+1]; sb += bPix[k+2]; cnt++; }
+        if (y > 0 && filled[i - TW]) { const k = (i - TW) * 4; sr += bPix[k]; sg += bPix[k+1]; sb += bPix[k+2]; cnt++; }
+        if (y < TH - 1 && filled[i + TW]) { const k = (i + TW) * 4; sr += bPix[k]; sg += bPix[k+1]; sb += bPix[k+2]; cnt++; }
+        if (cnt > 0) {
+          const idx = i * 4;
+          tempPix[idx] = (sr / cnt) | 0;
+          tempPix[idx + 1] = (sg / cnt) | 0;
+          tempPix[idx + 2] = (sb / cnt) | 0;
+          filled[i] = 2;
+          changed++;
+        }
+      }
+    }
+    for (let i = 0; i < TW * TH; i++) {
+      if (filled[i] === 2) {
+        filled[i] = 1;
+        const idx = i * 4;
+        bPix[idx] = tempPix[idx];
+        bPix[idx + 1] = tempPix[idx + 1];
+        bPix[idx + 2] = tempPix[idx + 2];
+      }
+    }
+    if (!changed) break;
+  }
+
+  // Pack mask into alpha channel of finalData, and Button flag into alpha channel of bgData
+  for (let y = 0; y < TH; y++) {
+    for (let x = 0; x < TW; x++) {
+      const i = y * TW + x;
+      const idx = i * 4;
+      fPix[idx + 3] = mask[i];
+      // Button region in texture space: x in [31..309], y in [235..301]
+      const isBtn = (x >= 31 && x <= 309 && y >= 235 && y <= 301) ? 255 : 0;
+      bPix[idx + 3] = isBtn;
+    }
+  }
+
+  return { bgPixels: bPix, finalPixels: fPix, cFinal };
+}
+
+// --- 2. WebGL2 Setup & Shaders (576x324 = 186,624 Individual Tile Instances + Circular Bokeh DoF) ---
+const glCanvas = document.getElementById('gl');
+const gl = glCanvas.getContext('webgl2', { preserveDrawingBuffer: true, antialias: false });
+
+const { bgPixels, finalPixels, cFinal } = createReferenceCanvases();
+
+function compileShader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    console.error(gl.getShaderInfoLog(s));
+  }
+  return s;
+}
+function createProgram(vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compileShader(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compileShader(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+    console.error(gl.getProgramInfoLog(p));
+  }
+  return p;
+}
+
+// --- Floor Shader (Plaster Stucco + Red Carpenter's Chalk Lines + Dynamic Dark Grout Bed) ---
+const floorVS = `#version 300 es
+precision highp float;
+layout(location=0) in vec2 aPos;
+uniform mat4 uViewProj;
+out vec3 vWorldPos;
+void main() {
+  vWorldPos = vec3(aPos.x, 0.0, aPos.y);
+  gl_Position = uViewProj * vec4(vWorldPos, 1.0);
+}`;
+
+const floorFS = `#version 300 es
+precision highp float;
+in vec3 vWorldPos;
+uniform float uTime;
+uniform vec2 uStartCenter;
+out vec4 fragColor;
+
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1,0)), f.x),
+             mix(hash(i + vec2(0,1)), hash(i + vec2(1,1)), f.x), f.y);
+}
+
+float getDropTime(vec2 uv) {
+  vec2 aspect = vec2(16.0, 9.0);
+  vec2 d = (uv - uStartCenter) * aspect;
+  float r = length(d);
+  if (r < 0.018) return 0.2;
+  float ang = atan(d.y, d.x);
+  float spiral = fract((ang / 6.2831853) - r * 2.2);
+  float h = hash(floor(uv * vec2(576.0, 324.0)));
+  if (r < 1.85) {
+    float normR = r / 1.85;
+    return 3.0 + pow(normR, 0.88) * 6.3 + spiral * 0.48 + h * 0.18;
+  } else {
+    float normR = clamp((r - 1.85) / 10.8, 0.0, 1.0);
+    return 10.0 + pow(normR, 0.82) * 9.8 + spiral * 0.65 + h * 0.35;
+  }
+}
+
+void main() {
+  vec2 wp = vWorldPos.xz;
+  // Stucco plaster procedural texture
+  float n1 = noise(wp * 4.5);
+  float n2 = noise(wp * 22.0);
+  float n3 = noise(wp * 95.0);
+  vec3 plaster = vec3(0.84, 0.81, 0.76) * (0.88 + 0.10 * n1 + 0.05 * n2 + 0.03 * n3);
+
+  // Carpenter's red chalk snap lines in background & alignment axes
+  vec2 startW = (uStartCenter - 0.5) * vec2(16.0, 9.0);
+  float chalk1 = smoothstep(0.035, 0.0, abs(wp.y - startW.y - 0.65));
+  float chalk2 = smoothstep(0.035, 0.0, abs(wp.x - startW.x + 0.85));
+  float chalk3 = smoothstep(0.045, 0.0, abs((wp.x - startW.x)*0.55 + (wp.y - startW.y) - 1.8));
+  float chalkNoise = smoothstep(0.2, 0.85, n2 * 0.7 + n3 * 0.5);
+  float chalkMask = clamp((chalk1 + chalk2 + chalk3 * 0.8) * chalkNoise, 0.0, 1.0);
+  plaster = mix(plaster, vec3(0.76, 0.16, 0.13), chalkMask * 0.85);
+
+  // Check if a tile has landed on this grid cell (Spec: Dark bed appears ONLY on cells where tiles have landed)
+  vec2 uv = wp / vec2(16.0, 9.0) + 0.5;
+  if (uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0) {
+    vec2 cellUV = (floor(uv * vec2(576.0, 324.0)) + 0.5) / vec2(576.0, 324.0);
+    float tLand = getDropTime(cellUV) + 0.62;
+    float landed = smoothstep(tLand - 0.08, tLand + 0.05, uTime);
+    vec3 darkBed = vec3(0.07, 0.075, 0.085) * (0.9 + 0.1 * n3);
+    plaster = mix(plaster, darkBed, landed);
+  }
+
+  // Sun vignette & directional lighting
+  vec3 lightDir = normalize(vec3(-0.55, 1.35, -0.45));
+  float diff = clamp(dot(vec3(0.0, 1.0, 0.0), lightDir), 0.0, 1.0);
+  vec3 col = plaster * (0.35 + 0.75 * diff);
+
+  float depth = clamp(gl_FragCoord.z / gl_FragCoord.w, 0.5, 40.0);
+  fragColor = vec4(col, depth);
+}`;
+
+// --- Instanced Tile Shader (576x324 = 186,624 Individual 3D Beveled Tiles, 12 Materials) ---
+const tileVS = `#version 300 es
+precision highp float;
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aNorm;
+
+uniform mat4 uViewProj;
+uniform float uTime;
+uniform vec2 uStartCenter;
+uniform sampler2D uTexBg;
+uniform sampler2D uTexFinal;
+
+out vec3 vWorldPos;
+out vec3 vNormal;
+out vec3 vBaseColor;
+out vec2 vTileLocal;
+out float vMatID;
+out float vFlipMix;
+
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+
+float getDropTime(vec2 uv, float h) {
+  vec2 aspect = vec2(16.0, 9.0);
+  vec2 d = (uv - uStartCenter) * aspect;
+  float r = length(d);
+  if (r < 0.018) return 0.2;
+  float ang = atan(d.y, d.x);
+  float spiral = fract((ang / 6.2831853) - r * 2.2);
+  if (r < 1.85) {
+    float normR = r / 1.85;
+    return 3.0 + pow(normR, 0.88) * 6.3 + spiral * 0.48 + h * 0.18;
+  } else {
+    float normR = clamp((r - 1.85) / 10.8, 0.0, 1.0);
+    return 10.0 + pow(normR, 0.82) * 9.8 + spiral * 0.65 + h * 0.35;
+  }
+}
+
+mat3 rotAxisAngle(vec3 axis, float angle) {
+  float s = sin(angle), c = cos(angle), oc = 1.0 - c;
+  return mat3(
+    oc*axis.x*axis.x + c,        oc*axis.x*axis.y - axis.z*s, oc*axis.z*axis.x + axis.y*s,
+    oc*axis.x*axis.y + axis.z*s, oc*axis.y*axis.y + c,        oc*axis.y*axis.z - axis.x*s,
+    oc*axis.z*axis.x - axis.y*s, oc*axis.y*axis.z + axis.x*s, oc*axis.z*axis.z + c
+  );
+}
+
+// Classify color into 12 distinct physical tile materials by luminance & saturation
+float classifyMaterial(vec3 c, float h) {
+  float maxC = max(c.r, max(c.g, c.b));
+  float minC = min(c.r, min(c.g, c.b));
+  float lum = dot(c, vec3(0.299, 0.587, 0.114));
+  float sat = (maxC > 0.001) ? (maxC - minC) / maxC : 0.0;
+
+  if (lum > 0.86 && sat < 0.18) return 0.0; // 0: White Porcelain (白磁)
+  if (lum > 0.72 && sat < 0.32) return 1.0; // 1: Mother of Pearl (真珠貝)
+  if (lum < 0.20) return 2.0;               // 2: Dark Basalt Slate (黒スレート)
+  if (lum < 0.36 && sat < 0.38) return 3.0; // 3: Riven Slate (天然スレート)
+  if (c.r > c.g * 1.25 && c.g >= c.b && sat > 0.38) {
+    return (lum > 0.52) ? 4.0 : 5.0;        // 4: Glazed Red Ceramic, 5: Raw Terracotta (テラコッタ)
+  }
+  if (c.b > c.r * 1.12) {
+    return (sat > 0.42) ? 6.0 : 7.0;        // 6: Cobalt Art Glass (琉球ガラス), 7: Celadon Glaze (青磁)
+  }
+  if (sat > 0.52 && lum > 0.58) return 8.0; // 8: Amber Lustre Glaze (飴釉)
+  if (sat < 0.25) return 9.0;               // 9: Honed Travertine Marble (大理石)
+  return (h > 0.5) ? 10.0 : 11.0;           // 10: Satin Earthenware, 11: Handcrafted Enamel
+}
+
+void main() {
+  int id = gl_InstanceID;
+  int gx = id % 576;
+  int gy = id / 576;
+  vec2 uv = (vec2(float(gx), float(gy)) + 0.5) / vec2(576.0, 324.0);
+
+  float h1 = hash(vec2(float(gx), float(gy)));
+  float h2 = hash(vec2(float(gy) + 17.0, float(gx) + 43.0));
+  float tDrop = getDropTime(uv, h1);
+
+  float dt = uTime - tDrop;
+  if (dt < 0.0) {
+    gl_Position = vec4(2.0, 2.0, 2.0, 0.0);
+    return;
+  }
+
+  float dur = 0.62;
+  float p = clamp(dt / dur, 0.0, 1.0);
+  float ease = 1.0 - pow(1.0 - p, 3.0);
+
+  // Sample dilated background color vs final advertisement color
+  vec4 bgSample = texelFetch(uTexBg, ivec2(gx, gy), 0);
+  vec4 fnSample = texelFetch(uTexFinal, ivec2(gx, gy), 0);
+  float isMasked = step(0.5, fnSample.a);
+  float isButton = step(0.5, bgSample.a);
+
+  // 24s - 26s: Masked tiles (text, logo, button, and their white outlines) flip left-to-right!
+  float flipAngle = 0.0;
+  float flipLift = 0.0;
+  float colorSwitch = 0.0;
+  if (isMasked > 0.5) {
+    float tFlipStart = 24.0 + uv.x * 1.35 + (h1 - 0.5) * 0.08;
+    float fp = clamp((uTime - tFlipStart) / 0.48, 0.0, 1.0);
+    float sfp = fp * fp * (3.0 - 2.0 * fp);
+    flipAngle = sfp * 3.14159265;
+    flipLift = sin(sfp * 3.14159265) * 0.14;
+    colorSwitch = step(0.5, sfp);
+  }
+
+  // 27.6s+: Mouse click depresses the CTA button tiles
+  float pressOffset = 0.0;
+  if (isButton > 0.5 && uTime > 27.55) {
+    float cp = clamp((uTime - 27.55) / 0.12, 0.0, 1.0);
+    float cr = clamp((uTime - 28.05) / 0.30, 0.0, 1.0);
+    float pressCurve = sin(cp * 1.570796) * (1.0 - 0.35 * sin(cr * 1.570796));
+    pressOffset = -0.011 * pressCurve;
+  }
+
+  // Per-tile variations in thickness, micro-position, and resting tilt
+  float cellW = 16.0 / 576.0;
+  float cellH = 9.0 / 324.0;
+  // Flatten micro-variations slightly at very end so typography is razor sharp
+  float flatMix = smoothstep(23.5, 26.2, uTime);
+  float thickScale = mix(0.75 + 0.65 * h1, 1.0, flatMix * 0.5);
+
+  vec3 localPos = aPos;
+  // Keep bottom at 0, scale height
+  localPos.y *= thickScale;
+  // Flip around tile center so top and bottom stay flush
+  if (flipAngle > 0.0) {
+    float cy = 0.5 * 0.016 * thickScale;
+    localPos.y -= cy;
+    float ca = cos(flipAngle), sa = sin(flipAngle);
+    localPos = vec3(localPos.x * ca + localPos.y * sa, -localPos.x * sa + localPos.y * ca, localPos.z);
+    localPos.y += cy;
+  }
+
+  vec3 norm = aNorm;
+  if (flipAngle > 0.0) {
+    float ca = cos(flipAngle), sa = sin(flipAngle);
+    norm = vec3(norm.x * ca + norm.y * sa, -norm.x * sa + norm.y * ca, norm.z);
+    if (colorSwitch > 0.5) norm = -norm; // Invert normal when flipped upside down
+  }
+
+  // Spiral fall trajectory
+  vec2 baseXZ = (uv - 0.5) * vec2(16.0, 9.0);
+  vec2 jitterXZ = (vec2(h1, h2) - 0.5) * 0.0018 * (1.0 - flatMix * 0.6);
+  float fallSpin = (1.0 - ease) * (3.5 + h1 * 4.0);
+  vec2 spiralXZ = vec2(cos(fallSpin), sin(fallSpin)) * (1.0 - ease) * 0.32;
+  float dropY = pow(1.0 - ease, 2.15) * (1.35 + h2 * 0.7);
+  // Subtle bounce on impact
+  float bounce = sin(p * 3.14159265 * 2.0) * exp(-p * 6.0) * 0.018 * (1.0 - step(0.99, p));
+
+  // Resting micro-tilt + falling tumble rotation
+  vec3 restAxis = normalize(vec3(h1 - 0.5, 0.2, h2 - 0.5));
+  float restAng = (h1 - 0.5) * 0.075 * (1.0 - flatMix * 0.7);
+  vec3 tumbleAxis = normalize(vec3(h2 - 0.3, 0.6, h1 - 0.5));
+  float tumbleAng = (1.0 - ease) * 5.5;
+
+  mat3 R = rotAxisAngle(tumbleAxis, tumbleAng) * rotAxisAngle(restAxis, restAng);
+  vec3 rPos = R * localPos;
+  vec3 rNorm = normalize(R * norm);
+
+  vec3 worldPos = vec3(
+    baseXZ.x + jitterXZ.x + spiralXZ.x + rPos.x,
+    dropY + bounce + flipLift + pressOffset + rPos.y,
+    baseXZ.y + jitterXZ.y + spiralXZ.y + rPos.z
+  );
+
+  // Choose base color (First solitary tile at 0..3s is dark slate, warming into eye iris at 3s)
+  vec3 rawCol = mix(bgSample.rgb, fnSample.rgb, colorSwitch);
+  if (tDrop < 0.5) {
+    float w = smoothstep(2.6, 3.8, uTime);
+    rawCol = mix(vec3(0.11, 0.12, 0.15), rawCol, w);
+  }
+  // Per-tile subtle hue/value variation
+  float colVar = (h2 - 0.5) * 0.045 * (1.0 - flatMix * 0.45);
+  vBaseColor = clamp(rawCol + colVar, 0.0, 1.0);
+  vMatID = classifyMaterial(vBaseColor, h1);
+  vWorldPos = worldPos;
+  vNormal = rNorm;
+  vTileLocal = aPos.xz / vec2(cellW, cellH);
+  vFlipMix = sin(clamp(flipAngle, 0.0, 3.14159));
+
+  gl_Position = uViewProj * vec4(worldPos, 1.0);
+}`;
+
+const tileFS = `#version 300 es
+precision highp float;
+in vec3 vWorldPos;
+in vec3 vNormal;
+in vec3 vBaseColor;
+in vec2 vTileLocal;
+in float vMatID;
+in float vFlipMix;
+
+uniform vec3 uCamPos;
+uniform float uTime;
+out vec4 fragColor;
+
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+
+void main() {
+  vec3 N = normalize(vNormal);
+  vec3 V = normalize(uCamPos - vWorldPos);
+  // Single hard sun light from top-left
+  vec3 L = normalize(vec3(-0.48, 1.45, -0.42));
+  vec3 H = normalize(L + V);
+
+  // Material properties across the 12 tile types
+  float roughness = 0.25;
+  float specStrength = 0.55;
+  vec3 iridTint = vec3(1.0);
+  float grainAmt = 0.02;
+
+  int m = int(vMatID + 0.5);
+  if (m == 0) { roughness = 0.08; specStrength = 0.95; grainAmt = 0.005; } // White Porcelain
+  else if (m == 1) { // Mother of Pearl iridescence
+    roughness = 0.14; specStrength = 0.85;
+    float ndv = clamp(dot(N, V), 0.0, 1.0);
+    iridTint = 0.92 + 0.12 * cos(6.28318 * (ndv * 2.2 + vec3(0.0, 0.33, 0.67)));
+  }
+  else if (m == 2 || m == 3) { roughness = 0.65; specStrength = 0.22; grainAmt = 0.06; } // Slate
+  else if (m == 4) { roughness = 0.11; specStrength = 0.88; } // Glazed Red Ceramic
+  else if (m == 5) { roughness = 0.78; specStrength = 0.12; grainAmt = 0.07; } // Raw Terracotta
+  else if (m == 6) { roughness = 0.06; specStrength = 1.10; } // Cobalt Art Glass
+  else if (m == 7) { roughness = 0.15; specStrength = 0.78; } // Celadon Glaze
+  else if (m == 8) { roughness = 0.12; specStrength = 0.92; } // Amber Lustre
+
+  // Micro surface grain
+  float g = (hash(floor(vWorldPos.xz * 420.0)) - 0.5) * grainAmt;
+  vec3 albedo = clamp(vBaseColor * iridTint + g, 0.0, 1.0);
+
+  // Bevel edge catchlight
+  float bevelFactor = clamp(1.0 - N.y, 0.0, 1.0);
+  float diff = max(dot(N, L), 0.0);
+  float shininess = mix(128.0, 8.0, roughness);
+  float spec = pow(max(dot(N, H), 0.0), shininess) * specStrength;
+
+  // Extra glint when flipping between 24s-26s
+  spec += vFlipMix * 0.45 * pow(max(dot(N, V), 0.0), 8.0);
+
+  // Calibrate final color match at end frame so attached reference image colors read accurately
+  float endCalib = smoothstep(22.0, 26.5, uTime);
+  float ambient = mix(0.36, 0.62, endCalib);
+  float sunWeight = mix(0.74, 0.44, endCalib);
+
+  vec3 lit = albedo * (ambient + sunWeight * diff) + vec3(1.0, 0.97, 0.90) * spec * (1.0 - endCalib * 0.45);
+  lit += vec3(0.18, 0.16, 0.14) * bevelFactor * (0.4 + 0.6 * diff);
+
+  // Slight ambient occlusion in the recessed mortar gap around each tile's base
+  float edgeDist = max(abs(vTileLocal.x), abs(vTileLocal.y));
+  float edgeAO = smoothstep(0.49, 0.41, edgeDist);
+  lit *= (0.78 + 0.22 * edgeAO);
+
+  float depth = clamp(gl_FragCoord.z / gl_FragCoord.w, 0.5, 40.0);
+  fragColor = vec4(lit, depth);
+}`;
+
+// --- Post-Processing Custom Circular Bokeh Depth-of-Field + Color Match Shader ---
+const postVS = `#version 300 es
+precision highp float;
+layout(location=0) in vec2 aPos;
+out vec2 vUV;
+void main() {
+  vUV = aPos * 0.5 + 0.5;
+  gl_Position = vec4(aPos, 0.0, 1.0);
+}`;
+
+const postFS = `#version 300 es
+precision highp float;
+in vec2 vUV;
+uniform sampler2D uColorDepth;
+uniform float uFocusDist;
+uniform float uAperture;
+uniform float uTime;
+out vec4 fragColor;
+
+// 24-tap Golden-Angle Vogel Disk for authentic Circular Bokeh
+const int SAMPLES = 24;
+
+void main() {
+  vec2 texel = 1.0 / vec2(1280.0, 720.0);
+  vec4 center = texture(uColorDepth, vUV);
+  float centerDepth = center.a;
+
+  float coc = clamp(abs(centerDepth - uFocusDist) / uFocusDist * uAperture, 0.0, 18.0);
+
+  vec3 acc = center.rgb;
+  float totalW = 1.0;
+
+  if (coc > 0.35) {
+    for (int i = 1; i <= SAMPLES; i++) {
+      float fi = float(i);
+      float r = sqrt(fi / float(SAMPLES)) * coc;
+      float theta = fi * 2.39996323; // Golden angle
+      vec2 offset = vec2(cos(theta), sin(theta)) * r * texel;
+      vec4 samp = texture(uColorDepth, clamp(vUV + offset, 0.001, 0.999));
+      float sampCoc = clamp(abs(samp.a - uFocusDist) / uFocusDist * uAperture, 0.0, 18.0);
+      // Circular bokeh highlight boost
+      float luma = dot(samp.rgb, vec3(0.299, 0.587, 0.114));
+      float bokehBoost = 1.0 + smoothstep(0.65, 1.0, luma) * 1.4 * clamp(coc / 10.0, 0.0, 1.0);
+      float w = (samp.a >= centerDepth - 0.15) ? bokehBoost : clamp(sampCoc / max(coc, 0.001), 0.1, 1.0);
+      acc += samp.rgb * w;
+      totalW += w;
+    }
+    acc /= totalW;
+  }
+
+  // Final exposure, saturation, and contrast calibration
+  vec3 col = acc;
+  float endBlend = smoothstep(23.0, 26.5, uTime);
+  // Warm cinematic grade during macro, calibrated true-to-reference grade at end
+  float luma = dot(col, vec3(0.299, 0.587, 0.114));
+  col = mix(vec3(luma), col, mix(1.12, 1.18, endBlend));
+  col = pow(clamp(col * mix(1.04, 1.06, endBlend), 0.0, 1.0), vec3(0.95));
+
+  fragColor = vec4(col, 1.0);
+}`;
+
+const progFloor = createProgram(floorVS, floorFS);
+const progTile  = createProgram(tileVS, tileFS);
+const progPost  = createProgram(postVS, postFS);
+
+// --- 3. Geometry & Textures ---
+function createDataTexture(pixels) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, TW, TH, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  return tex;
+}
+const texBg = createDataTexture(bgPixels);
+const texFinal = createDataTexture(finalPixels);
+
+// Floor Quad VAO
+const floorVAO = gl.createVertexArray();
+gl.bindVertexArray(floorVAO);
+const floorBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, floorBuf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-35, -35, 35, -35, -35, 35, 35, 35]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+// Post Quad VAO
+const postVAO = gl.createVertexArray();
+gl.bindVertexArray(postVAO);
+const postBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, postBuf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+// 3D Beveled Tile Mesh (10 vertices, 16 triangles = 48 indices, open bottom)
+const tileVAO = gl.createVertexArray();
+gl.bindVertexArray(tileVAO);
+{
+  const cellW = 16.0 / TW;
+  const cellH = 9.0 / TH;
+  // Leave physical mortar gap (empty space, no drawn grid lines!)
+  const bx = cellW * 0.435;
+  const bz = cellH * 0.435;
+  const tx = cellW * 0.375;
+  const tz = cellH * 0.375;
+  const hMid = 0.012;
+  const hTop = 0.0165;
+
+  // Positions (x,y,z) + Normals (nx,ny,nz)
+  const verts = new Float32Array([
+    // 0..3: Base perimeter
+    -bx, 0, -bz,  -0.7, 0.2, -0.7,
+     bx, 0, -bz,   0.7, 0.2, -0.7,
+     bx, 0,  bz,   0.7, 0.2,  0.7,
+    -bx, 0,  bz,  -0.7, 0.2,  0.7,
+    // 4..7: Bevel shoulder
+    -bx, hMid, -bz,  -0.65, 0.45, -0.65,
+     bx, hMid, -bz,   0.65, 0.45, -0.65,
+     bx, hMid,  bz,   0.65, 0.45,  0.65,
+    -bx, hMid,  bz,  -0.65, 0.45,  0.65,
+    // 8..11: Top flat crown
+    -tx, hTop, -tz,  -0.12, 0.98, -0.12,
+     tx, hTop, -tz,   0.12, 0.98, -0.12,
+     tx, hTop,  tz,   0.12, 0.98,  0.12,
+    -tx, hTop,  tz,  -0.12, 0.98,  0.12
+  ]);
+
+  const indices = new Uint16Array([
+    // Lower walls
+    0,1,5, 0,5,4,  1,2,6, 1,6,5,  2,3,7, 2,7,6,  3,0,4, 3,4,7,
+    // Bevel chamfers
+    4,5,9, 4,9,8,  5,6,10, 5,10,9,  6,7,11, 6,11,10,  7,4,8, 7,8,11,
+    // Top face
+    8,9,10, 8,10,11
+  ]);
+
+  const vbo = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+  gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 24, 0);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 24, 12);
+
+  const ibo = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+}
+
+// --- Offscreen Float Framebuffer for Depth-of-Field Post-Process ---
+gl.getExtension('EXT_color_buffer_float');
+const fbo = gl.createFramebuffer();
+gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+
+const fboTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, fboTex);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, 1280, 720, 0, gl.RGBA, gl.HALF_FLOAT, null);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, fboTex, 0);
+
+const depthRb = gl.createRenderbuffer();
+gl.bindRenderbuffer(gl.RENDERBUFFER, depthRb);
+gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, 1280, 720);
+gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depthRb);
+gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+// --- 4. Matrix & Monotone Hermite Camera Math (Zero Overshoot, Safe Top-Down Up Vector) ---
+function mat4Perspective(fovRad, aspect, near, far) {
+  const f = 1.0 / Math.tan(fovRad / 2);
+  const nf = 1 / (near - far);
+  return new Float32Array([
+    f / aspect, 0, 0, 0,
+    0, f, 0, 0,
+    0, 0, (far + near) * nf, -1,
+    0, 0, (2 * far * near) * nf, 0
+  ]);
+}
+
+function mat4LookAt(eye, target, up) {
+  let zx = eye[0] - target[0], zy = eye[1] - target[1], zz = eye[2] - target[2];
+  let len = Math.hypot(zx, zy, zz) || 1;
+  zx /= len; zy /= len; zz /= len;
+
+  let xx = up[1] * zz - up[2] * zy;
+  let xy = up[2] * zx - up[0] * zz;
+  let xz = up[0] * zy - up[1] * zx;
+  len = Math.hypot(xx, xy, xz) || 1;
+  xx /= len; xy /= len; xz /= len;
+
+  const yx = zy * xz - zz * xy;
+  const yy = zz * xx - zx * xz;
+  const yz = zx * xy - zy * xx;
+
+  return new Float32Array([
+    xx, yx, zx, 0,
+    xy, yy, zy, 0,
+    xz, yz, zz, 0,
+    -(xx * eye[0] + xy * eye[1] + xz * eye[2]),
+    -(yx * eye[0] + yy * eye[1] + yz * eye[2]),
+    -(zx * eye[0] + zy * eye[1] + zz * eye[2]),
+    1
+  ]);
+}
+
+function mat4Mul(a, b) {
+  const out = new Float32Array(16);
+  for (let i = 0; i < 4; i++) {
+    for (let j = 0; j < 4; j++) {
+      out[j * 4 + i] =
+        a[0 * 4 + i] * b[j * 4 + 0] +
+        a[1 * 4 + i] * b[j * 4 + 1] +
+        a[2 * 4 + i] * b[j * 4 + 2] +
+        a[3 * 4 + i] * b[j * 4 + 3];
+    }
+  }
+  return out;
+}
+
+function smootherstep(a, b, t) {
+  const x = Math.max(0, Math.min(1, (t - a) / (b - a)));
+  return x * x * x * (x * (x * 6 - 15) + 10);
+}
+
+// Starting point of the tile mosaic: Woman's right eye
+const START_UV = [0.618, 0.415];
+const START_WORLD = [(START_UV[0] - 0.5) * 16.0, (START_UV[1] - 0.5) * 9.0];
+
+function getCameraState(t) {
+  const sx = START_WORLD[0], sz = START_WORLD[1];
+
+  // Keyframe states with zero velocity at stops (prevents spline overshoot & 90° gimbal flip!)
+  // Note: Top-down position is offset by z = +0.025 (never exactly 0.0) so LookAt never hits singularity.
+  const fovDeg = 35.0;
+  // Exact height so 16x9 tile board fills 100% of frame at 35 deg vertical FOV (no floor visible!)
+  const fullHeight = 4.5 / Math.tan((fovDeg * 0.5) * Math.PI / 180.0); // ~14.272
+
+  let eye, look, aperture, focusDist;
+
+  if (t <= 3.0) {
+    // 0〜3s: Skimming the plaster floor right in front of the single dark tile
+    const u = smootherstep(0.0, 3.0, t);
+    eye = [sx - 0.55 + u * 0.12, 0.085 + u * 0.03, sz + 0.72 - u * 0.08];
+    look = [sx, 0.015, sz - 0.05];
+    aperture = 16.0;
+    focusDist = Math.hypot(eye[0] - sx, eye[1] - 0.01, eye[2] - sz);
+  } else if (t <= 10.0) {
+    // 3〜10s: Rising spiral macro view as tiles vortex around the eye
+    const u = smootherstep(3.0, 10.0, t);
+    eye = [
+      (sx - 0.43) * (1 - u) + (sx - 0.95) * u,
+      0.115 * (1 - u) + 2.45 * u,
+      (sz + 0.64) * (1 - u) + (sz + 2.35) * u
+    ];
+    look = [sx * (1 - u) + (sx * 0.75) * u, 0.01, sz * (1 - u) + (sz * 0.75) * u];
+    aperture = 16.0 * (1 - u) + 9.5 * u;
+    focusDist = Math.hypot(eye[0] - look[0], eye[1] - look[1], eye[2] - look[2]);
+  } else if (t <= 21.5) {
+    // 10〜21.5s: Sweeping pull-back revealing the smiling woman mosaic
+    const u = smootherstep(10.0, 21.5, t);
+    eye = [
+      (sx - 0.95) * (1 - u) + 0.0 * u,
+      2.45 * (1 - u) + (fullHeight * 0.97) * u,
+      (sz + 2.35) * (1 - u) + 0.45 * u
+    ];
+    look = [
+      (sx * 0.75) * (1 - u) + 0.0 * u,
+      0.01 * (1 - u) + 0.0 * u,
+      (sz * 0.75) * (1 - u) + 0.0 * u
+    ];
+    aperture = 9.5 * (1 - u) + 1.8 * u;
+    focusDist = Math.hypot(eye[0] - look[0], eye[1] - look[1], eye[2] - look[2]);
+  } else {
+    // 21.5〜26s: Settle smoothly into locked top-down frame with zero overshoot
+    // Keep z = +0.018 offset from exact vertical to prevent 90-degree camera twist!
+    const u = smootherstep(21.5, 25.8, t);
+    eye = [
+      0.0,
+      (fullHeight * 0.97) * (1 - u) + (fullHeight * 0.992) * u,
+      0.45 * (1 - u) + 0.018 * u
+    ];
+    look = [0.0, 0.0, 0.0];
+    aperture = 1.8 * (1 - u) + 0.0 * u; // Pin-sharp small aperture at end
+    focusDist = eye[1];
+  }
+
+  return { eye, look, fovRad: fovDeg * Math.PI / 180.0, aperture, focusDist };
+}
+
+// --- 5. Procedural WebAudio Sound Engine (Tile Clacks, Rain Cascade, Flip Patapata, Mouse Click) ---
+let audioCtx = null;
+let lastAudioTime = -1;
+
+function initAudio() {
+  if (audioCtx) return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  audioCtx = new AC();
+}
+window.addEventListener('pointerdown', initAudio, { once: true });
+
+function triggerTileSound(type, vol) {
+  if (!audioCtx || audioCtx.state !== 'running') return;
+  const now = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  if (type === 'clack') {
+    osc.type = 'triangle';
+    const f = 900 + Math.random() * 600;
+    osc.frequency.setValueAtTime(f, now);
+    osc.frequency.exponentialRampToValueAtTime(180, now + 0.045);
+    gain.gain.setValueAtTime(vol * 0.18, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(now); osc.stop(now + 0.05);
+  } else if (type === 'flip') {
+    // Crisp ceramic patapata flip sound (featured prominently 24-26s)
+    osc.type = 'sine';
+    const f = 1350 + Math.random() * 450;
+    osc.frequency.setValueAtTime(f, now);
+    osc.frequency.exponentialRampToValueAtTime(420, now + 0.035);
+    gain.gain.setValueAtTime(vol * 0.28, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.038);
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(now); osc.stop(now + 0.04);
+  } else if (type === 'click') {
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(1800, now);
+    osc.frequency.exponentialRampToValueAtTime(320, now + 0.03);
+    gain.gain.setValueAtTime(0.32, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.035);
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(now); osc.stop(now + 0.04);
+  }
+}
+
+function updateAudio(t) {
+  if (!audioCtx) initAudio();
+  if (!audioCtx || audioCtx.state !== 'running') return;
+  if (Math.abs(t - lastAudioTime) > 0.25) lastAudioTime = t;
+  // First solitary tile landing at t ~ 0.82s
+  if (lastAudioTime < 0.82 && t >= 0.82) triggerTileSound('clack', 1.0);
+  // Spiral placement clacks 3..20s
+  if (t >= 3.2 && t <= 20.5 && Math.floor(t * 18) !== Math.floor(lastAudioTime * 18)) {
+    const distAtten = Math.max(0.2, 1.0 - (t - 3.0) / 22.0);
+    triggerTileSound('clack', distAtten);
+  }
+  // Featured 24..26s Patapata flip wave
+  if (t >= 24.0 && t <= 25.9 && Math.floor(t * 28) !== Math.floor(lastAudioTime * 28)) {
+    triggerTileSound('flip', 1.0);
+  }
+  // 27.6s Mouse click
+  if (lastAudioTime < 27.6 && t >= 27.6) triggerTileSound('click', 1.0);
+  lastAudioTime = t;
+}
+
+// --- 6. 2D Overlay UI (Cursor Click at 26-30s + Subtle Sound Wave Indicator) ---
+const uiCanvas = document.getElementById('ui');
+const uictx = uiCanvas.getContext('2d');
+
+function renderOverlayUI(t) {
+  uictx.clearRect(0, 0, 1280, 720);
+
+  // Subtle acoustic indicator bar in top-right so silent recordings also show the sound design rhythm
+  uictx.save();
+  let soundEnergy = 0.0;
+  if (Math.abs(t - 0.82) < 0.15) soundEnergy = 0.95;
+  else if (t > 3.2 && t < 20.5) soundEnergy = 0.35 + 0.25 * Math.sin(t * 24.0);
+  else if (t >= 24.0 && t <= 25.9) soundEnergy = 0.95 * Math.abs(Math.sin(t * 36.0)); // Loudest at 24-26s patapata
+  else if (Math.abs(t - 27.6) < 0.15) soundEnergy = 0.9;
+
+  if (t < 26.2 && soundEnergy > 0.05) {
+    uictx.fillStyle = 'rgba(255,255,255,0.55)';
+    for (let b = 0; b < 5; b++) {
+      const bh = 3 + soundEnergy * 14 * Math.abs(Math.sin(t * 15 + b * 1.3));
+      uictx.fillRect(1236 + b * 5, 28 - bh * 0.5, 3, bh);
+    }
+  }
+  uictx.restore();
+
+  // 26.0〜30.0s: Mouse cursor glides in, clicks [ 無料体験はこちら ] button, and ripples
+  if (t >= 25.8) {
+    const moveP = smootherstep(25.8, 27.35, t);
+    // Start bottom-right, land on CTA button center (x=380, y=596 in 1280x720 space)
+    const startX = 940, startY = 690;
+    const targetX = 395, targetY = 595;
+    const curX = startX + (targetX - startX) * moveP;
+    const curY = startY + (targetY - startY) * moveP - Math.sin(moveP * Math.PI) * 45;
+
+    // Click depression scale
+    let clickScale = 1.0;
+    if (t >= 27.55 && t <= 28.25) {
+      const cp = Math.sin(Math.min(1, (t - 27.55) / 0.22) * Math.PI);
+      clickScale = 1.0 - 0.18 * cp;
+    }
+
+    // Expanding click ring ripple
+    if (t >= 27.6 && t <= 28.7) {
+      const rp = (t - 27.6) / 1.1;
+      uictx.save();
+      uictx.strokeStyle = `rgba(255, 255, 255, ${(1 - rp) * 0.85})`;
+      uictx.lineWidth = 3.5 * (1 - rp);
+      uictx.beginPath();
+      uictx.arc(targetX, targetY, 12 + rp * 68, 0, Math.PI * 2);
+      uictx.stroke();
+      uictx.restore();
+    }
+
+    // Draw crisp arrow pointer cursor with drop shadow
+    uictx.save();
+    uictx.translate(curX, curY);
+    uictx.scale(clickScale, clickScale);
+    uictx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+    uictx.shadowBlur = 10;
+    uictx.shadowOffsetX = 3;
+    uictx.shadowOffsetY = 5;
+
+    uictx.beginPath();
+    uictx.moveTo(0, 0);
+    uictx.lineTo(0, 32);
+    uictx.lineTo(8.5, 24.5);
+    uictx.lineTo(14.5, 37);
+    uictx.lineTo(20, 34.2);
+    uictx.lineTo(14, 22);
+    uictx.lineTo(24, 22);
+    uictx.closePath();
+
+    uictx.fillStyle = '#ffffff';
+    uictx.fill();
+    uictx.lineWidth = 2.2;
+    uictx.strokeStyle = '#141a24';
+    uictx.stroke();
+    uictx.restore();
+  }
+}
+
+// --- 7. Deterministic seek(t) Render Function ---
+const uFloorVP = gl.getUniformLocation(progFloor, 'uViewProj');
+const uFloorTime = gl.getUniformLocation(progFloor, 'uTime');
+const uFloorStart = gl.getUniformLocation(progFloor, 'uStartCenter');
+
+const uTileVP = gl.getUniformLocation(progTile, 'uViewProj');
+const uTileTime = gl.getUniformLocation(progTile, 'uTime');
+const uTileStart = gl.getUniformLocation(progTile, 'uStartCenter');
+const uTileCam = gl.getUniformLocation(progTile, 'uCamPos');
+const uTileTexBg = gl.getUniformLocation(progTile, 'uTexBg');
+const uTileTexFinal = gl.getUniformLocation(progTile, 'uTexFinal');
+
+const uPostTex = gl.getUniformLocation(progPost, 'uColorDepth');
+const uPostFocus = gl.getUniformLocation(progPost, 'uFocusDist');
+const uPostAperture = gl.getUniformLocation(progPost, 'uAperture');
+const uPostTime = gl.getUniformLocation(progPost, 'uTime');
+
+function seek(tSec) {
+  const t = ((tSec % window.DUR) + window.DUR) % window.DUR;
+  const cam = getCameraState(t);
+
+  const proj = mat4Perspective(cam.fovRad, 16.0 / 9.0, 0.04, 45.0);
+  const view = mat4LookAt(cam.eye, cam.look, [0, 1, 0]);
+  const vp = mat4Mul(proj, view);
+
+  // Pass 1: Render 3D Floor & 186,624 Instanced Beveled Tiles into Float FBO
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.viewport(0, 0, 1280, 720);
+  gl.enable(gl.DEPTH_TEST);
+  gl.enable(gl.CULL_FACE);
+  gl.clearColor(0.08, 0.08, 0.10, 30.0);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  // Draw Plaster Floor & Carpenter Chalk Lines
+  gl.useProgram(progFloor);
+  gl.uniformMatrix4fv(uFloorVP, false, vp);
+  gl.uniform1f(uFloorTime, t);
+  gl.uniform2f(uFloorStart, START_UV[0], START_UV[1]);
+  gl.bindVertexArray(floorVAO);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+  // Draw 576 x 324 = 186,624 Individual 3D Tile Instances
+  gl.useProgram(progTile);
+  gl.uniformMatrix4fv(uTileVP, false, vp);
+  gl.uniform1f(uTileTime, t);
+  gl.uniform2f(uTileStart, START_UV[0], START_UV[1]);
+  gl.uniform3f(uTileCam, cam.eye[0], cam.eye[1], cam.eye[2]);
+
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, texBg);
+  gl.uniform1i(uTileTexBg, 0);
+
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, texFinal);
+  gl.uniform1i(uTileTexFinal, 1);
+
+  gl.bindVertexArray(tileVAO);
+  gl.drawElementsInstanced(gl.TRIANGLES, 48, gl.UNSIGNED_SHORT, 0, TW * TH);
+
+  // Pass 2: Circular Bokeh Depth-of-Field Post-Processing to Screen
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, 1280, 720);
+  gl.disable(gl.DEPTH_TEST);
+
+  gl.useProgram(progPost);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, fboTex);
+  gl.uniform1i(uPostTex, 0);
+  gl.uniform1f(uPostFocus, cam.focusDist);
+  gl.uniform1f(uPostAperture, cam.aperture);
+  gl.uniform1f(uPostTime, t);
+
+  gl.bindVertexArray(postVAO);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+  // Pass 3: 2D Cursor & Click Overlay
+  renderOverlayUI(t);
+  updateAudio(t);
+}
+
+// Expose deterministic seek(t) for frame-accurate capture
+window.seek = seek;
+
+// --- 8. Main Animation Loop driven purely by performance.now() + ?t=SECONDS support ---
+const params = new URLSearchParams(window.location.search);
+const startOffset = parseFloat(params.get('t')) || 0;
+let basePerf = null;
+
+function tick(now) {
+  if (basePerf === null) basePerf = now;
+  const elapsed = (now - basePerf) * 0.001 + startOffset;
+  seek(elapsed % window.DUR);
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+window.DUR=20;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px'}
+addEventListener('resize',fit);fit();
+const off=parseFloat(new URLSearchParams(location.search).get('t'))||0;
+const t0=performance.now()-off*1000;
+const P=[];for(let i=0;i<160;i++)P.push({x:Math.random()*1280,y:Math.random()*720,z:Math.random()*2+.3,h:Math.random()*360});
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const ease=v=>{v=cl(v);return 1-Math.pow(1-v,3)};
+function fade(t,a,b){return cl((t-a)/.5)*cl((b-t)/.5)}
+function txt(s,X,Y,sz,a,col='#fff',w='700'){x.globalAlpha=a;x.fillStyle=col;x.font=w+' '+sz+'px Helvetica,Arial,sans-serif';x.textAlign='center';x.textBaseline='middle';x.fillText(s,X,Y);x.globalAlpha=1}
+function bg(t){
+ const g=x.createRadialGradient(640,360,50,640,360,800);
+ const h=(t*12)%360;g.addColorStop(0,`hsl(${250+Math.sin(t*.3)*30},60%,14%)`);g.addColorStop(1,'#03030a');
+ x.fillStyle=g;x.fillRect(0,0,1280,720);
+ for(const p of P){const px=(p.x+t*40*p.z)%1280,py=p.y+Math.sin(t+p.x)*10;
+  x.fillStyle=`hsla(${p.h+h},80%,70%,${.25*p.z})`;x.beginPath();x.arc(px,py,p.z*1.4,0,7);x.fill()}
+ x.strokeStyle='rgba(120,140,255,.07)';x.lineWidth=1;
+ for(let i=0;i<14;i++){const y=400+i*i*2.2+((t*30)%20);x.beginPath();x.moveTo(0,y);x.lineTo(1280,y);x.stroke()}
+}
+function ring(t,r,a){x.globalAlpha=a;x.lineWidth=4;
+ for(let i=0;i<3;i++){x.strokeStyle=`hsl(${200+i*60+t*40},90%,60%)`;x.beginPath();x.arc(640,360,r+i*14,t*(1+i*.5)+i,t*(1+i*.5)+i+Math.PI*1.3);x.stroke()}
+ x.globalAlpha=1}
+function card(t,i,s,icon,ap){const X=290+i*350,Y=380,k=ease((t-ap)*1.5),y=Y+(1-k)*80;
+ x.globalAlpha=k*fade(t,ap,14.5);x.fillStyle='rgba(255,255,255,.06)';x.strokeStyle=`hsl(${200+i*60},90%,60%)`;x.lineWidth=2;
+ x.beginPath();x.roundRect(X-140,y-110,280,220,18);x.fill();x.stroke();
+ x.save();x.translate(X,y-35);x.rotate(t*(i+1)*.6);x.strokeStyle=`hsl(${200+i*60},90%,65%)`;x.lineWidth=4;x.beginPath();
+ for(let j=0;j<=icon;j++){const a=j/icon*Math.PI*2;x.lineTo(Math.cos(a)*32,Math.sin(a)*32)}x.stroke();x.restore();
+ txt(s,X,y+50,30,x.globalAlpha);x.globalAlpha=1}
+function frame(){
+ const t=((performance.now()-t0)/1000)%DUR;bg(t);
+ // scene 1: intro 0-5
+ if(t<5.3){const a=fade(t,0,5.2);ring(t,140*ease(t),a);
+  txt('READY TO',640,320,40,a*ease(t-.5),'#9ab',"300");
+  const s=ease((t-.8)*1.2);txt('STAND OUT?',640,390,100*(.8+.2*s),a*s)}
+ // scene 2: features 5-15
+ if(t>5&&t<15){txt('WHAT WE DO',640,170,54,fade(t,5,14.8));
+  ['Design','Motion','Code'].forEach((s,i)=>card(t,i,s,[3,5,6][i],5.5+i*.5));
+  if(t>9){const k=ease(t-9);x.fillStyle=`hsl(${t*60},90%,60%)`;x.globalAlpha=fade(t,9,14.8);x.fillRect(640-400*k,560,800*k,4);x.globalAlpha=1;
+   txt('Ideas → Experiences',640,610,34,fade(t,9.5,14.8),'#cde','400')}}
+ // scene 3: stats/logo 15-20
+ if(t>14.8){const a=fade(t,14.8,19.8),k=ease((t-15)*.8);ring(t,170+20*Math.sin(t*2),a);
+  x.globalAlpha=a;x.save();x.translate(640,300);x.rotate(t*.5);
+  const g=x.createLinearGradient(-60,-60,60,60);g.addColorStop(0,'#4af');g.addColorStop(1,'#f4a');
+  x.fillStyle=g;x.beginPath();for(let j=0;j<6;j++){const an=j/6*Math.PI*2;x.lineTo(Math.cos(an)*70*k,Math.sin(an)*70*k)}x.fill();x.restore();
+  txt('YOUR BRAND',640,430,72,a*k);txt('Bold. Fast. Unforgettable.',640,495,30,a*ease(t-16),'#bcd','400');
+  const b=ease(t-17);x.globalAlpha=a*b;x.fillStyle='#fff';x.beginPath();x.roundRect(520,560,240,60,30);x.fill();
+  txt("LET'S TALK",640,591,26,a*b,'#112')}
+ // vignette + letterbox
+ x.fillStyle='#000';x.fillRect(0,0,1280,40);x.fillRect(0,680,1280,40);
+ requestAnimationFrame(frame)}
+frame();
+</script></body></html>

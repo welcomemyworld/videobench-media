@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Programmatic 3D Music Video Pipeline</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #stage {
+    width: 1280px; height: 720px;
+    max-width: 100vw; max-height: 100vh;
+    aspect-ratio: 16 / 9;
+    display: block;
+    box-shadow: 0 0 40px rgba(255, 85, 0, 0.15);
+  }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+const canvas = document.getElementById('stage');
+const ctx = canvas.getContext('2d');
+
+window.DUR = 50;
+const params = new URLSearchParams(window.location.search);
+const startOffset = parseFloat(params.get('t')) || 0;
+
+// Strict Palette: Black, Bone, Orange
+const BLK = '#0D0C0B';
+const BONE = '#E8E2D5';
+const ORG = '#FF5500';
+const BONE_DIM = 'rgba(232, 226, 213, 0.25)';
+const ORG_DIM = 'rgba(255, 85, 0, 0.22)';
+
+const SCENES = [
+  { id: 0, start: 0,  end: 6,  word: 'IGNITE',    lyric: 'Carving light from hollow stone',   obj: 'TORUS',    cam: 'ORBIT_LOW',   agent: 'OPUS_01' },
+  { id: 1, start: 6,  end: 12, word: 'FRACTURE',  lyric: 'Every shadow splits in two',        obj: 'SHARDS',   cam: 'DOLLY_IN',    agent: 'OPUS_02' },
+  { id: 2, start: 12, end: 18, word: 'PULSE',     lyric: 'Copper wires beneath the skin',     obj: 'SPHERE',   cam: 'SPIRAL_UP',   agent: 'OPUS_03' },
+  { id: 3, start: 18, end: 24, word: 'TOWER',     lyric: 'Rising where the silence stood',    obj: 'MONOLITH', cam: 'CRANE_HIGH',  agent: 'OPUS_04' },
+  { id: 4, start: 24, end: 30, word: 'VORTEX',    lyric: 'Spinning through the iron gate',    obj: 'HELIX',    cam: 'TUNNEL_ZOOM', agent: 'OPUS_01' },
+  { id: 5, start: 30, end: 36, word: 'ECHO',      lyric: 'Voices etched in ivory bone',       obj: 'RINGS',    cam: 'TILT_PAN',    agent: 'OPUS_02' },
+  { id: 6, start: 36, end: 42, word: 'CROWN',     lyric: 'Burning embers in the dark',        obj: 'CROWN',    cam: 'ORBIT_FAST',  agent: 'OPUS_03' },
+  { id: 7, start: 42, end: 50, word: 'ETERNAL',   lyric: 'Code becomes the final frame',      obj: 'HYPERCUBE',cam: 'PULL_BACK',   agent: 'OPUS_04' }
+];
+
+const STEPS = [
+  "1. Suno Song + ID3 Lyrics",
+  "2. Demucs 4-Stem Split",
+  "3. mlx_whisper Alignment",
+  "4. 3D Storyboard JSON",
+  "5. 4x Parallel Opus Agents",
+  "6. 16-Frame Contact Sheet",
+  "7. Headless Chrome 1080x1920",
+  "8. Loudnorm -14.0 LUFS"
+];
+
+function hash(n) {
+  return ((Math.sin(n * 12.9898) * 43758.5453) % 1 + 1) % 1;
+}
+
+function getStems(t) {
+  const bps = 2.0; // 120 BPM
+  const beat = (t * bps) % 1;
+  const drums = Math.pow(Math.max(0, 1 - beat * 3.5), 2) + (beat > 0.48 && beat < 0.58 ? 0.65 : 0);
+  const bass = 0.45 + 0.45 * Math.sin(t * Math.PI * 2 * (bps / 2)) * (1 - beat * 0.3);
+  const scene = SCENES.find(s => t >= s.start && t < s.end) || SCENES[0];
+  const st = (t - scene.start) / (scene.end - scene.start);
+  const vEnv = st > 0.06 && st < 0.88 ? 1 : 0.08;
+  const vocals = vEnv * (0.5 + 0.45 * Math.sin(t * 17) * Math.cos(t * 9));
+  const other = 0.35 + 0.35 * Math.sin(t * 3.1 + Math.cos(t * 5.2));
+  return { vocals, drums, bass, other, beat };
+}
+
+function strokeEngraved(x1, y1, x2, y2, color, width = 1) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+}
+
+function drawEngravedBox(x, y, w, h, color = BONE, accent = false, hatch = 0) {
+  ctx.fillStyle = BLK;
+  ctx.fillRect(x, y, w, h);
+  if (hatch > 0) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.clip();
+    ctx.strokeStyle = accent ? ORG_DIM : BONE_DIM;
+    ctx.lineWidth = 1;
+    const step = Math.max(4, Math.floor(14 - hatch * 9));
+    ctx.beginPath();
+    for (let i = -h; i < w + h; i += step) {
+      ctx.moveTo(x + i, y);
+      ctx.lineTo(x + i - h, y + h);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+  ctx.strokeStyle = color;
+  ctx.lineWidth = accent ? 1.8 : 1;
+  ctx.strokeRect(x, y, w, h);
+  ctx.strokeStyle = BONE_DIM;
+  ctx.lineWidth = 0.7;
+  ctx.strokeRect(x + 3, y + 3, w - 6, h - 6);
+
+  // Corner ticks
+  const c = 5;
+  ctx.strokeStyle = accent ? ORG : color;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x, y + c); ctx.lineTo(x, y); ctx.lineTo(x + c, y);
+  ctx.moveTo(x + w - c, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + c);
+  ctx.moveTo(x, y + h - c); ctx.lineTo(x, y + h); ctx.lineTo(x + c, y + h);
+  ctx.moveTo(x + w - c, y + h); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w, y + h - c);
+  ctx.stroke();
+}
+
+// 3D Procedural Engraving Renderer (Three.js style wireframe + hatching)
+function render3DScene(cx, cy, w, h, sceneId, t, stems, minimal = false) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(cx - w / 2, cy - h / 2, w, h);
+  ctx.clip();
+
+  // Background engraving lines (sky/horizon)
+  if (!minimal) {
+    ctx.strokeStyle = BONE_DIM;
+    ctx.lineWidth = 0.6;
+    const horizon = cy + h * 0.18;
+    ctx.beginPath();
+    for (let i = -8; i <= 8; i++) {
+      ctx.moveTo(cx + i * 12, horizon);
+      ctx.lineTo(cx + i * 95, cy + h / 2);
+    }
+    for (let j = 1; j <= 6; j++) {
+      const yy = horizon + Math.pow(j / 6, 1.7) * (h * 0.32);
+      ctx.moveTo(cx - w / 2, yy);
+      ctx.lineTo(cx + w / 2, yy);
+    }
+    ctx.stroke();
+
+    // Sun / Radial engraving in upper sky
+    const sunY = cy - h * 0.16;
+    const sunR = 26 + stems.drums * 10;
+    ctx.strokeStyle = ORG_DIM;
+    ctx.beginPath();
+    for (let a = 0; a < 24; a++) {
+      const ang = (a / 24) * Math.PI * 2 + t * 0.15;
+      ctx.moveTo(cx + Math.cos(ang) * (sunR + 4), sunY + Math.sin(ang) * (sunR + 4));
+      ctx.lineTo(cx + Math.cos(ang) * (sunR + 42), sunY + Math.sin(ang) * (sunR + 42));
+    }
+    ctx.stroke();
+  }
+
+  // Camera & rotation
+  const rotY = t * 0.85 + sceneId * 0.7;
+  const rotX = 0.42 * Math.sin(t * 0.6 + sceneId) + 0.25;
+  const scale = (minimal ? 0.32 : 1.0) * (105 + stems.drums * 22 + stems.bass * 12);
+  const fov = 320;
+
+  function proj(x, y, z) {
+    let x1 = x * Math.cos(rotY) - z * Math.sin(rotY);
+    let z1 = z * Math.cos(rotY) + x * Math.sin(rotY);
+    let y2 = y * Math.cos(rotX) - z1 * Math.sin(rotX);
+    let z2 = z1 * Math.cos(rotX) + y * Math.sin(rotX) + 4.2;
+    const p = fov / Math.max(0.8, z2);
+    return { x: cx + x1 * scale * (p / 100), y: cy - h * 0.04 + y2 * scale * (p / 100), z: z2 };
+  }
+
+  const edges = [];
+  const addEdge = (a, b, col = BONE, w = 1.1) => edges.push({ a: proj(...a), b: proj(...b), col, w });
+
+  const type = sceneId % 8;
+  if (type === 0) {
+    // TORUS + Engraved hatching rings
+    const R = 1.15, r = 0.48 + stems.vocals * 0.15;
+    const uSteps = minimal ? 10 : 20, vSteps = minimal ? 8 : 12;
+    for (let u = 0; u < uSteps; u++) {
+      const a1 = (u / uSteps) * Math.PI * 2;
+      const a2 = ((u + 1) / uSteps) * Math.PI * 2;
+      for (let v = 0; v < vSteps; v++) {
+        const b1 = (v / vSteps) * Math.PI * 2 + t;
+        const b2 = ((v + 1) / vSteps) * Math.PI * 2 + t;
+        const p1 = [(R + r * Math.cos(b1)) * Math.cos(a1), r * Math.sin(b1), (R + r * Math.cos(b1)) * Math.sin(a1)];
+        const p2 = [(R + r * Math.cos(b2)) * Math.cos(a1), r * Math.sin(b2), (R + r * Math.cos(b2)) * Math.sin(a1)];
+        const p3 = [(R + r * Math.cos(b1)) * Math.cos(a2), r * Math.sin(b1), (R + r * Math.cos(b1)) * Math.sin(a2)];
+        addEdge(p1, p2, v % 3 === 0 ? ORG : BONE, v % 3 === 0 ? 1.4 : 0.8);
+        addEdge(p1, p3, BONE, 0.7);
+      }
+    }
+  } else if (type === 1) {
+    // FRACTURE SHARDS (Octahedra cluster)
+    const count = minimal ? 3 : 6;
+    for (let k = 0; k < count; k++) {
+      const ang = (k / count) * Math.PI * 2 + t * 0.5;
+      const rad = k === 0 ? 0 : 0.95 + stems.drums * 0.3;
+      const ox = Math.cos(ang) * rad, oz = Math.sin(ang) * rad, oy = Math.sin(t * 2 + k) * 0.35;
+      const s = k === 0 ? 0.85 : 0.42;
+      const top = [ox, oy + s * 1.4, oz], bot = [ox, oy - s * 1.4, oz];
+      const ring = [[ox + s, oy, oz], [ox, oy, oz + s], [ox - s, oy, oz], [ox, oy, oz - s]];
+      for (let i = 0; i < 4; i++) {
+        const n = (i + 1) % 4;
+        const col = k === 0 ? ORG : BONE;
+        addEdge(top, ring[i], col, k === 0 ? 1.5 : 0.9);
+        addEdge(bot, ring[i], col, 0.9);
+        addEdge(ring[i], ring[n], BONE, 0.9);
+      }
+    }
+  } else if (type === 2) {
+    // PULSE SPHERE with latitude hatching
+    const lats = minimal ? 6 : 12, lons = minimal ? 8 : 16;
+    for (let i = 1; i < lats; i++) {
+      const th1 = (i / lats) * Math.PI;
+      const r1 = Math.sin(th1) * (1.25 + 0.2 * Math.sin(th1 * 6 + t * 4) * stems.vocals);
+      const y1 = Math.cos(th1) * 1.25;
+      for (let j = 0; j < lons; j++) {
+        const ph1 = (j / lons) * Math.PI * 2;
+        const ph2 = ((j + 1) / lons) * Math.PI * 2;
+        const p1 = [r1 * Math.cos(ph1), y1, r1 * Math.sin(ph1)];
+        const p2 = [r1 * Math.cos(ph2), y1, r1 * Math.sin(ph2)];
+        addEdge(p1, p2, i % 3 === 0 ? ORG : BONE, i % 3 === 0 ? 1.4 : 0.8);
+      }
+    }
+  } else if (type === 3) {
+    // TOWER MONOLITH with architectural ribs
+    const ribs = minimal ? 6 : 14;
+    for (let i = 0; i < ribs; i++) {
+      const yy = -1.5 + (i / (ribs - 1)) * 3.0;
+      const w1 = 0.85 - (i / ribs) * 0.45 + (i % 2 === 0 ? stems.drums * 0.15 : 0);
+      const pts = [[-w1, yy, -w1], [w1, yy, -w1], [w1, yy, w1], [-w1, yy, w1]];
+      for (let k = 0; k < 4; k++) {
+        addEdge(pts[k], pts[(k + 1) % 4], i % 4 === 0 ? ORG : BONE, i % 4 === 0 ? 1.5 : 0.8);
+      }
+    }
+    const base = 0.85, top = 0.4;
+    [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([sx, sz]) => {
+      addEdge([sx * base, -1.5, sz * base], [sx * top, 1.5, sz * top], ORG, 1.4);
+    });
+  } else if (type === 4) {
+    // VORTEX DOUBLE HELIX
+    const steps = minimal ? 16 : 36;
+    for (let i = 0; i < steps; i++) {
+      const f = i / steps;
+      const y = -1.6 + f * 3.2;
+      const a = f * Math.PI * 4 + t * 2.5;
+      const r = 0.9 + 0.25 * Math.sin(f * Math.PI * 2);
+      const p1 = [Math.cos(a) * r, y, Math.sin(a) * r];
+      const p2 = [Math.cos(a + Math.PI) * r, y, Math.sin(a + Math.PI) * r];
+      addEdge(p1, p2, i % 3 === 0 ? ORG : BONE, i % 3 === 0 ? 1.4 : 0.8);
+      if (i < steps - 1) {
+        const fn = (i + 1) / steps;
+        const yn = -1.6 + fn * 3.2;
+        const an = fn * Math.PI * 4 + t * 2.5;
+        const rn = 0.9 + 0.25 * Math.sin(fn * Math.PI * 2);
+        addEdge(p1, [Math.cos(an) * rn, yn, Math.sin(an) * rn], ORG, 1.3);
+        addEdge(p2, [Math.cos(an + Math.PI) * rn, yn, Math.sin(an + Math.PI) * rn], BONE, 1.1);
+      }
+    }
+  } else if (type === 5) {
+    // ECHO GYROSCOPE RINGS
+    const rings = 4, segs = minimal ? 12 : 24;
+    for (let r = 0; r < rings; r++) {
+      const rad = 0.55 + r * 0.32;
+      const tilt = (r * 0.6) + t * (r % 2 === 0 ? 1.2 : -1.2);
+      for (let s = 0; s < segs; s++) {
+        const a1 = (s / segs) * Math.PI * 2;
+        const a2 = ((s + 1) / segs) * Math.PI * 2;
+        const p1 = [Math.cos(a1) * rad, Math.sin(a1) * rad * Math.cos(tilt), Math.sin(a1) * rad * Math.sin(tilt)];
+        const p2 = [Math.cos(a2) * rad, Math.sin(a2) * rad * Math.cos(tilt), Math.sin(a2) * rad * Math.sin(tilt)];
+        addEdge(p1, p2, r % 2 === 0 ? ORG : BONE, r % 2 === 0 ? 1.5 : 1.0);
+      }
+    }
+  } else if (type === 6) {
+    // CROWN OF SPIKES
+    const spikes = minimal ? 8 : 16;
+    for (let i = 0; i < spikes; i++) {
+      const a1 = (i / spikes) * Math.PI * 2;
+      const a2 = ((i + 1) / spikes) * Math.PI * 2;
+      const r1 = 1.15;
+      const hPeak = (i % 2 === 0 ? 1.2 : 0.45) + stems.vocals * 0.4;
+      const b1 = [Math.cos(a1) * r1, -0.7, Math.sin(a1) * r1];
+      const b2 = [Math.cos(a2) * r1, -0.7, Math.sin(a2) * r1];
+      const pk = [Math.cos(a1) * (r1 * 0.85), hPeak, Math.sin(a1) * (r1 * 0.85)];
+      addEdge(b1, b2, BONE, 1.1);
+      addEdge(b1, pk, i % 2 === 0 ? ORG : BONE, 1.4);
+      addEdge(b2, pk, BONE, 0.8);
+      addEdge([0, -1.2, 0], b1, ORG_DIM, 0.7);
+    }
+  } else {
+    // HYPERCUBE (Tesseract projection)
+    const verts = [];
+    for (let i = 0; i < 16; i++) {
+      let x = (i & 1) ? 1 : -1;
+      let y = (i & 2) ? 1 : -1;
+      let z = (i & 4) ? 1 : -1;
+      let w4 = (i & 8) ? 1 : -1;
+      const a = t * 1.1;
+      const xw = x * Math.cos(a) - w4 * Math.sin(a);
+      const ww = x * Math.sin(a) + w4 * Math.cos(a);
+      const s = 1.35 / (2.2 - ww * 0.45);
+      verts.push([xw * s, y * s, z * s, w4]);
+    }
+    for (let i = 0; i < 16; i++) {
+      for (let j = i + 1; j < 16; j++) {
+        const diff = i ^ j;
+        if (diff === 1 || diff === 2 || diff === 4 || diff === 8) {
+          const isW = diff === 8;
+          addEdge(verts[i], verts[j], isW ? ORG : BONE, isW ? 1.5 : 1.0);
+        }
+      }
+    }
+  }
+
+  // Sort back-to-front and draw with engraving cross-lines
+  edges.sort((e1, e2) => (e2.a.z + e2.b.z) - (e1.a.z + e1.b.z));
+  for (const e of edges) {
+    ctx.strokeStyle = e.col;
+    ctx.lineWidth = e.w;
+    ctx.beginPath();
+    ctx.moveTo(e.a.x, e.a.y);
+    ctx.lineTo(e.b.x, e.b.y);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawPhoneFrame(t, stems, activeStep) {
+  // Center vertical 9:16 viewport (342 x 608 -> exact 9:16 ratio)
+  const pw = 342, ph = 608;
+  const px = 469, py = 62;
+  const cx = px + pw / 2, cy = py + ph / 2;
+
+  const scene = SCENES.find(s => t >= s.start && s < s.end) || SCENES[0];
+  const sceneProg = (t - scene.start) / (scene.end - scene.start);
+
+  // Outer engraved bezel
+  drawEngravedBox(px - 6, py - 6, pw + 12, ph + 12, ORG, true, 0.2);
+  drawEngravedBox(px, py, pw, ph, BONE, false, 0);
+
+  // 3D Render inside 9:16 viewport
+  render3DScene(cx, cy, pw - 8, ph - 8, scene.id, t, stems, false);
+
+  // Top HUD inside vertical video
+  ctx.fillStyle = BLK;
+  ctx.fillRect(px + 12, py + 12, pw - 24, 34);
+  ctx.strokeStyle = BONE;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(px + 12, py + 12, pw - 24, 34);
+
+  ctx.font = 'bold 11px monospace';
+  ctx.fillStyle = ORG;
+  ctx.fillText(`THREE.WebGLRenderer // 1080x1920`, px + 20, py + 27);
+  ctx.fillStyle = BONE;
+  ctx.font = '10px monospace';
+  ctx.fillText(`SCENE 0${scene.id + 1}/08  CAM:${scene.cam}  60.0FPS`, px + 20, py + 40);
+
+  // Kinetic Typography: MAIN WORD banner
+  const wordPulse = 1 + stems.drums * 0.08;
+  ctx.save();
+  ctx.translate(cx, py + 106);
+  ctx.scale(wordPulse, wordPulse);
+  ctx.font = 'bold 42px monospace';
+  ctx.textAlign = 'center';
+  // Engraved drop shadow
+  ctx.strokeStyle = ORG;
+  ctx.lineWidth = 1.5;
+  ctx.strokeText(scene.word, 3, 3);
+  ctx.fillStyle = BONE;
+  ctx.fillText(scene.word, 0, 0);
+  ctx.restore();
+
+  // Bottom Lyric Karaoke Box (mlx_whisper word-level alignment)
+  const words = scene.lyric.split(' ');
+  const activeWordIdx = Math.floor(sceneProg * words.length);
+  const lbY = py + ph - 98;
+  drawEngravedBox(px + 14, lbY, pw - 28, 62, BONE, true, 0.15);
+
+  ctx.font = 'bold 13px monospace';
+  ctx.textAlign = 'center';
+  let line1 = words.slice(0, 3).join(' ');
+  let line2 = words.slice(3).join(' ');
+  ctx.fillStyle = BONE;
+  ctx.fillText(line1, cx, lbY + 24);
+  ctx.fillStyle = ORG;
+  ctx.fillText(line2, cx, lbY + 44);
+
+  // Progress bar inside lyric box
+  ctx.fillStyle = BONE_DIM;
+  ctx.fillRect(px + 24, lbY + 52, pw - 48, 4);
+  ctx.fillStyle = ORG;
+  ctx.fillRect(px + 24, lbY + 52, (pw - 48) * sceneProg, 4);
+
+  // Footer timecode
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = BONE;
+  const tc = `00:${String(Math.floor(t)).padStart(2, '0')}:${String(Math.floor((t % 1) * 60)).padStart(2, '0')}`;
+  ctx.fillText(`TC ${tc}`, px + 16, py + ph - 14);
+  ctx.textAlign = 'right';
+  ctx.fillStyle = ORG;
+  ctx.fillText(`AGENT: ${scene.agent} [WORD ${activeWordIdx + 1}/${words.length}]`, px + pw - 16, py + ph - 14);
+  ctx.textAlign = 'left';
+}
+
+function drawLeftColumn(t, stems, activeStep) {
+  const x = 22, w = 425;
+  const scene = SCENES.find(s => t >= s.start && s < s.end) || SCENES[0];
+
+  // Panel 1: Step 1 & 2 - Suno + Demucs Stems
+  drawEngravedBox(x, 62, w, 195, BONE, activeStep <= 1, activeStep <= 1 ? 0.3 : 0.05);
+  ctx.font = 'bold 13px monospace';
+  ctx.fillStyle = ORG;
+  ctx.fillText('[01-02] SUNO AUDIO + DEMUCS STEM SPLIT', x + 14, 84);
+  ctx.font = '11px monospace';
+  ctx.fillStyle = BONE;
+  ctx.fillText('TRACK: "ETCHED IN IRON" (suno_v3.5_id3.mp3)', x + 14, 102);
+
+  const stemList = [
+    { name: 'VOCALS.wav', val: stems.vocals, col: ORG },
+    { name: 'DRUMS.wav ', val: stems.drums,  col: BONE },
+    { name: 'BASS.wav  ', val: stems.bass,   col: BONE },
+    { name: 'OTHER.wav ', val: stems.other,  col: ORG }
+  ];
+  stemList.forEach((st, idx) => {
+    const sy = 122 + idx * 31;
+    ctx.font = '11px monospace';
+    ctx.fillStyle = st.col;
+    ctx.fillText(st.name, x + 14, sy + 12);
+
+    // Waveform box
+    const wx = x + 100, ww = 310, wh = 20;
+    ctx.strokeStyle = BONE_DIM;
+    ctx.strokeRect(wx, sy, ww, wh);
+    ctx.beginPath();
+    ctx.strokeStyle = st.col;
+    ctx.lineWidth = 1.2;
+    for (let i = 0; i < ww; i += 4) {
+      const amp = st.val * Math.sin(i * 0.12 + t * (12 + idx * 5)) * (wh * 0.44);
+      if (i === 0) ctx.moveTo(wx + i, sy + wh / 2 + amp);
+      else ctx.lineTo(wx + i, sy + wh / 2 + amp);
+    }
+    ctx.stroke();
+  });
+
+  // Panel 2: Step 3 - mlx_whisper Transcription & Alignment
+  drawEngravedBox(x, 270, w, 185, BONE, activeStep === 2, activeStep === 2 ? 0.3 : 0.05);
+  ctx.font = 'bold 13px monospace';
+  ctx.fillStyle = ORG;
+  ctx.fillText('[03] MLX_WHISPER ALIGNMENT (1 LINE = 1 SCENE)', x + 14, 292);
+
+  SCENES.slice(0, 6).forEach((sc, idx) => {
+    const ly = 314 + idx * 21;
+    const isCur = sc.id === scene.id;
+    if (isCur) {
+      ctx.fillStyle = ORG;
+      ctx.fillRect(x + 12, ly - 12, w - 24, 17);
+      ctx.fillStyle = BLK;
+    } else {
+      ctx.fillStyle = BONE;
+    }
+    ctx.font = isCur ? 'bold 11px monospace' : '11px monospace';
+    const ts = `${String(sc.start).padStart(2, '0')}.0s-${String(sc.end).padStart(2, '0')}.0s`;
+    ctx.fillText(`${ts} | S0${sc.id + 1} | "${sc.lyric}"`, x + 16, ly);
+  });
+
+  // Panel 3: Step 4 - 3D Storyboard Specification
+  drawEngravedBox(x, 468, w, 202, BONE, activeStep === 3, activeStep === 3 ? 0.3 : 0.05);
+  ctx.font = 'bold 13px monospace';
+  ctx.fillStyle = ORG;
+  ctx.fillText('[04] STORYBOARD SPEC // ACTIVE SCENE JSON', x + 14, 490);
+
+  const jsonLines = [
+    `{`,
+    `  "scene_id": "SCENE_0${scene.id + 1}",`,
+    `  "lyric_line": "${scene.lyric}",`,
+    `  "what_to_show_3d": "Procedural ${scene.obj} mesh",`,
+    `  "camera_rig": "${scene.cam} (fov:45, dof:true)",`,
+    `  "main_word": "${scene.word}",`,
+    `  "shader_style": "Engraved_Crosshatch_3Color",`,
+    `  "assigned_worker": "${scene.agent}"`,
+    `}`
+  ];
+  ctx.font = '11.5px monospace';
+  jsonLines.forEach((ln, i) => {
+    ctx.fillStyle = ln.includes('main_word') || ln.includes('what_to_show_3d') ? ORG : BONE;
+    ctx.fillText(ln, x + 18, 512 + i * 17);
+  });
+}
+
+function drawRightColumn(t, stems, activeStep) {
+  const x = 833, w = 425;
+  const scene = SCENES.find(s => t >= s.start && s < s.end) || SCENES[0];
+
+  // Panel 4: Step 5 - 4 Parallel Opus Sub-Agents
+  drawEngravedBox(x, 62, w, 195, BONE, activeStep === 4, activeStep === 4 ? 0.3 : 0.05);
+  ctx.font = 'bold 13px monospace';
+  ctx.fillStyle = ORG;
+  ctx.fillText('[05] 4x PARALLEL OPUS SUB-AGENTS (SCENE CODE)', x + 14, 84);
+
+  const agents = [
+    { id: 'OPUS_01', task: 'Scenes 01, 05 (Torus/Helix)',   prog: Math.min(1, (t / 18) % 1.1) },
+    { id: 'OPUS_02', task: 'Scenes 02, 06 (Shards/Rings)',  prog: Math.min(1, ((t + 4) / 18) % 1.1) },
+    { id: 'OPUS_03', task: 'Scenes 03, 07 (Sphere/Crown)',  prog: Math.min(1, ((t + 8) / 18) % 1.1) },
+    { id: 'OPUS_04', task: 'Scenes 04, 08 (Tower/Tesseract)',prog: Math.min(1, ((t + 12) / 18) % 1.1) }
+  ];
+  agents.forEach((ag, i) => {
+    const bx = x + 14 + (i % 2) * 202;
+    const by = 96 + Math.floor(i / 2) * 76;
+    const isAct = scene.agent === ag.id;
+    drawEngravedBox(bx, by, 194, 66, isAct ? ORG : BONE, isAct, isAct ? 0.25 : 0);
+    ctx.font = 'bold 11px monospace';
+    ctx.fillStyle = isAct ? ORG : BONE;
+    ctx.fillText(`${ag.id} ${isAct ? '[ACTIVE]' : '[READY]'}`, bx + 10, by + 18);
+    ctx.font = '10px monospace';
+    ctx.fillStyle = BONE;
+    ctx.fillText(ag.task, bx + 10, by + 34);
+    // Code compile bar
+    ctx.strokeStyle = BONE;
+    ctx.strokeRect(bx + 10, by + 44, 174, 10);
+    ctx.fillStyle = isAct ? ORG : BONE;
+    ctx.fillRect(bx + 12, by + 46, 170 * ag.prog, 6);
+  });
+
+  // Panel 5: Step 6 - 16-Frame Contact Sheet Verification
+  drawEngravedBox(x, 270, w, 222, BONE, activeStep === 5, activeStep === 5 ? 0.3 : 0.05);
+  ctx.font = 'bold 13px monospace';
+  ctx.fillStyle = ORG;
+  ctx.fillText('[06] 16-FRAME CONTACT SHEET (VISUAL QA)', x + 14, 292);
+
+  const cols = 4, rows = 4;
+  const cw = 94, ch = 40;
+  const activeFrame = Math.floor((t / window.DUR) * 16) % 16;
+  for (let f = 0; f < 16; f++) {
+    const r = Math.floor(f / cols), c = f % cols;
+    const fx = x + 16 + c * (cw + 6);
+    const fy = 304 + r * (ch + 6);
+    const isCur = f === activeFrame;
+    ctx.fillStyle = BLK;
+    ctx.fillRect(fx, fy, cw, ch);
+    render3DScene(fx + cw / 2, fy + ch / 2, cw, ch, f % 8, f * 1.7 + t * 0.2, stems, true);
+    ctx.strokeStyle = isCur ? ORG : BONE;
+    ctx.lineWidth = isCur ? 2 : 0.8;
+    ctx.strokeRect(fx, fy, cw, ch);
+    ctx.font = '9px monospace';
+    ctx.fillStyle = isCur ? ORG : BONE;
+    ctx.fillText(`F${String(f + 1).padStart(2, '0')}`, fx + 4, fy + 11);
+  }
+
+  // Panel 6: Step 7 & 8 - Headless Chrome + -14 LUFS Loudness Normalization
+  drawEngravedBox(x, 504, w, 166, BONE, activeStep >= 6, activeStep >= 6 ? 0.3 : 0.05);
+  ctx.font = 'bold 13px monospace';
+  ctx.fillStyle = ORG;
+  ctx.fillText('[07-08] HEADLESS CHROME & -14 LUFS MASTER', x + 14, 526);
+
+  const frameNum = Math.floor((t / window.DUR) * 3000);
+  ctx.font = '11px monospace';
+  ctx.fillStyle = BONE;
+  ctx.fillText(`PUPPETEER: 1080x1920 @ 60fps | FRAME ${frameNum}/3000`, x + 14, 548);
+
+  // Render progress bar
+  ctx.strokeStyle = BONE;
+  ctx.strokeRect(x + 14, 556, w - 28, 14);
+  ctx.fillStyle = ORG;
+  ctx.fillRect(x + 16, 558, (w - 32) * (t / window.DUR), 10);
+
+  // LUFS Meter
+  const lufs = (-14.0 + Math.sin(t * 9) * 0.18).toFixed(1);
+  ctx.fillStyle = BONE;
+  ctx.fillText(`FFMPEG EBU R128 LOUDNORM: INTEGRATED ${lufs} LUFS`, x + 14, 592);
+  ctx.fillText(`TRUE PEAK: -1.0 dBTP  |  LRA: 6.2 LU  |  TARGET: -14.0`, x + 14, 610);
+
+  // Engraved dB scale bar
+  const mx = x + 14, my = 622, mw = w - 28, mh = 22;
+  ctx.strokeStyle = BONE;
+  ctx.strokeRect(mx, my, mw, mh);
+  for (let i = 0; i < 36; i++) {
+    const bx = mx + 4 + i * 11;
+    const isTarget = i === 26; // -14 LUFS mark
+    const active = i < 26 + Math.round(stems.drums * 3);
+    ctx.fillStyle = isTarget ? ORG : (active ? BONE : BONE_DIM);
+    ctx.fillRect(bx, my + 4, 8, mh - 8);
+  }
+  ctx.fillStyle = ORG;
+  ctx.font = 'bold 10px monospace';
+  ctx.fillText('TARGET -14 LUFS [LOCKED]', mx + 245, my + 36);
+}
+
+function drawTopAndBottomBars(t, activeStep) {
+  // Top Pipeline Header
+  drawEngravedBox(22, 12, 1236, 40, BONE, true, 0.15);
+  ctx.font = 'bold 14px monospace';
+  ctx.fillStyle = ORG;
+  ctx.fillText('PROGRAMMATIC 3D MUSIC VIDEO PIPELINE // THREE.JS + DEMUCS + MLX_WHISPER + 4x OPUS', 38, 36);
+
+  ctx.font = 'bold 13px monospace';
+  ctx.textAlign = 'right';
+  ctx.fillStyle = BONE;
+  ctx.fillText(`PALETTE: [BLACK #0D0C0B] [BONE #E8E2D5] [ORANGE #FF5500]  |  ${t.toFixed(1)}s / 50.0s`, 1242, 36);
+  ctx.textAlign = 'left';
+
+  // Bottom 8-Step Pipeline Progress Strip
+  const by = 678, bh = 30;
+  const sw = 1236 / 8;
+  for (let i = 0; i < 8; i++) {
+    const sx = 22 + i * sw;
+    const isDone = i < activeStep;
+    const isCur = i === activeStep;
+    ctx.fillStyle = isCur ? ORG : BLK;
+    ctx.fillRect(sx, by, sw - 4, bh);
+    ctx.strokeStyle = isCur || isDone ? ORG : BONE;
+    ctx.lineWidth = isCur ? 2 : 1;
+    ctx.strokeRect(sx, by, sw - 4, bh);
+
+    ctx.font = isCur ? 'bold 10px monospace' : '10px monospace';
+    ctx.fillStyle = isCur ? BLK : (isDone ? ORG : BONE);
+    ctx.fillText(STEPS[i], sx + 6, by + 19);
+  }
+}
+
+function render(now) {
+  const t = ((now / 1000) + startOffset) % window.DUR;
+  const stems = getStems(t);
+  const activeStep = Math.min(7, Math.floor((t / window.DUR) * 8));
+
+  // Solid Black Background
+  ctx.fillStyle = BLK;
+  ctx.fillRect(0, 0, 1280, 720);
+
+  // Subtle background engraving grid lines
+  ctx.strokeStyle = 'rgba(232, 226, 213, 0.06)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let y = 0; y < 720; y += 6) {
+    ctx.moveTo(0, y);
+    ctx.lineTo(1280, y);
+  }
+  ctx.stroke();
+
+  drawTopAndBottomBars(t, activeStep);
+  drawLeftColumn(t, stems, activeStep);
+  drawPhoneFrame(t, stems, activeStep);
+  drawRightColumn(t, stems, activeStep);
+
+  requestAnimationFrame(render);
+}
+
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

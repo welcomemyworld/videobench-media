@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="UTF-8">
+<title>رحلة عبر الطبيعة اليابانية</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #000; width: 100%; height: 100%; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+  #stage { width: 1280px; height: 720px; transform-origin: center center; background: #000; }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+window.DUR = 24;
+const ctx = document.getElementById('stage').getContext('2d', { alpha: false });
+function resize(){ let s = Math.min(innerWidth/1280, innerHeight/720); document.getElementById('stage').style.transform = `scale(${s})`; }
+addEventListener('resize', resize); resize();
+
+let seed = 1337;
+function rnd(){ seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+function hex2rgb(h){ if(Array.isArray(h)) return h; h=h.replace('#',''); return [parseInt(h.substr(0,2),16),parseInt(h.substr(2,2),16),parseInt(h.substr(4,2),16)]; }
+function mix(a,b,f){ a=hex2rgb(a); b=hex2rgb(b); return [a[0]+(b[0]-a[0])*f, a[1]+(b[1]-a[1])*f, a[2]+(b[2]-a[2])*f]; }
+function shade(c,a){ return [c[0]*a, c[1]*a, c[2]*a]; }
+function rgb(c){ let cl=v=>Math.max(0,Math.min(255,v|0)); return `rgb(${cl(c[0])},${cl(c[1])},${cl(c[2])})`; }
+
+let staticFaces = [], dynamicFaces = [], target = staticFaces;
+let activeTransform = null, curEmissive = 0, curNoRef = false, cam = {};
+
+function pushFace(pts, color){
+  if(activeTransform) pts = pts.map(activeTransform);
+  let z = 0; for(let p of pts) z += p[2]; z /= pts.length;
+  target.push({ pts, color, z, noRef: curNoRef, em: curEmissive });
+}
+function addBox(x,y,z,w,h,d,col,ry=0){
+  let c = hex2rgb(col), hw=w/2, hh=h/2, hd=d/2, cr=Math.cos(ry), sr=Math.sin(ry);
+  let V = [[-hw,-hh,-hd],[hw,-hh,-hd],[hw,hh,-hd],[-hw,hh,-hd],[-hw,-hh,hd],[hw,-hh,hd],[hw,hh,hd],[-hw,hh,hd]]
+    .map(p => [x + p[0]*cr - p[2]*sr, y + p[1], z + p[0]*sr + p[2]*cr]);
+  pushFace([V[3],V[2],V[6],V[7]], shade(c,1.25)); pushFace([V[4],V[5],V[6],V[7]], shade(c,0.95));
+  pushFace([V[0],V[1],V[2],V[3]], shade(c,0.8));  pushFace([V[0],V[4],V[7],V[3]], shade(c,0.7));
+  pushFace([V[1],V[5],V[6],V[2]], shade(c,1.05));
+}
+function addCyl(x,y,z,r,h,col,segs=8){
+  let c=hex2rgb(col), top=[], bot=[];
+  for(let i=0;i<segs;i++){ let a=i/segs*Math.PI*2; top.push([x+Math.cos(a)*r,y+h/2,z+Math.sin(a)*r]); bot.push([x+Math.cos(a)*r,y-h/2,z+Math.sin(a)*r]); }
+  pushFace(top, shade(c,1.2));
+  for(let i=0;i<segs;i++){ let j=(i+1)%segs, lit=0.6+0.5*(0.5+0.5*Math.cos(i/segs*Math.PI*2-0.5)); pushFace([bot[i],bot[j],top[j],top[i]], shade(c,lit)); }
+}
+function addCone(x,y,z,r,h,col,segs=8,rot=0){
+  let c=hex2rgb(col), apex=[x,y+h/2,z], bot=[];
+  for(let i=0;i<segs;i++){ let a=i/segs*Math.PI*2+rot; bot.push([x+Math.cos(a)*r,y-h/2,z+Math.sin(a)*r]); }
+  for(let i=0;i<segs;i++){ let j=(i+1)%segs, lit=0.6+0.5*(0.5+0.5*Math.cos(i/segs*Math.PI*2+rot)); pushFace([bot[i],bot[j],apex], shade(c,lit)); }
+}
+function addSphere(x,y,z,r,col,rings=4,segs=6){
+  let c=hex2rgb(col), g=[];
+  for(let i=0;i<=rings;i++){ let p=i/rings*Math.PI, row=[]; for(let j=0;j<=segs;j++){ let th=j/segs*Math.PI*2; row.push([x+r*Math.sin(p)*Math.cos(th), y+r*Math.cos(p), z+r*Math.sin(p)*Math.sin(th)]); } g.push(row); }
+  for(let i=0;i<rings;i++) for(let j=0;j<segs;j++){ let lit=0.4+0.7*(0.5+0.5*Math.cos(j/segs*Math.PI*2-0.5))*Math.sin((i+0.5)/rings*Math.PI); pushFace([g[i][j],g[i][j+1],g[i+1][j+1],g[i+1][j]], shade(c,lit+0.3)); }
+}
+
+function addTorii(x,z,s){
+  let red=[210,45,45], blk=[30,25,25];
+  addCyl(x-3*s,3*s,z,0.4*s,6*s,red,6); addCyl(x+3*s,3*s,z,0.4*s,6*s,red,6);
+  addBox(x,6.2*s,z,9*s,0.5*s,0.8*s,blk); addBox(x,5.2*s,z,7.5*s,0.4*s,0.6*s,red); addBox(x,6.8*s,z,10*s,0.4*s,1*s,red);
+}
+function addPagoda(x,z,s){
+  let wall=[225,215,195], roof=[45,50,60];
+  for(let i=0;i<3;i++){ let y=(i*3+1.5)*s, w=(6-i*1.2)*s; addBox(x,y,z,w,3*s,w,wall); addCone(x,y+1.8*s,z,w*0.85,1.5*s,roof,4,Math.PI/4); }
+  addCyl(x,10*s,z,0.2*s,2*s,[200,170,50],6);
+}
+function addTree(x,z,s){
+  let sakura=rnd()>0.4, trunk=[60,45,35];
+  addCyl(x,2*s,z,0.4*s,4*s,trunk,6);
+  let leaf=sakura?[255,183,197]:[40,80,55];
+  addSphere(x,4.5*s,z,2*s,leaf,3,6); addSphere(x-1.2*s,4*s,z+0.5*s,1.5*s,shade(leaf,0.9),3,5); addSphere(x+1.2*s,4.2*s,z-0.5*s,1.6*s,shade(leaf,1.1),3,5);
+}
+function addLantern(x,z,s){
+  let st=[110,110,105]; addCyl(x,0.5*s,z,0.3*s,1*s,st,6);
+  curEmissive=1; addBox(x,1.3*s,z,0.8*s,0.7*s,0.8*s,[255,200,100]); curEmissive=0;
+  addCone(x,1.9*s,z,0.8*s,0.5*s,st,4,Math.PI/4);
+}
+
+// --- Scene Generation ---
+for(let z=-40; z<480; z+=25){
+  for(let side of [-1,1]){
+    let d=35+rnd()*40, h=15+rnd()*25, w=20+rnd()*20, c=mix([40,70,60],[90,110,100],rnd());
+    let p1=[side*d,0,z-w], p2=[side*d,0,z+w], p3=[side*(d+5),h,z+(rnd()-0.5)*10];
+    pushFace([p1,p2,p3], c);
+    if(h>28){ let m1=[p1[0]*0.2+p3[0]*0.8,h-8,p1[2]*0.2+p3[2]*0.8], m2=[p2[0]*0.2+p3[0]*0.8,h-8,p2[2]*0.2+p3[2]*0.8]; pushFace([m1,m2,p3],[230,235,240]); }
+  }
+}
+for(let z=0; z<460; z+=18){
+  for(let side of [-1,1]){
+    let x=side*(22+rnd()*6);
+    if(z%72===0 && side===1) addTorii(x-side*4,z,1.2);
+    if(z%108===0 && side===-1) addPagoda(x+side*12,z,1.5);
+    if(rnd()>0.3) addTree(x,z,0.8+rnd()*0.6);
+    if(rnd()>0.6) addLantern(x-side*3,z+5,0.6);
+    curNoRef=true; addSphere(x-side*2,-0.5,z+2,1.5+rnd(),[80,85,80],2,4); curNoRef=false;
+  }
+}
+
+// --- Boat & Characters ---
+function addChar(x,y,z,kc){
+  addSphere(x,y+1.45,z-0.08,0.26,[25,20,20],3,6); addSphere(x,y+1.4,z,0.25,[240,210,190],3,6);
+  addCone(x,y+0.6,z,0.45,1.2,kc,8); addBox(x,y+1.05,z,0.6,0.1,0.6,[255,255,255]);
+}
+function buildBoat(t, camZ, rain){
+  target=dynamicFaces; dynamicFaces.length=0;
+  let bz=camZ+2, by=Math.sin(t*2)*0.15, roll=Math.sin(t*1.3)*0.04, cr=Math.cos(roll), sr=Math.sin(roll);
+  activeTransform=p=>{ let dx=p[0], dy=p[1], dz=p[2]-bz; return [dx*cr-dy*sr, dx*sr+dy*cr+by, dz+bz]; };
+  let wood=[110,70,45], dark=[70,45,30], roof=[35,40,45];
+  addBox(0,0.4,bz,3.2,0.8,7,dark); addBox(0,0.85,bz,3.0,0.1,6.5,wood);
+  let bk=[[-1.6,0,bz+3.5],[1.6,0,bz+3.5],[-1.6,0.8,bz+3.5],[1.6,0.8,bz+3.5],[0,0,bz+5.2],[0,0.8,bz+5.2]];
+  pushFace([bk[0],bk[4],bk[5],bk[2]],shade(dark,0.7)); pushFace([bk[4],bk[1],bk[3],bk[5]],shade(dark,1.0)); pushFace([bk[2],bk[5],bk[3]],shade(wood,1.2));
+  addBox(0,1.6,bz-0.5,2.4,1.4,3,[230,220,205]); addBox(0,2.35,bz-0.5,3.0,0.2,3.6,roof); addCone(0,2.6,bz-0.5,1.8,0.4,roof,4,Math.PI/4);
+  addBox(0,1.7,bz+1.05,1.8,0.8,0.1,[40,60,80]); addBox(-1.25,1.7,bz-0.5,0.1,0.8,2,[40,60,80]); addBox(1.25,1.7,bz-0.5,0.1,0.8,2,[40,60,80]);
+  curEmissive=1; addSphere(-1.2,1.9,bz+1.2,0.25,[255,150,50],2,5); addSphere(1.2,1.9,bz+1.2,0.25,[255,150,50],2,5); curEmissive=0;
+  addChar(-0.7,0.9,bz+2.2,[40,80,140]); addChar(0.7,0.9,bz+2.2,[220,100,130]);
+  if(rain>0.25){ addCyl(0.7,1.8,bz+2.2,0.03,1.2,[60,40,30],4); addCone(0.7,2.5,bz+2.2,0.9,0.4,[200,50,50],8); }
+  activeTransform=null;
+}
+
+// --- Weather ---
+const skies = [
+  { top:[160,180,190], bot:[210,215,210], sun:[230,235,220], fog:[200,210,205], light:0.8, label:"ضباب الصباح • 暁の霧" },
+  { top:[60,160,230],  bot:[180,230,255], sun:[255,250,200], fog:[190,230,250], light:1.2, label:"ربيع الكرز • 桜の季節" },
+  { top:[40,40,90],    bot:[230,110,70],  sun:[255,160,60],  fog:[180,100,80],  light:0.9, label:"غروب ومطر • 夕立" },
+  { top:[5,10,25],     bot:[20,30,60],    sun:[200,220,255], fog:[20,30,50],    light:0.5, label:"ليلة مقمرة • 月夜" }
+];
+function getWx(t){
+  let ph=t/6, i0=Math.floor(ph)%4, i1=(i0+1)%4, f=ph%1; f=f*f*(3-2*f);
+  let a=skies[i0], b=skies[i1];
+  return {
+    top:mix(a.top,b.top,f), bot:mix(a.bot,b.bot,f), sun:mix(a.sun,b.sun,f), fog:mix(a.fog,b.fog,f),
+    light:a.light+(b.light-a.light)*f, label:f<0.5?a.label:b.label,
+    rain:(i0===2?1-f:(i1===2?f:0)), petals:(i0===1?1-f:(i1===1?f:0)), mist:(i0===0?1-f:(i1===0?f:0))
+  };
+}
+
+// --- Projection ---
+function project(p){
+  let dx=p[0]-cam.x, dy=p[1]-cam.y, dz=p[2]-cam.z;
+  let cy=Math.cos(cam.yaw), sy=Math.sin(cam.yaw), cp=Math.cos(cam.pitch), sp=Math.sin(cam.pitch);
+  let rx=dx*cy-dz*sy, rz=dx*sy+dz*cy;
+  let ry=dy*cp-rz*sp, rz2=dy*sp+rz*cp;
+  if(rz2<0.1) rz2=0.1;
+  return [640+rx*600/rz2, 360-ry*600/rz2, rz2];
+}
+function projectRef(p,t){
+  let wave=Math.sin(p[2]*0.4+t*3)*(0.15+Math.abs(p[1])*0.03);
+  return project([p[0]+wave, -p[1], p[2]]);
+}
+
+// --- Particles ---
+let particles=[];
+for(let i=0;i<260;i++) particles.push({ x:(rnd()-0.5)*80, y:rnd()*25, z:rnd()*100, spd:0.5+rnd(), ph:rnd()*6.28 });
+function drawParticles(wx,t){
+  for(let p of particles){
+    let pz=5+((p.z-t*20)%100+100)%100, px=p.x+Math.sin(t+p.ph)*2, py=(p.y-t*4*p.spd%25+25)%25;
+    let pr=project([cam.x+px, cam.y+py-4, cam.z+pz]);
+    if(pr[2]<1||pr[2]>100) continue;
+    let s=600/pr[2];
+    if(wx.petals>0.05){ ctx.fillStyle=`rgba(255,183,197,${wx.petals*0.85})`; ctx.beginPath(); ctx.ellipse(pr[0],pr[1],3*s,1.5*s,t*2+p.ph,0,6.28); ctx.fill(); }
+    if(wx.rain>0.05){ ctx.strokeStyle=`rgba(180,210,240,${wx.rain*0.55})`; ctx.lineWidth=1*s; ctx.beginPath(); ctx.moveTo(pr[0],pr[1]); ctx.lineTo(pr[0]-2*s,pr[1]+12*s); ctx.stroke(); }
+    if(wx.mist>0.05){ ctx.fillStyle=`rgba(220,230,235,${wx.mist*0.035})`; ctx.beginPath(); ctx.arc(pr[0],pr[1],40*s,0,6.28); ctx.fill(); }
+  }
+}
+
+// --- Render Passes ---
+function drawFaces(faces, isRef, wx, t){
+  faces.sort((a,b)=>b.z-a.z);
+  for(let f of faces){
+    if(isRef && f.noRef) continue;
+    if(f.z < cam.z+1 || f.z > cam.z+260) continue;
+    let pts = isRef ? f.pts.map(p=>projectRef(p,t)) : f.pts.map(project);
+    if(pts.some(p=>p[2]<=0)) continue;
+    let dist=f.z-cam.z, fogF=Math.max(0,Math.min(1,(dist-40)/220));
+    fogF = 1-(1-fogF)*(1-wx.mist*0.6);
+    let c=f.color;
+    if(f.em>0){ c=mix(shade(c,0.6),c,Math.min(1,Math.max(0,1-wx.light)+wx.rain*0.3+0.3)); fogF*=0.4; }
+    else c=shade(c,wx.light);
+    c=mix(c,wx.fog,fogF*(isRef?0.8:1));
+    if(isRef){ c=mix(c,[8,25,45],0.55); ctx.globalAlpha=0.5*(1-fogF*0.6); } else ctx.globalAlpha=1;
+    ctx.fillStyle=rgb(c); ctx.strokeStyle=ctx.fillStyle; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(pts[0][0],pts[0][1]); for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i][0],pts[i][1]); ctx.closePath(); ctx.fill(); ctx.stroke();
+  }
+}
+
+function render(t){
+  let wx=getWx(t), camZ=(t/window.DUR)*400;
+  cam={ x:Math.sin(t*0.4)*1.2, y:4.2+Math.sin(t*2)*0.08, z:camZ-13, yaw:Math.sin(t*0.3)*0.02, pitch:-0.06+Math.sin(t*1.5)*0.005 };
+  let hy=360+Math.tan(cam.pitch)*600, ang=(t/window.DUR)*Math.PI*2;
+  let sx=640-Math.cos(ang)*440, sy=hy-30-Math.abs(Math.sin(ang))*260;
+
+  // Sky
+  let sg=ctx.createLinearGradient(0,0,0,hy+50); sg.addColorStop(0,rgb(wx.top)); sg.addColorStop(1,rgb(wx.bot));
+  ctx.globalAlpha=1; ctx.fillStyle=sg; ctx.fillRect(0,0,1280,720);
+
+  // Distant Silhouette
+  ctx.fillStyle=rgb(mix(wx.fog,wx.top,0.3)); ctx.beginPath(); ctx.moveTo(0,hy);
+  for(let x=0;x<=1280;x+=40) ctx.lineTo(x, hy-30-Math.sin(x*0.005+1)*25-Math.sin(x*0.013)*15);
+  ctx.lineTo(1280,hy); ctx.fill();
+
+  // Sun / Moon
+  if(sy<hy){
+    let glow=ctx.createRadialGradient(sx,sy,0,sx,sy,130);
+    glow.addColorStop(0,`rgba(${wx.sun[0]|0},${wx.sun[1]|0},${wx.sun[2]|0},0.75)`); glow.addColorStop(1,`rgba(${wx.sun[0]|0},${wx.sun[1]|0},${wx.sun[2]|0},0)`);
+    ctx.fillStyle=glow; ctx.beginPath(); ctx.arc(sx,sy,130,0,6.28); ctx.fill();
+    ctx.fillStyle=rgb(wx.sun); ctx.beginPath(); ctx.arc(sx,sy,wx.light<0.7?20:34,0,6.28); ctx.fill();
+  }
+
+  buildBoat(t,camZ,wx.rain);
+  let allFaces=staticFaces.concat(dynamicFaces);
+
+  // Reflections
+  ctx.save(); ctx.beginPath(); ctx.rect(0,hy,1280,720-hy); ctx.clip();
+  drawFaces(allFaces,true,wx,t); ctx.restore();
+
+  // Water Base
+  let wg=ctx.createLinearGradient(0,hy,0,720);
+  wg.addColorStop(0,`rgba(${wx.fog[0]*0.3|0},${wx.fog[1]*0.4|0},${wx.fog[2]*0.5|0},0.65)`); wg.addColorStop(1,`rgba(2,6,14,0.92)`);
+  ctx.globalAlpha=1; ctx.fillStyle=wg; ctx.fillRect(0,hy,1280,720-hy);
+
+  // Specular Path
+  if(sy<hy){ let sp=ctx.createLinearGradient(0,hy,0,720); sp.addColorStop(0,`rgba(${wx.sun[0]|0},${wx.sun[1]|0},${wx.sun[2]|0},0.35)`); sp.addColorStop(1,`rgba(${wx.sun[0]|0},${wx.sun[1]|0},${wx.sun[2]|0},0)`);
+    ctx.fillStyle=sp; ctx.beginPath(); ctx.moveTo(sx-15,hy); ctx.lineTo(sx+15,hy); ctx.lineTo(sx+120,720); ctx.lineTo(sx-120,720); ctx.fill(); }
+
+  // Ripples & Wake
+  ctx.lineCap='round';
+  for(let i=0;i<45;i++){ let p=((i+(t*1.5)%1)/45), d=p*p, ry=hy+d*(720-hy), a=(1-p)*0.12*wx.light;
+    ctx.strokeStyle=`rgba(255,255,255,${a})`; ctx.lineWidth=0.5+d*2; ctx.beginPath();
+    for(let x=0;x<=1280;x+=32){ let yo=Math.sin(x*0.012+t*3+i*1.3)*(1+d*8); x===0?ctx.moveTo(x,ry+yo):ctx.lineTo(x,ry+yo); } ctx.stroke(); }
+  let bow=project([cam.x,0,camZ+7]);
+  if(bow[2]>0){ ctx.strokeStyle='rgba(255,255,255,0.35)'; ctx.lineWidth=2; for(let i=0;i<3;i++){ let r=20+i*15+Math.sin(t*8)*5; ctx.beginPath(); ctx.ellipse(bow[0],bow[1],r,r*0.25,0,0,Math.PI); ctx.stroke(); } }
+
+  // Normal Geometry
+  drawFaces(allFaces,false,wx,t);
+  ctx.globalAlpha=1; drawParticles(wx,t);
+
+  // Cinematic UI
+  ctx.fillStyle='#000'; ctx.fillRect(0,0,1280,45); ctx.fillRect(0,675,1280,45);
+  ctx.textAlign='center'; ctx.direction='rtl'; ctx.shadowColor='rgba(0,0,0,0.7)'; ctx.shadowBlur=8; ctx.shadowOffsetY=2;
+  ctx.fillStyle='#fff'; ctx.font='bold 34px Tahoma, Arial, sans-serif'; ctx.fillText("رحلة عبر الطبيعة اليابانية",640,92);
+  ctx.fillStyle='rgba(255,200,100,0.6)'; ctx.shadowColor='transparent'; ctx.fillRect(590,104,100,1);
+  ctx.shadowColor='rgba(0,0,0,0.7)'; ctx.font='19px Tahoma, Arial, sans-serif'; ctx.fillStyle='rgba(255,235,200,0.95)'; ctx.fillText(wx.label,640,128);
+  ctx.shadowColor='transparent'; ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.fillRect(440,650,400,2);
+  ctx.fillStyle='rgba(255,200,100,0.85)'; ctx.fillRect(440,650,400*(t/window.DUR),2);
+}
+
+// --- Loop ---
+let params=new URLSearchParams(location.search);
+let tOffset=Math.max(0,Math.min(window.DUR-0.001,parseFloat(params.get('t'))||0));
+let startPerf=null;
+function loop(now){
+  if(startPerf===null) startPerf=now;
+  render((tOffset+(now-startPerf)/1000)%window.DUR);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

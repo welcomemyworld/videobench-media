@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8"><title>AI发展史</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=60;
+const cv=document.getElementById('c'),g=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px'}
+addEventListener('resize',fit);fit();
+const M=[
+["1950","图灵测试","艾伦·图灵提出：机器能思考吗？"],
+["1956","达特茅斯会议","“人工智能”一词正式诞生。"],
+["1958","感知机","罗森布拉特造出第一个可学习的神经网络。"],
+["1966","ELIZA","第一个聊天机器人，模拟心理医生对话。"],
+["1974","AI寒冬","期望落空，资金枯竭，研究陷入低谷。"],
+["1986","反向传播","辛顿等人让多层网络真正学会学习。"],
+["1997","深蓝","IBM深蓝击败国际象棋世界冠军卡斯帕罗夫。"],
+["2006","深度学习","深度信念网络点燃神经网络复兴。"],
+["2012","AlexNet","GPU训练的卷积网络横扫ImageNet。"],
+["2016","AlphaGo","AlphaGo以4:1战胜李世石。"],
+["2017","Transformer","《Attention Is All You Need》改变一切。"],
+["2022","ChatGPT","大语言模型走进亿万人的日常。"]];
+const T0=3,SEG=4.5,N=M.length,SP=600;
+const nodes=M.map((m,i)=>({x:Math.cos(i*1.1)*260,y:Math.sin(i*1.1)*150,z:i*SP,h:(190+i*14)%360}));
+let R=1;const rnd=()=>(R=(R*16807)%2147483647)/2147483647;
+const stars=[];for(let i=0;i<900;i++)stars.push([(rnd()-.5)*4000,(rnd()-.5)*2400,rnd()*(N*SP+1500)-600]);
+// synthesized typing sound
+let ac=null,lastK=-1;
+function startAudio(){if(!ac){try{ac=new (window.AudioContext||window.webkitAudioContext)()}catch(e){}}if(ac&&ac.state!='running')ac.resume()}
+addEventListener('pointerdown',startAudio);addEventListener('keydown',startAudio);try{startAudio()}catch(e){}
+function click(){if(!ac||ac.state!='running')return;const n=ac.sampleRate*.03,b=ac.createBuffer(1,n,ac.sampleRate),d=b.getChannelData(0);
+for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/n,6);const s=ac.createBufferSource(),f=ac.createBiquadFilter(),v=ac.createGain();
+f.type='bandpass';f.frequency.value=1800+Math.random()*1500;v.gain.value=.5;s.buffer=b;s.connect(f).connect(v).connect(ac.destination);s.start()}
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t'))||0,st=performance.now();
+const ease=x=>x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2;
+function cam(t){let p=(t-T0)/SEG;p=Math.max(-.6,Math.min(N-1+.4,p));const i=Math.floor(p),f=p-i,e=ease(Math.min(1,Math.max(0,(f-.55)/.45)));
+const a=nodes[Math.max(0,Math.min(N-1,i))],b=nodes[Math.max(0,Math.min(N-1,i+1))];
+const lx=a.x+(b.x-a.x)*e,ly=a.y+(b.y-a.y)*e,lz=(i+e)*SP+(p<0?p*SP:0);
+return{x:lx*.7+Math.sin(t*.3)*40,y:ly*.7+Math.cos(t*.25)*25,z:lz-420,tx:lx,ty:ly,tz:lz}}
+function frame(){const t=((performance.now()-st)/1000+off)%DUR;const C=cam(t),F=700;
+g.fillStyle='#03040a';g.fillRect(0,0,1280,720);
+const vg=g.createRadialGradient(640,360,50,640,360,800);vg.addColorStop(0,'rgba(30,60,120,.25)');vg.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=vg;g.fillRect(0,0,1280,720);
+const P=(x,y,z)=>{const dz=z-C.z;if(dz<10)return null;const s=F/dz;return[640+(x-C.x+(C.x-C.tx)*0)*s,360+(y-C.y)*s,s,dz]};
+for(const s of stars){const p=P(s[0],s[1],s[2]);if(!p||p[3]>3000)continue;const a=Math.min(1,(3000-p[3])/1500);g.fillStyle=`rgba(180,210,255,${a*.8})`;g.fillRect(p[0],p[1],Math.max(1,p[2]*2),Math.max(1,p[2]*2))}
+// path
+g.lineWidth=2;for(let i=0;i<N-1;i++){const a=P(nodes[i].x,nodes[i].y,nodes[i].z),b=P(nodes[i+1].x,nodes[i+1].y,nodes[i+1].z);if(!a||!b)continue;
+const gr=g.createLinearGradient(a[0],a[1],b[0],b[1]);gr.addColorStop(0,`hsla(${nodes[i].h},90%,65%,.7)`);gr.addColorStop(1,`hsla(${nodes[i+1].h},90%,65%,.7)`);g.strokeStyle=gr;g.beginPath();g.moveTo(a[0],a[1]);g.lineTo(b[0],b[1]);g.stroke()}
+// nodes back to front
+const cur=Math.floor((t-T0)/SEG);
+nodes.map((n,i)=>[n,i]).sort((a,b)=>b[0].z-a[0].z).forEach(([n,i])=>{const p=P(n.x,n.y,n.z);if(!p||p[3]>4000)return;const r=26*p[2],act=i==cur;
+g.save();g.translate(p[0],p[1]);g.rotate(t*.5+i);g.shadowBlur=act?40:15;g.shadowColor=`hsl(${n.h},100%,60%)`;
+g.strokeStyle=`hsla(${n.h},100%,${act?75:60}%,${Math.min(1,(4000-p[3])/2000)})`;g.lineWidth=Math.max(1,2*p[2]);
+for(let k=0;k<3;k++){g.beginPath();g.ellipse(0,0,r*(1.6+k*.5),r*(.5+k*.2),k*1.05,0,7);g.stroke()}
+g.fillStyle=`hsl(${n.h},100%,${act?80:60}%)`;g.beginPath();g.arc(0,0,r*.6,0,7);g.fill();g.restore();
+if(p[2]>.25){g.fillStyle=`rgba(255,255,255,${Math.min(1,p[2])})`;g.font=`600 ${Math.round(22*p[2]+6)}px sans-serif`;g.textAlign='center';g.fillText(M[i][0],p[0],p[1]-r*2.2)}});
+g.textAlign='left';
+// typing panel
+let k=-1;
+if(cur>=0&&cur<N){const lt=t-T0-cur*SEG,m=M[cur],full=m[0]+"  "+m[1],body=m[2];
+const c1=Math.min(full.length,Math.floor(lt*14)),c2=Math.max(0,Math.min(body.length,Math.floor((lt-.9)*16)));k=cur*1000+c1+c2;
+const a=Math.min(1,lt*3,(SEG-lt)*3);g.globalAlpha=a;
+g.fillStyle='rgba(8,14,30,.72)';g.fillRect(70,500,720,150);g.fillStyle=`hsl(${nodes[cur].h},90%,60%)`;g.fillRect(70,500,5,150);
+g.font='bold 44px sans-serif';g.fillStyle='#fff';g.fillText(full.slice(0,c1),100,560);
+g.font='26px sans-serif';g.fillStyle='#bcd';const bt=body.slice(0,c2);g.fillText(bt,100,615);
+if(Math.floor(t*3)%2){const w=c2>0?g.measureText(bt).width:0;g.fillStyle='#7cf';g.fillRect(102+w,592,12,28)}g.globalAlpha=1;
+// progress
+g.fillStyle='rgba(255,255,255,.15)';g.fillRect(70,680,1140,3);g.fillStyle=`hsl(${nodes[cur].h},90%,60%)`;g.fillRect(70,680,1140*((cur+lt/SEG)/N),3)}
+if(k!==lastK){if(lastK>=0&&k>=0)click();lastK=k}
+// intro/outro
+if(t<T0+.5){const a=Math.min(1,t*1.5,(T0+.5-t)*2);g.globalAlpha=a;g.textAlign='center';g.fillStyle='#fff';g.font='bold 76px sans-serif';g.fillText('人工智能发展史',640,340);
+g.font='26px sans-serif';g.fillStyle='#8af';g.fillText('1950 — 2022 · 每一帧皆由代码渲染',640,395);g.globalAlpha=1;g.textAlign='left'}
+const oe=T0+N*SEG;if(t>oe-.3){const a=Math.min(1,(t-oe+.3)*1.5);g.globalAlpha=a;g.fillStyle='rgba(0,0,0,.5)';g.fillRect(0,0,1280,720);g.textAlign='center';
+g.fillStyle='#fff';g.font='bold 60px sans-serif';g.fillText('下一个里程碑，由你书写',640,350);g.font='24px sans-serif';g.fillStyle='#8af';g.fillText('代码合成画面与打字声 · 无视频生成模型',640,400);g.globalAlpha=1;g.textAlign='left'}
+g.font='16px monospace';g.fillStyle='rgba(150,180,220,.6)';g.fillText('AI HISTORY · '+t.toFixed(1)+'s',1080,40);
+requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

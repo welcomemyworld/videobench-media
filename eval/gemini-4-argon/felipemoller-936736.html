@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Meu Orbe - Simulação de Gastos</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #000000;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  #stage {
+    width: 1280px;
+    height: 720px;
+    display: block;
+    box-shadow: 0 0 50px rgba(0,0,0,0.8);
+  }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+(() => {
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const W = 1280, H = 720;
+  window.DUR = 22;
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const startOffset = parseFloat(urlParams.get('t')) || 0;
+  let t0 = null;
+
+  function resize() {
+    const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+    canvas.style.transform = `scale(${scale})`;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // Easing & Math helpers
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const invLerp = (a, b, v) => clamp((v - a) / (b - a), 0, 1);
+  const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+  const easeInOutCubic = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  const easeOutBack = t => {
+    const c1 = 1.70158, c3 = c1 + 1;
+    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+  };
+
+  function formatBRL(val) {
+    const parts = val.toFixed(2).split('.');
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+    return "R$ " + parts.join(',');
+  }
+
+  function roundRect(ctx, x, y, w, h, r) {
+    const rr = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + rr, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rr);
+    ctx.arcTo(x + w, y + h, x, y + h, rr);
+    ctx.arcTo(x, y + h, x, y, rr);
+    ctx.arcTo(x, y, x + w, y, rr);
+    ctx.closePath();
+  }
+
+  // Expenses Data
+  const items = [
+    {
+      id: 'mercado',
+      title: 'Supermercado',
+      place: 'St. Marche • 10:24',
+      cat: 'Alimentação',
+      amount: 348.90,
+      color: '#10B981',
+      tStart: 3.0,
+      budgetPct: 0.68
+    },
+    {
+      id: 'posto',
+      title: 'Posto de Gasolina',
+      place: 'Shell Select • 14:50',
+      cat: 'Transporte',
+      amount: 220.00,
+      color: '#F59E0B',
+      tStart: 7.0,
+      budgetPct: 0.54
+    },
+    {
+      id: 'restaurante',
+      title: 'Restaurante',
+      place: 'Outback Steakhouse • 20:15',
+      cat: 'Lazer & Jantar',
+      amount: 164.50,
+      color: '#EC4899',
+      tStart: 11.0,
+      budgetPct: 0.82
+    }
+  ];
+
+  // Ambient background particles
+  const stars = Array.from({ length: 65 }, (_, i) => ({
+    x: (Math.sin(i * 123.45) * 0.5 + 0.5) * W,
+    y: (Math.cos(i * 678.90) * 0.5 + 0.5) * H,
+    r: (i % 3 + 1) * 0.8,
+    s: 0.2 + (i % 5) * 0.1,
+    c: i % 2 === 0 ? '#7C3AED' : '#06B6D4'
+  }));
+
+  function drawIcon(type, cx, cy, s, color) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(s, s);
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 2.4;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    if (type === 'mercado') {
+      ctx.beginPath();
+      ctx.moveTo(-11, -8);
+      ctx.lineTo(-7, -8);
+      ctx.lineTo(-4, 4);
+      ctx.lineTo(8, 4);
+      ctx.lineTo(11, -5);
+      ctx.lineTo(-6, -5);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(-3, 9, 2, 0, Math.PI * 2);
+      ctx.arc(6, 9, 2, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (type === 'posto') {
+      roundRect(ctx, -8, -9, 11, 18, 2);
+      ctx.stroke();
+      ctx.fillRect(-5, -6, 5, 4);
+      ctx.beginPath();
+      ctx.moveTo(3, -4);
+      ctx.lineTo(7, -4);
+      ctx.lineTo(8, 5);
+      ctx.arc(6, 5, 2, 0, Math.PI);
+      ctx.lineTo(4, -1);
+      ctx.stroke();
+    } else if (type === 'restaurante') {
+      // Fork
+      ctx.beginPath();
+      ctx.moveTo(-5, -9); ctx.lineTo(-5, -2);
+      ctx.moveTo(-8, -9); ctx.lineTo(-8, -4); ctx.quadraticCurveTo(-8, -1, -5, -1);
+      ctx.moveTo(-2, -9); ctx.lineTo(-2, -4); ctx.quadraticCurveTo(-2, -1, -5, -1);
+      ctx.moveTo(-5, -1); ctx.lineTo(-5, 9);
+      ctx.stroke();
+      // Knife
+      ctx.beginPath();
+      ctx.moveTo(5, -9);
+      ctx.quadraticCurveTo(9, -5, 8, 1);
+      ctx.lineTo(5, 1);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(6, 1);
+      ctx.lineTo(6, 9);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawGlowingOrb(cx, cy, radius, t, pulse = 0) {
+    ctx.save();
+    const r = radius * (1 + pulse * 0.12);
+    const g = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.3, r * 0.05, cx, cy, r * 1.4);
+    g.addColorStop(0, '#FFFFFF');
+    g.addColorStop(0.25, '#38BDF8');
+    g.addColorStop(0.6, '#7C3AED');
+    g.addColorStop(1, 'rgba(124, 58, 237, 0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 1.4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Orbiting rings
+    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 2; i++) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(t * (0.8 + i * 0.5) + i * 1.2);
+      ctx.scale(1, 0.38);
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 1.05, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  function getTotalSpentAt(t) {
+    let sum = 0;
+    for (const it of items) {
+      const p = easeOutCubic(invLerp(it.tStart + 0.2, it.tStart + 1.4, t));
+      sum += it.amount * p;
+    }
+    return sum;
+  }
+
+  function renderBackground(t) {
+    // Deep cinematic studio backdrop around the 9:16 frame
+    const bg = ctx.createRadialGradient(W / 2, H / 2, 50, W / 2, H / 2, 750);
+    bg.addColorStop(0, '#131129');
+    bg.addColorStop(0.6, '#070710');
+    bg.addColorStop(1, '#020205');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // Subtle perspective grid in background
+    ctx.save();
+    ctx.strokeStyle = 'rgba(124, 58, 237, 0.07)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x < W; x += 64) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, H);
+      ctx.stroke();
+    }
+    for (let y = 0; y < H; y += 64) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Floating particles
+    for (const st of stars) {
+      const y = (st.y - t * 18 * st.s + H * 10) % H;
+      const alpha = 0.25 + 0.35 * Math.sin(t * 2 + st.x);
+      ctx.fillStyle = st.c;
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      ctx.arc(st.x, y, st.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Subtle side branding outside the 9:16 vertical stage (keeps 9:16 hero pure)
+    const sideAlpha = clamp(invLerp(0.5, 2.0, t), 0, 1) * 0.55;
+    ctx.save();
+    ctx.globalAlpha = sideAlpha;
+    ctx.fillStyle = '#94A3B8';
+    ctx.font = '600 13px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.letterSpacing = '3px';
+    ctx.fillText('FORMATO VERTICAL 9:16', 70, 68);
+    ctx.fillStyle = '#475569';
+    ctx.font = '500 12px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillText('MEU ORBE • CONTROLE INTELIGENTE', 70, 90);
+
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#64748B';
+    ctx.fillText('lp.meuorbe.com.br', W - 70, 68);
+    ctx.restore();
+  }
+
+  function render916Stage(t) {
+    // Exact 9:16 aspect ratio container (387 x 688) centered in 1280x720
+    const fw = 387;
+    const fh = 688;
+    const fx = (W - fw) / 2;
+    const fy = (H - fh) / 2;
+
+    // Entrance scale
+    const introP = easeOutCubic(invLerp(0, 1.2, t));
+    const scale = lerp(0.92, 1.0, introP);
+
+    ctx.save();
+    ctx.translate(W / 2, H / 2);
+    ctx.scale(scale, scale);
+    ctx.translate(-W / 2, -H / 2);
+
+    // Outer ambient glow behind 9:16 frame
+    let activeGlowColor = 'rgba(124, 58, 237, 0.38)';
+    for (const it of items) {
+      if (t >= it.tStart && t < it.tStart + 3.5) {
+        activeGlowColor = it.color + '55';
+      }
+    }
+    ctx.save();
+    ctx.shadowColor = activeGlowColor;
+    ctx.shadowBlur = 65;
+    roundRect(ctx, fx, fy, fw, fh, 34);
+    ctx.fillStyle = '#090A14';
+    ctx.fill();
+    ctx.restore();
+
+    // Clip to 9:16 screen
+    ctx.save();
+    roundRect(ctx, fx, fy, fw, fh, 34);
+    ctx.clip();
+
+    // Inner 9:16 background
+    const innerBg = ctx.createLinearGradient(fx, fy, fx, fy + fh);
+    innerBg.addColorStop(0, '#0F1123');
+    innerBg.addColorStop(0.5, '#090B16');
+    innerBg.addColorStop(1, '#06070E');
+    ctx.fillStyle = innerBg;
+    ctx.fillRect(fx, fy, fw, fh);
+
+    // Soft top aurora inside phone
+    const aurora = ctx.createRadialGradient(fx + fw * 0.5, fy + 60, 10, fx + fw * 0.5, fy + 60, 260);
+    aurora.addColorStop(0, 'rgba(124, 58, 237, 0.28)');
+    aurora.addColorStop(0.6, 'rgba(6, 182, 212, 0.08)');
+    aurora.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = aurora;
+    ctx.fillRect(fx, fy, fw, 340);
+
+    // Top Status Bar
+    ctx.fillStyle = '#94A3B8';
+    ctx.font = '600 11px -apple-system, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('09:41', fx + 26, fy + 24);
+
+    // Dynamic Island / Speaker notch
+    ctx.fillStyle = '#030408';
+    roundRect(ctx, fx + fw / 2 - 42, fy + 10, 84, 20, 10);
+    ctx.fill();
+
+    // Status icons right
+    ctx.fillStyle = '#94A3B8';
+    roundRect(ctx, fx + fw - 44, fy + 15, 20, 10, 3);
+    ctx.strokeStyle = '#94A3B8';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    ctx.fillRect(fx + fw - 42, fy + 17, 14, 6);
+
+    // Header: Brand + Greeting
+    const headerFade = invLerp(0.2, 1.2, t) * (1 - invLerp(17.5, 18.3, t));
+    if (headerFade > 0) {
+      ctx.save();
+      ctx.globalAlpha = headerFade;
+
+      // Mini Orb Logo
+      drawGlowingOrb(fx + 38, fy + 58, 12, t, 0);
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '700 16px -apple-system, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('Meu Orbe', fx + 58, fy + 63);
+
+      // Live badge
+      ctx.fillStyle = 'rgba(16, 185, 129, 0.16)';
+      roundRect(ctx, fx + fw - 108, fy + 46, 84, 22, 11);
+      ctx.fill();
+      ctx.fillStyle = '#10B981';
+      ctx.beginPath();
+      ctx.arc(fx + fw - 94, fy + 57, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.font = '600 10px -apple-system, sans-serif';
+      ctx.fillText('TEMPO REAL', fx + fw - 84, fy + 61);
+
+      ctx.restore();
+    }
+
+    // Intro Overlay Headline (0s - 2.8s)
+    if (t < 3.0) {
+      const pIn = easeOutCubic(invLerp(0.1, 0.9, t));
+      const pOut = easeInOutCubic(invLerp(2.1, 2.9, t));
+      const alpha = pIn * (1 - pOut);
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      const yShift = lerp(25, 0, pIn) - lerp(0, 25, pOut);
+
+      drawGlowingOrb(fx + fw / 2, fy + 240 + yShift, 48, t, Math.sin(t * 4));
+
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#38BDF8';
+      ctx.font = '700 12px -apple-system, sans-serif';
+      ctx.fillText('SIMULAÇÃO DO DIA A DIA', fx + fw / 2, fy + 335 + yShift);
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '800 26px -apple-system, sans-serif';
+      ctx.fillText('Para onde vai o', fx + fw / 2, fy + 372 + yShift);
+      ctx.fillText('seu dinheiro?', fx + fw / 2, fy + 404 + yShift);
+
+      ctx.fillStyle = '#94A3B8';
+      ctx.font = '400 14px -apple-system, sans-serif';
+      ctx.fillText('Mercado, posto, restaurante...', fx + fw / 2, fy + 440 + yShift);
+      ctx.fillText('Veja o Meu Orbe em ação.', fx + fw / 2, fy + 462 + yShift);
+      ctx.restore();
+    }
+
+    // Main Dashboard & Expense Simulation (t = 2.2s to 18.2s)
+    const dashAlpha = easeOutCubic(invLerp(2.3, 3.1, t)) * (1 - easeInOutCubic(invLerp(17.4, 18.2, t)));
+    if (dashAlpha > 0) {
+      ctx.save();
+      ctx.globalAlpha = dashAlpha;
+
+      const totalBudget = 2500.00;
+      const spent = getTotalSpentAt(t);
+      const remaining = totalBudget - spent;
+
+      // Summary Balance Card
+      const cardX = fx + 20;
+      const cardY = fy + 84;
+      const cardW = fw - 40;
+      const cardH = 128;
+
+      const cg = ctx.createLinearGradient(cardX, cardY, cardX + cardW, cardY + cardH);
+      cg.addColorStop(0, 'rgba(30, 41, 59, 0.85)');
+      cg.addColorStop(1, 'rgba(15, 23, 42, 0.92)');
+      ctx.fillStyle = cg;
+      roundRect(ctx, cardX, cardY, cardW, cardH, 20);
+      ctx.fill();
+
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.18)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#94A3B8';
+      ctx.font = '500 11px -apple-system, sans-serif';
+      ctx.fillText('GASTOS DE HOJE', cardX + 18, cardY + 26);
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '800 28px -apple-system, sans-serif';
+      ctx.fillText(formatBRL(spent), cardX + 18, cardY + 60);
+
+      // Right side mini ring
+      const pctSpent = clamp(spent / 1000, 0, 1);
+      const ringX = cardX + cardW - 44;
+      const ringY = cardY + 46;
+      ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.arc(ringX, ringY, 22, 0, Math.PI * 2);
+      ctx.stroke();
+
+      const ringGrad = ctx.createLinearGradient(ringX - 20, ringY - 20, ringX + 20, ringY + 20);
+      ringGrad.addColorStop(0, '#38BDF8');
+      ringGrad.addColorStop(1, '#A855F7');
+      ctx.strokeStyle = ringGrad;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.arc(ringX, ringY, 22, -Math.PI / 2, -Math.PI / 2 + pctSpent * Math.PI * 2);
+      ctx.stroke();
+
+      ctx.fillStyle = '#E2E8F0';
+      ctx.font = '700 10px -apple-system, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(Math.round(pctSpent * 100) + '%', ringX, ringY + 3.5);
+
+      // Remaining disponible bar
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#64748B';
+      ctx.font = '500 11px -apple-system, sans-serif';
+      ctx.fillText('Saldo Mensal Livre:', cardX + 18, cardY + 90);
+      ctx.fillStyle = '#38BDF8';
+      ctx.font = '700 11px -apple-system, sans-serif';
+      ctx.fillText(formatBRL(remaining), cardX + 122, cardY + 90);
+
+      // Category stacked bar inside balance card
+      const barX = cardX + 18;
+      const barY = cardY + 102;
+      const barW = cardW - 36;
+      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      roundRect(ctx, barX, barY, barW, 8, 4);
+      ctx.fill();
+
+      let curX = barX;
+      for (const it of items) {
+        const p = easeOutCubic(invLerp(it.tStart + 0.2, it.tStart + 1.4, t));
+        const segW = (it.amount / 1000) * barW * p;
+        if (segW > 0.5) {
+          ctx.fillStyle = it.color;
+          roundRect(ctx, curX, barY, segW, 8, 4);
+          ctx.fill();
+          curX += segW + 2;
+        }
+      }
+
+      // Section label
+      ctx.fillStyle = '#CBD5E1';
+      ctx.font = '700 13px -apple-system, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('Estabelecimentos do Dia', cardX + 2, cardY + 154);
+
+      ctx.fillStyle = '#64748B';
+      ctx.font = '500 11px -apple-system, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText('Categorização Automática', cardX + cardW - 2, cardY + 154);
+
+      // Render each Expense Card (Mercado, Posto, Restaurante)
+      items.forEach((it, idx) => {
+        const appearP = easeOutBack(invLerp(it.tStart, it.tStart + 0.75, t));
+        if (appearP <= 0) return;
+
+        const iy = cardY + 168 + idx * 100;
+        const slideX = lerp(60, 0, clamp(appearP, 0, 1.2));
+        const cardAlpha = clamp(invLerp(it.tStart, it.tStart + 0.4, t), 0, 1);
+
+        // Highlight pulse when newly added
+        const highlight = Math.sin(invLerp(it.tStart, it.tStart + 1.6, t) * Math.PI);
+
+        ctx.save();
+        ctx.globalAlpha = dashAlpha * cardAlpha;
+        ctx.translate(slideX, 0);
+
+        // Card body
+        ctx.fillStyle = 'rgba(20, 26, 46, 0.9)';
+        roundRect(ctx, cardX, iy, cardW, 88, 16);
+        ctx.fill();
+
+        ctx.strokeStyle = highlight > 0.05
+          ? it.color
+          : 'rgba(148, 163, 184, 0.14)';
+        ctx.lineWidth = highlight > 0.05 ? 1.6 : 1;
+        ctx.stroke();
+
+        // Icon circle
+        ctx.fillStyle = it.color + '22';
+        ctx.beginPath();
+        ctx.arc(cardX + 34, iy + 36, 20, 0, Math.PI * 2);
+        ctx.fill();
+
+        drawIcon(it.id, cardX + 34, iy + 36, 1.0, it.color);
+
+        // Title & Place
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#F8FAFC';
+        ctx.font = '700 15px -apple-system, sans-serif';
+        ctx.fillText(it.title, cardX + 64, iy + 31);
+
+        ctx.fillStyle = '#94A3B8';
+        ctx.font = '500 11px -apple-system, sans-serif';
+        ctx.fillText(it.place, cardX + 64, iy + 48);
+
+        // Category pill
+        ctx.fillStyle = it.color + '24';
+        roundRect(ctx, cardX + 64, iy + 57, 86, 18, 9);
+        ctx.fill();
+        ctx.fillStyle = it.color;
+        ctx.font = '600 10px -apple-system, sans-serif';
+        ctx.fillText(it.cat, cardX + 73, iy + 69);
+
+        // Animated Expense Amount
+        const countP = easeOutCubic(invLerp(it.tStart + 0.15, it.tStart + 1.2, t));
+        const shownVal = it.amount * countP;
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '700 15px -apple-system, sans-serif';
+        ctx.fillText('- ' + formatBRL(shownVal), cardX + cardW - 16, iy + 32);
+
+        // Mini category budget progress bar on right
+        const miniW = 92;
+        const miniX = cardX + cardW - 16 - miniW;
+        const miniY = iy + 64;
+        ctx.fillStyle = 'rgba(255,255,255,0.08)';
+        roundRect(ctx, miniX, miniY, miniW, 5, 2.5);
+        ctx.fill();
+
+        ctx.fillStyle = it.color;
+        roundRect(ctx, miniX, miniY, miniW * it.budgetPct * countP, 5, 2.5);
+        ctx.fill();
+
+        ctx.fillStyle = '#64748B';
+        ctx.font = '500 10px -apple-system, sans-serif';
+        ctx.fillText('Meta ' + Math.round(it.budgetPct * 100 * countP) + '%', cardX + cardW - 16, iy + 56);
+
+        ctx.restore();
+      });
+
+      // Top Contactless Payment Toast when a transaction happens
+      items.forEach((it) => {
+        if (t >= it.tStart - 0.2 && t <= it.tStart + 2.0) {
+          const pIn = easeOutBack(invLerp(it.tStart - 0.2, it.tStart + 0.3, t));
+          const pOut = easeInOutCubic(invLerp(it.tStart + 1.5, it.tStart + 2.0, t));
+          const vis = pIn * (1 - pOut);
+          const ty = lerp(fy - 60, fy + 40, vis);
+
+          ctx.save();
+          ctx.globalAlpha = clamp(vis, 0, 1);
+          ctx.fillStyle = '#1E293B';
+          ctx.shadowColor = 'rgba(0,0,0,0.5)';
+          ctx.shadowBlur = 20;
+          roundRect(ctx, fx + 28, ty, fw - 56, 44, 22);
+          ctx.fill();
+          ctx.strokeStyle = it.color;
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+
+          ctx.fillStyle = it.color;
+          ctx.beginPath();
+          ctx.arc(fx + 50, ty + 22, 6, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = '#F8FAFC';
+          ctx.font = '600 12px -apple-system, sans-serif';
+          ctx.textAlign = 'left';
+          ctx.fillText(`Novo gasto: ${it.title}`, fx + 64, ty + 26);
+
+          ctx.fillStyle = '#38BDF8';
+          ctx.font = '700 11px -apple-system, sans-serif';
+          ctx.textAlign = 'right';
+          ctx.fillText('Sincronizado ✓', fx + fw - 44, ty + 26);
+          ctx.restore();
+        }
+      });
+
+      // AI Smart Insight Banner (t = 14.3s to 18.0s)
+      if (t >= 14.2) {
+        const insP = easeOutBack(invLerp(14.2, 15.0, t));
+        const iy = fy + fh - 122;
+        ctx.save();
+        ctx.globalAlpha = dashAlpha * clamp(insP, 0, 1);
+        ctx.translate(0, lerp(30, 0, insP));
+
+        const ig = ctx.createLinearGradient(cardX, iy, cardX + cardW, iy + 86);
+        ig.addColorStop(0, 'rgba(124, 58, 237, 0.28)');
+        ig.addColorStop(1, 'rgba(6, 182, 212, 0.22)');
+        ctx.fillStyle = ig;
+        roundRect(ctx, cardX, iy, cardW, 84, 18);
+        ctx.fill();
+
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+
+        drawGlowingOrb(cardX + 32, iy + 42, 15, t, Math.sin(t * 6));
+
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#38BDF8';
+        ctx.font = '700 11px -apple-system, sans-serif';
+        ctx.fillText('INSIGHT INTELIGENTE • MEU ORBE', cardX + 58, iy + 27);
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '600 13px -apple-system, sans-serif';
+        ctx.fillText('3 gastos registrados hoje (R$ 733,40).', cardX + 58, iy + 47);
+
+        ctx.fillStyle = '#A7F3D0';
+        ctx.font = '500 12px -apple-system, sans-serif';
+        ctx.fillText('Você segue 18% abaixo do limite semanal!', cardX + 58, iy + 66);
+
+        ctx.restore();
+      }
+
+      ctx.restore();
+    }
+
+    // Final Impact CTA Scene (t = 17.8s to 22.0s)
+    if (t >= 17.6) {
+      const ctaP = easeOutCubic(invLerp(17.6, 18.6, t));
+      ctx.save();
+      ctx.globalAlpha = ctaP;
+
+      const cx = fx + fw / 2;
+      const cy = fy + 225;
+
+      drawGlowingOrb(cx, cy, 56, t, Math.sin(t * 5));
+
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '800 30px -apple-system, sans-serif';
+      ctx.fillText('Meu Orbe', cx, cy + 105);
+
+      ctx.fillStyle = '#E2E8F0';
+      ctx.font = '600 17px -apple-system, sans-serif';
+      ctx.fillText('Domine cada centavo do seu', cx, cy + 142);
+      ctx.fillText('dia a dia sem esforço.', cx, cy + 166);
+
+      // Feature chips
+      const chips = ['Mercado', 'Combustível', 'Restaurantes', 'Metas IA'];
+      chips.forEach((ch, i) => {
+        const row = Math.floor(i / 2);
+        const col = i % 2;
+        const cw = 138;
+        const chx = cx - cw - 6 + col * (cw + 12);
+        const chy = cy + 192 + row * 34;
+        ctx.fillStyle = 'rgba(255,255,255,0.07)';
+        roundRect(ctx, chx, chy, cw, 26, 13);
+        ctx.fill();
+        ctx.fillStyle = '#94A3B8';
+        ctx.font = '600 11px -apple-system, sans-serif';
+        ctx.fillText('✓ ' + ch, chx + cw / 2, chy + 17);
+      });
+
+      // Glowing CTA Button with URL
+      const pulse = 1 + 0.025 * Math.sin(t * 6);
+      ctx.save();
+      ctx.translate(cx, cy + 305);
+      ctx.scale(pulse, pulse);
+
+      const btnW = 310, btnH = 54;
+      const btnGrad = ctx.createLinearGradient(-btnW / 2, 0, btnW / 2, 0);
+      btnGrad.addColorStop(0, '#7C3AED');
+      btnGrad.addColorStop(1, '#06B6D4');
+
+      ctx.shadowColor = 'rgba(6, 182, 212, 0.55)';
+      ctx.shadowBlur = 25;
+      ctx.fillStyle = btnGrad;
+      roundRect(ctx, -btnW / 2, -btnH / 2, btnW, btnH, 27);
+      ctx.fill();
+
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '800 16px -apple-system, sans-serif';
+      ctx.fillText('lp.meuorbe.com.br', 0, 6);
+      ctx.restore();
+
+      ctx.fillStyle = '#38BDF8';
+      ctx.font = '600 12px -apple-system, sans-serif';
+      ctx.fillText('Acesse agora e transforme suas finanças', cx, cy + 358);
+
+      ctx.restore();
+    }
+
+    // Bottom iOS Home Indicator inside 9:16 frame
+    ctx.fillStyle = 'rgba(255,255,255,0.28)';
+    roundRect(ctx, fx + fw / 2 - 55, fy + fh - 14, 110, 4, 2);
+    ctx.fill();
+
+    ctx.restore(); // end clip
+
+    // Sleek metallic 9:16 bezel border
+    const bezel = ctx.createLinearGradient(fx, fy, fx + fw, fy + fh);
+    bezel.addColorStop(0, 'rgba(255,255,255,0.35)');
+    bezel.addColorStop(0.5, 'rgba(124, 58, 237, 0.45)');
+    bezel.addColorStop(1, 'rgba(6, 182, 212, 0.35)');
+    ctx.strokeStyle = bezel;
+    ctx.lineWidth = 2.5;
+    roundRect(ctx, fx, fy, fw, fh, 34);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function frame(now) {
+    if (t0 === null) t0 = now;
+    const elapsed = (now - t0) / 1000 + startOffset;
+    const t = elapsed % window.DUR;
+
+    ctx.clearRect(0, 0, W, H);
+    renderBackground(t);
+    render916Stage(t);
+
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

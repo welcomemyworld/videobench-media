@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Network Effects</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#stage{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+canvas{display:block;cursor:pointer}
+</style></head><body>
+<div id="stage"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+window.DUR=42;
+const cv=document.getElementById('c'),x=cv.getContext('2d'),st=document.getElementById('stage');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);st.style.transform=`scale(${s}) translate(-50%,-50%)`;st.style.transform=`translate(-50%,-50%) scale(${s})`;st.style.transformOrigin='center';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t'))||0;
+const t0=performance.now()-off*1000;
+const C=n=>n*(n-1)/2;
+// narration script
+const lines=[
+[0,"Network effects: a product becomes more valuable as more people use it."],
+[6.5,"With two users, there is exactly one possible connection."],
+[12,"Add users, and every newcomer can connect to everyone already there."],
+[17,"Ten users create forty-five connections."],
+[23,"Now grow to fifty users: five times the people…"],
+[29,"…but twelve hundred twenty-five connections. About twenty-seven times more!"],
+[35,"Users grow linearly. Connections grow with the square. That is the network effect."]];
+// user count timeline
+const keys=[[0,2],[5,2],[7,2],[12,2],[16,10],[22,10],[28,50],[35,50],[40,2],[42,2]];
+function ease(a){return a<.5?2*a*a:1-Math.pow(-2*a+2,2)/2}
+function autoN(t){for(let i=0;i<keys.length-1;i++){const[a,va]=keys[i],[b,vb]=keys[i+1];if(t>=a&&t<=b)return va+(vb-va)*ease((t-a)/(b-a));}return 2}
+let manual=null,manualUntil=0,drag=false,spoken=-1,lastT=0;
+const SL={x:120,y:650,w:560};
+function pos(e){const r=cv.getBoundingClientRect();return[(e.clientX-r.left)*1280/r.width,(e.clientY-r.top)*720/r.height]}
+function setFrom(px){manual=Math.round(2+Math.max(0,Math.min(1,(px-SL.x)/SL.w))*58);}
+cv.addEventListener('pointerdown',e=>{const[a,b]=pos(e);if(Math.abs(b-SL.y)<30){drag=true;setFrom(a);}});
+addEventListener('pointermove',e=>{if(drag)setFrom(pos(e)[0])});
+addEventListener('pointerup',()=>{drag=false;manualUntil=performance.now()+4000});
+function say(s){try{const u=new SpeechSynthesisUtterance(s);u.rate=1.02;speechSynthesis.cancel();speechSynthesis.speak(u)}catch(e){}}
+function frame(now){
+ let t=((now-t0)/1000)%DUR;
+ if(t<lastT)spoken=-1;lastT=t;
+ let li=0;lines.forEach((l,i)=>{if(t>=l[0])li=i});
+ if(li!==spoken){spoken=li;say(lines[li][1]);}
+ let nf=autoN(t);
+ if(manual!==null&&(drag||now<manualUntil))nf=manual;else manual=null;
+ const n=Math.max(2,Math.round(nf));
+ // bg
+ const g=x.createRadialGradient(420,360,50,640,360,900);g.addColorStop(0,'#0d1a33');g.addColorStop(1,'#03050b');
+ x.fillStyle=g;x.fillRect(0,0,1280,720);
+ x.fillStyle='#fff';x.font='bold 34px sans-serif';x.textAlign='left';x.fillText('Network Effects',60,62);
+ x.fillStyle='#7f9cc9';x.font='18px sans-serif';x.fillText('Connections = n × (n − 1) / 2',60,92);
+ // graph
+ const cx=420,cy=360,R=210,P=[];
+ for(let i=0;i<n;i++){const a=i/n*Math.PI*2-Math.PI/2+t*.05;P.push([cx+Math.cos(a)*R,cy+Math.sin(a)*R])}
+ x.lineWidth=1;const al=Math.max(.06,Math.min(.8,6/n));
+ for(let i=0;i<n;i++)for(let j=i+1;j<n;j++){
+  const h=(200+(i*7+j*13)%60);x.strokeStyle=`hsla(${h},90%,65%,${al})`;
+  x.beginPath();x.moveTo(P[i][0],P[i][1]);x.lineTo(P[j][0],P[j][1]);x.stroke();}
+ const nr=Math.max(4,12-n/6);
+ P.forEach(p=>{x.fillStyle='#ffd166';x.shadowColor='#ffd166';x.shadowBlur=12;x.beginPath();x.arc(p[0],p[1],nr,0,7);x.fill();});x.shadowBlur=0;
+ // slider
+ const fr=(nf-2)/58;
+ x.fillStyle='#1d2b47';x.fillRect(SL.x,SL.y-4,SL.w,8);
+ x.fillStyle='#4cc9f0';x.fillRect(SL.x,SL.y-4,SL.w*fr,8);
+ x.beginPath();x.arc(SL.x+SL.w*fr,SL.y,13,0,7);x.fillStyle='#fff';x.fill();
+ x.fillStyle='#9fb3d9';x.font='16px sans-serif';x.textAlign='left';x.fillText('Users (drag to adjust): '+n,SL.x,SL.y-22);
+ x.textAlign='right';x.fillText(manual!==null?'manual':'auto demo',SL.x+SL.w,SL.y-22);
+ // stats
+ x.textAlign='left';
+ x.fillStyle='#ffd166';x.font='bold 54px sans-serif';x.fillText(n,780,170);
+ x.fillStyle='#9fb3d9';x.font='18px sans-serif';x.fillText('users',780,196);
+ x.fillStyle='#4cc9f0';x.font='bold 54px sans-serif';x.fillText(C(n).toLocaleString('en-US'),960,170);
+ x.fillStyle='#9fb3d9';x.font='18px sans-serif';x.fillText('possible connections',960,196);
+ // chart
+ const ox=790,oy=500,W=420,H=260;
+ x.strokeStyle='#33476b';x.beginPath();x.moveTo(ox,oy-H);x.lineTo(ox,oy);x.lineTo(ox+W,oy);x.stroke();
+ const mx=C(60);
+ x.lineWidth=3;x.strokeStyle='#ffd166';x.beginPath();
+ for(let k=2;k<=60;k++){const px=ox+(k-2)/58*W,py=oy-(k/60)*H*.25;k==2?x.moveTo(px,py):x.lineTo(px,py)}x.stroke();
+ x.strokeStyle='#4cc9f0';x.beginPath();
+ for(let k=2;k<=60;k++){const px=ox+(k-2)/58*W,py=oy-C(k)/mx*H;k==2?x.moveTo(px,py):x.lineTo(px,py)}x.stroke();x.lineWidth=1;
+ const mpx=ox+(nf-2)/58*W,mpy=oy-C(nf)/mx*H;
+ x.fillStyle='#fff';x.beginPath();x.arc(mpx,mpy,6,0,7);x.fill();
+ x.font='14px sans-serif';x.fillStyle='#ffd166';x.fillText('users (linear)',ox+W-110,oy-H*.25-12);
+ x.fillStyle='#4cc9f0';x.fillText('connections (≈ n²)',ox+W-130,oy-H+10);
+ x.fillStyle='#6f84ab';x.fillText('users →',ox+W-55,oy+20);
+ // comparison callout
+ if(t>27&&t<41&&manual===null){const a=Math.min(1,(t-27)/1.5,(41-t));x.globalAlpha=a;
+  x.fillStyle='rgba(76,201,240,.12)';x.fillRect(780,540,440,70);x.strokeStyle='#4cc9f0';x.strokeRect(780,540,440,70);
+  x.fillStyle='#fff';x.font='bold 22px sans-serif';x.fillText('10 → 50 users  =  5× users',796,568);
+  x.fillStyle='#4cc9f0';x.fillText('45 → 1,225 links  =  27× connections',796,598);x.globalAlpha=1;}
+ // caption
+ const cap=lines[li][1],ca=Math.min(1,(t-lines[li][0])*3);
+ x.globalAlpha=ca;x.fillStyle='rgba(0,0,0,.55)';x.fillRect(0,682,1280,38);
+ x.fillStyle='#fff';x.font='20px sans-serif';x.textAlign='center';x.fillText(cap,640,708);x.globalAlpha=1;
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></body></html>

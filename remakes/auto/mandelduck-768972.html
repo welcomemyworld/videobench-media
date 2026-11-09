@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+window.DUR=40;
+const cv=document.getElementById('c'),X=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),T0=parseFloat(q.get('t')||0);
+const st=performance.now();
+let R=1;function rnd(){R=(R*16807)%2147483647;return R/2147483647;}
+// world: houses, trees, cats
+const houses=[],cats=[],cyp=[];
+for(let i=0;i<46;i++){const a=rnd()*6.283,d=6+rnd()*26;houses.push({x:Math.cos(a)*d,z:Math.sin(a)*d,w:1.2+rnd()*1.6,h:1+rnd()*2,c:rnd(),win:rnd()>.4});}
+for(let i=0;i<10;i++){const a=rnd()*6.283,d=8+rnd()*20;cyp.push({x:Math.cos(a)*d,z:Math.sin(a)*d,h:4+rnd()*4});}
+// path of camera: loop
+function path(t){const a=t/DUR*6.283;return{x:Math.cos(a)*14+Math.sin(a*2)*3,z:Math.sin(a)*14,yaw:a+1.571+Math.sin(a*3)*.35};}
+const catNames=['Vincent','Théo','Lune','Étoile','Cyprès','Mistral','Arles','Iris'];
+for(let i=0;i<8;i++){const tt=(i+.5)/8*DUR,p=path(tt+1.5),a=p.yaw+(i%2?.5:-.5);cats.push({x:p.x+Math.cos(a-1.571)*5+Math.sin(i)*1,z:p.z+Math.sin(a-1.571)*5,c:i%3,name:catNames[i],t:tt+1.5,found:-1});}
+// swirl strokes
+const strokes=[];for(let i=0;i<900;i++)strokes.push({x:rnd()*1280,y:rnd()*400,r:rnd(),p:rnd()*6});
+const stars=[];for(let i=0;i<11;i++)stars.push({x:rnd()*1280,y:30+rnd()*220,s:14+rnd()*22});
+let cam;
+function proj(x,y,z){const dx=x-cam.x,dz=z-cam.z,c=Math.cos(cam.yaw),s=Math.sin(cam.yaw);
+const rx=dx*s-dz*c,rz=dx*c+dz*s;if(rz<.3)return null;const f=700/rz;return{x:640+rx*f,y:430-(y-1.6+cam.bob)*f,f,z:rz};}
+function sky(t){const g=X.createLinearGradient(0,0,0,450);g.addColorStop(0,'#0b1a4a');g.addColorStop(1,'#2a5596');X.fillStyle=g;X.fillRect(0,0,1280,720);
+const off=(cam.yaw*400)%1280;X.lineCap='round';
+for(const s of strokes){let x=((s.x-off)%1280+1280)%1280,y=s.y;const ang=Math.sin(x*.006+y*.01+t*.4+s.p)*2+t*.2;
+X.strokeStyle=s.r<.3?'#7fb0e0':s.r<.6?'#3a6ac0':s.r<.8?'#c8d8f0':'#1d3a88';X.lineWidth=3;X.beginPath();X.moveTo(x,y);X.lineTo(x+Math.cos(ang)*14,y+Math.sin(ang)*6);X.stroke();}
+for(const s of stars){let x=((s.x-off*.8)%1280+1280)%1280;for(let k=4;k>0;k--){X.strokeStyle=k%2?'#f3e27a':'#fff8c0';X.lineWidth=3;X.beginPath();X.arc(x,s.y,s.s*k/3+Math.sin(t*2+k)*2,t+k,t+k+5);X.stroke();}X.fillStyle='#fff7b0';X.beginPath();X.arc(x,s.y,s.s/3,0,7);X.fill();}
+let mx=((1100-off*.8)%1280+1280)%1280;X.fillStyle='#f6c730';X.beginPath();X.arc(mx,90,40,0,7);X.fill();X.fillStyle='#0b1a4a';X.beginPath();X.arc(mx+16,80,34,0,7);X.fill();
+// hills
+X.fillStyle='#1b3a5c';X.beginPath();X.moveTo(0,460);for(let x=0;x<=1280;x+=20)X.lineTo(x,400+Math.sin((x+off)*.008)*25);X.lineTo(1280,460);X.fill();
+const gg=X.createLinearGradient(0,430,0,720);gg.addColorStop(0,'#1d3550');gg.addColorStop(1,'#2f4a2a');X.fillStyle=gg;X.fillRect(0,428,1280,292);}
+function draw(t){const p=path(t);cam={x:p.x,z:p.z,yaw:p.yaw,bob:Math.sin(t*8)*.04};sky(t);
+const L=[];
+for(const h of houses)L.push({o:h,k:'h',d:(h.x-cam.x)**2+(h.z-cam.z)**2});
+for(const c of cyp)L.push({o:c,k:'t',d:(c.x-cam.x)**2+(c.z-cam.z)**2});
+for(const c of cats)L.push({o:c,k:'c',d:(c.x-cam.x)**2+(c.z-cam.z)**2});
+L.sort((a,b)=>b.d-a.d);
+for(const e of L){const o=e.o;
+if(e.k=='h'){const a=proj(o.x,0,o.z);if(!a||a.z>40)continue;const w=o.w*a.f,hh=o.h*a.f;
+X.fillStyle=`hsl(${210+o.c*30},35%,${18+o.c*12}%)`;X.fillRect(a.x-w/2,a.y-hh,w,hh);
+X.fillStyle='#4a2e3a';X.beginPath();X.moveTo(a.x-w/2-4,a.y-hh);X.lineTo(a.x,a.y-hh-w*.4);X.lineTo(a.x+w/2+4,a.y-hh);X.fill();
+if(o.win){X.fillStyle='#f5c842';X.fillRect(a.x-w*.25,a.y-hh*.6,w*.18,hh*.2);X.fillRect(a.x+w*.08,a.y-hh*.6,w*.18,hh*.2);}}
+else if(e.k=='t'){const a=proj(o.x,0,o.z);if(!a)continue;for(let k=0;k<14;k++){const y=a.y-k/14*o.h*a.f,ww=(1-k/14)*a.f*.6;X.strokeStyle=k%2?'#14301f':'#24502c';X.lineWidth=Math.max(2,a.f*.15);X.beginPath();X.moveTo(a.x-ww,y);X.quadraticCurveTo(a.x+Math.sin(t*2+k)*ww,y-a.f*.3,a.x+ww,y);X.stroke();}}
+else{const a=proj(o.x,0,o.z);if(!a)continue;const s=a.f*.35,col=['#e08a2c','#222','#ddd'][o.c];
+if(o.found<0&&t>o.t-2&&t<o.t+5&&Math.abs(a.x-640)<300)o.found=t;
+const tail=Math.sin(t*3+o.x);X.fillStyle=col;X.strokeStyle=col;X.lineWidth=s*.15;
+X.beginPath();X.ellipse(a.x,a.y-s*.5,s*.6,s*.45,0,0,7);X.fill();X.beginPath();X.arc(a.x,a.y-s*1.1,s*.35,0,7);X.fill();
+X.beginPath();X.moveTo(a.x-s*.32,a.y-s*1.25);X.lineTo(a.x-s*.25,a.y-s*1.6);X.lineTo(a.x-s*.05,a.y-s*1.4);X.moveTo(a.x+s*.32,a.y-s*1.25);X.lineTo(a.x+s*.25,a.y-s*1.6);X.lineTo(a.x+s*.05,a.y-s*1.4);X.fill();
+X.beginPath();X.moveTo(a.x+s*.5,a.y-s*.4);X.quadraticCurveTo(a.x+s*1.1,a.y-s*.6,a.x+s*(.9+tail*.2),a.y-s*1.2);X.stroke();
+X.fillStyle='#ffe95a';X.beginPath();X.arc(a.x-s*.13,a.y-s*1.15,s*.07,0,7);X.arc(a.x+s*.13,a.y-s*1.15,s*.07,0,7);X.fill();
+if(o.found>=0){const k=Math.min(1,(t-o.found)*2);X.strokeStyle=`rgba(255,240,120,${k})`;X.lineWidth=3;X.beginPath();X.arc(a.x,a.y-s*.8,s*1.3+Math.sin(t*5)*4,0,7);X.stroke();
+X.fillStyle=`rgba(255,250,210,${k})`;X.font='bold 20px Georgia';X.textAlign='center';X.fillText(o.name,a.x,a.y-s*2.3);}}}
+// vignette
+const v=X.createRadialGradient(640,360,300,640,360,800);v.addColorStop(0,'rgba(0,0,0,0)');v.addColorStop(1,'rgba(0,0,0,.6)');X.fillStyle=v;X.fillRect(0,0,1280,720);
+// HUD
+const n=cats.filter(c=>c.found>=0).length;X.fillStyle='rgba(10,20,50,.7)';X.fillRect(20,20,360,70);X.strokeStyle='#f3e27a';X.lineWidth=2;X.strokeRect(20,20,360,70);
+X.fillStyle='#f3e27a';X.textAlign='left';X.font='bold 24px Georgia';X.fillText('Cats in Starry Night',36,50);X.font='18px Georgia';X.fillStyle='#fff';X.fillText(`Cats spotted: ${n} / ${cats.length}`,36,78);
+X.strokeStyle='rgba(255,255,255,.7)';X.beginPath();X.arc(640,380,10,0,7);X.stroke();
+const recent=cats.find(c=>c.found>=0&&t-c.found<2);if(recent){X.textAlign='center';X.font='bold 34px Georgia';X.fillStyle='#fff3a0';X.fillText('Found '+recent.name+'!',640,660);}
+if(t<4){X.globalAlpha=1-t/4;X.fillStyle='#000';X.fillRect(0,0,1280,720);X.globalAlpha=Math.min(1,2-t/2);X.fillStyle='#f3e27a';X.textAlign='center';X.font='bold 52px Georgia';X.fillText('The Starry Night',640,330);X.font='24px Georgia';X.fillText('Walk the village and spot the hidden cats',640,380);X.globalAlpha=1;}
+if(t>DUR-4){X.textAlign='center';X.fillStyle='rgba(0,0,0,.5)';X.fillRect(0,300,1280,110);X.fillStyle='#f3e27a';X.font='bold 44px Georgia';X.fillText(`All ${n} cats found!`,640,368);}}
+function loop(){let t=((performance.now()-st)/1000+T0)%DUR;if(t<.05)for(const c of cats)c.found=-1;
+for(const c of cats)if(c.found>t)c.found=-1;draw(t);requestAnimationFrame(loop);}
+requestAnimationFrame(loop);
+</script></body></html>

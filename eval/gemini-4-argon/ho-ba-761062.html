@@ -1,0 +1,1291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>mdfor.dev — Motion Design Showreel</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    user-select: none;
+  }
+  #stage {
+    width: 1280px; height: 720px;
+    position: relative;
+    box-shadow: 0 0 80px rgba(0, 240, 255, 0.15);
+    background: #06070b;
+    overflow: hidden;
+    transform-origin: center center;
+  }
+  canvas {
+    display: block;
+    width: 1280px; height: 720px;
+  }
+  #sound-pill {
+    position: absolute; bottom: 18px; right: 22px;
+    background: rgba(15, 18, 28, 0.78);
+    border: 1px solid rgba(0, 240, 255, 0.35);
+    color: #b8e7ff; font-size: 12px; letter-spacing: 0.08em;
+    padding: 6px 12px; border-radius: 999px;
+    cursor: pointer; backdrop-filter: blur(6px);
+    z-index: 10; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="c" width="1280" height="720"></canvas>
+  <div id="sound-pill">🔊 CLICK FOR AUDIO SYNC</div>
+</div>
+<script>
+(() => {
+  const W = 1280, H = 720;
+  window.DUR = 30.0;
+  const BPM = 128;
+  const BEAT_S = 60 / BPM; // 0.46875s per beat, 64 beats in 30s
+
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const stage = document.getElementById('stage');
+  const soundPill = document.getElementById('sound-pill');
+
+  function fitStage() {
+    const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+    stage.style.transform = `scale(${scale})`;
+  }
+  window.addEventListener('resize', fitStage);
+  fitStage();
+
+  const params = new URLSearchParams(location.search);
+  const startOffset = parseFloat(params.get('t') || '0') || 0;
+
+  // --- EASING & MATH HELPERS ---
+  const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const invLerp = (a, b, v) => clamp((v - a) / (b - a));
+  const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+  const easeOutExpo = t => t >= 1 ? 1 : 1 - Math.pow(2, -10 * t);
+  const easeInOutCubic = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  const easeOutBack = (t, s = 1.70158) => 1 + (s + 1) * Math.pow(t - 1, 3) + s * Math.pow(t - 1, 2);
+  const easeOutElastic = t => {
+    if (t <= 0) return 0;
+    if (t >= 1) return 1;
+    return Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * (2 * Math.PI) / 3) + 1;
+  };
+  const springSquash = (t) => {
+    const s = Math.exp(-6 * t) * Math.sin(t * 22);
+    return { sx: 1 + s * 0.28, sy: 1 - s * 0.28 };
+  };
+
+  // --- WEB AUDIO SYNTHESIZER (128 BPM French-Touch / Tech Synthwave) ---
+  let ac = null, masterGain = null, lastStep = -1;
+  function initAudio() {
+    if (ac) {
+      if (ac.state === 'suspended') ac.resume();
+      return;
+    }
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    ac = new AudioCtx();
+    masterGain = ac.createGain();
+    masterGain.gain.value = 0.35;
+    masterGain.connect(ac.destination);
+    soundPill.textContent = '🔊 128 BPM LOCKED';
+    setTimeout(() => { soundPill.style.opacity = '0.25'; }, 1200);
+  }
+  window.addEventListener('pointerdown', initAudio);
+  window.addEventListener('keydown', initAudio);
+  initAudio();
+
+  function triggerStep(stepIndex) {
+    if (!ac || ac.state !== 'running') return;
+    const now = ac.currentTime;
+    const beat = Math.floor(stepIndex / 4);
+    const sub = stepIndex % 4;
+
+    // Kick on every beat (4-on-the-floor) + extra syncopation on fills
+    if (sub === 0 || (beat % 8 === 7 && sub === 2)) {
+      const osc = ac.createOscillator();
+      const g = ac.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(145, now);
+      osc.frequency.exponentialRampToValueAtTime(36, now + 0.14);
+      g.gain.setValueAtTime(0.95, now);
+      g.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+      osc.connect(g); g.connect(masterGain);
+      osc.start(now); osc.stop(now + 0.25);
+    }
+
+    // Crisp Snare / Clap on beats 1 and 3
+    if (sub === 0 && (beat % 2 === 1)) {
+      const bufSize = ac.sampleRate * 0.14;
+      const buf = ac.createBuffer(1, bufSize, ac.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufSize * 0.28));
+      const noise = ac.createBufferSource();
+      noise.buffer = buf;
+      const filter = ac.createBiquadFilter();
+      filter.type = 'highpass';
+      filter.frequency.value = 900;
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.55, now);
+      g.gain.exponentialRampToValueAtTime(0.01, now + 0.14);
+      noise.connect(filter); filter.connect(g); g.connect(masterGain);
+      noise.start(now);
+    }
+
+    // 16th-note Hi-Hats
+    {
+      const bufSize = ac.sampleRate * 0.04;
+      const buf = ac.createBuffer(1, bufSize, ac.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufSize * 0.25));
+      const noise = ac.createBufferSource();
+      noise.buffer = buf;
+      const hp = ac.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = 6500;
+      const g = ac.createGain();
+      const accent = (sub === 2) ? 0.25 : 0.10;
+      g.gain.setValueAtTime(accent, now);
+      g.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+      noise.connect(hp); hp.connect(g); g.connect(masterGain);
+      noise.start(now);
+    }
+
+    // Driving Bass + Pluck Arp (D minor / F major progression)
+    const roots = [38, 38, 41, 43, 45, 45, 41, 40]; // D2, D2, F2, G2, A2, A2, F2, E2
+    const rootMidi = roots[Math.floor(beat / 4) % roots.length];
+    const arpOffsets = [0, 7, 12, 15, 7, 12, 19, 12];
+    const noteMidi = (sub % 2 === 0 ? rootMidi : rootMidi + 12) + (sub === 3 ? 7 : 0);
+    const freq = 440 * Math.pow(2, (noteMidi - 69) / 12);
+
+    const bass = ac.createOscillator();
+    const bg = ac.createGain();
+    const bf = ac.createBiquadFilter();
+    bass.type = 'sawtooth';
+    bass.frequency.setValueAtTime(freq, now);
+    bf.type = 'lowpass';
+    bf.frequency.setValueAtTime(sub === 2 ? 1900 : 850, now);
+    bf.frequency.exponentialRampToValueAtTime(220, now + 0.11);
+    bg.gain.setValueAtTime(sub === 0 ? 0.18 : 0.34, now); // sidechain duck on sub 0
+    bg.gain.exponentialRampToValueAtTime(0.008, now + 0.11);
+    bass.connect(bf); bf.connect(bg); bg.connect(masterGain);
+    bass.start(now); bass.stop(now + 0.12);
+
+    // Lead sparkle arp
+    const leadMidi = rootMidi + 24 + arpOffsets[stepIndex % arpOffsets.length];
+    const lFreq = 440 * Math.pow(2, (leadMidi - 69) / 12);
+    const lead = ac.createOscillator();
+    const lg = ac.createGain();
+    lead.type = 'triangle';
+    lead.frequency.setValueAtTime(lFreq, now);
+    lg.gain.setValueAtTime(0.14, now);
+    lg.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+    lead.connect(lg); lg.connect(masterGain);
+    lead.start(now); lead.stop(now + 0.17);
+  }
+
+  // --- DRAWING PRIMITIVES & UI ASSETS ---
+  const COLORS = {
+    bg: '#06070c',
+    panel: '#0e111b',
+    panelHi: '#161b2c',
+    border: 'rgba(120, 150, 255, 0.22)',
+    cyan: '#00f0ff',
+    magenta: '#ff2a85',
+    violet: '#7c3aed',
+    lime: '#10b981',
+    amber: '#f59e0b',
+    white: '#f8fafc',
+    muted: '#8b9bb4'
+  };
+
+  function roundRect(x, y, w, h, r) {
+    const rr = Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + rr, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rr);
+    ctx.arcTo(x + w, y + h, x, y + h, rr);
+    ctx.arcTo(x, y + h, x, y, rr);
+    ctx.arcTo(x, y, x + w, y, rr);
+    ctx.closePath();
+  }
+
+  // Draw the signature mdfor.dev brand mark (Vector Icon + Typography)
+  function drawBrandLogo(x, y, scale = 1, reveal = 1, glow = 1) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+
+    // Outer rounded badge
+    const bw = 96, bh = 96;
+    ctx.save();
+    if (glow > 0) {
+      ctx.shadowColor = COLORS.cyan;
+      ctx.shadowBlur = 28 * glow;
+    }
+    const grad = ctx.createLinearGradient(-bw / 2, -bh / 2, bw / 2, bh / 2);
+    grad.addColorStop(0, '#00f0ff');
+    grad.addColorStop(0.5, '#6366f1');
+    grad.addColorStop(1, '#ff2a85');
+    roundRect(-bw / 2, -bh / 2, bw, bh, 22);
+    ctx.fillStyle = '#0b0e17';
+    ctx.fill();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = grad;
+    ctx.stroke();
+    ctx.restore();
+
+    // Inner "M + Down-Arrow + Code Slash" mark
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 7;
+    ctx.strokeStyle = '#ffffff';
+    ctx.beginPath();
+    // M shape morphing into markdown arrow
+    ctx.moveTo(-26, 18);
+    ctx.lineTo(-26, -18);
+    ctx.lineTo(-6, 4);
+    ctx.lineTo(14, -18);
+    ctx.lineTo(14, 18);
+    ctx.stroke();
+
+    // Accent cyan arrow / slash on right
+    ctx.strokeStyle = COLORS.cyan;
+    ctx.beginPath();
+    ctx.moveTo(26, -12);
+    ctx.lineTo(26, 16);
+    ctx.moveTo(19, 9);
+    ctx.lineTo(26, 17);
+    ctx.lineTo(33, 9);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.restore();
+  }
+
+  // Draw dynamic background grid + beat rings + ambient particles
+  const particles = Array.from({ length: 42 }, (_, i) => ({
+    x: (i * 197) % W,
+    y: (i * 131) % H,
+    r: 1.5 + (i % 3) * 1.2,
+    sp: 18 + (i % 5) * 14,
+    col: i % 3 === 0 ? COLORS.cyan : (i % 3 === 1 ? COLORS.magenta : '#6366f1')
+  }));
+
+  function drawStageBackdrop(t, beatPulse, camTiltX = 0, camTiltY = 0) {
+    ctx.fillStyle = COLORS.bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // Radial neon atmosphere
+    const g1 = ctx.createRadialGradient(W * 0.25 + camTiltX * 40, H * 0.25 + camTiltY * 40, 10, W * 0.25, H * 0.25, 620);
+    g1.addColorStop(0, 'rgba(0, 240, 255, 0.13)');
+    g1.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = g1;
+    ctx.fillRect(0, 0, W, H);
+
+    const g2 = ctx.createRadialGradient(W * 0.78 - camTiltX * 40, H * 0.75 - camTiltY * 40, 10, W * 0.78, H * 0.75, 580);
+    g2.addColorStop(0, 'rgba(255, 42, 133, 0.13)');
+    g2.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = g2;
+    ctx.fillRect(0, 0, W, H);
+
+    // Perspective dot/line grid
+    ctx.save();
+    ctx.strokeStyle = `rgba(110, 145, 255, ${0.05 + beatPulse * 0.04})`;
+    ctx.lineWidth = 1;
+    const spacing = 64;
+    const ox = (t * 28) % spacing;
+    const oy = (t * 18) % spacing;
+    ctx.beginPath();
+    for (let x = -spacing + ox; x < W + spacing; x += spacing) {
+      ctx.moveTo(x, 0); ctx.lineTo(x, H);
+    }
+    for (let y = -spacing + oy; y < H + spacing; y += spacing) {
+      ctx.moveTo(0, y); ctx.lineTo(W, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    // Floating bokeh particles
+    for (const p of particles) {
+      const py = (p.y - t * p.sp % H + H) % H;
+      const px = (p.x + Math.sin(t * 1.5 + p.y) * 18 + W) % W;
+      ctx.fillStyle = p.col;
+      ctx.globalAlpha = 0.25 + beatPulse * 0.25;
+      ctx.beginPath();
+      ctx.arc(px, py, p.r * (1 + beatPulse * 0.3), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Draw a sleek vector cursor with click ripples
+  function drawCursor(x, y, clicking = 0) {
+    ctx.save();
+    ctx.translate(x, y);
+    if (clicking > 0) {
+      ctx.strokeStyle = COLORS.cyan;
+      ctx.lineWidth = 2.5;
+      ctx.globalAlpha = 1 - clicking;
+      ctx.beginPath();
+      ctx.arc(0, 0, 10 + clicking * 36, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    const sc = 1 - Math.sin(clicking * Math.PI) * 0.22;
+    ctx.scale(sc, sc);
+    ctx.shadowColor = 'rgba(0,0,0,0.6)';
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = '#06070c';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, 22);
+    ctx.lineTo(6, 17);
+    ctx.lineTo(11, 26);
+    ctx.lineTo(15, 24);
+    ctx.lineTo(10, 15);
+    ctx.lineTo(18, 15);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // --- SCENE 1 (0.0s - 4.0s): KINETIC SHOWREEL INTRO & BRAND SLAM ---
+  function renderScene1(t, beat, beatFrac, beatPulse) {
+    // 0 - 1.8s: Rapid kinetic typography cuts synchronized to beats
+    if (t < 1.875) {
+      const bIdx = Math.floor(t / BEAT_S); // 0, 1, 2, 3
+      const words = [
+        { top: '60FPS KINETIC', main: 'MOTION', sub: 'DESIGN SHOWREEL // 2025', col: COLORS.cyan },
+        { top: 'BUILT FOR', main: 'DEVELOPERS', sub: 'CLEAN. DETERMINISTIC. INSTANT.', col: COLORS.magenta },
+        { top: 'TURN ANY URL INTO', main: 'MARKDOWN', sub: 'ZERO NOISE // LLM READY', col: '#a855f7' },
+        { top: 'INTRODUCING', main: 'MDFOR.DEV', sub: 'THE WEB, DISTILLED FOR AI', col: COLORS.lime }
+      ][bIdx % 4];
+
+      const localT = (t % BEAT_S) / BEAT_S;
+      const slam = easeOutBack(clamp(localT * 3.2), 2.1);
+      const sq = springSquash(localT);
+
+      // Diagonal kinetic shutters
+      ctx.save();
+      ctx.translate(W / 2, H / 2);
+      ctx.rotate((bIdx % 2 === 0 ? -0.04 : 0.04));
+      ctx.fillStyle = words.col;
+      ctx.globalAlpha = 0.08;
+      ctx.fillRect(-W, -160 * slam, W * 2, 320 * slam);
+      ctx.restore();
+
+      ctx.save();
+      ctx.translate(W / 2, H / 2);
+      ctx.scale(slam * sq.sx, slam * sq.sy);
+
+      // Top tag pill
+      roundRect(-140, -135, 280, 34, 17);
+      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      ctx.fill();
+      ctx.strokeStyle = words.col;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      ctx.fillStyle = words.col;
+      ctx.font = '700 14px ui-monospace, SFMono-Regular, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(words.top, 0, -113);
+
+      // Giant kinetic title with chromatic offset
+      ctx.font = '900 124px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.fillStyle = COLORS.magenta;
+      ctx.globalAlpha = 0.6 * (1 - localT);
+      ctx.fillText(words.main, -8 * (1 - localT), 28);
+      ctx.fillStyle = COLORS.cyan;
+      ctx.fillText(words.main, 8 * (1 - localT), 28);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(words.main, 0, 28);
+
+      // Bottom subtitle
+      ctx.font = '600 18px ui-monospace, SFMono-Regular, monospace';
+      ctx.fillStyle = COLORS.muted;
+      ctx.fillText(words.sub, 0, 88);
+      ctx.restore();
+      return;
+    }
+
+    // 1.875s - 4.0s: Hero Brand Lockup Assembly with shockwave rings
+    const lt = (t - 1.875) / (4.0 - 1.875);
+    const entry = easeOutElastic(clamp(lt * 1.4));
+    const sq = springSquash(lt);
+
+    // Expanding shockwave rings
+    for (let i = 0; i < 3; i++) {
+      const rp = clamp(lt * 1.5 - i * 0.16);
+      if (rp > 0 && rp < 1) {
+        ctx.save();
+        ctx.strokeStyle = i % 2 === 0 ? COLORS.cyan : COLORS.magenta;
+        ctx.lineWidth = 4 * (1 - rp);
+        ctx.globalAlpha = (1 - rp) * 0.7;
+        ctx.beginPath();
+        ctx.arc(W / 2, H / 2 - 20, rp * 540, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    ctx.save();
+    ctx.translate(W / 2, H / 2 - 25);
+    ctx.scale(entry * sq.sx, entry * sq.sy);
+
+    // Logo icon on left, wordmark on right
+    drawBrandLogo(-225, 0, 1.15, 1, 1 + beatPulse * 0.6);
+
+    ctx.textAlign = 'left';
+    ctx.font = '900 92px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('mdfor', -145, 30);
+
+    // ".dev" in glowing cyan gradient
+    const g = ctx.createLinearGradient(125, -40, 310, 40);
+    g.addColorStop(0, COLORS.cyan);
+    g.addColorStop(1, '#818cf8');
+    ctx.fillStyle = g;
+    ctx.fillText('.dev', 120, 30);
+
+    // Tagline bar underneath
+    const barW = 580 * easeOutCubic(clamp((lt - 0.15) * 2));
+    roundRect(-290, 68, barW, 40, 20);
+    ctx.fillStyle = 'rgba(14, 17, 27, 0.9)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0, 240, 255, 0.4)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    if (lt > 0.25) {
+      ctx.textAlign = 'center';
+      ctx.font = '600 16px ui-monospace, SFMono-Regular, monospace';
+      ctx.fillStyle = '#d1fae5';
+      ctx.fillText('https://mdfor.dev  •  Any URL → Clean Markdown for LLMs & Devs', 0, 93);
+    }
+    ctx.restore();
+  }
+
+  // --- SCENE 2 (4.0s - 9.0s): THE BLOATED DOM PROBLEM vs LASER SLICER ---
+  function renderScene2(t, beat, beatFrac, beatPulse) {
+    const lt = (t - 4.0) / 5.0; // 0..1 over 5s
+
+    // Top narrative header
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.font = '700 15px ui-monospace, SFMono-Regular, monospace';
+    ctx.fillStyle = COLORS.magenta;
+    ctx.fillText('01 // THE PROBLEM WITH RAW HTML SCRAPING', W / 2, 48);
+    ctx.font = '800 34px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(lt < 0.58 ? 'Modern Web Pages Are 90% Token Bloat' : 'Strip Away the Noise in One Prefix', W / 2, 86);
+    ctx.restore();
+
+    // Cluttered noisy cards that pop in, then get laser-sliced at lt = 0.52
+    const sliceT = clamp((lt - 0.50) / 0.28);
+    const laserX = lerp(120, W - 120, easeInOutCubic(sliceT));
+
+    const bloatItems = [
+      { x: 180, y: 150, w: 280, h: 120, title: '🍪 GDPR Cookie Wall', code: '<div class="modal-backdrop z-9999">', col: '#ef4444' },
+      { x: 490, y: 140, w: 310, h: 110, title: '📢 AdSense Banner_728x90', code: '<iframe src="ads.doubleclick.net">', col: '#f59e0b' },
+      { x: 830, y: 155, w: 270, h: 125, title: '📦 42 Tracking Scripts', code: '<script src="analytics.min.js">', col: '#ec4899' },
+      { x: 160, y: 305, w: 300, h: 130, title: '🧭 Mega-Menu Nav DOM', code: '<ul class="nav-lvl-4 hidden">', col: '#8b5cf6' },
+      { x: 820, y: 310, w: 290, h: 130, title: '🔔 Newsletter Popover', code: '<aside id="subscribe-nag">', col: '#f97316' },
+      { x: 220, y: 465, w: 380, h: 110, title: '🌀 Hydrated SVG Sprites', code: '<svg viewBox="0 0 1024 1024">...', col: '#6366f1' },
+      { x: 640, y: 465, w: 420, h: 110, title: '💬 Unloaded Comment Widget', code: '<div id="disqus_thread"></div>', col: '#14b8a6' }
+    ];
+
+    // Central core article card (survives the laser)
+    ctx.save();
+    const coreScale = 1 + easeOutBack(clamp((lt - 0.55) * 2.2)) * 0.14;
+    ctx.translate(W / 2, 365);
+    ctx.scale(coreScale, coreScale);
+    roundRect(-155, -75, 310, 150, 16);
+    ctx.fillStyle = '#0f172a';
+    ctx.fill();
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = COLORS.cyan;
+    ctx.stroke();
+    ctx.fillStyle = COLORS.cyan;
+    ctx.font = '700 13px ui-monospace, SFMono-Regular, monospace';
+    ctx.fillText('PURE CONTENT PAYLOAD', -130, -42);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '800 22px -apple-system, sans-serif';
+    ctx.fillText('# Deep Dive Architecture', -130, -10);
+    ctx.fillStyle = COLORS.muted;
+    ctx.font = '500 14px ui-monospace, monospace';
+    ctx.fillText('Clean headings, tables & code', -130, 22);
+    ctx.fillStyle = COLORS.lime;
+    ctx.fillText('✓ 1,420 Tokens (Saved 92%)', -130, 50);
+    ctx.restore();
+
+    // Draw each bloat item; if laserX has passed it, shatter & vaporize it
+    bloatItems.forEach((it, idx) => {
+      const popIn = easeOutBack(clamp((lt * 5.0) - idx * 0.18));
+      if (popIn <= 0) return;
+
+      const centerX = it.x + it.w / 2;
+      const centerY = it.y + it.h / 2;
+      const hitProgress = sliceT > 0 ? clamp((laserX - centerX + 120) / 220) : 0;
+
+      ctx.save();
+      ctx.translate(centerX, centerY);
+      const wobble = Math.sin(t * 7 + idx) * 0.03;
+      const pushX = hitProgress * (centerX < W / 2 ? -90 : 90);
+      const pushY = hitProgress * (centerY < 360 ? -70 : 70);
+      ctx.translate(pushX, pushY);
+      ctx.rotate(wobble + hitProgress * (idx % 2 === 0 ? 0.35 : -0.35));
+      const sc = popIn * (1 - hitProgress * 0.85);
+      ctx.scale(sc, sc);
+      ctx.globalAlpha = 1 - hitProgress;
+
+      roundRect(-it.w / 2, -it.h / 2, it.w, it.h, 14);
+      ctx.fillStyle = '#141826';
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = it.col;
+      ctx.stroke();
+
+      // Fake window dots
+      ctx.fillStyle = it.col;
+      ctx.beginPath();
+      ctx.arc(-it.w / 2 + 18, -it.h / 2 + 18, 5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '700 16px -apple-system, sans-serif';
+      ctx.fillText(it.title, -it.w / 2 + 34, -it.h / 2 + 24);
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '500 13px ui-monospace, monospace';
+      ctx.fillText(it.code, -it.w / 2 + 18, 10);
+
+      // Token waste badge
+      roundRect(-it.w / 2 + 18, 22, 155, 24, 6);
+      ctx.fillStyle = 'rgba(239, 68, 68, 0.18)';
+      ctx.fill();
+      ctx.fillStyle = '#fca5a5';
+      ctx.font = '700 12px ui-monospace, monospace';
+      ctx.fillText(`+${(idx + 2) * 3400} junk tokens`, -it.w / 2 + 28, 38);
+
+      ctx.restore();
+    });
+
+    // Draw the vertical cyan/magenta laser beam sweeping across
+    if (sliceT > 0 && sliceT < 1) {
+      ctx.save();
+      ctx.shadowColor = COLORS.cyan;
+      ctx.shadowBlur = 32;
+      const lg = ctx.createLinearGradient(laserX - 40, 0, laserX + 10, 0);
+      lg.addColorStop(0, 'rgba(0, 240, 255, 0)');
+      lg.addColorStop(0.8, 'rgba(0, 240, 255, 0.45)');
+      lg.addColorStop(1, '#ffffff');
+      ctx.fillStyle = lg;
+      ctx.fillRect(laserX - 40, 115, 50, 500);
+
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(laserX, 115);
+      ctx.lineTo(laserX, 615);
+      ctx.stroke();
+
+      // Laser badge
+      roundRect(laserX - 75, 622, 150, 30, 15);
+      ctx.fillStyle = COLORS.cyan;
+      ctx.fill();
+      ctx.fillStyle = '#05070c';
+      ctx.font = '800 13px ui-monospace, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('MDFOR.DEV PARSER', laserX, 642);
+      ctx.restore();
+    }
+  }
+
+  // --- SCENE 3 (9.0s - 20.0s): DECONSTRUCTED PRODUCT UI & COMPONENT ORCHESTRATION ---
+  function renderScene3(t, beat, beatFrac, beatPulse) {
+    const lt = (t - 9.0) / 11.0; // 0..1 across 11 seconds
+    const sec = t - 9.0; // 0..11s
+
+    // Subtle 2.5D floating camera motion
+    const camX = Math.sin(t * 1.4) * 8;
+    const camY = Math.cos(t * 1.1) * 6;
+
+    ctx.save();
+    ctx.translate(camX, camY);
+
+    // --- 1. DECONSTRUCTED URL OMNI-BAR (Top Center) ---
+    const barEntry = easeOutBack(clamp(sec / 0.8), 1.4);
+    ctx.save();
+    ctx.translate(W / 2, 74);
+    ctx.scale(barEntry, barEntry);
+
+    roundRect(-540, -34, 1080, 68, 18);
+    ctx.fillStyle = '#101422';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(0, 240, 255, 0.45)';
+    ctx.stroke();
+
+    // Brand badge inside omni-bar
+    drawBrandLogo(-495, 0, 0.48, 1, 0.5);
+
+    // URL Prefix pill that animates in and locks
+    const prefixPop = easeOutElastic(clamp((sec - 0.5) / 0.9));
+    ctx.save();
+    ctx.translate(-355, 0);
+    ctx.scale(prefixPop, prefixPop);
+    roundRect(-95, -20, 190, 40, 10);
+    const pg = ctx.createLinearGradient(-95, -20, 95, 20);
+    pg.addColorStop(0, 'rgba(0, 240, 255, 0.25)');
+    pg.addColorStop(1, 'rgba(99, 102, 241, 0.25)');
+    ctx.fillStyle = pg;
+    ctx.fill();
+    ctx.strokeStyle = COLORS.cyan;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = COLORS.cyan;
+    ctx.font = '700 17px ui-monospace, SFMono-Regular, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('https://mdfor.dev/', 0, 6);
+    ctx.restore();
+
+    // Target URL typing animation
+    const targetUrl = 'https://docs.stripe.com/api/charges/create';
+    const typedLen = Math.floor(clamp((sec - 1.1) / 1.4) * targetUrl.length);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '600 17px ui-monospace, SFMono-Regular, monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(targetUrl.slice(0, typedLen), -245, 6);
+
+    // Blinking caret
+    if (sec > 1.0 && sec < 2.8 && Math.floor(t * 4) % 2 === 0) {
+      const tw = ctx.measureText(targetUrl.slice(0, typedLen)).width;
+      ctx.fillStyle = COLORS.cyan;
+      ctx.fillRect(-242 + tw, -12, 3, 24);
+    }
+
+    // Right-side "Convert → .MD" action button
+    const btnClick = clamp((sec - 2.6) / 0.35);
+    const btnScale = 1 - Math.sin(btnClick * Math.PI) * 0.14;
+    ctx.save();
+    ctx.translate(430, 0);
+    ctx.scale(btnScale, btnScale);
+    roundRect(-92, -22, 184, 44, 12);
+    ctx.fillStyle = sec > 2.6 ? COLORS.lime : COLORS.cyan;
+    ctx.fill();
+    ctx.fillStyle = '#04070e';
+    ctx.font = '800 15px -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(sec > 2.75 ? '✓ CONVERTED 38ms' : '⚡ FETCH MARKDOWN', 0, 5);
+    ctx.restore();
+
+    ctx.restore(); // end omni-bar
+
+    // --- 2. LEFT PANE: DECONSTRUCTED WEB DOM & ASSET EXTRACTOR ---
+    const leftEntry = easeOutCubic(clamp((sec - 0.3) / 0.8));
+    ctx.save();
+    ctx.translate(290, 385);
+    ctx.scale(leftEntry, leftEntry);
+
+    roundRect(-230, -245, 440, 490, 20);
+    ctx.fillStyle = '#0d111d';
+    ctx.fill();
+    ctx.strokeStyle = COLORS.border;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Pane Header
+    ctx.fillStyle = COLORS.muted;
+    ctx.font = '700 12px ui-monospace, monospace';
+    ctx.fillText('SOURCE DOM // VISUAL COMPONENTS', -205, -212);
+
+    // Component blocks inside Source DOM that fly across to Markdown pane
+    const domBlocks = [
+      { y: -185, h: 66, tag: '<H1>', label: 'Create a charge', desc: 'POST /v1/charges endpoint doc', col: COLORS.cyan, delay: 3.0 },
+      { y: -105, h: 78, tag: '<TABLE>', label: 'Parameters Schema', desc: 'amount: integer | currency: iso', col: '#a855f7', delay: 4.1 },
+      { y: -13, h: 110, tag: '<PRE>', label: 'cURL Request Snippet', desc: 'curl https://api.stripe.com/v1/...', col: COLORS.amber, delay: 5.2 },
+      { y: 112, h: 74, tag: '<CALLOUT>', label: 'Idempotency Keys', desc: 'Safely retry requests without dupes', col: COLORS.lime, delay: 6.3 }
+    ];
+
+    domBlocks.forEach((b, i) => {
+      const active = clamp((sec - b.delay) / 0.7);
+      const pulse = active > 0 && active < 1 ? Math.sin(active * Math.PI) : 0;
+
+      ctx.save();
+      ctx.translate(0, b.y);
+      ctx.scale(1 + pulse * 0.04, 1 + pulse * 0.04);
+
+      roundRect(-205, 0, 390, b.h, 12);
+      ctx.fillStyle = active > 0 ? 'rgba(22, 28, 48, 0.95)' : '#131829';
+      ctx.fill();
+      ctx.lineWidth = active > 0 ? 2 : 1;
+      ctx.strokeStyle = active > 0 ? b.col : 'rgba(255,255,255,0.08)';
+      ctx.stroke();
+
+      // Tag pill
+      roundRect(-192, 14, 72, 24, 6);
+      ctx.fillStyle = b.col;
+      ctx.globalAlpha = 0.2;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = b.col;
+      ctx.font = '700 12px ui-monospace, monospace';
+      ctx.fillText(b.tag, -182, 30);
+
+      // Component Title & Subtitle
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '700 16px -apple-system, sans-serif';
+      ctx.fillText(b.label, -108, 31);
+
+      ctx.fillStyle = COLORS.muted;
+      ctx.font = '500 13px ui-monospace, monospace';
+      ctx.fillText(b.desc, -192, 54);
+
+      // Status icon on right
+      ctx.fillStyle = active >= 1 ? COLORS.lime : b.col;
+      ctx.font = '700 13px ui-monospace, monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText(active >= 1 ? 'AST → MD ✓' : 'DOM NODE', 170, 31);
+      ctx.textAlign = 'left';
+
+      ctx.restore();
+    });
+
+    // Bottom stripped clutter summary inside left pane
+    roundRect(-205, 200, 390, 30, 8);
+    ctx.fillStyle = 'rgba(239, 68, 68, 0.12)';
+    ctx.fill();
+    ctx.fillStyle = '#fca5a5';
+    ctx.font = '600 12px ui-monospace, monospace';
+    ctx.fillText('✂ Stripped: 14 scripts, 6 navbars, 3 tracking pixels', -192, 220);
+
+    ctx.restore(); // end left pane
+
+    // --- 3. CENTER AST PIPELINE NODE & STREAMING DATA PACKETS ---
+    ctx.save();
+    ctx.translate(545, 385);
+    // Vertical glowing conduit
+    ctx.strokeStyle = 'rgba(0, 240, 255, 0.28)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 6]);
+    ctx.lineDashOffset = -t * 40;
+    ctx.beginPath();
+    ctx.moveTo(-35, 0);
+    ctx.lineTo(55, 0);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Rotating hex/octagon parser core
+    const corePulse = 1 + beatPulse * 0.15;
+    ctx.scale(corePulse, corePulse);
+    ctx.shadowColor = COLORS.cyan;
+    ctx.shadowBlur = 22;
+    roundRect(-34, -34, 68, 68, 18);
+    ctx.fillStyle = '#090d18';
+    ctx.fill();
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = COLORS.cyan;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = COLORS.cyan;
+    ctx.font = '800 13px ui-monospace, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('MD', 0, -4);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '700 10px ui-monospace, monospace';
+    ctx.fillText('ENGINE', 0, 12);
+    ctx.restore();
+
+    // Animated glowing packets flying from left DOM blocks to right Markdown pane
+    domBlocks.forEach((b) => {
+      const p = (sec - b.delay) / 0.65;
+      if (p > 0 && p < 1) {
+        const px = lerp(475, 625, easeInOutCubic(p));
+        const py = lerp(385 + b.y + b.h / 2, 385 + b.y + b.h / 2, p);
+        ctx.save();
+        ctx.shadowColor = b.col;
+        ctx.shadowBlur = 16;
+        ctx.fillStyle = b.col;
+        ctx.beginPath();
+        ctx.arc(px, py, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    });
+
+    // --- 4. RIGHT PANE: STRUCTURED MARKDOWN OUTPUT + FLOATING TELEMETRY ---
+    const rightEntry = easeOutCubic(clamp((sec - 0.5) / 0.8));
+    ctx.save();
+    ctx.translate(910, 385);
+    ctx.scale(rightEntry, rightEntry);
+
+    roundRect(-300, -245, 620, 490, 20);
+    ctx.fillStyle = '#0b0f1a';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(0, 240, 255, 0.35)';
+    ctx.stroke();
+
+    // Editor Top Bar + Interactive Format Tabs
+    roundRect(-300, -245, 620, 48, 20);
+    ctx.fillStyle = '#13192b';
+    ctx.fill();
+
+    const tabs = ['Markdown .md', 'YAML Frontmatter', 'LLM Tokens', 'cURL / API'];
+    const activeTab = sec < 7.5 ? 0 : (sec < 9.2 ? 1 : 2);
+    tabs.forEach((tab, idx) => {
+      const tx = -280 + idx * 142;
+      const isAct = idx === activeTab;
+      if (isAct) {
+        roundRect(tx, -236, 134, 30, 8);
+        ctx.fillStyle = 'rgba(0, 240, 255, 0.16)';
+        ctx.fill();
+        ctx.strokeStyle = COLORS.cyan;
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+      }
+      ctx.fillStyle = isAct ? COLORS.cyan : COLORS.muted;
+      ctx.font = '700 12px ui-monospace, monospace';
+      ctx.fillText(tab, tx + 12, -216);
+    });
+
+    // YAML Frontmatter Card (always visible at top of markdown output once converted)
+    if (sec > 2.8) {
+      const fmPop = easeOutBack(clamp((sec - 2.8) / 0.5));
+      ctx.save();
+      ctx.translate(-275, -182);
+      ctx.scale(fmPop, fmPop);
+      roundRect(0, 0, 570, 74, 10);
+      ctx.fillStyle = 'rgba(124, 58, 237, 0.12)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(168, 85, 247, 0.45)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+
+      ctx.font = '600 13px ui-monospace, monospace';
+      ctx.fillStyle = '#c084fc';
+      ctx.fillText('---', 14, 18);
+      ctx.fillStyle = '#93c5fd';
+      ctx.fillText('title: "Create a charge | Stripe API Reference"', 14, 36);
+      ctx.fillStyle = '#6ee7b7';
+      ctx.fillText('source: "https://docs.stripe.com/api/charges/create"  tokens: 412', 14, 54);
+      ctx.fillStyle = '#c084fc';
+      ctx.fillText('---', 525, 18);
+      ctx.restore();
+    }
+
+    // Streamed Markdown Sections corresponding to the 4 DOM components
+    // Block 1: Heading
+    if (sec > 3.2) {
+      const p = easeOutBack(clamp((sec - 3.2) / 0.45));
+      ctx.save();
+      ctx.translate(-275, -94);
+      ctx.scale(p, p);
+      ctx.fillStyle = COLORS.cyan;
+      ctx.font = '800 22px ui-monospace, monospace';
+      ctx.fillText('# Create a charge', 0, 20);
+      ctx.fillStyle = '#cbd5e1';
+      ctx.font = '500 14px ui-monospace, monospace';
+      ctx.fillText('To charge a credit card or other payment source, you create a `Charge` object.', 0, 44);
+      ctx.restore();
+    }
+
+    // Block 2: Markdown Table
+    if (sec > 4.3) {
+      const p = easeOutBack(clamp((sec - 4.3) / 0.45));
+      ctx.save();
+      ctx.translate(-275, -30);
+      ctx.scale(p, p);
+      roundRect(0, 0, 570, 78, 10);
+      ctx.fillStyle = '#111728';
+      ctx.fill();
+      ctx.font = '600 13px ui-monospace, monospace';
+      ctx.fillStyle = '#e879f9';
+      ctx.fillText('| Parameter  | Type      | Required | Description                    |', 12, 22);
+      ctx.fillStyle = '#64748b';
+      ctx.fillText('|------------|-----------|----------|--------------------------------|', 12, 42);
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillText('| `amount`   | `integer` | **Yes**  | Positive cents to charge       |', 12, 62);
+      ctx.restore();
+    }
+
+    // Block 3: Fenced Code Block with Copy Badge
+    if (sec > 5.4) {
+      const p = easeOutBack(clamp((sec - 5.4) / 0.45));
+      ctx.save();
+      ctx.translate(-275, 62);
+      ctx.scale(p, p);
+      roundRect(0, 0, 570, 96, 10);
+      ctx.fillStyle = '#070a12';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(245, 158, 11, 0.4)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+
+      ctx.font = '600 13px ui-monospace, monospace';
+      ctx.fillStyle = COLORS.amber;
+      ctx.fillText('```bash', 14, 22);
+      ctx.fillStyle = '#38bdf8';
+      ctx.fillText('curl https://api.stripe.com/v1/charges \\', 14, 44);
+      ctx.fillStyle = '#a7f3d0';
+      ctx.fillText('  -u sk_test_51Hq...: -d amount=2000 -d currency=usd', 14, 64);
+      ctx.fillStyle = COLORS.amber;
+      ctx.fillText('```', 14, 84);
+      ctx.restore();
+    }
+
+    // Block 4: Blockquote Callout
+    if (sec > 6.5) {
+      const p = easeOutBack(clamp((sec - 6.5) / 0.45));
+      ctx.save();
+      ctx.translate(-275, 172);
+      ctx.scale(p, p);
+      ctx.fillStyle = COLORS.lime;
+      ctx.fillRect(0, 0, 4, 48);
+      ctx.font = '600 13px ui-monospace, monospace';
+      ctx.fillText('> **Note:** Support idempotency keys for safe network retries.', 14, 20);
+      ctx.fillStyle = '#94a3b8';
+      ctx.fillText('> Cleanly extracted without DOM wrapper divs.', 14, 40);
+      ctx.restore();
+    }
+
+    // Floating Telemetry / Token Gauge Card (pops out in 2.5D at sec > 7.4s)
+    if (sec > 7.2) {
+      const gPop = easeOutElastic(clamp((sec - 7.2) / 0.85));
+      ctx.save();
+      ctx.translate(155, -125);
+      ctx.scale(gPop, gPop);
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
+      ctx.shadowBlur = 28;
+      roundRect(-145, -55, 290, 110, 16);
+      ctx.fillStyle = '#151c30';
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = COLORS.lime;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      ctx.fillStyle = COLORS.lime;
+      ctx.font = '800 12px ui-monospace, monospace';
+      ctx.fillText('⚡ LLM CONTEXT EFFICIENCY', -125, -30);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '900 32px -apple-system, sans-serif';
+      ctx.fillText('-93.4% Tokens', -125, 8);
+
+      // Progress bar comparison
+      roundRect(-125, 22, 250, 10, 5);
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      ctx.fill();
+      roundRect(-125, 22, 250 * 0.08, 10, 5);
+      ctx.fillStyle = COLORS.cyan;
+      ctx.fill();
+
+      ctx.fillStyle = COLORS.muted;
+      ctx.font = '600 11px ui-monospace, monospace';
+      ctx.fillText('Raw HTML: 6,240 tok  →  mdfor.dev: 412 tok', -125, 46);
+      ctx.restore();
+    }
+
+    ctx.restore(); // end right pane
+
+    // --- 5. ANIMATED CURSOR CHOREOGRAPHY ---
+    let cx = 980, cy = 520, click = 0;
+    if (sec < 2.6) {
+      const p = easeInOutCubic(clamp(sec / 2.4));
+      cx = lerp(640, 1070, p);
+      cy = lerp(380, 78, p);
+    } else if (sec < 3.2) {
+      cx = 1070; cy = 78;
+      click = clamp((sec - 2.6) / 0.4);
+    } else if (sec < 7.5) {
+      const p = easeInOutCubic(clamp((sec - 3.2) / 2.2));
+      cx = lerp(1070, 780, p);
+      cy = lerp(78, 168, p);
+    } else {
+      const p = easeInOutCubic(clamp((sec - 7.5) / 1.0));
+      cx = lerp(780, 1040, p);
+      cy = lerp(168, 260, p);
+      if (sec > 8.6 && sec < 9.1) click = (sec - 8.6) / 0.5;
+    }
+    drawCursor(cx, cy, click);
+
+    ctx.restore();
+  }
+
+  // --- SCENE 4 (20.0s - 25.5s): DEVELOPER WORKFLOW & MULTI-AGENT BENTO GRID ---
+  function renderScene4(t, beat, beatFrac, beatPulse) {
+    const sec = t - 20.0; // 0..5.5s
+
+    // Top Header
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.font = '700 14px ui-monospace, monospace';
+    ctx.fillStyle = COLORS.cyan;
+    ctx.fillText('03 // DROP-IN DEVELOPER PRIMITIVE', W / 2, 50);
+    ctx.font = '900 38px -apple-system, sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('One URL Prefix. Infinite AI Workflows.', W / 2, 92);
+    ctx.restore();
+
+    const cards = [
+      {
+        x: 330, y: 245, w: 520, h: 215, col: COLORS.cyan, delay: 0.0,
+        badge: '01 // INSTANT URL PREFIX',
+        title: 'Prepend mdfor.dev/ in Browser',
+        line1: 'GET https://mdfor.dev/https://news.ycombinator.com',
+        line2: '→ Returns clean, readable Markdown in < 50ms',
+        metric: 'ZERO CONFIG'
+      },
+      {
+        x: 950, y: 245, w: 520, h: 215, col: COLORS.magenta, delay: 0.35,
+        badge: '02 // CLI & SHELL PIPELINES',
+        title: 'Pipe Directly into LLM Tools',
+        line1: '$ curl -sL mdfor.dev/example.com | llm "Summarize"',
+        line2: '→ Native text/markdown stream with UTF-8 headers',
+        metric: 'UNIX READY'
+      },
+      {
+        x: 330, y: 505, w: 520, h: 215, col: '#a855f7', delay: 0.70,
+        badge: '03 // AI AGENTS & RAG INGESTION',
+        title: '10x Cleaner Vector Embeddings',
+        line1: 'const md = await fetch("https://mdfor.dev/" + url)',
+        line2: '→ Preserves code blocks, tables & hierarchy',
+        metric: '93% LESS TOKENS'
+      },
+      {
+        x: 950, y: 505, w: 520, h: 215, col: COLORS.lime, delay: 1.05,
+        badge: '04 // EDGE CACHED & DETERMINISTIC',
+        title: 'Built for Production Scale',
+        line1: 'YAML Frontmatter + Semantic Heading Normalization',
+        line2: '→ Fast global edge workers, zero headless bloat',
+        metric: 'OPEN & FAST'
+      }
+    ];
+
+    cards.forEach((c, idx) => {
+      const pop = easeOutBack(clamp((sec - c.delay) / 0.65), 1.5);
+      if (pop <= 0) return;
+
+      const isBeatHighlight = (beat % 4) === idx;
+      const sc = pop * (1 + (isBeatHighlight ? beatPulse * 0.035 : 0));
+
+      ctx.save();
+      ctx.translate(c.x, c.y);
+      ctx.scale(sc, sc);
+
+      roundRect(-c.w / 2, -c.h / 2, c.w, c.h, 20);
+      ctx.fillStyle = '#0e1322';
+      ctx.fill();
+      ctx.lineWidth = isBeatHighlight ? 2.8 : 1.5;
+      ctx.strokeStyle = isBeatHighlight ? c.col : 'rgba(148, 163, 184, 0.22)';
+      ctx.stroke();
+
+      // Top badge pill
+      roundRect(-c.w / 2 + 24, -c.h / 2 + 22, 230, 26, 8);
+      ctx.fillStyle = 'rgba(255,255,255,0.05)';
+      ctx.fill();
+      ctx.fillStyle = c.col;
+      ctx.font = '700 12px ui-monospace, monospace';
+      ctx.fillText(c.badge, -c.w / 2 + 36, -c.h / 2 + 39);
+
+      // Metric tag top-right
+      ctx.textAlign = 'right';
+      ctx.fillStyle = c.col;
+      ctx.font = '800 12px ui-monospace, monospace';
+      ctx.fillText(c.metric, c.w / 2 - 24, -c.h / 2 + 39);
+      ctx.textAlign = 'left';
+
+      // Card Title
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '800 24px -apple-system, sans-serif';
+      ctx.fillText(c.title, -c.w / 2 + 24, -c.h / 2 + 82);
+
+      // Code terminal box inside card
+      roundRect(-c.w / 2 + 24, -c.h / 2 + 102, c.w - 48, 86, 12);
+      ctx.fillStyle = '#070911';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.fillStyle = '#e2e8f0';
+      ctx.font = '600 14px ui-monospace, monospace';
+      ctx.fillText(c.line1, -c.w / 2 + 38, -c.h / 2 + 132);
+
+      ctx.fillStyle = c.col;
+      ctx.font = '500 13px ui-monospace, monospace';
+      ctx.fillText(c.line2, -c.w / 2 + 38, -c.h / 2 + 162);
+
+      ctx.restore();
+    });
+  }
+
+  // --- SCENE 5 (25.5s - 30.0s): GRAND FINALE LOCKUP & CALL TO ACTION ---
+  function renderScene5(t, beat, beatFrac, beatPulse) {
+    const sec = t - 25.5; // 0..4.5s
+    const pop = easeOutElastic(clamp(sec / 1.1));
+
+    // Radial speed lines converging on center
+    ctx.save();
+    ctx.translate(W / 2, H / 2 - 20);
+    const numRays = 24;
+    for (let i = 0; i < numRays; i++) {
+      const ang = (i / numRays) * Math.PI * 2 + t * 0.25;
+      const r1 = 190 + Math.sin(t * 4 + i) * 20;
+      const r2 = 340 + beatPulse * 60;
+      ctx.strokeStyle = i % 2 === 0 ? COLORS.cyan : COLORS.magenta;
+      ctx.globalAlpha = 0.14 + beatPulse * 0.12;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(ang) * r1, Math.sin(ang) * r1);
+      ctx.lineTo(Math.cos(ang) * r2, Math.sin(ang) * r2);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(W / 2, H / 2 - 30);
+    ctx.scale(pop * (1 + beatPulse * 0.03), pop * (1 + beatPulse * 0.03));
+
+    // Center hero badge + brand logo
+    drawBrandLogo(0, -110, 1.25, 1, 1.2 + beatPulse * 0.8);
+
+    // Huge URL lockup
+    ctx.textAlign = 'center';
+    ctx.font = '900 84px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('https://mdfor.dev', 0, 22);
+
+    // Subtitle
+    ctx.font = '600 22px -apple-system, sans-serif';
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText('Turn any webpage into clean, LLM-ready Markdown.', 0, 68);
+
+    // Interactive CTA Pill Button
+    const ctaScale = 1 + Math.sin(t * 8) * 0.025;
+    ctx.save();
+    ctx.translate(0, 138);
+    ctx.scale(ctaScale, ctaScale);
+    roundRect(-230, -30, 460, 60, 30);
+    const cg = ctx.createLinearGradient(-230, 0, 230, 0);
+    cg.addColorStop(0, COLORS.cyan);
+    cg.addColorStop(0.5, '#6366f1');
+    cg.addColorStop(1, COLORS.magenta);
+    ctx.fillStyle = cg;
+    ctx.shadowColor = COLORS.cyan;
+    ctx.shadowBlur = 26;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = '#05070e';
+    ctx.font = '900 18px ui-monospace, SFMono-Regular, monospace';
+    ctx.fillText('TRY IT NOW → MDFOR.DEV/<ANY-URL>', 0, 6);
+    ctx.restore();
+
+    ctx.restore();
+  }
+
+  // --- GLOBAL HUD: BEAT EQUALIZER, TIMECODE & PROGRESS BAR ---
+  function renderShowreelHUD(t, beat, beatFrac, beatPulse) {
+    ctx.save();
+
+    // Top-left showreel watermark
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.font = '700 12px ui-monospace, SFMono-Regular, monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('MOTION DESIGN REEL // MDFOR.DEV', 26, 28);
+
+    // Top-right 128 BPM Audio Equalizer bars
+    const eqX = W - 155, eqY = 16;
+    for (let i = 0; i < 12; i++) {
+      const h = 4 + Math.abs(Math.sin(t * 14 + i * 0.9)) * 14 * (0.45 + beatPulse * 0.8);
+      ctx.fillStyle = i % 2 === 0 ? COLORS.cyan : COLORS.magenta;
+      ctx.fillRect(eqX + i * 8, eqY + (18 - h), 5, h);
+    }
+
+    // Bottom progress timeline bar
+    const prog = t / window.DUR;
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.fillRect(0, H - 5, W, 5);
+    const pg = ctx.createLinearGradient(0, 0, W, 0);
+    pg.addColorStop(0, COLORS.cyan);
+    pg.addColorStop(0.5, '#6366f1');
+    pg.addColorStop(1, COLORS.magenta);
+    ctx.fillStyle = pg;
+    ctx.fillRect(0, H - 5, W * prog, 5);
+
+    ctx.restore();
+  }
+
+  // --- MAIN RENDER LOOP (Driven strictly by performance.now) ---
+  let t0 = null;
+  function frame(now) {
+    if (t0 === null) t0 = now;
+    const rawElapsed = (now - t0) / 1000 + startOffset;
+    const t = ((rawElapsed % window.DUR) + window.DUR) % window.DUR;
+
+    // 128 BPM synchronization math
+    const totalBeats = t / BEAT_S;
+    const beat = Math.floor(totalBeats);
+    const beatFrac = totalBeats - beat;
+    const beatPulse = Math.pow(1 - beatFrac, 3); // sharp attack on every beat
+
+    // Trigger WebAudio synth on every 16th note step
+    const stepIndex = Math.floor(totalBeats * 4);
+    if (stepIndex !== lastStep) {
+      lastStep = stepIndex;
+      triggerStep(stepIndex);
+    }
+
+    // Backdrop
+    drawStageBackdrop(t, beatPulse, Math.sin(t * 0.9), Math.cos(t * 0.7));
+
+    // Scene Router with Whip-Pan / Flash Transitions
+    if (t < 4.0) {
+      renderScene1(t, beat, beatFrac, beatPulse);
+    } else if (t < 9.0) {
+      renderScene2(t, beat, beatFrac, beatPulse);
+    } else if (t < 20.0) {
+      renderScene3(t, beat, beatFrac, beatPulse);
+    } else if (t < 25.5) {
+      renderScene4(t, beat, beatFrac, beatPulse);
+    } else {
+      renderScene5(t, beat, beatFrac, beatPulse);
+    }
+
+    // Crisp kinetic wipe flashes at scene boundaries
+    const cuts = [4.0, 9.0, 20.0, 25.5];
+    for (const c of cuts) {
+      const dt = Math.abs(t - c);
+      if (dt < 0.18) {
+        const p = 1 - dt / 0.18;
+        ctx.save();
+        ctx.fillStyle = COLORS.cyan;
+        ctx.globalAlpha = p * 0.28;
+        ctx.fillRect(0, 0, W, H);
+        ctx.restore();
+      }
+    }
+
+    renderShowreelHUD(t, beat, beatFrac, beatPulse);
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

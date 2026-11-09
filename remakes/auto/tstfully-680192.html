@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+window.DUR=15;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px'}
+fit();addEventListener('resize',fit);
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t'))||0,t0=performance.now();
+const cl=v=>Math.max(0,Math.min(1,v)),ease=v=>{v=cl(v);return v<.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2};
+const F='Helvetica,Arial,sans-serif';
+function rr(X,Y,w,h,r){x.beginPath();x.roundRect(X,Y,w,h,r)}
+const url='youtube.com/watch?v=dQw4w9WgXcQ';
+const lines=["[00:00] Welcome back, everyone. Today we're","building something incredible from scratch.","[00:07] First, let's talk about why this matters","and how it changes the way you work.","[00:15] Every idea starts with a single word,","and every word deserves to be captured.","[00:22] So grab a coffee, and let's dive in."];
+function bg(t){const g=x.createLinearGradient(0,0,1280,720);g.addColorStop(0,'#0b0d1a');g.addColorStop(1,'#1a0b1f');x.fillStyle=g;x.fillRect(0,0,1280,720);
+for(let i=0;i<40;i++){const px=(i*137.5%1280+t*20*(1+i%3))%1280,py=(i*91%720+Math.sin(t+i)*20);x.fillStyle='rgba(255,80,120,'+(.05+.05*(i%3))+')';x.beginPath();x.arc(px,py,2+i%4,0,7);x.fill()}}
+function txt(s,X,Y,sz,a,col,w){x.globalAlpha=a;x.fillStyle=col||'#fff';x.font=(w||'700')+' '+sz+'px '+F;x.textAlign='center';x.fillText(s,X,Y);x.globalAlpha=1}
+function frame(){const t=((performance.now()-t0)/1000+off)%DUR;bg(t);x.textBaseline='middle';
+// Scene 1: hook 0-3
+if(t<3.2){const a=cl(t/.5)*cl((3.2-t)/.4);const y=360+(1-ease(t/.6))*40;
+txt('Hours of video.',640,y-40,64,a);txt('Zero time to rewatch.',640,y+40,64,a*cl((t-.8)/.5),'#ff4d6d')}
+// Scene 2: paste 3-7.5
+if(t>3&&t<7.7){const a=cl((t-3)/.4)*cl((7.7-t)/.3);x.globalAlpha=a;
+const s=.9+.1*ease((t-3)/.6);x.save();x.translate(640,360);x.scale(s,s);
+rr(-420,-150,840,300,24);x.fillStyle='#161827';x.fill();x.strokeStyle='#2c2f48';x.lineWidth=2;x.stroke();
+txt('Paste a YouTube link',0,-90,30,a,'#aab');
+rr(-360,-30,560,64,14);x.fillStyle='#0d0e18';x.fill();x.strokeStyle=t>4.2?'#ff4d6d':'#333';x.stroke();
+const n=Math.floor(cl((t-4.2)/1.2)*url.length);x.font='500 24px '+F;x.textAlign='left';x.fillStyle='#fff';x.fillText(url.slice(0,n),-340,2);
+if(Math.floor(t*3)%2&&n<url.length){const w=x.measureText(url.slice(0,n)).width;x.fillRect(-338+w,-14,2,30)}
+const pr=t>6.2&&t<6.5?.93:1;x.save();x.translate(290,2);x.scale(pr,pr);rr(-80,-32,160,64,14);x.fillStyle='#ff2d55';x.fill();x.restore();
+txt('Transcribe',290,2,24,a);
+// play icon
+x.fillStyle='#ff0033';rr(-60,90,120,40,10);x.fill();x.fillStyle='#fff';x.beginPath();x.moveTo(-8,98);x.lineTo(14,110);x.lineTo(-8,122);x.fill();
+// cursor
+const ct=ease((t-5.5)/.7),cx=-100+390*ct,cy=150-148*ct;x.fillStyle='#fff';x.beginPath();x.moveTo(cx,cy);x.lineTo(cx,cy+26);x.lineTo(cx+7,cy+19);x.lineTo(cx+18,cy+19);x.fill();
+x.restore();x.globalAlpha=1}
+// Scene 3: transcript 7.5-11.5
+if(t>7.5&&t<11.7){const a=cl((t-7.5)/.4)*cl((11.7-t)/.3);x.globalAlpha=a;
+rr(240,120,800,480,24);x.fillStyle='#161827';x.fill();x.strokeStyle='#2c2f48';x.stroke();
+x.fillStyle='#ff2d55';x.beginPath();x.arc(280,160,7,0,7);x.fill();
+x.font='700 22px '+F;x.textAlign='left';x.fillStyle='#fff';x.fillText('Transcript',300,161);
+const total=lines.join(' ').length;let shown=Math.floor(cl((t-7.9)/2.6)*total);
+x.font='400 22px '+F;lines.forEach((l,i)=>{if(shown<=0)return;const s=l.slice(0,shown);shown-=l.length+1;
+const ts=s.match(/^\[\d+:\d+\]/);let X=280,Y=220+i*50;if(ts){x.fillStyle='#ff4d6d';x.fillText(ts[0],X,Y);X+=x.measureText(ts[0]+' ').width;x.fillStyle='#dde';x.fillText(s.slice(ts[0].length+1),X,Y)}else{x.fillStyle='#dde';x.fillText(s,X+90,Y)}});
+const pc=Math.floor(cl((t-7.9)/2.6)*100);x.textAlign='right';x.fillStyle='#889';x.font='600 18px '+F;x.fillText(pc+'% · '+Math.floor(pc*24.12)+' words',1010,161);
+x.globalAlpha=1}
+// Scene 4: CTA 11.5-15
+if(t>11.5){const a=cl((t-11.5)/.5)*cl((15-t)/.4),k=ease((t-11.5)/.8);
+txt('Every word.',640,280-(1-k)*30,84,a);txt('In seconds.',640,370-(1-k)*30,84,a*cl((t-12)/.5),'#ff4d6d');
+const b=cl((t-12.6)/.5);x.globalAlpha=a*b;rr(520,450,240,64,32);x.fillStyle='#ff2d55';x.fill();x.globalAlpha=1;
+txt('Try it free',640,483,26,a*b);txt('Paste. Transcribe. Done.',640,570,22,a*b,'#99a','500')}
+requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

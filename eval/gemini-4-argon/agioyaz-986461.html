@@ -1,0 +1,1094 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>余白</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #stage {
+    position: relative; width: 1280px; height: 720px;
+    background: #000; overflow: hidden;
+    box-shadow: 0 0 40px rgba(0,0,0,0.9);
+  }
+  canvas {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: block;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="gl" width="1280" height="720"></canvas>
+  <canvas id="ui" width="1280" height="720"></canvas>
+</div>
+<script>
+window.DUR = 36;
+const urlParams = new URLSearchParams(window.location.search);
+const startT = parseFloat(urlParams.get('t') || '0');
+
+function fitStage() {
+  const st = document.getElementById('stage');
+  const scale = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+  st.style.transform = `scale(${scale})`;
+}
+window.addEventListener('resize', fitStage);
+fitStage();
+
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const smoothstep = (a, b, x) => {
+  const t = clamp((x - a) / (b - a), 0, 1);
+  return t * t * (3 - 2 * t);
+};
+const lerp = (a, b, t) => a + (b - a) * t;
+const hash = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+
+// --- 1. Procedural Stained Glass Texture (Madonna, Two Angels, Rose Window) ---
+const sgCanvas = document.createElement('canvas');
+sgCanvas.width = 512; sgCanvas.height = 768;
+const sctx = sgCanvas.getContext('2d');
+
+function buildStainedGlass() {
+  sctx.fillStyle = '#080a12';
+  sctx.fillRect(0, 0, 512, 768);
+
+  // Arch Clip
+  sctx.save();
+  sctx.beginPath();
+  sctx.moveTo(16, 768);
+  sctx.lineTo(16, 300);
+  sctx.quadraticCurveTo(16, 60, 256, 12);
+  sctx.quadraticCurveTo(496, 60, 496, 300);
+  sctx.lineTo(496, 768);
+  sctx.closePath();
+  sctx.clip();
+
+  // Deep jewel background with diamond mosaic
+  const bgGrad = sctx.createLinearGradient(0, 0, 0, 768);
+  bgGrad.addColorStop(0, '#102560');
+  bgGrad.addColorStop(0.5, '#1b4098');
+  bgGrad.addColorStop(1, '#0c1c4c');
+  sctx.fillStyle = bgGrad;
+  sctx.fillRect(0, 0, 512, 768);
+
+  for (let y = 0; y < 768; y += 24) {
+    for (let x = 0; x < 512; x += 24) {
+      const h = hash(x * 13 + y * 37);
+      sctx.fillStyle = h > 0.6 ? 'rgba(60,140,255,0.22)' : (h > 0.3 ? 'rgba(18,40,110,0.35)' : 'rgba(120,40,160,0.18)');
+      sctx.beginPath();
+      sctx.moveTo(x + 12, y); sctx.lineTo(x + 24, y + 12);
+      sctx.lineTo(x + 12, y + 24); sctx.lineTo(x, y + 12);
+      sctx.closePath();
+      sctx.fill();
+      sctx.strokeStyle = 'rgba(8,10,18,0.65)';
+      sctx.lineWidth = 2;
+      sctx.stroke();
+    }
+  }
+
+  const paintPoly = (pts, fill, lw = 4.5) => {
+    sctx.beginPath();
+    pts.forEach((p, i) => i ? sctx.lineTo(p[0], p[1]) : sctx.moveTo(p[0], p[1]));
+    sctx.closePath();
+    sctx.fillStyle = fill; sctx.fill();
+    sctx.lineWidth = lw; sctx.strokeStyle = '#090b12'; sctx.stroke();
+  };
+  const paintCircle = (x, y, r, fill, lw = 4.5) => {
+    sctx.beginPath(); sctx.arc(x, y, r, 0, Math.PI * 2);
+    sctx.fillStyle = fill; sctx.fill();
+    sctx.lineWidth = lw; sctx.strokeStyle = '#090b12'; sctx.stroke();
+  };
+
+  // Golden gothic side pillars & arches
+  for (let s of [-1, 1]) {
+    const cx = 256 + s * 212;
+    paintPoly([[cx-18, 280], [cx+18, 280], [cx+18, 768], [cx-18, 768]], '#d99b26');
+    for (let y = 300; y < 760; y += 45) {
+      paintPoly([[cx-18, y], [cx+18, y], [cx+18, y+22], [cx-18, y+22]], '#f5c242');
+    }
+  }
+
+  // Radiant light rays behind figures
+  sctx.save();
+  sctx.translate(256, 420);
+  for (let i = 0; i < 24; i++) {
+    const a1 = (i / 24) * Math.PI * 2, a2 = ((i + 0.5) / 24) * Math.PI * 2;
+    sctx.beginPath(); sctx.moveTo(0, 0);
+    sctx.lineTo(Math.cos(a1) * 350, Math.sin(a1) * 350);
+    sctx.lineTo(Math.cos(a2) * 350, Math.sin(a2) * 350);
+    sctx.closePath();
+    sctx.fillStyle = 'rgba(255, 215, 90, 0.14)';
+    sctx.fill();
+  }
+  sctx.restore();
+
+  // --- TWO SYMMETRICAL ANGELS (Left & Right) ---
+  function drawAngel(dir) {
+    sctx.save();
+    sctx.translate(256, 0);
+    sctx.scale(dir, 1);
+
+    // Great Outspread Wings (Gold, Crimson, Emerald feathers)
+    const wingColors = ['#ffe066', '#ffae19', '#ff5964', '#2ec4b6', '#3a86ff'];
+    for (let i = 0; i < 7; i++) {
+      const y0 = 400 + i * 22;
+      const xOuter = 238 - i * 11;
+      const yOuter = 290 + i * 34;
+      paintPoly([
+        [105, y0], [165, y0 - 28], [xOuter, yOuter], [xOuter - 12, yOuter + 24], [115, y0 + 20]
+      ], wingColors[i % wingColors.length]);
+    }
+    // Inner wing shoulder
+    paintPoly([[105, 420], [155, 360], [185, 415], [125, 465]], '#ffd166');
+
+    // Halo
+    paintCircle(122, 415, 38, '#ffb703');
+    paintCircle(122, 415, 28, '#ffd166');
+
+    // Robe (Emerald & Turquoise panels)
+    paintPoly([[85, 460], [155, 460], [188, 750], [65, 750]], '#06d6a0');
+    paintPoly([[98, 460], [140, 460], [156, 750], [92, 750]], '#118ab2');
+    paintPoly([[85, 550], [165, 520], [178, 630], [75, 650]], '#073b4c');
+    paintPoly([[95, 460], [145, 460], [130, 540], [105, 540]], '#ffd166'); // Gold collar
+
+    // Face & Hair (Facing inward towards Madonna)
+    paintCircle(122, 420, 18, '#ffe5d9');
+    paintPoly([[112, 402], [140, 405], [144, 435], [126, 428]], '#d48c28');
+
+    // Praying hands towards center
+    paintPoly([[98, 485], [68, 455], [75, 445], [108, 470]], '#ffe5d9');
+    sctx.restore();
+  }
+  drawAngel(-1);
+  drawAngel(1);
+
+  // --- CENTRAL MADONNA ---
+  // Mandorla (Almond Aureole of Gold & Ruby)
+  sctx.save();
+  sctx.beginPath();
+  sctx.ellipse(256, 540, 92, 205, 0, 0, Math.PI * 2);
+  sctx.fillStyle = 'rgba(255, 185, 30, 0.35)'; sctx.fill();
+  sctx.lineWidth = 5; sctx.strokeStyle = '#090b12'; sctx.stroke();
+  sctx.restore();
+
+  // Halo of Madonna
+  paintCircle(256, 365, 56, '#ff9f1c');
+  paintCircle(256, 365, 44, '#ffe066');
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    sctx.beginPath();
+    sctx.moveTo(256 + Math.cos(a) * 28, 365 + Math.sin(a) * 28);
+    sctx.lineTo(256 + Math.cos(a) * 56, 365 + Math.sin(a) * 56);
+    sctx.strokeStyle = '#090b12'; sctx.lineWidth = 3; sctx.stroke();
+  }
+
+  // Outer Mantle (Deep Royal Sapphire & Ultramarine folds)
+  paintPoly([[256, 330], [195, 410], [160, 750], [352, 750], [317, 410]], '#1d3557');
+  paintPoly([[202, 430], [165, 750], [225, 750], [232, 460]], '#2ec4b6');
+  paintPoly([[310, 430], [347, 750], [287, 750], [280, 460]], '#2ec4b6');
+  paintPoly([[188, 520], [162, 750], [212, 750], [222, 545]], '#3a86ff');
+  paintPoly([[324, 520], [350, 750], [300, 750], [290, 545]], '#3a86ff');
+
+  // Inner Dress (Glowing Ruby & Crimson)
+  paintPoly([[224, 425], [288, 425], [302, 750], [210, 750]], '#e63946');
+  paintPoly([[235, 490], [277, 490], [288, 750], [224, 750]], '#ff4d6d');
+  paintPoly([[220, 560], [292, 585], [285, 650], [215, 625]], '#c9184a');
+
+  // Golden Veil & Crown
+  paintPoly([[226, 355], [256, 332], [286, 355], [304, 438], [208, 438]], '#f8f9fa');
+  paintPoly([[232, 342], [244, 320], [256, 336], [268, 320], [280, 342]], '#ffd166');
+
+  // Madonna Face & Serene Features
+  paintCircle(256, 375, 23, '#ffe5d9');
+  // Clasped Hands & Radiant Heart
+  paintPoly([[232, 470], [256, 442], [280, 470], [256, 492]], '#ffe5d9');
+  paintCircle(256, 468, 18, '#ffd166');
+  paintCircle(256, 468, 9, '#ffffff');
+
+  // --- UPPER ROSE WINDOW (Symmetric Kaleidoscope) ---
+  const rx = 256, ry = 185, rr = 128;
+  paintCircle(rx, ry, rr + 8, '#090b12', 2);
+  paintCircle(rx, ry, rr, '#182048', 6);
+
+  for (let ring = 3; ring >= 1; ring--) {
+    const n = ring === 1 ? 8 : 16;
+    const rad = rr * (ring / 3.2);
+    const inRad = rr * ((ring - 1) / 3.2);
+    for (let i = 0; i < n; i++) {
+      const a1 = (i / n) * Math.PI * 2;
+      const a2 = ((i + 0.5) / n) * Math.PI * 2;
+      const a3 = ((i + 1) / n) * Math.PI * 2;
+      const cols = ['#ffbe0b', '#fb5607', '#ff006e', '#8338ec', '#3a86ff', '#06d6a0'];
+      const col = cols[(i + ring * 2) % cols.length];
+      paintPoly([
+        [rx + Math.cos(a1) * inRad, ry + Math.sin(a1) * inRad],
+        [rx + Math.cos(a2) * rad,   ry + Math.sin(a2) * rad],
+        [rx + Math.cos(a3) * inRad, ry + Math.sin(a3) * inRad]
+      ], col, 4);
+      if (ring === 3) {
+        paintCircle(rx + Math.cos(a2) * (rad + 14), ry + Math.sin(a2) * (rad + 14), 11, i % 2 ? '#ff006e' : '#ffbe0b', 3.5);
+      }
+    }
+  }
+  paintCircle(rx, ry, 20, '#fff3b0', 4);
+
+  // Bottom border panels
+  for (let i = 0; i < 8; i++) {
+    paintPoly([[32 + i*56, 735], [88 + i*56, 735], [88 + i*56, 768], [32 + i*56, 768]], i%2 ? '#e63946' : '#ffb703', 4);
+  }
+
+  // Pointed Arch Thick Stone/Lead Frame
+  sctx.restore();
+  sctx.beginPath();
+  sctx.moveTo(16, 768);
+  sctx.lineTo(16, 300);
+  sctx.quadraticCurveTo(16, 60, 256, 12);
+  sctx.quadraticCurveTo(496, 60, 496, 300);
+  sctx.lineTo(496, 768);
+  sctx.lineWidth = 18;
+  sctx.strokeStyle = '#050608';
+  sctx.stroke();
+}
+buildStainedGlass();
+const sgPixels = sctx.getImageData(0, 0, 512, 768).data;
+function sampleStainedGlass(u, v) {
+  const x = clamp(Math.floor(u * 511), 0, 511);
+  const y = clamp(Math.floor((1 - v) * 767), 0, 767);
+  const idx = (y * 512 + x) * 4;
+  return [sgPixels[idx] / 255, sgPixels[idx + 1] / 255, sgPixels[idx + 2] / 255];
+}
+
+// --- 2. Engraved Word Atlas Texture (for 3D Cubes) ---
+const WORDS = ['忙しい', '効率化', '至急', '締切', '最適化', '優先', '生産性', '納期', 'ノルマ', '成果', '目標', '速度', 'タスク', '会議', '改善', '急務'];
+const wordAtlas = document.createElement('canvas');
+wordAtlas.width = 1024; wordAtlas.height = 1024;
+const wctx = wordAtlas.getContext('2d');
+wctx.fillStyle = '#5a5d64';
+wctx.fillRect(0, 0, 1024, 1024);
+for (let i = 0; i < 16; i++) {
+  const gx = (i % 4) * 256, gy = Math.floor(i / 4) * 256;
+  // Subtle concrete bevel
+  wctx.fillStyle = '#62666e';
+  wctx.fillRect(gx + 6, gy + 6, 244, 244);
+  wctx.strokeStyle = '#43464c';
+  wctx.lineWidth = 6;
+  wctx.strokeRect(gx + 6, gy + 6, 244, 244);
+  // White engraved text
+  wctx.font = 'bold 64px "Hiragino Mincho ProN", "Yu Mincho", "MS PMincho", serif';
+  wctx.textAlign = 'center';
+  wctx.textBaseline = 'middle';
+  wctx.fillStyle = '#f2f4f8';
+  wctx.fillText(WORDS[i], gx + 128, gy + 128);
+}
+
+// --- 3. Window Grid & Block Timeline Setup ---
+// Window dimensions: width 10m (x: -5 to 5), height 15m (y: 0 to 15), at z = 0
+const COLS = 8, ROWS = 12;
+const BW = 10 / COLS, BH = 15 / ROWS; // 1.25m x 1.25m cubes
+const blocks = [];
+
+function insideArch(u, v) {
+  // Matches the pointed arch on the 512x768 canvas
+  const yPx = (1 - v) * 768;
+  const xPx = u * 512;
+  if (yPx >= 300) return xPx >= 12 && xPx <= 500;
+  const t = clamp((300 - yPx) / 288, 0, 1);
+  const halfW = 240 * (1 - t * t * 0.92);
+  return Math.abs(xPx - 256) <= halfW + 18;
+}
+
+let tempCells = [];
+for (let r = 0; r < ROWS; r++) {
+  for (let c = 0; c < COLS; c++) {
+    const u = (c + 0.5) / COLS;
+    const v = (r + 0.5) / ROWS;
+    if (insideArch(u, v)) {
+      tempCells.push({ c, r, u, v });
+    }
+  }
+}
+
+// Center block at (c=3, r=5) is the hero "忙しい" block that drops at t=14s
+const heroCol = 3, heroRow = 5;
+// Sort for arrival order (accelerating pace from 3.0s to 10.8s)
+tempCells.sort((a, b) => hash(a.c * 19 + a.r * 73) - hash(b.c * 19 + b.r * 73));
+
+tempCells.forEach((cell, idx) => {
+  const isHero = (cell.c === heroCol && cell.r === heroRow);
+  const wordIdx = isHero ? 0 : ((idx * 3 + cell.r) % (WORDS.length - 1)) + 1;
+  const q = idx / Math.max(1, tempCells.length - 1);
+  // Accelerating arrival: starts slow, then rapid barrage
+  const tArrive = 3.0 + 7.4 * Math.pow(q, 0.58);
+  const flyDur = lerp(0.95, 0.42, q);
+  const tStart = tArrive - flyDur;
+
+  // Distance from hero block for chain-reaction release (19.0s to 25.5s)
+  const dist = Math.hypot(cell.c - heroCol, cell.r - heroRow);
+  const maxDist = Math.hypot(COLS, ROWS);
+  const tDrop = isHero ? 14.2 : (19.0 + (dist / maxDist) * 5.6 + hash(idx * 41) * 0.7);
+
+  const tx = -5 + (cell.c + 0.5) * BW;
+  const ty = (cell.r + 0.5) * BH;
+  const sx = tx * 2.1 + (hash(idx * 11) - 0.5) * 8;
+  const sy = ty * 0.9 + (hash(idx * 23) - 0.5) * 4 + 2;
+  const sz = 22 + hash(idx * 31) * 6;
+
+  // Sample vibrant stained glass color at this cell
+  const col = sampleStainedGlass(cell.u, cell.v);
+  // Boost saturation slightly for volumetric rays & sparks
+  const maxC = Math.max(col[0], col[1], col[2], 0.1);
+  const vibrant = [
+    clamp(col[0] / maxC * 1.1, 0.15, 1),
+    clamp(col[1] / maxC * 1.1, 0.15, 1),
+    clamp(col[2] / maxC * 1.1, 0.15, 1)
+  ];
+
+  blocks.push({
+    c: cell.c, r: cell.r, u: cell.u, v: cell.v,
+    isHero, wordIdx,
+    tStart, tArrive, tDrop,
+    tx, ty, tz: 0,
+    sx, sy, sz,
+    color: vibrant
+  });
+});
+
+// --- 4. WebGL Initialization & Shaders ---
+const glCanvas = document.getElementById('gl');
+const gl = glCanvas.getContext('webgl', { preserveDrawingBuffer: true, antialias: true, alpha: false });
+
+function compileShader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  return s;
+}
+function createProgram(vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compileShader(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compileShader(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  return p;
+}
+
+// Matrix math helpers
+function mat4Perspective(fov, aspect, near, far) {
+  const f = 1.0 / Math.tan(fov / 2), nf = 1 / (near - far);
+  return new Float32Array([
+    f / aspect, 0, 0, 0,
+    0, f, 0, 0,
+    0, 0, (far + near) * nf, -1,
+    0, 0, (2 * far * near) * nf, 0
+  ]);
+}
+function mat4LookAt(eye, target, up) {
+  let zx = eye[0] - target[0], zy = eye[1] - target[1], zz = eye[2] - target[2];
+  let len = Math.hypot(zx, zy, zz); zx /= len; zy /= len; zz /= len;
+  let xx = up[1] * zz - up[2] * zy, xy = up[2] * zx - up[0] * zz, xz = up[0] * zy - up[1] * zx;
+  len = Math.hypot(xx, xy, xz); xx /= len; xy /= len; xz /= len;
+  let yx = zy * xz - zz * xy, yy = zz * xx - zx * xz, yz = zx * xy - zy * xx;
+  return new Float32Array([
+    xx, yx, zx, 0,
+    xy, yy, zy, 0,
+    xz, yz, zz, 0,
+    -(xx * eye[0] + xy * eye[1] + xz * eye[2]),
+    -(yx * eye[0] + yy * eye[1] + yz * eye[2]),
+    -(zx * eye[0] + zy * eye[1] + zz * eye[2]),
+    1
+  ]);
+}
+function mat4Mul(a, b) {
+  const out = new Float32Array(16);
+  for (let i = 0; i < 4; i++) {
+    for (let j = 0; j < 4; j++) {
+      out[j * 4 + i] = a[0 * 4 + i] * b[j * 4 + 0] + a[1 * 4 + i] * b[j * 4 + 1] + a[2 * 4 + i] * b[j * 4 + 2] + a[3 * 4 + i] * b[j * 4 + 3];
+    }
+  }
+  return out;
+}
+
+// Create WebGL Textures
+const sgTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, sgTex);
+gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sgCanvas);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+const wordTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, wordTex);
+gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, wordAtlas);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+// Dynamic Mask Texture (8x12 grid representing open window cells)
+const maskTex = gl.createTexture();
+const maskData = new Uint8Array(COLS * ROWS * 4);
+
+// --- SHADER 1: Cathedral Room & Window & Floor Projection ---
+const roomProg = createProgram(`
+  attribute vec3 aPos;
+  attribute vec3 aNorm;
+  uniform mat4 uVP;
+  varying vec3 vPos;
+  varying vec3 vNorm;
+  void main() {
+    vPos = aPos;
+    vNorm = aNorm;
+    gl_Position = uVP * vec4(aPos, 1.0);
+  }
+`, `
+  precision highp float;
+  varying vec3 vPos;
+  varying vec3 vNorm;
+  uniform sampler2D uSG;
+  uniform sampler2D uMask;
+  uniform float uColorMix;
+  uniform float uAmbient;
+
+  bool insideArchUV(vec2 uv) {
+    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return false;
+    float yPx = (1.0 - uv.y) * 768.0;
+    float xPx = uv.x * 512.0;
+    if (yPx >= 300.0) return xPx >= 16.0 && xPx <= 496.0;
+    float t = clamp((300.0 - yPx) / 288.0, 0.0, 1.0);
+    float halfW = 240.0 * (1.0 - t * t * 0.92);
+    return abs(xPx - 256.0) <= halfW;
+  }
+
+  float stonePattern(vec2 p) {
+    vec2 g = floor(p);
+    vec2 f = fract(p);
+    float id = fract(sin(dot(g, vec2(12.9898, 78.233))) * 43758.5453);
+    float mortar = smoothstep(0.0, 0.06, f.x) * smoothstep(0.0, 0.06, f.y) *
+                   smoothstep(0.0, 0.06, 1.0 - f.x) * smoothstep(0.0, 0.06, 1.0 - f.y);
+    return mix(0.45, 0.85 + 0.3 * id, mortar);
+  }
+
+  void main() {
+    // Front wall window check (z near 0)
+    if (vPos.z < 0.05 && vNorm.z > 0.5) {
+      vec2 wuv = vec2((vPos.x + 5.0) / 10.0, vPos.y / 15.0);
+      if (insideArchUV(wuv)) {
+        vec3 sg = texture2D(uSG, wuv).rgb;
+        vec3 whiteLight = vec3(0.95, 0.97, 1.0) * (0.65 + 0.45 * dot(sg, vec3(0.3, 0.5, 0.2)));
+        vec3 glassCol = mix(whiteLight, sg * 1.45, uColorMix);
+        float open = texture2D(uMask, wuv).r;
+        gl_FragColor = vec4(glassCol * (0.18 + 0.95 * open), 1.0);
+        return;
+      }
+    }
+
+    // Dark stone masonry base
+    vec2 tileUV = vNorm.y > 0.5 ? vPos.xz * 0.75 : (abs(vNorm.x) > 0.5 ? vPos.zy * 0.6 : vPos.xy * 0.6);
+    float st = stonePattern(tileUV);
+    vec3 baseStone = vec3(0.07, 0.075, 0.09) * st * uAmbient;
+
+    // Gothic ribs on side walls
+    if (abs(vNorm.x) > 0.5) {
+      float rib = smoothstep(0.35, 0.0, abs(fract(vPos.z * 0.2) - 0.5));
+      baseStone *= (1.0 - 0.35 * rib);
+    }
+
+    // Floor Stained Glass Projection (45-degree slant: z on floor maps to y on window)
+    if (vNorm.y > 0.5 && vPos.z > 0.0 && vPos.z < 15.0 && abs(vPos.x) < 5.0) {
+      vec2 puv = vec2((vPos.x + 5.0) / 10.0, vPos.z / 15.0);
+      if (insideArchUV(puv)) {
+        float open = texture2D(uMask, puv).r;
+        vec3 sg = texture2D(uSG, puv).rgb;
+        float lum = dot(sg, vec3(0.299, 0.587, 0.114));
+        vec3 whiteProj = vec3(0.92, 0.95, 1.0) * (0.55 + 0.5 * lum);
+        vec3 richProj = sg * 1.65 + vec3(0.06, 0.04, 0.02);
+        vec3 projLight = mix(whiteProj, richProj, uColorMix);
+        // Subtle stone texture shows through the projected light
+        baseStone += projLight * open * (0.78 + 0.28 * st);
+      }
+    }
+
+    // Distance fog for cathedral depth
+    float dist = length(vPos - vec3(0.0, 5.0, 10.0));
+    float fog = clamp(1.0 - dist / 42.0, 0.15, 1.0);
+    gl_FragColor = vec4(baseStone * fog, 1.0);
+  }
+`);
+
+// --- SHADER 2: Engraved Gray Cubes ---
+const cubeProg = createProgram(`
+  attribute vec3 aPos;
+  attribute vec3 aNorm;
+  attribute vec2 aUV;
+  uniform mat4 uVP;
+  uniform vec3 uCenter;
+  uniform vec3 uScale;
+  uniform float uRotX;
+  varying vec3 vNorm;
+  varying vec2 vUV;
+  varying vec3 vWorldPos;
+  void main() {
+    vec3 p = aPos * uScale;
+    float c = cos(uRotX), s = sin(uRotX);
+    p = vec3(p.x, p.y * c - p.z * s, p.y * s + p.z * c);
+    vec3 n = vec3(aNorm.x, aNorm.y * c - aNorm.z * s, aNorm.y * s + aNorm.z * c);
+    vWorldPos = p + uCenter;
+    vNorm = n;
+    vUV = aUV;
+    gl_Position = uVP * vec4(vWorldPos, 1.0);
+  }
+`, `
+  precision mediump float;
+  varying vec3 vNorm;
+  varying vec2 vUV;
+  varying vec3 vWorldPos;
+  uniform sampler2D uWordTex;
+  uniform vec2 uWordOffset;
+  uniform float uGlow;
+  void main() {
+    vec2 uv = (vUV * 0.25) + uWordOffset;
+    vec3 tex = texture2D(uWordTex, uv).rgb;
+    vec3 lightDir = normalize(vec3(0.25, 0.6, 0.75));
+    float diff = 0.45 + 0.55 * max(0.0, dot(normalize(vNorm), lightDir));
+    vec3 col = tex * diff;
+    col = mix(col, vec3(1.0, 0.9, 0.65), uGlow);
+    gl_FragColor = vec4(col, 1.0);
+  }
+`);
+
+// --- SHADER 3: Volumetric Light Pillars (45-deg Shafts) ---
+const beamProg = createProgram(`
+  attribute vec3 aPos;
+  attribute float aAlpha;
+  uniform mat4 uVP;
+  uniform vec2 uCellPos;
+  uniform vec2 uCellSize;
+  varying float vAlpha;
+  varying float vY;
+  void main() {
+    // aPos.z in [0,1]: 0 at window (x,y,0), 1 at floor (x,0,y)
+    float t = aPos.z;
+    float wx = uCellPos.x + aPos.x * uCellSize.x;
+    float wy = uCellPos.y + aPos.y * uCellSize.y;
+    vec3 world = vec3(wx, wy * (1.0 - t), wy * t);
+    vAlpha = aAlpha * (1.0 - 0.35 * t);
+    vY = wy;
+    gl_Position = uVP * vec4(world, 1.0);
+  }
+`, `
+  precision mediump float;
+  varying float vAlpha;
+  varying float vY;
+  uniform vec3 uBeamColor;
+  uniform float uBeamIntensity;
+  void main() {
+    gl_FragColor = vec4(uBeamColor * vAlpha * uBeamIntensity, 1.0);
+  }
+`);
+
+// --- SHADER 4: Sparkling Dust & Dissolving Block Particles ---
+const partProg = createProgram(`
+  attribute vec3 aPos;
+  attribute vec3 aCol;
+  attribute float aSize;
+  uniform mat4 uVP;
+  varying vec3 vCol;
+  void main() {
+    vCol = aCol;
+    vec4 clip = uVP * vec4(aPos, 1.0);
+    gl_Position = clip;
+    gl_PointSize = clamp(aSize / max(1.0, clip.w * 0.18), 1.5, 18.0);
+  }
+`, `
+  precision mediump float;
+  varying vec3 vCol;
+  void main() {
+    float d = length(gl_PointCoord - vec2(0.5));
+    float a = smoothstep(0.5, 0.05, d);
+    gl_FragColor = vec4(vCol * a, 1.0);
+  }
+`);
+
+// --- Build Geometry Buffers ---
+// 1. Cathedral Room (Floor, Front Wall, Side Walls, Ceiling)
+const roomVerts = [];
+function addQuad(p0, p1, p2, p3, n) {
+  roomVerts.push(
+    ...p0, ...n, ...p1, ...n, ...p2, ...n,
+    ...p0, ...n, ...p2, ...n, ...p3, ...n
+  );
+}
+// Floor (y=0, x: -14..14, z: 0..28)
+addQuad([-14,0,0], [14,0,0], [14,0,28], [-14,0,28], [0,1,0]);
+// Front Wall (z=0, x: -14..14, y: 0..22)
+addQuad([-14,0,0], [14,0,0], [14,22,0], [-14,22,0], [0,0,1]);
+// Left Wall (x=-14)
+addQuad([-14,0,28], [-14,0,0], [-14,22,0], [-14,22,28], [1,0,0]);
+// Right Wall (x=14)
+addQuad([14,0,0], [14,0,28], [14,22,28], [14,22,0], [-1,0,0]);
+// Ceiling
+addQuad([-14,22,0], [14,22,0], [14,22,28], [-14,22,28], [0,-1,0]);
+
+const roomBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, roomBuf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(roomVerts), gl.STATIC_DRAW);
+
+// 2. Unit Cube Geometry (pos, norm, uv)
+const cubeVerts = [];
+function addCubeFace(p0, p1, p2, p3, n) {
+  cubeVerts.push(
+    ...p0, ...n, 0,0,  ...p1, ...n, 1,0,  ...p2, ...n, 1,1,
+    ...p0, ...n, 0,0,  ...p2, ...n, 1,1,  ...p3, ...n, 0,1
+  );
+}
+addCubeFace([-0.5,-0.5, 0.5],[ 0.5,-0.5, 0.5],[ 0.5, 0.5, 0.5],[-0.5, 0.5, 0.5],[ 0, 0, 1]);
+addCubeFace([ 0.5,-0.5,-0.5],[-0.5,-0.5,-0.5],[-0.5, 0.5,-0.5],[ 0.5, 0.5,-0.5],[ 0, 0,-1]);
+addCubeFace([-0.5, 0.5, 0.5],[ 0.5, 0.5, 0.5],[ 0.5, 0.5,-0.5],[-0.5, 0.5,-0.5],[ 0, 1, 0]);
+addCubeFace([-0.5,-0.5,-0.5],[ 0.5,-0.5,-0.5],[ 0.5,-0.5, 0.5],[-0.5,-0.5, 0.5],[ 0,-1, 0]);
+addCubeFace([ 0.5,-0.5, 0.5],[ 0.5,-0.5,-0.5],[ 0.5, 0.5,-0.5],[ 0.5, 0.5, 0.5],[ 1, 0, 0]);
+addCubeFace([-0.5,-0.5,-0.5],[-0.5,-0.5, 0.5],[-0.5, 0.5, 0.5],[-0.5, 0.5,-0.5],[-1, 0, 0]);
+
+const cubeBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, cubeBuf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(cubeVerts), gl.STATIC_DRAW);
+
+// 3. Light Shaft Prism Buffer (4 side faces of a slanted column)
+const beamVerts = [];
+function addBeamSide(x0, y0, x1, y1) {
+  beamVerts.push(
+    x0,y0,0, 0.9,  x1,y1,0, 0.9,  x1,y1,1, 0.5,
+    x0,y0,0, 0.9,  x1,y1,1, 0.5,  x0,y0,1, 0.5
+  );
+}
+addBeamSide(-0.48,-0.48,  0.48,-0.48);
+addBeamSide( 0.48,-0.48,  0.48, 0.48);
+addBeamSide( 0.48, 0.48, -0.48, 0.48);
+addBeamSide(-0.48, 0.48, -0.48,-0.48);
+// Inner cross planes for rich volumetric density
+addBeamSide(-0.45, 0.0,   0.45, 0.0);
+addBeamSide( 0.0, -0.45,  0.0,  0.45);
+
+const beamBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, beamBuf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(beamVerts), gl.STATIC_DRAW);
+
+// 4. Dynamic Particle Buffer (Atmospheric Dust + Shattered Block Sparks)
+const MAX_PARTS = 900;
+const partData = new Float32Array(MAX_PARTS * 7);
+const partBuf = gl.createBuffer();
+
+const dustMotes = [];
+for (let i = 0; i < 320; i++) {
+  const u = hash(i * 17 + 3), v = hash(i * 29 + 7);
+  dustMotes.push({
+    x: (u - 0.5) * 9.5,
+    y0: v * 14.2 + 0.5,
+    slide: hash(i * 43 + 11),
+    phase: hash(i * 61) * Math.PI * 2,
+    col: sampleStainedGlass(u, v)
+  });
+}
+
+// --- 5. Camera Choreography ---
+function getCamera(t) {
+  if (t < 11.0) {
+    // Slowly pushing in as blocks seal the window
+    const s = smoothstep(0, 11, t);
+    return {
+      eye: [lerp(0, 0.4, s), lerp(4.8, 5.2, s), lerp(21.5, 19.0, s)],
+      target: [0, lerp(6.2, 6.8, s), 0],
+      up: [0, 1, 0]
+    };
+  } else if (t < 14.0) {
+    // Stillness in darkness
+    const s = smoothstep(11, 14, t);
+    return {
+      eye: [lerp(0.4, 0, s), 5.2, lerp(19.0, 18.0, s)],
+      target: [0, 6.8, 0],
+      up: [0, 1, 0]
+    };
+  } else if (t < 19.0) {
+    // Focus on the single "忙しい" block falling and releasing the first ruby/gold ray
+    const s = smoothstep(14, 19, t);
+    return {
+      eye: [lerp(0, -1.2, s), lerp(5.2, 5.8, s), lerp(18.0, 15.8, s)],
+      target: [lerp(0, -0.5, s), lerp(6.8, 5.8, s), lerp(0, 2.0, s)],
+      up: [0, 1, 0]
+    };
+  } else if (t < 26.0) {
+    // Sweeping back slightly as colored light shafts multiply across the cathedral
+    const s = smoothstep(19, 26, t);
+    return {
+      eye: [lerp(-1.2, 0.0, s), lerp(5.8, 5.0, s), lerp(15.8, 17.5, s)],
+      target: [lerp(-0.5, 0.0, s), lerp(5.8, 5.2, s), lerp(2.0, 4.5, s)],
+      up: [0, 1, 0]
+    };
+  } else {
+    // 26 to 36s: Soar through the colorful light pillars and look straight down at the floor
+    const s = smoothstep(26.0, 31.8, t);
+    // Smooth curve through the beams (z around 7..8m) up to y=17.5m
+    const arcX = Math.sin(s * Math.PI) * 1.6;
+    const eyeY = lerp(5.0, 17.2, Math.pow(s, 0.88));
+    const eyeZ = lerp(17.5, 7.65, smoothstep(0, 0.85, s));
+    const targY = lerp(5.2, 0.0, smoothstep(0.0, 0.75, s));
+    const targZ = lerp(4.5, 7.6, smoothstep(0.0, 0.85, s));
+    // Smoothly transition up-vector from +Y to -Z so the top of the stained glass is at the top of the screen
+    const upY = lerp(1.0, 0.0, smoothstep(0.35, 0.95, s));
+    const upZ = lerp(0.0, -1.0, smoothstep(0.35, 0.95, s));
+    return {
+      eye: [arcX * (1 - s), eyeY, eyeZ],
+      target: [0, targY, targZ],
+      up: [0, upY, upZ]
+    };
+  }
+}
+
+// --- 6. Subtitle & Overlay Text Schedule ---
+const SUBTITLES = [
+  { t0: 3.3,  t1: 6.2,  text: '毎日、もっと速く。' },
+  { t0: 6.5,  t1: 9.4,  text: 'もっと、効率よく。' },
+  { t0: 10.6, t1: 13.7, text: '気づけば、光が入らなくなっていた。' },
+  { t0: 14.3, t1: 18.2, text: 'ひとつ、手放してみる。' },
+  { t0: 19.3, t1: 23.0, text: '空いたところから、光が入る。' },
+  { t0: 25.0, t1: 29.2, text: 'その光は、前より豊かだった。' }
+];
+
+const uiCanvas = document.getElementById('ui');
+const uctx = uiCanvas.getContext('2d');
+
+function renderOverlay(t) {
+  uctx.clearRect(0, 0, 1280, 720);
+
+  // Subtle cinematic vignette
+  const vGrad = uctx.createRadialGradient(640, 360, 260, 640, 360, 740);
+  vGrad.addColorStop(0, 'rgba(0,0,0,0)');
+  vGrad.addColorStop(1, 'rgba(0,0,0,0.55)');
+  uctx.fillStyle = vGrad;
+  uctx.fillRect(0, 0, 1280, 720);
+
+  // Opening subtle title (0.4s - 2.6s)
+  if (t < 2.8) {
+    const a = smoothstep(0.3, 1.1, t) * (1 - smoothstep(2.0, 2.7, t));
+    uctx.save();
+    uctx.font = '32px "Hiragino Mincho ProN", "Yu Mincho", "MS PMincho", serif';
+    uctx.fillStyle = `rgba(240, 242, 248, ${a * 0.78})`;
+    uctx.textAlign = 'center';
+    uctx.fillText('余　白', 640, 645);
+    uctx.restore();
+  }
+
+  // Poetic Mincho subtitles
+  for (const sub of SUBTITLES) {
+    if (t >= sub.t0 && t <= sub.t1) {
+      const a = smoothstep(sub.t0, sub.t0 + 0.7, t) * (1 - smoothstep(sub.t1 - 0.7, sub.t1, t));
+      uctx.save();
+      uctx.font = '29px "Hiragino Mincho ProN", "Yu Mincho", "MS PMincho", serif';
+      uctx.textAlign = 'center';
+      uctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
+      uctx.shadowBlur = 14;
+      uctx.fillStyle = `rgba(245, 244, 240, ${a * 0.92})`;
+      uctx.fillText(sub.text, 640, 650);
+      uctx.restore();
+    }
+  }
+
+  // 33〜36秒: Dazzling golden-white light & final message「豊かさは余白に宿る」
+  if (t > 32.2) {
+    const bloom = smoothstep(32.2, 34.4, t);
+    const lGrad = uctx.createRadialGradient(640, 360, 40, 640, 360, 750);
+    lGrad.addColorStop(0, `rgba(255, 252, 242, ${bloom * 0.96})`);
+    lGrad.addColorStop(0.6, `rgba(255, 246, 225, ${bloom * 0.92})`);
+    lGrad.addColorStop(1, `rgba(250, 235, 205, ${bloom * 0.88})`);
+    uctx.fillStyle = lGrad;
+    uctx.fillRect(0, 0, 1280, 720);
+
+    const textA = smoothstep(33.1, 34.2, t) * (1 - smoothstep(35.5, 36.0, t));
+    if (textA > 0.001) {
+      uctx.save();
+      uctx.font = '56px "Hiragino Mincho ProN", "Yu Mincho", "MS PMincho", serif';
+      uctx.textAlign = 'center';
+      uctx.textBaseline = 'middle';
+      uctx.shadowColor = 'rgba(210, 165, 70, 0.45)';
+      uctx.shadowBlur = 24;
+      uctx.fillStyle = `rgba(38, 28, 18, ${textA})`;
+      uctx.fillText('豊かさは余白に宿る', 640, 360);
+      uctx.restore();
+    }
+  }
+}
+
+// --- 7. Main Render Loop ---
+function renderFrame(t) {
+  gl.viewport(0, 0, 1280, 720);
+  gl.clearColor(0.01, 0.01, 0.015, 1.0);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+  gl.disable(gl.BLEND);
+
+  // Color transition: 0~11s cold white, 14s+ rich jewel stained glass
+  const colorMix = smoothstep(13.2, 14.5, t);
+
+  // Compute block states and update 8x12 Window Openness Mask
+  maskData.fill(255);
+  const activeCubes = [];
+  const openBeams = [];
+  let openCount = 0;
+
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
+    let cellOpen = 1.0;
+
+    if (t >= b.tStart && t < b.tDrop + 1.35) {
+      if (t < b.tArrive) {
+        // Flying in from foreground to seal the window
+        const p = smoothstep(b.tStart, b.tArrive, t);
+        const cx = lerp(b.sx, b.tx, p);
+        const cy = lerp(b.sy, b.ty, p);
+        const cz = lerp(b.sz, b.tz, Math.pow(p, 0.85));
+        activeCubes.push({ b, cx, cy, cz, scale: 1.0, rotX: (1 - p) * 1.4, glow: 0 });
+        if (p > 0.85) cellOpen = 1.0 - (p - 0.85) / 0.15;
+      } else if (t < b.tDrop) {
+        // Sealed in the window
+        cellOpen = 0.0;
+        const preGlow = smoothstep(b.tDrop - 0.35, b.tDrop, t) * 0.45;
+        activeCubes.push({ b, cx: b.tx, cy: b.ty, cz: b.tz, scale: 1.0, rotX: 0, glow: preGlow });
+      } else {
+        // Detaching from window, falling, and dissolving into particles of light
+        const dt = t - b.tDrop;
+        const fallP = clamp(dt / 1.35, 0, 1);
+        cellOpen = smoothstep(0.0, 0.35, dt);
+        if (fallP < 0.82) {
+          const sc = 1.0 - smoothstep(0.3, 0.82, fallP);
+          const cy = b.ty - 5.5 * dt * dt;
+          const cz = b.tz + 2.2 * dt;
+          activeCubes.push({ b, cx: b.tx, cy: Math.max(0.6, cy), cz, scale: sc, rotX: dt * 2.6, glow: smoothstep(0.0, 0.4, fallP) });
+        }
+      }
+    }
+
+    const mIdx = (b.r * COLS + b.c) * 4;
+    const val = Math.round(clamp(cellOpen, 0, 1) * 255);
+    maskData[mIdx] = val; maskData[mIdx + 1] = val; maskData[mIdx + 2] = val; maskData[mIdx + 3] = 255;
+
+    if (cellOpen > 0.05) {
+      openCount++;
+      openBeams.push({ b, open: cellOpen });
+    }
+  }
+
+  const openRatio = openCount / blocks.length;
+  const ambient = 0.22 + 0.78 * openRatio;
+
+  // Upload updated mask texture
+  gl.bindTexture(gl.TEXTURE_2D, maskTex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, COLS, ROWS, 0, gl.RGBA, gl.UNSIGNED_BYTE, maskData);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+  // Camera View-Projection Matrix
+  const cam = getCamera(t);
+  const proj = mat4Perspective(52 * Math.PI / 180, 1280 / 720, 0.2, 70.0);
+  const view = mat4LookAt(cam.eye, cam.target, cam.up);
+  const vp = mat4Mul(proj, view);
+
+  // --- PASS 1: Draw Cathedral Room & Floor Projection ---
+  gl.useProgram(roomProg);
+  gl.uniformMatrix4fv(gl.getUniformLocation(roomProg, 'uVP'), false, vp);
+  gl.uniform1f(gl.getUniformLocation(roomProg, 'uColorMix'), colorMix);
+  gl.uniform1f(gl.getUniformLocation(roomProg, 'uAmbient'), ambient);
+
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, sgTex);
+  gl.uniform1i(gl.getUniformLocation(roomProg, 'uSG'), 0);
+
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, maskTex);
+  gl.uniform1i(gl.getUniformLocation(roomProg, 'uMask'), 1);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, roomBuf);
+  const rPos = gl.getAttribLocation(roomProg, 'aPos');
+  const rNorm = gl.getAttribLocation(roomProg, 'aNorm');
+  gl.enableVertexAttribArray(rPos);
+  gl.enableVertexAttribArray(rNorm);
+  gl.vertexAttribPointer(rPos, 3, gl.FLOAT, false, 24, 0);
+  gl.vertexAttribPointer(rNorm, 3, gl.FLOAT, false, 24, 12);
+  gl.drawArrays(gl.TRIANGLES, 0, roomVerts.length / 6);
+
+  // --- PASS 2: Draw Engraved Gray Cubes ---
+  gl.useProgram(cubeProg);
+  gl.uniformMatrix4fv(gl.getUniformLocation(cubeProg, 'uVP'), false, vp);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, wordTex);
+  gl.uniform1i(gl.getUniformLocation(cubeProg, 'uWordTex'), 0);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, cubeBuf);
+  const cPos = gl.getAttribLocation(cubeProg, 'aPos');
+  const cNorm = gl.getAttribLocation(cubeProg, 'aNorm');
+  const cUV = gl.getAttribLocation(cubeProg, 'aUV');
+  gl.enableVertexAttribArray(cPos);
+  gl.enableVertexAttribArray(cNorm);
+  gl.enableVertexAttribArray(cUV);
+  gl.vertexAttribPointer(cPos, 3, gl.FLOAT, false, 32, 0);
+  gl.vertexAttribPointer(cNorm, 3, gl.FLOAT, false, 32, 12);
+  gl.vertexAttribPointer(cUV, 2, gl.FLOAT, false, 32, 24);
+
+  const uCenter = gl.getUniformLocation(cubeProg, 'uCenter');
+  const uScale = gl.getUniformLocation(cubeProg, 'uScale');
+  const uRotX = gl.getUniformLocation(cubeProg, 'uRotX');
+  const uWordOffset = gl.getUniformLocation(cubeProg, 'uWordOffset');
+  const uGlow = gl.getUniformLocation(cubeProg, 'uGlow');
+
+  for (let i = 0; i < activeCubes.length; i++) {
+    const ac = activeCubes[i];
+    const wIdx = ac.b.wordIdx;
+    const ox = (wIdx % 4) * 0.25;
+    const oy = 0.75 - Math.floor(wIdx / 4) * 0.25;
+    gl.uniform3f(uCenter, ac.cx, ac.cy, ac.cz);
+    gl.uniform3f(uScale, BW * 0.96 * ac.scale, BH * 0.96 * ac.scale, 1.15 * ac.scale);
+    gl.uniform1f(uRotX, ac.rotX);
+    gl.uniform2f(uWordOffset, ox, oy);
+    gl.uniform1f(uGlow, ac.glow);
+    gl.drawArrays(gl.TRIANGLES, 0, 36);
+  }
+  gl.disableVertexAttribArray(cUV);
+
+  // --- PASS 3: Volumetric Light Shafts (Additive Blending) ---
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+  gl.depthMask(false);
+
+  // Fade beams slightly when camera looks straight down at the floor so floor art is crystal clear
+  const topDownFade = 1.0 - 0.55 * smoothstep(28.5, 31.5, t);
+
+  gl.useProgram(beamProg);
+  gl.uniformMatrix4fv(gl.getUniformLocation(beamProg, 'uVP'), false, vp);
+  gl.bindBuffer(gl.ARRAY_BUFFER, beamBuf);
+  const bPos = gl.getAttribLocation(beamProg, 'aPos');
+  const bAlpha = gl.getAttribLocation(beamProg, 'aAlpha');
+  gl.enableVertexAttribArray(bPos);
+  gl.enableVertexAttribArray(bAlpha);
+  gl.vertexAttribPointer(bPos, 3, gl.FLOAT, false, 16, 0);
+  gl.vertexAttribPointer(bAlpha, 1, gl.FLOAT, false, 16, 12);
+
+  const uCellPos = gl.getUniformLocation(beamProg, 'uCellPos');
+  const uCellSize = gl.getUniformLocation(beamProg, 'uCellSize');
+  const uBeamColor = gl.getUniformLocation(beamProg, 'uBeamColor');
+  const uBeamIntensity = gl.getUniformLocation(beamProg, 'uBeamIntensity');
+  gl.uniform2f(uCellSize, BW, BH);
+
+  for (let i = 0; i < openBeams.length; i++) {
+    const ob = openBeams[i];
+    const b = ob.b;
+    const r = lerp(0.85, b.color[0], colorMix);
+    const g = lerp(0.90, b.color[1], colorMix);
+    const bl = lerp(1.00, b.color[2], colorMix);
+    // Boost the single hero ray at 14..19s for dramatic impact
+    const heroBoost = (b.isHero && t > 14.0 && t < 20.0) ? 2.4 : 1.0;
+    gl.uniform2f(uCellPos, b.tx, b.ty);
+    gl.uniform3f(uBeamColor, r, g, bl);
+    gl.uniform1f(uBeamIntensity, 0.042 * ob.open * heroBoost * topDownFade);
+    gl.drawArrays(gl.TRIANGLES, 0, beamVerts.length / 4);
+  }
+
+  // --- PASS 4: Dissolving Block Sparks & Shimmering Dust Motes ---
+  let pCount = 0;
+
+  // Dissolving particles from falling blocks
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
+    const dt = t - b.tDrop;
+    if (dt > 0.15 && dt < 2.6) {
+      const life = (dt - 0.15) / 2.45;
+      const fade = Math.sin(life * Math.PI);
+      const numSparks = b.isHero ? 42 : 12;
+      for (let k = 0; k < numSparks && pCount < MAX_PARTS; k++) {
+        const seed = i * 97 + k * 13;
+        const vx = (hash(seed) - 0.5) * 3.8;
+        const vy = (hash(seed + 1) - 0.2) * 3.5 - 1.5 * dt;
+        const vz = hash(seed + 2) * 4.5 + 1.2;
+        const px = b.tx + vx * dt;
+        const py = Math.max(0.2, b.ty - 1.2 + vy * dt);
+        const pz = b.tz + vz * dt;
+        const idx = pCount * 7;
+        partData[idx]     = px;
+        partData[idx + 1] = py;
+        partData[idx + 2] = pz;
+        partData[idx + 3] = lerp(1.0, b.color[0], 0.6) * fade * 1.6;
+        partData[idx + 4] = lerp(0.95, b.color[1], 0.6) * fade * 1.6;
+        partData[idx + 5] = lerp(0.8, b.color[2], 0.6) * fade * 1.6;
+        partData[idx + 6] = (b.isHero ? 26.0 : 18.0) * (1 - 0.5 * life);
+        pCount++;
+      }
+    }
+  }
+
+  // Shimmering dust motes inside open light shafts
+  if (openRatio > 0.01) {
+    for (let i = 0; i < dustMotes.length && pCount < MAX_PARTS; i++) {
+      const m = dustMotes[i];
+      const s = fract(m.slide + t * 0.025);
+      const px = m.x + Math.sin(t * 0.7 + m.phase) * 0.35;
+      const py = m.y0 * (1 - s);
+      const pz = m.y0 * s;
+      // Check if corresponding window cell is open
+      const colIdx = clamp(Math.floor(((px + 5) / 10) * COLS), 0, COLS - 1);
+      const rowIdx = clamp(Math.floor((m.y0 / 15) * ROWS), 0, ROWS - 1);
+      const isOpen = maskData[(rowIdx * COLS + colIdx) * 4] / 255;
+      if (isOpen > 0.2) {
+        const twinkle = (0.4 + 0.6 * Math.sin(t * 3.8 + m.phase)) * isOpen;
+        const idx = pCount * 7;
+        partData[idx]     = px;
+        partData[idx + 1] = py;
+        partData[idx + 2] = pz;
+        partData[idx + 3] = lerp(0.9, m.col[0] * 1.5, colorMix) * twinkle;
+        partData[idx + 4] = lerp(0.9, m.col[1] * 1.5, colorMix) * twinkle;
+        partData[idx + 5] = lerp(1.0, m.col[2] * 1.5, colorMix) * twinkle;
+        partData[idx + 6] = 11.0;
+        pCount++;
+      }
+    }
+  }
+
+  if (pCount > 0) {
+    gl.useProgram(partProg);
+    gl.uniformMatrix4fv(gl.getUniformLocation(partProg, 'uVP'), false, vp);
+    gl.bindBuffer(gl.ARRAY_BUFFER, partBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, partData.subarray(0, pCount * 7), gl.DYNAMIC_DRAW);
+    const pPos = gl.getAttribLocation(partProg, 'aPos');
+    const pCol = gl.getAttribLocation(partProg, 'aCol');
+    const pSize = gl.getAttribLocation(partProg, 'aSize');
+    gl.enableVertexAttribArray(pPos);
+    gl.enableVertexAttribArray(pCol);
+    gl.enableVertexAttribArray(pSize);
+    gl.vertexAttribPointer(pPos, 3, gl.FLOAT, false, 28, 0);
+    gl.vertexAttribPointer(pCol, 3, gl.FLOAT, false, 28, 12);
+    gl.vertexAttribPointer(pSize, 1, gl.FLOAT, false, 28, 24);
+    gl.drawArrays(gl.POINTS, 0, pCount);
+    gl.disableVertexAttribArray(pSize);
+  }
+
+  gl.depthMask(true);
+  gl.disable(gl.BLEND);
+
+  renderOverlay(t);
+}
+
+function fract(x) { return x - Math.floor(x); }
+
+let t0 = null;
+function tick(now) {
+  if (t0 === null) t0 = now;
+  const elapsed = (now - t0) / 1000 + startT;
+  const t = elapsed % window.DUR;
+  renderFrame(t);
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>

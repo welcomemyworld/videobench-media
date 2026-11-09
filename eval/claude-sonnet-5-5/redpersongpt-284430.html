@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000;height:100%;overflow:hidden}#w{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}canvas{width:1280px;height:720px;display:block}</style></head><body><div id="w"><canvas id="c" width="1280" height="720"></canvas></div><script>
+const c=document.getElementById('c'),g=c.getContext('2d'),w=document.getElementById('w');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);w.style.transform=`scale(${s})`;w.style.marginLeft=-640*s+'px';w.style.marginTop=-360*s+'px'}
+fit();onresize=fit;
+window.DUR=36;
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t'))||0,st=performance.now();
+const cl=(x,a=0,b=1)=>Math.max(a,Math.min(b,x)),ease=x=>1-Math.pow(1-cl(x),3),sm=x=>{x=cl(x);return x*x*(3-2*x)};
+const bk=(x,a=1.7)=>{x=cl(x);return 1+(a+1)*Math.pow(x-1,3)+a*Math.pow(x-1,2)};
+function rr(x,y,w,h,r){g.beginPath();g.roundRect(x,y,w,h,r)}
+function txt(s,x,y,sz,col,al='left',wt=700){g.font=`${wt} ${sz}px -apple-system,Helvetica,Arial,sans-serif`;g.fillStyle=col;g.textAlign=al;g.textBaseline='middle';g.fillText(s,x,y)}
+// scenes: [start,end]
+const ACC='#7c5cff',ACC2='#ff5ca8';
+function bg(t){const gr=g.createLinearGradient(0,0,1280,720);gr.addColorStop(0,'#0b0a14');gr.addColorStop(1,'#1a1030');g.fillStyle=gr;g.fillRect(0,0,1280,720);
+for(let i=0;i<14;i++){const x=(i*173+t*20*(1+i%3))%1400-60,y=(i*97)%720+Math.sin(t+i)*20;g.fillStyle=`rgba(${i%2?'124,92,255':'255,92,168'},.07)`;g.beginPath();g.arc(x,y,40+i*6,0,7);g.fill()}}
+// chat templates
+const TPL=[
+{n:'iMessage',bg:'#fff',me:'#0a84ff',them:'#e9e9eb',tc:'#000',font:20,r:20,hd:'#f6f6f6',name:'Mia'},
+{n:'WhatsApp',bg:'#e6ddd4',me:'#d9fdd3',them:'#fff',tc:'#111',font:20,r:12,hd:'#075e54',name:'Jay',hw:1},
+{n:'Discord',bg:'#313338',me:null,them:null,tc:'#dbdee1',font:19,r:0,hd:'#2b2d31',name:'#general',dc:1},
+{n:'AI Chat',bg:'#212121',me:'#303030',them:null,tc:'#ececec',font:19,r:18,hd:'#212121',name:'Assistant',ai:1}];
+const MSG=[[0,'wait… you saw the screenshot??'],[1,'you made that in 10 seconds?'],[0,'yep. every name, time, photo.'],[1,'ok that looks completely real']];
+function phone(x,y,s,tp,t,typed){ // t seconds into chat
+ const T=TPL[tp];g.save();g.translate(x,y);g.scale(s,s);
+ g.shadowColor='rgba(124,92,255,.5)';g.shadowBlur=60;rr(-150,-310,300,620,38);g.fillStyle='#000';g.fill();g.shadowBlur=0;
+ g.save();rr(-142,-302,284,604,32);g.clip();g.fillStyle=T.bg;g.fillRect(-150,-310,300,620);
+ g.fillStyle=T.hd;g.fillRect(-150,-310,300,92);
+ const dark=T.hw||T.dc||T.ai;
+ g.fillStyle=T.hw?'#fff':dark?'#fff':'#000';
+ txt('9:41',-100,-288,12,dark?'#fff':'#000','left');
+ g.fillStyle=ACC;g.beginPath();g.arc(-100,-244,16,0,7);g.fill();txt(T.name[0]==='#'?'#':T.name[0],-100,-244,15,'#fff','center');
+ txt(T.name,-72,-244,15,dark?'#fff':'#000','left');
+ MSG.forEach((m,i)=>{const a=bk((t-i*0.9)/.5,1.4);if(a<=0)return;const me=m[0]===1;const yy=-190+i*98+(1-a)*30;
+  g.globalAlpha=cl(a);
+  g.font=`500 ${T.font*.72}px -apple-system,Helvetica,Arial`;
+  const wds=m[1].split(' ');let l1='',l2='';wds.forEach(w=>{if(g.measureText(l1+w).width<150&&!l2)l1+=w+' ';else l2+=w+' '});
+  const bw=Math.min(200,Math.max(g.measureText(l1).width,g.measureText(l2).width)+26),bh=l2?52:34;
+  if(T.dc){ // discord
+   g.fillStyle=me?ACC2:ACC;g.beginPath();g.arc(-120,yy+14,13,0,7);g.fill();
+   txt(me?'sam':'kai',-98,yy+4,12,'#fff','left');txt(l1,-98,yy+22,11,T.tc,'left',500);if(l2)txt(l2,-98,yy+38,11,T.tc,'left',500);
+  }else if(T.ai){
+   if(me){g.fillStyle=T.me;rr(140-bw-4-8,yy,bw,bh,16);g.fill();txt(l1,140-bw-8+10,yy+(l2?16:17),11.5,T.tc,'left',500);if(l2)txt(l2,140-bw-8+10,yy+36,11.5,T.tc,'left',500)}
+   else{txt(l1,-125,yy+10,11.5,T.tc,'left',500);if(l2)txt(l2,-125,yy+28,11.5,T.tc,'left',500)}
+  }else{
+   const bx=me?138-bw:-138;g.fillStyle=me?T.me:T.them;rr(bx,yy,bw,bh,T.r*.7);g.fill();
+   const col=(tp==0&&me)?'#fff':T.tc;txt(l1,bx+12,yy+(l2?16:17),11.5,col,'left',500);if(l2)txt(l2,bx+12,yy+36,11.5,col,'left',500);
+   txt(me?'9:4'+(1+i)+(tp==1?' ✓✓':''):'9:4'+(1+i),me?bx+bw-6:bx+8,yy+bh+9,8,'#999',me?'right':'left',500)}
+  g.globalAlpha=1});
+ // input bar
+ g.fillStyle=dark?'#ffffff18':'#00000010';rr(-130,262,260,28,14);g.fill();
+ if(typed)txt(typed,-118,276,11,dark?'#ddd':'#333','left',500);
+ g.restore();g.restore()}
+function editor(t){ // t into scene
+ const s=ease(t/.6);g.save();g.globalAlpha=s;
+ rr(60,70,560,580,24);g.fillStyle='#14121f';g.fill();g.strokeStyle='#ffffff18';g.lineWidth=1.5;g.stroke();
+ txt('Edit conversation',90,108,22,'#fff','left');
+ const rows=[['Name','Mia → Jay'],['Message','wait… you saw the screenshot??'],['Timestamp','9:41 PM'],['Bubble color','']];
+ rows.forEach((r,i)=>{const y=150+i*80,a=ease((t-.3-i*.35)/.4);g.globalAlpha=s*a;txt(r[0].toUpperCase(),90,y,12,'#8a84a8','left');
+  rr(90,y+14,500,42,12);g.fillStyle='#211d33';g.fill();
+  if(i<3){let v=r[1];if(i==1)v=v.slice(0,Math.floor(cl((t-.8)/1.4)*v.length));txt(v+(i==1&&Math.floor(t*3)%2?'|':''),106,y+36,16,'#fff','left',500)}
+  else{['#0a84ff','#25d366',ACC,ACC2,'#ffb020'].forEach((cc,k)=>{g.fillStyle=cc;g.beginPath();g.arc(112+k*50,y+36,15+(k==Math.floor(t*1.5)%5?3:0),0,7);g.fill()})}});
+ g.globalAlpha=1;
+ rr(90,500,230,50,25);g.fillStyle='#ffffff14';g.fill();txt('Add profile photo',205,525,15,'#fff','center',600);
+ g.globalAlpha=1;g.restore()}
+function title(a,b,t,y=360,sz=64){const e=ease(t/.7);g.globalAlpha=e;txt(a,640,y+(1-e)*30,sz,'#fff','center',800);if(b)txt(b,640,y+sz*.95+(1-e)*30,sz*.38,'#b5acd8','center',500);g.globalAlpha=1}
+function logo(x,y,s){g.save();g.translate(x,y);g.scale(s,s);const gr=g.createLinearGradient(-40,-40,40,40);gr.addColorStop(0,ACC);gr.addColorStop(1,ACC2);rr(-40,-40,80,80,22);g.fillStyle=gr;g.fill();
+ g.fillStyle='#fff';rr(-24,-22,34,22,9);g.fill();g.globalAlpha=.7;rr(-8,2,34,22,9);g.fill();g.globalAlpha=1;g.restore()}
+function draw(T){
+ bg(T);
+ if(T<4){ // hook
+  const t=T;
+  const lines=['Fake chat','that looks','real.'];
+  lines.forEach((l,i)=>{const e=bk((t-.2-i*.35)/.6);g.globalAlpha=cl(e);txt(l,90,230+i*110+(1-e)*60,100,i==2?ACC2:'#fff','left',900)});g.globalAlpha=1;
+  txt('in about 10 seconds.',92,580,28,'#b5acd8','left',500);
+  phone(900,370+Math.sin(t*2)*6,1.05*bk((t-.4)/.9,1),0,t-1,'');
+ }else if(T<10){ // editor + live preview
+  const t=T-4;editor(t);
+  const ts=Math.floor(cl((t-.8)/1.4)*29);
+  phone(930,360,.95,0,t*.9+.2,'');
+  txt('Edit both sides. Preview updates live.',640,40,22,'#fff','center',700);
+  // live ping
+  g.globalAlpha=.5+.5*Math.sin(t*6);g.fillStyle='#3ddc84';g.beginPath();g.arc(790,60,6,0,7);g.fill();g.globalAlpha=1;txt('LIVE',802,60,12,'#3ddc84','left');
+ }else if(T<18){ // template switch
+  const t=T-10,k=Math.floor(t/2)%4,lt=t%2;
+  title('63 templates.','one tap each.',Math.min(t,1),110,50);
+  const shift=sm(lt/.35);
+  for(let i=0;i<4;i++){const rel=(i-k+4)%4;const px=640+(rel==0?0:rel==1?330:rel==3?-330:0);if(rel==2)continue;
+   const sc=rel==0?1.0:.7;g.globalAlpha=rel==0?1:.55;phone(px,440,sc*.8,i,lt+1.5+i);}
+  g.globalAlpha=1;
+  const nm=TPL[k].n;txt(nm,640,675,26,'#fff','center',700);
+  const cats=['Chat','AI','Social','Comments','Stories','Email','Game'];
+  cats.forEach((cn,i)=>{const x=640+(i-3)*130;rr(x-52,150,104,30,15);g.fillStyle='#ffffff16';g.fill();txt(cn,x,165,13,'#cfc8ee','center',600)});
+ }else if(T<25){ // record mp4 / dialogue video
+  const t=T-18;
+  phone(400,370,1.05,2,t*1.1,'');
+  title('Record it as MP4.','',t,250,52);
+  txt('Supported templates play out as a dialogue video.',860,330,20,'#b5acd8','center',500);
+  // record button & timer
+  const rx=860,ry=440;g.fillStyle='#ffffff10';rr(rx-150,ry-34,300,68,34);g.fill();
+  g.fillStyle=Math.floor(t*2)%2?'#ff3b4f':'#a02030';g.beginPath();g.arc(rx-110,ry,10,0,7);g.fill();
+  txt('REC 00:0'+Math.min(9,Math.floor(t)),rx-85,ry,20,'#fff','left',700);
+  // progress
+  rr(rx-150,ry+60,300,8,4);g.fillStyle='#ffffff18';g.fill();rr(rx-150,ry+60,300*cl(t/6),8,4);g.fillStyle=ACC2;g.fill();
+ }else if(T<31){ // export
+  const t=T-25;
+  phone(420,370,.95,3,t+1.5,'');
+  const e=ease(t/.6);g.globalAlpha=e;
+  txt('Export',860,200,56,'#fff','center',800);
+  ['Image  ·  PNG','Video  ·  MP4'].forEach((s,i)=>{const y=290+i*90,hl=(Math.floor(t/1.5)%2)==i;rr(710,y,300,66,18);g.fillStyle=hl?ACC:'#ffffff14';g.fill();txt(s,860,y+33,22,'#fff','center',700)});
+  txt('3 free exports  ·  Pro removes the watermark',860,520,17,'#b5acd8','center',500);
+  g.globalAlpha=1;
+  const d=cl((t-3)/.5);if(d>0){g.globalAlpha=d;g.fillStyle='#3ddc84';g.beginPath();g.arc(860,590,22*bk(d),0,7);g.fill();g.strokeStyle='#fff';g.lineWidth=4;g.beginPath();g.moveTo(850,590);g.lineTo(857,598);g.lineTo(872,582);g.stroke();g.globalAlpha=1}
+ }else{ // outro
+  const t=T-31;
+  logo(640,230,bk(t/.8)*1.5);
+  title('Mimicly','Chat mockups that look right.',Math.max(0,t-.3),350,84);
+  const e=ease((t-1.2)/.6);g.globalAlpha=e;rr(480,520,320,64,32);const gr=g.createLinearGradient(480,0,800,0);gr.addColorStop(0,ACC);gr.addColorStop(1,ACC2);g.fillStyle=gr;g.fill();
+  txt('Try 3 exports free',640,552,22,'#fff','center',800);txt('Web  ·  iPhone',640,620,18,'#b5acd8','center',500);g.globalAlpha=1}
+ // captions strip
+ const caps=[[0,4,'Mimicly'],[4,10,'Real names, photos, timestamps, colors'],[10,18,'iMessage · WhatsApp · Discord · AI · more'],[18,25,'Dialogue videos, ready to post'],[25,31,'Image or MP4']];
+ // progress bar
+ g.fillStyle='#ffffff14';g.fillRect(0,714,1280,6);g.fillStyle=ACC2;g.fillRect(0,714,1280*T/DUR,6);
+ // scene fade
+ [4,10,18,25,31].forEach(b=>{const d=Math.abs(T-b);if(d<.25){g.fillStyle=`rgba(11,10,20,${.8*(1-d/.25)})`;g.fillRect(0,0,1280,720)}});
+}
+function f(){const T=((performance.now()-st)/1000+off)%DUR;draw(T);requestAnimationFrame(f)}
+requestAnimationFrame(f);
+</script></body></html>

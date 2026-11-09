@@ -1,0 +1,86 @@
+<html><head><meta charset="utf-8"><title>Pixel Wizard</title><style>html,body{margin:0;background:#000;overflow:hidden;height:100%}canvas{display:block;position:absolute;image-rendering:pixelated;image-rendering:crisp-edges}</style></head><body><canvas id="c"></canvas><script>
+window.DUR=16;
+const W=128,H=96;
+const P=["#05040f","#0b0a24","#141238","#1f1b4d","#2d2766","#ffffff","#e8e4c8","#b8b090","#3a1e5c","#5a2e8a","#7a46b0","#2a1a10","#5a3a1e","#8a5a2e","#c08a4a","#d8d8e8","#9a9ab0","#4a4a5e","#2a2a38","#bff7ff","#3ad8ff","#1a7ad0","#ff5ad8","#ffe060"];
+const lc=document.createElement('canvas');lc.width=W;lc.height=H;const g=lc.getContext('2d');
+const dc=document.getElementById('c'),dx=dc.getContext('2d');
+function rs(){dc.width=innerWidth;dc.height=innerHeight;let s=Math.max(1,Math.floor(Math.min(innerWidth/W,innerHeight/H)));dc._s=s;dc._x=((innerWidth-W*s)/2)|0;dc._y=((innerHeight-H*s)/2)|0;dx.imageSmoothingEnabled=false;}
+addEventListener('resize',rs);rs();
+function R(x,y,w,h,c){g.fillStyle=P[c];g.fillRect(x|0,y|0,w|0,h|0);}
+// stars
+const ST=new Int16Array(60);for(let i=0;i<30;i++){ST[i*2]=(i*53+17)%W;ST[i*2+1]=(i*37+5)%60;}
+// particles
+const N=160,px=new Float32Array(N),py=new Float32Array(N),vx=new Float32Array(N),vy=new Float32Array(N),pl=new Float32Array(N),pm=new Float32Array(N),pk=new Uint8Array(N),pa=new Uint8Array(N);
+let pi=0;function spawn(x,y,ax,ay,life,k){let i=pi;pi=(pi+1)%N;px[i]=x;py[i]=y;vx[i]=ax;vy[i]=ay;pl[i]=life;pm[i]=life;pk[i]=k;pa[i]=1;}
+const RAMP=[5,19,20,21,2];
+let st={sa:0,ar:0,ht:0,sw:0},proj=-1,prX=0,prY=0,shake=0,seed=1;
+function rnd(){seed=(seed*16807)%2147483647;return seed/2147483647;}
+function ease(t){t=t<0?0:t>1?1:t;return t*t*(3-2*t);}
+const L=4; // loop length (s) → 4 cycles per DUR
+function phase(t){t%=L;if(t<1.2)return[0,t/1.2];if(t<2.4)return[1,(t-1.2)/1.2];if(t<2.9)return[2,(t-2.4)/.5];return[3,(t-2.9)/1.1];}
+let lastPh=-1,gemX=0,gemY=0;
+function update(t){const[ph,f]=phase(t);let tsa,tar;
+if(ph==0){tsa=0;tar=0;}else if(ph==1){tsa=ease(f)*0.9;tar=ease(f);}else if(ph==2){tsa=0.9-0.6*ease(f*2);tar=1;}else{tsa=0.3*(1-ease(f));tar=1-ease(f);}
+st.sa=tsa;st.ar=tar;st.ht=ph==1?-ease(f):ph==2?1:0;st.sw=Math.sin(t*3);
+const gm=gem();gemX=gm[0];gemY=gm[1];
+if(ph==1&&rnd()<.6){let a=rnd()*6.28,r=14+rnd()*6;spawn(gemX+Math.cos(a)*r,gemY+Math.sin(a)*r,a,r,40,0);}
+if(ph==2&&lastPh!=2){for(let i=0;i<50;i++){let a=rnd()*6.28,s=.4+rnd()*1.4;spawn(gemX,gemY,Math.cos(a)*s,Math.sin(a)*s,30+rnd()*25,1);}proj=0;prX=gemX;prY=gemY;shake=14;}
+lastPh=ph;
+if(proj>=0){prX+=1.6;proj++;if(rnd()<.9)spawn(prX-2,prY+(rnd()*4-2),-.2,(rnd()-.5)*.3,20,1);if(prX>W+4){proj=-1;}}
+if(shake>0)shake--;
+for(let i=0;i<N;i++){if(!pa[i])continue;pl[i]--;if(pl[i]<=0){pa[i]=0;continue;}
+if(pk[i]==0){vx[i]+=.12;vy[i]*=.95;px[i]=gemX+Math.cos(vx[i])*vy[i];py[i]=gemY+Math.sin(vx[i])*vy[i];}else{px[i]+=vx[i];py[i]+=vy[i];vx[i]*=.96;vy[i]=vy[i]*.96+.01;}}}
+const WX=40,WY=88;
+function gem(){let a=st.sa,q=Math.round(a*4)/4;let hx=WX+8,hy=WY-14-Math.round(st.ar*6);let ang=-1.57+q*0.6;return[Math.round(hx+Math.cos(ang)*0+Math.sin(q)*6),Math.round(hy-18)];}
+function line(x0,y0,x1,y1,c){let dxl=Math.abs(x1-x0),dyl=-Math.abs(y1-y0),sx=x0<x1?1:-1,sy=y0<y1?1:-1,e=dxl+dyl;for(;;){R(x0,y0,1,1,c);if(x0==x1&&y0==y1)break;let e2=2*e;if(e2>=dyl){e+=dyl;x0+=sx;}if(e2<=dxl){e+=dxl;y0+=sy;}}}
+function draw(t){const[ph,f]=phase(t);
+for(let y=0;y<H;y++)R(0,y,W,1,y<25?0:y<50?1:y<70?2:3);
+for(let i=0;i<30;i++){let tw=((t*6+i*7)|0)%11;if(tw)R(ST[i*2],ST[i*2+1],1,1,tw<3?16:tw<6?7:5);}
+// moon
+for(let y=-7;y<=7;y++){let w=Math.floor(Math.sqrt(49-y*y));R(100-w,16+y,w*2+1,1,6);}
+R(97,13,2,2,7);R(102,18,3,2,7);R(99,20,1,1,7);
+// floor
+R(0,WY,W,H-WY,18);R(0,WY,W,1,16);for(let x=((x0=0));x<W;x+=9)R(x+((x/9|0)%2)*4,WY+3,1,3,17);R(0,WY+6,W,1,17);
+let sx=shake?((shake>>1)%2?1:-1):0;g.save();g.translate(sx,shake%3==1?1:0);
+const q=Math.floor(t*10);// 10fps pose quantization
+const bob=ph==0||ph==3?(q%2):0;const sw=Math.round(st.sw);const ht=Math.round(st.ht);
+let glow=ph==1?2+(q%2):ph==2?4:1;
+const x=WX,y=WY-bob;
+// robe (trapezoid)
+for(let r=0;r<18;r++){let w=8+(r>>1);let ox=x-w/2+(r>12?sw:0);R(ox-1,y-18+r,w+2,1,8);R(ox,y-18+r,w,1,9);R(ox,y-18+r,(w/2)|0,1,10);}
+R(x-12+sw,y-1,22,1,8);
+R(x-3,y-10,6,1,14);// belt
+// rim light (right edge, from gem)
+let rc=glow>=3?19:glow==2?20:21;for(let r=0;r<18;r+=1){let w=8+(r>>1);let ox=x-w/2+(r>12?sw:0);if(glow>1||r%2)R(ox+w,y-18+r,1,1,rc);}
+// head
+let hy=y-24;R(x-3+ht,hy,6,6,14);R(x-2+ht,hy+2,1,1,0);R(x+1+ht,hy+2,1,1,0);
+// beard
+for(let r=0;r<10;r++){let w=Math.max(1,6-(r>>1));let bx=x-((w/2)|0)+ht+(r>5?sw:0);R(bx,hy+4+r,w,1,r%3?15:16);}
+R(x-((6-(9>>1))/2|0)+ht+sw+1,hy+4,1,8,glow>2?19:15);
+// hat
+for(let r=0;r<11;r++){let w=Math.max(1,10-r);let hx=x-((w/2)|0)+ht+(r>6?(r-6)*-1:0);R(hx,hy-1-r,w,1,r==0?8:4);R(hx,hy-1-r,1,1,8);if(glow>1)R(hx+w-1,hy-1-r,1,1,rc);}
+R(x-6+ht,hy-1,12,1,8);R(x-6+ht,hy-2,12,1,3);R(x-3+ht,hy-4,1,1,23);
+// staff + arm
+let g2=gem();let hx2=x+7,hY=y-12-Math.round(st.ar*6);
+line(g2[0],g2[1]+2,hx2-2,y-1,12);line(g2[0]+1,g2[1]+2,hx2-1,y-1,13);
+line(x+3,y-15,hx2,hY,9);R(hx2-1,hY-1,3,3,14);
+// gem
+let gc=ph==1?(q%2?19:20):ph==2?5:20;R(g2[0]-1,g2[1]-1,3,3,21);R(g2[0],g2[1]-1,1,3,gc);R(g2[0]-1,g2[1],3,1,gc);
+if(glow>=2){R(g2[0],g2[1]-3,1,1,19);R(g2[0],g2[1]+3,1,1,19);R(g2[0]-3,g2[1],1,1,19);R(g2[0]+3,g2[1],1,1,19);}
+// burst
+if(ph==2&&f<.5){let r=(f*20)|0;for(let a=0;a<16;a++){let an=a*.3927;R(g2[0]+Math.round(Math.cos(an)*r),g2[1]+Math.round(Math.sin(an)*r),1,1,f<.25?5:19);}}
+// particles
+for(let i=0;i<N;i++){if(!pa[i])continue;let k=1-pl[i]/pm[i];let ci=pk[i]==0?(k<.5?RAMP[2+(q+i)%2]:RAMP[k<.8?1:0]):RAMP[Math.min(4,(k*5)|0)];if(pk[i]==1&&i%4==0&&k<.6)ci=22;R(Math.round(px[i]),Math.round(py[i]),1,1,ci);}
+// projectile
+if(proj>=0){let X=Math.round(prX),Y=Math.round(prY);R(X-2,Y-1,4,3,20);R(X-1,Y-2,2,5,20);R(X-1,Y,3,1,5);R(X,Y-1,1,3,19);if(q%2)R(X+2,Y,1,1,22);}
+g.restore();
+dx.fillStyle="#000";dx.fillRect(0,0,dc.width,dc.height);dx.imageSmoothingEnabled=false;dx.drawImage(lc,dc._x,dc._y,W*dc._s,H*dc._s);}
+let off=parseFloat(new URLSearchParams(location.search).get('t'))||0;
+let t0=performance.now(),acc=0,sim=0,lastF=-1;
+function frame(now){let el=((now-t0)/1000+off)%DUR;let target=Math.floor(el*60);
+if(target<lastF){lastF=-1;pa.fill(0);proj=-1;shake=0;seed=1;lastPh=-1;}
+if(lastF<0){let s=Math.max(0,target-300);lastF=Math.floor(s/(L*60))*L*60-1;}
+let n=0;while(lastF<target&&n<400){lastF++;update(lastF/60);n++;}
+draw(lastF/60);requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

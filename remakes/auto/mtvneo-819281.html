@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+window.DUR=15;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t')||0)||0;
+const t0=performance.now()-off*1000;
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const ease=v=>{v=cl(v);return v<.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2};
+const P=[];for(let i=0;i<140;i++)P.push({a:Math.random()*6.28,r:200+Math.random()*500,s:.05+Math.random()*.2,z:Math.random()});
+// character: glowing orb with eyes
+function bot(cx,cy,R,t,talk,wave){
+  const g=x.createRadialGradient(cx,cy,0,cx,cy,R*2.2);
+  g.addColorStop(0,'rgba(255,170,110,.35)');g.addColorStop(1,'rgba(255,120,60,0)');
+  x.fillStyle=g;x.beginPath();x.arc(cx,cy,R*2.2,0,7);x.fill();
+  const b=x.createRadialGradient(cx-R*.3,cy-R*.4,R*.1,cx,cy,R);
+  b.addColorStop(0,'#ffe2c4');b.addColorStop(.6,'#e8875a');b.addColorStop(1,'#a8442a');
+  x.fillStyle=b;x.beginPath();x.arc(cx,cy,R,0,7);x.fill();
+  // arm wave
+  if(wave>0){x.strokeStyle='#e8875a';x.lineWidth=R*.16;x.lineCap='round';
+    const an=-0.9+Math.sin(t*9)*.4*wave;x.beginPath();x.moveTo(cx+R*.85,cy+R*.1);
+    x.lineTo(cx+R*.85+Math.cos(an)*R*.7,cy+R*.1+Math.sin(an)*R*.7);x.stroke();}
+  const blink=(t%3.2)>3.05?.1:1;
+  x.fillStyle='#2a1208';
+  for(const s of[-1,1]){x.beginPath();x.ellipse(cx+s*R*.3,cy-R*.12,R*.09,R*.15*blink,0,0,7);x.fill();}
+  const m=talk?Math.abs(Math.sin(t*14))*R*.12+R*.03:R*.03;
+  x.beginPath();x.ellipse(cx,cy+R*.3,R*.18,m,0,0,7);x.fill();
+}
+function bubble(bx,by,txt,a){
+  if(a<=0)return;x.save();x.globalAlpha=a;x.font='600 30px sans-serif';
+  const w=x.measureText(txt).width+48;
+  x.fillStyle='rgba(255,255,255,.95)';x.beginPath();x.roundRect(bx,by,w,64,20);x.fill();
+  x.beginPath();x.moveTo(bx+20,by+64);x.lineTo(bx-10,by+86);x.lineTo(bx+50,by+64);x.fill();
+  x.fillStyle='#2a1208';x.fillText(txt,bx+24,by+42);x.restore();
+}
+function frame(){
+  const t=((performance.now()-t0)/1000)%DUR;
+  x.fillStyle='#0b0706';x.fillRect(0,0,1280,720);
+  const bg=x.createRadialGradient(640,360,0,640,360,800);
+  bg.addColorStop(0,'#2a140c');bg.addColorStop(1,'#050303');x.fillStyle=bg;x.fillRect(0,0,1280,720);
+  for(const p of P){const a=p.a+t*p.s;x.fillStyle=`rgba(255,${150+p.z*90|0},120,${.2+p.z*.5})`;
+    x.fillRect(640+Math.cos(a)*p.r,360+Math.sin(a)*p.r*.55,1+p.z*2,1+p.z*2);}
+  // character position by phase
+  let bx=640,by=380,R=110;
+  const enter=ease(t/1.5);by=900-enter*520;
+  const side=ease((t-5.2)/1);bx=640-side*400;R=110-side*20;
+  const fin=ease((t-11)/1);bx=bx+fin*400;by=by-fin*170;R=R-fin*40;
+  const bob=Math.sin(t*2)*8;
+  const talk=(t>1.6&&t<4.8)||(t>6.5&&t<10.5);
+  bot(bx,by+bob,R,t,talk,t>1.5&&t<3.5?1:0);
+  bubble(bx+R+20,by-R-60,"Hi! I'm Claude.",cl((t-1.6)*3)*cl((4.8-t)*3));
+  bubble(bx+R+20,by-R-60,"Let me introduce something new...",cl((t-3.2)*3)*cl((5.2-t)*3)*(t>3.2?1:0));
+  // features
+  const F=["Deeper reasoning","Sharper code","Longer memory","Warmer conversation"];
+  x.font='600 40px sans-serif';
+  F.forEach((f,i)=>{const s=6.3+i*.9,a=cl((t-s)*2)*cl((11-t)*3);if(a<=0)return;
+    const dx=(1-ease((t-s)*1.5))*60;x.globalAlpha=a;
+    x.fillStyle='#ff9c6a';x.beginPath();x.arc(480+dx,230+i*90,8,0,7);x.fill();
+    x.fillStyle='#fff3ea';x.fillText(f,510+dx,244+i*90);x.globalAlpha=1;});
+  // title reveal
+  if(t>11.3){const a=ease((t-11.3)/1.2);x.save();x.globalAlpha=a*cl((14.8-t)*4);
+    x.textAlign='center';const sc=.8+.2*a;x.translate(640,450);x.scale(sc,sc);
+    x.shadowColor='#ff8a50';x.shadowBlur=40;x.fillStyle='#fff';x.font='800 120px sans-serif';
+    x.fillText('Opus 5.5',0,0);x.shadowBlur=0;
+    x.fillStyle='#ffb48a';x.font='400 30px sans-serif';x.fillText('Think further. Build bolder.',0,64);
+    x.strokeStyle='#ff9c6a';x.lineWidth=2;x.beginPath();x.moveTo(-220*a,100);x.lineTo(220*a,100);x.stroke();
+    x.restore();
+    bubble(bx+R+15,by-R-50,"Meet Opus 5.5!",cl((t-12)*3)*cl((14.6-t)*3));}
+  // flash
+  const fl=cl(1-Math.abs(t-11.3)*5);if(fl>0){x.fillStyle=`rgba(255,220,190,${fl*.6})`;x.fillRect(0,0,1280,720);}
+  x.fillStyle=`rgba(0,0,0,${cl(1-t*2)+cl((t-14.6)*2.5)})`;x.fillRect(0,0,1280,720);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></body></html>

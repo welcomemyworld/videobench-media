@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>@aidellyai</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#s{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+canvas{display:block}
+</style></head><body>
+<div id="s"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+window.DUR=30;
+const c=document.getElementById('c'),x=c.getContext('2d'),S=document.getElementById('s');
+function fit(){const k=Math.min(innerWidth/1280,innerHeight/720);S.style.transform=`scale(${k}) translate(-50%,-50%)`;S.style.transform=`translate(-50%,-50%) scale(${k})`;}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)||0;const t0=performance.now();
+const cl=v=>Math.max(0,Math.min(1,v)),E=v=>{v=cl(v);return v<.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2};
+const A='#7c5cff',B='#22d3ee',P='#ff5ca8';
+let R=1;function rnd(){R=(R*16807)%2147483647;return R/2147483647}
+const pts=[];for(let i=0;i<90;i++)pts.push([rnd()*1280,rnd()*720,rnd()*2+.5,rnd()*6]);
+function grad(){const g=x.createLinearGradient(0,0,1280,720);g.addColorStop(0,A);g.addColorStop(.5,B);g.addColorStop(1,P);return g}
+function txt(s,X,Y,sz,a,col,w){x.globalAlpha=cl(a);x.fillStyle=col||'#fff';x.font=`${w||700} ${sz}px Helvetica,Arial,sans-serif`;x.textAlign='center';x.textBaseline='middle';x.fillText(s,X,Y);x.globalAlpha=1}
+function scene(t,a,b){return {p:cl((t-a)/(b-a)),in:E((t-a)/0.8),out:1-E((t-b+0.6)/0.6),on:t>=a&&t<b}}
+function logo(X,Y,r,rot,al){x.save();x.globalAlpha=al;x.translate(X,Y);x.rotate(rot);x.strokeStyle=grad();x.lineWidth=r*.12;
+for(let i=0;i<3;i++){x.beginPath();x.ellipse(0,0,r,r*.38,i*Math.PI/3,0,7);x.stroke()}
+x.fillStyle='#fff';x.beginPath();x.arc(0,0,r*.2,0,7);x.fill();x.restore()}
+function card(X,Y,w,h,a){x.globalAlpha=a;x.fillStyle='rgba(255,255,255,.06)';x.strokeStyle='rgba(255,255,255,.18)';x.lineWidth=2;x.beginPath();x.roundRect(X-w/2,Y-h/2,w,h,20);x.fill();x.stroke();x.globalAlpha=1}
+function draw(t){
+x.fillStyle='#07061a';x.fillRect(0,0,1280,720);
+const bg=x.createRadialGradient(640+200*Math.sin(t*.3),360,50,640,360,800);bg.addColorStop(0,'rgba(124,92,255,.28)');bg.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=bg;x.fillRect(0,0,1280,720);
+for(const p of pts){x.globalAlpha=.3+.3*Math.sin(t*2+p[3]);x.fillStyle='#9fe';x.beginPath();x.arc((p[0]+t*8*p[2])%1280,p[1],p[2],0,7);x.fill()}x.globalAlpha=1;
+let s=scene(t,0,5);if(s.on){const a=s.in*s.out;logo(640,300,90*E(s.p*2),t,a);txt('@aidellyai',640,450,64,a*E((t-.8)/.8),grad(),800);txt('AI that works for your business',640,510,26,a*E((t-1.5)/.8),'#bcc')}
+s=scene(t,5,10);if(s.on){const a=s.in*s.out;txt('Too many tasks. Not enough time.',640,140,44,a);
+const items=['Emails','Leads','Content','Support','Reports','Scheduling'];
+items.forEach((w,i)=>{const k=E((t-5.3-i*.2)/.6);const X=260+(i%3)*380,Y=320+Math.floor(i/3)*150+Math.sin(t*3+i)*6*(1-cl((t-8)));card(X,Y,300,100,a*k);txt(w,X,Y,30,a*k,'#fff',600);
+x.globalAlpha=a*k;x.fillStyle=P;x.beginPath();x.arc(X+130,Y-38,10,0,7);x.fill();x.globalAlpha=1})}
+s=scene(t,10,16);if(s.on){const a=s.in*s.out;txt('Meet aidelly — your AI teammate',640,110,44,a,grad(),800);
+logo(640,390,70,t*1.5,a);const items=['Emails','Leads','Content','Support','Reports','Scheduling'];
+items.forEach((w,i)=>{const ang=i/6*Math.PI*2+t*.4,k=E((t-10.5-i*.15)/.7),X=640+Math.cos(ang)*330*k,Y=390+Math.sin(ang)*190*k;
+x.globalAlpha=a*.5;x.strokeStyle=B;x.setLineDash([6,8]);x.lineDashOffset=-t*40;x.beginPath();x.moveTo(640,390);x.lineTo(X,Y);x.stroke();x.setLineDash([]);
+card(X,Y,170,56,a*k);txt('✓ '+w,X,Y,22,a*k,'#dff',600)})}
+s=scene(t,16,22);if(s.on){const a=s.in*s.out;txt('How it works',640,110,46,a);
+const st=[['1','Connect','Link your tools in minutes'],['2','Automate','AI handles the busywork'],['3','Grow','Focus on what matters']];
+st.forEach((v,i)=>{const k=E((t-16.5-i*.6)/.7),X=270+i*370,Y=370+(1-k)*60;card(X,Y,320,260,a*k);
+x.globalAlpha=a*k;x.fillStyle=[A,B,P][i];x.beginPath();x.arc(X,Y-60,36,0,7);x.fill();x.globalAlpha=1;
+txt(v[0],X,Y-60,34,a*k,'#07061a',800);txt(v[1],X,Y+15,32,a*k);txt(v[2],X,Y+65,19,a*k,'#abc',400);
+if(i<2){x.globalAlpha=a*k;x.fillStyle='#fff';txt('→',X+185,Y,36,a*k)}})}
+s=scene(t,22,26.5);if(s.on){const a=s.in*s.out;txt('Results you can measure',640,110,44,a);
+const d=[['10h+','saved weekly'],['3×','faster replies'],['24/7','always on']];
+d.forEach((v,i)=>{const k=E((t-22.4-i*.3)/.8),X=290+i*350;txt(v[0],X,330,90*k+1,a*k,grad(),800);txt(v[1],X,420,26,a*k,'#bcc',400)});
+for(let i=0;i<12;i++){const h=E((t-23-i*.08)/.6)*(30+i*9);x.globalAlpha=a*.8;x.fillStyle=i%2?B:A;x.fillRect(400+i*42,620-h,30,h)}x.globalAlpha=1}
+s=scene(t,26.5,30);if(s.on){const a=s.in*s.out;logo(640,250,70,t,a);txt('Work smarter with AI',640,380,52,a);
+txt('Follow @aidellyai',640,460,40,a*E((t-27.2)/.7),grad(),800);
+const k=E((t-27.6)/.7);x.globalAlpha=a*k;x.strokeStyle=grad();x.lineWidth=3;x.beginPath();x.roundRect(490,510,300,60,30);x.stroke();x.globalAlpha=1;txt('Get started today',640,540,24,a*k,'#fff',600)}
+}
+function loop(){const t=((performance.now()-t0)/1000+off)%DUR;draw(t);requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+</script></body></html>

@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Point Nemo</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#stage{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:center center}
+canvas{display:block;background:#000}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+window.DUR = 42;
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+const stage = document.getElementById("stage");
+function fit(){
+  const s = Math.min(innerWidth/1280, innerHeight/720);
+  stage.style.transform = "translate(-50%,-50%) scale(" + s + ")";
+}
+addEventListener("resize", fit);
+fit();
+const stars = [];
+for (let i = 0; i < 140; i++) stars.push([(i*97)%1280, (i*53)%420, 0.3+(i%7)/10, (i%5)+1]);
+const q = new URLSearchParams(location.search);
+const tOff = parseFloat(q.get("t")) || 0;
+const tOrigin = performance.now() - tOff*1000;
+function clamp(v,a,b){return v<a?a:v>b?b:v}
+function ease(t){t=clamp(t,0,1); return t*t*(3-2*t)}
+function seg(t,a,b){return ease((t-a)/(b-a))}
+function lerp(a,b,u){return a+(b-a)*u}
+function rr(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+function ocean(t){
+  const g = ctx.createLinearGradient(0,0,0,720);
+  g.addColorStop(0,"#02060f");
+  g.addColorStop(0.45,"#041428");
+  g.addColorStop(1,"#021018");
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,1280,720);
+  for (const s of stars){
+    const tw = 0.55+0.45*Math.sin(t*1.4+s[0]);
+    ctx.globalAlpha = s[2]*tw;
+    ctx.fillStyle = "#d7e6ff";
+    ctx.fillRect(s[0], s[1], s[3], s[3]);
+  }
+  ctx.globalAlpha = 1;
+  for (let i=0;i<18;i++){
+    const y = 430 + i*16;
+    ctx.strokeStyle = "rgba(80,170,190,"+(0.05+i*0.012)+")";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x=0;x<=1280;x+=10){
+      const yy = y + Math.sin(x*0.012 + t*0.7 + i)* (3+i*0.25) + Math.sin(x*0.004 - t*0.3)*6;
+      x?ctx.lineTo(x,yy):ctx.moveTo(x,yy);
+    }
+    ctx.stroke();
+  }
+}
+function label(txt,x,y,size,color,align,weight){
+  ctx.fillStyle = color;
+  ctx.font = (weight||"500")+" "+size+"px Georgia, 'Times New Roman', serif";
+  ctx.textAlign = align||"left";
+  ctx.textBaseline = "top";
+  ctx.fillText(txt,x,y);
+}
+function sans(txt,x,y,size,color,align){
+  ctx.fillStyle = color;
+  ctx.font = "500 "+size+"px 'Segoe UI', system-ui, sans-serif";
+  ctx.textAlign = align||"left";
+  ctx.textBaseline = "top";
+  ctx.fillText(txt,x,y);
+}
+function globe(cx,cy,R,rot,alpha){
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  ctx.arc(cx,cy,R,0,Math.PI*2);
+  const g = ctx.createRadialGradient(cx-R*0.3,cy-R*0.35,R*0.1,cx,cy,R);
+  g.addColorStop(0,"#1c4a62");
+  g.addColorStop(0.7,"#0b2438");
+  g.addColorStop(1,"#061018");
+  ctx.fillStyle = g;
+  ctx.fill();
+  ctx.clip();
+  ctx.strokeStyle = "rgba(140,210,220,0.28)";
+  ctx.lineWidth = 1;
+  const tilt = 0.35;
+  for (let lat=-75; lat<=75; lat+=15){
+    ctx.beginPath();
+    let on=false;
+    for (let lon=-180; lon<=180; lon+=6){
+      const la = lat*Math.PI/180, lo = (lon+rot)*Math.PI/180;
+      const x3 = Math.cos(la)*Math.sin(lo);
+      const y3 = Math.sin(la)*Math.cos(tilt) - Math.cos(la)*Math.cos(lo)*Math.sin(tilt);
+      const z3 = Math.sin(la)*Math.sin(tilt) + Math.cos(la)*Math.cos(lo)*Math.cos(tilt);
+      if (z3>0.02){
+        const X = cx+x3*R, Y = cy-y3*R;
+        on?ctx.lineTo(X,Y):(ctx.moveTo(X,Y), on=true);
+      } else on=false;
+    }
+    ctx.stroke();
+  }
+  for (let lon=-180; lon<180; lon+=20){
+    ctx.beginPath();
+    let on=false;
+    for (let lat=-80; lat<=80; lat+=4){
+      const la = lat*Math.PI/180, lo = (lon+rot)*Math.PI/180;
+      const x3 = Math.cos(la)*Math.sin(lo);
+      const y3 = Math.sin(la)*Math.cos(tilt) - Math.cos(la)*Math.cos(lo)*Math.sin(tilt);
+      const z3 = Math.sin(la)*Math.sin(tilt) + Math.cos(la)*Math.cos(lo)*Math.cos(tilt);
+      if (z3>0.02){
+        const X = cx+x3*R, Y = cy-y3*R;
+        on?ctx.lineTo(X,Y):(ctx.moveTo(X,Y), on=true);
+      } else on=false;
+    }
+    ctx.stroke();
+  }
+  // Point Nemo approx 48.9S 123.4W — highlight when facing
+  const nla = -48.88*Math.PI/180, nlo = (-123.4+rot)*Math.PI/180;
+  const nx = Math.cos(nla)*Math.sin(nlo);
+  const ny = Math.sin(nla)*Math.cos(tilt) - Math.cos(nla)*Math.cos(nlo)*Math.sin(tilt);
+  const nz = Math.sin(nla)*Math.sin(tilt) + Math.cos(nla)*Math.cos(nlo)*Math.cos(tilt);
+  ctx.restore();
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = "rgba(180,230,240,0.45)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(cx,cy,R,0,Math.PI*2);
+  ctx.stroke();
+  if (nz>0.05){
+    ctx.fillStyle = "#7dffe2";
+    ctx.shadowColor = "#7dffe2";
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.arc(cx+nx*R, cy-ny*R, 4, 0, Math.PI*2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+  ctx.restore();
+  return nz>0.05 ? [cx+nx*R, cy-ny*R] : null;
+}
+function poleDiagram(t){
+  const a = seg(t,6.2,8.2);
+  const cx=860, cy=390, R=168*a;
+  ctx.save();
+  ctx.globalAlpha = a;
+  ctx.strokeStyle = "rgba(125,255,226,0.35)";
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4,6]);
+  ctx.beginPath();
+  ctx.arc(cx,cy,R,0,Math.PI*2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  const names = ["Ducie Island","Motu Nui","Maher Island"];
+  const ang0 = -Math.PI/2 + t*0.05;
+  for (let i=0;i<3;i++){
+    const ang = ang0 + i*Math.PI*2/3;
+    const x = cx+Math.cos(ang)*R, y = cy+Math.sin(ang)*R;
+    ctx.strokeStyle = "rgba(240,195,106,0.7)";
+    ctx.beginPath();
+    ctx.moveTo(cx,cy);
+    ctx.lineTo(x,y);
+    ctx.stroke();
+    ctx.fillStyle = "#f0c36a";
+    ctx.beginPath();
+    ctx.arc(x,y,5,0,Math.PI*2);
+    ctx.fill();
+    sans(names[i], x+ (Math.cos(ang)>0.2?10:-10), y-8, 15, "#f4e7c8", Math.cos(ang)>0.2?"left":"right");
+  }
+  ctx.fillStyle = "#7dffe2";
+  ctx.shadowColor = "#7dffe2";
+  ctx.shadowBlur = 16;
+  ctx.beginPath();
+  ctx.arc(cx,cy,6,0,Math.PI*2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  sans("POINT NEMO", cx, cy+14, 13, "#bffcf0", "center");
+  ctx.restore();
+}
+function bars(t){
+  const u = seg(t,16.4,19);
+  const kmPx = 640/2688;
+  const x0=300, y1=300, y2=400;
+  ctx.globalAlpha = seg(t,16,17.2);
+  sans("SAME KILOMETER SCALE  ·  TWO DIFFERENT MEASURES", 80, 230, 14, "#8fb0c4");
+  sans("ISS orbital altitude", 80, y1-28, 18, "#d5e8f2");
+  sans("408 km  above sea level", 80, y1+36, 15, "#8fb0c4");
+  rr(x0,y1,640,28,6);
+  ctx.fillStyle = "rgba(255,255,255,0.06)";
+  ctx.fill();
+  rr(x0,y1,408*kmPx*u,28,6);
+  ctx.fillStyle = "#7dffe2";
+  ctx.fill();
+  sans("Distance to nearest land", 80, y2-28, 18, "#d5e8f2");
+  sans("2,688 km  across open ocean", 80, y2+36, 15, "#8fb0c4");
+  rr(x0,y2,640,28,6);
+  ctx.fillStyle = "rgba(255,255,255,0.06)";
+  ctx.fill();
+  const grd = ctx.createLinearGradient(x0,0,x0+640,0);
+  grd.addColorStop(0,"#f0c36a");
+  grd.addColorStop(1,"#e07a4c");
+  rr(x0,y2,640*u,28,6);
+  ctx.fillStyle = grd;
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  const z = seg(t,20.2,22);
+  if (z>0){
+    ctx.globalAlpha = z;
+    rr(80,500,1120,92,10);
+    ctx.fillStyle = "rgba(8,20,32,0.72)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(125,255,226,0.35)";
+    ctx.stroke();
+    label("Closer than any island", 104, 514, 26, "#f4efe4", "left", "600");
+    sans("When the station passes overhead, its crew can be the nearest people — 408 km up, not 2,688 km away.", 104, 552, 16, "#c5d7e4");
+    ctx.globalAlpha = 1;
+  }
+}
+function slice(t){
+  const a = seg(t,16,17.5);
+  const cx=1080, cy=168, R=78;
+  ctx.save();
+  ctx.globalAlpha = a;
+  ctx.beginPath();
+  ctx.arc(cx,cy,R,0,Math.PI*2);
+  ctx.fillStyle = "#0c2a3c";
+  ctx.fill();
+  ctx.strokeStyle = "rgba(160,220,230,0.5)";
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+  // true scale: 408 km / 6371 km * R ≈ 5 px
+  ctx.beginPath();
+  ctx.arc(cx,cy,R+5, -0.9, -0.15);
+  ctx.strokeStyle = "#7dffe2";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  // surface arc 2688/6371 rad ≈ 24.2°
+  ctx.beginPath();
+  ctx.arc(cx,cy,R, 0.4, 0.4+2688/6371, false);
+  ctx.strokeStyle = "#f0c36a";
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  sans("TRUE SCALE", cx, cy-8, 11, "#d5e8f2", "center");
+  sans("Earth R 6,371 km", cx-70, cy+R+8, 12, "#8fb0c4");
+  ctx.restore();
+}
+function cemetery(t){
+  const a = seg(t,26.5,28.2);
+  ctx.globalAlpha = a;
+  label("The oceanic spacecraft cemetery", 72, 78, 40, "#f4efe4");
+  sans("Controlled re-entries are aimed at this empty Pacific zone.", 74, 132, 18, "#b7c9d6");
+  ctx.globalAlpha = 1;
+  const crafts = [
+    ["Mir", 2001],
+    ["ATV Jules Verne", 2008],
+    ["ATV Johannes Kepler", 2011],
+    ["HTV Kounotori", 2013],
+    ["Progress fleet", "ongoing"],
+    ["Cygnus", "selected"]
+  ];
+  for (let i=0;i<crafts.length;i++){
+    const delay = 28 + i*1.15;
+    const u = seg(t, delay, delay+1.6);
+    if (u<=0) continue;
+    const x = 120 + (i%3)*380;
+    const y = 210 + Math.floor(i/3)*200;
+    ctx.globalAlpha = Math.min(1,u*1.4)*a;
+    // falling vehicle
+    const fall = lerp(-40, 0, u);
+    ctx.save();
+    ctx.translate(x+36, y+70+fall);
+    ctx.rotate(-0.4);
+    ctx.fillStyle = "#d7e4ee";
+    ctx.beginPath();
+    ctx.moveTo(0,-16);
+    ctx.lineTo(8,10);
+    ctx.lineTo(-8,10);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "rgba(125,255,226,0.8)";
+    ctx.fillRect(-3,10,6,8);
+    ctx.restore();
+    // ripple
+    const rp = (t*0.6 + i)%1;
+    ctx.strokeStyle = "rgba(125,200,220,"+(0.45*(1-rp))+")";
+    ctx.beginPath();
+    ctx.ellipse(x+70, y+130, 18+rp*70, 7+rp*18, 0, 0, Math.PI*2);
+    ctx.stroke();
+    label(crafts[i][0], x+100, y+78, 22, "#f4efe4");
+    sans(String(crafts[i][1]), x+100, y+108, 15, "#f0c36a");
+    ctx.globalAlpha = 1;
+  }
+  const n = seg(t,35,36.4);
+  if (n>0){
+    ctx.globalAlpha = n;
+    sans("More than 260 spacecraft have been disposed near Point Nemo — farther from people than almost any place on Earth.", 74, 640, 16, "#c5d7e4");
+    ctx.globalAlpha = 1;
+  }
+}
+function hud(t){
+  sans("EARTH  ·  ISOLATION", 64, 28, 13, "#7dffe2");
+  const chap = t<6?"01  THE POLE": t<16?"02  THE CIRCLE": t<26?"03  ALTITUDE VS DISTANCE":"04  THE CEMETERY";
+  sans(chap, 1216, 28, 13, "#8fb0c4", "right");
+  ctx.fillStyle = "rgba(255,255,255,0.12)";
+  ctx.fillRect(64,692,1152,2);
+  ctx.fillStyle = "#7dffe2";
+  ctx.fillRect(64,692,1152*(t/window.DUR),2);
+}
+function draw(t){
+  ocean(t);
+  const intro = 1-seg(t,5.2,6.4);
+  const gA = t<6?seg(t,0.4,1.6): t<16?1: 1-seg(t,15.2,16.2);
+  if (gA>0.01){
+    const rot = -40 + t*8;
+    globe(250, 250, 150, rot, Math.min(gA, intro>0?1:gA));
+  }
+  if (t<6.5){
+    const a = seg(t,0.6,2)* (1-seg(t,5,6.3));
+    ctx.globalAlpha = a;
+    label("Point Nemo", 480, 200, 68, "#f7f1e6");
+    sans("The most isolated location on Earth", 484, 282, 22, "#c5d7e4");
+    sans("48°52.6′ S    123°23.6′ W", 484, 324, 18, "#f0c36a");
+    sans("Oceanic pole of inaccessibility  ·  South Pacific", 484, 356, 16, "#8fb0c4");
+    ctx.globalAlpha = 1;
+  }
+  if (t>=5.8 && t<16.4){
+    const a = seg(t,6,7.2)*(1-seg(t,15.2,16.2));
+    ctx.globalAlpha = a;
+    label("A circle of ocean", 500, 150, 42, "#f4efe4");
+    sans("Nearest land is 2,688 km away in three directions.", 504, 208, 18, "#c5d7e4");
+    sans("Ducie · Motu Nui · Maher — almost perfectly equidistant.", 504, 238, 16, "#8fb0c4");
+    ctx.globalAlpha = 1;
+    poleDiagram(t);
+    const k = seg(t,9,11);
+    ctx.globalAlpha = k*(1-seg(t,15.2,16.2));
+    rr(500,520,420,70,8);
+    ctx.fillStyle = "rgba(6,16,28,0.65)";
+    ctx.fill();
+    sans("RADIUS OF ISOLATION", 520, 532, 12, "#7dffe2");
+    label("2,688 km", 520, 548, 28, "#f4efe4");
+    ctx.globalAlpha = 1;
+  }
+  if (t>=15.6 && t<27){
+    const a = seg(t,15.8,17)*(1-seg(t,25.6,26.8));
+    ctx.globalAlpha = a;
+    label("Orbit versus ocean", 72, 78, 44, "#f4efe4");
+    sans("How far is “far”? Altitude and surface distance, drawn to one scale.", 74, 136, 18, "#c5d7e4");
+    ctx.globalAlpha = 1;
+    if (a>0.05){
+      ctx.save();
+      ctx.globalAlpha = a;
+      bars(t);
+      slice(t);
+      ctx.restore();
+    }
+  }
+  if (t>=26.2){
+    cemetery(t);
+  }
+  hud(t);
+  let fade = 0;
+  if (t<0.8) fade = 1-t/0.8;
+  if (t>window.DUR-0.9) fade = (t-(window.DUR-0.9))/0.9;
+  if (fade>0){
+    ctx.fillStyle = "rgba(0,0,0,"+fade+")";
+    ctx.fillRect(0,0,1280,720);
+  }
+}
+function frame(now){
+  let t = ((now - tOrigin)/1000) % window.DUR;
+  if (t<0) t += window.DUR;
+  draw(t);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

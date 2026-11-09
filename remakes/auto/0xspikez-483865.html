@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Turbofan: Suck, Squeeze, Bang, Blow</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=42;
+const cv=document.getElementById('c'),g=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const T0=parseFloat(q.get('t')||0)||0;let start=null;
+const PI=Math.PI,TAU=PI*2;
+const ss=(a,b,x)=>{x=Math.min(1,Math.max(0,(x-a)/(b-a)));return x*x*(3-2*x)};
+const lerp=(a,b,k)=>a+(b-a)*k;
+// groups: key,label,center x,color hsl,explode index
+const G={
+ fan:{n:'FAN',x:-250,h:205,s:30,ei:0},
+ lpc:{n:'LOW-PRESSURE COMPRESSOR',x:-190,h:190,s:40,ei:1},
+ hpc:{n:'HIGH-PRESSURE COMPRESSOR',x:-85,h:170,s:45,ei:2},
+ comb:{n:'COMBUSTOR',x:30,h:25,s:85,ei:3},
+ hpt:{n:'HIGH-PRESSURE TURBINE',x:92,h:40,s:70,ei:4},
+ lpt:{n:'LOW-PRESSURE TURBINE',x:165,h:15,s:55,ei:5},
+ noz:{n:'EXHAUST NOZZLE',x:240,h:220,s:10,ei:6},
+ lps:{n:'LP SHAFT',x:0,h:120,s:60,ei:-1},
+ hps:{n:'HP SHAFT',x:0,h:280,s:60,ei:-1},
+ case:{n:'NACELLE',x:-100,h:210,s:15,ei:-2}
+};
+// geometry primitives
+const parts=[];
+function disc(gk,x,rh,rt,n,c,tw,shaft,w){parts.push({t:'disc',g:gk,x,rh,rt,n,c,tw,shaft,w:w||1});}
+function cone(gk,x0,x1,r0,r1,seg,half,alpha,shaft){parts.push({t:'cone',g:gk,x0,x1,r0,r1,seg,half,alpha,shaft});}
+disc('fan',-250,24,140,20,14,0.22,'lp',1);
+cone('fan',-275,-235,4,26,16,0,1,'lp');
+for(let i=0;i<3;i++)disc('lpc',-210+i*18,36,72-i*4,26,5,0.12,'lp');
+cone('lpc',-220,-165,34,38,18,0,1,'lp');
+for(let i=0;i<8;i++)disc('hpc',-140+i*13,40+i*0.6,62-i*2.2,30,4,0.1,'hp');
+cone('hpc',-148,-35,38,44,18,0,1,'hp');
+cone('comb',-10,60,48,52,24,0,1,null);cone('comb',-10,60,68,64,24,0,1,null);
+cone('comb',-25,-10,58,48,24,0,1,null);cone('comb',-25,-10,58,68,24,0,1,null);
+for(let i=0;i<2;i++)disc('hpt',80+i*16,42,66+i*2,32,5,-0.14,'hp');
+cone('hpt',72,115,40,40,18,0,1,'hp');
+for(let i=0;i<5;i++)disc('lpt',135+i*15,44,78+i*4,34,5,-0.14,'lp');
+cone('lpt',128,205,42,44,18,0,1,'lp');
+cone('noz',205,275,40,6,18,0,1,null);cone('noz',205,275,104,82,24,1,0.55,null);
+cone('lps',-245,215,9,9,10,0,1,'lp');
+cone('hps',-150,120,17,17,10,0,1,'hp');
+cone('case',-295,60,150,142,30,1,0.35,null);
+cone('case',-295,-300,150,138,30,1,0.35,null);
+cone('case',-175,205,78,102,26,1,0.45,null);
+// camera
+let yaw=0,pitch=0,tx=0,D=900,F=820,ty=0;
+function P(x,y,z){x-=tx;y-=ty;const c=Math.cos(yaw),s=Math.sin(yaw);let X=x*c+z*s,Z=-x*s+z*c;const cp=Math.cos(pitch),sp=Math.sin(pitch);let Y=y*cp-Z*sp;Z=y*sp+Z*cp;const d=Z+D;return[640+X*F/d,360-Y*F/d,d,X,Y,Z];}
+const L=[0.35,0.65,-0.68];
+let polys=[];
+function quad(pts,hue,sat,li,alpha,glow){
+ const p=pts.map(v=>P(v[0],v[1],v[2]));
+ const ax=p[1][3]-p[0][3],ay=p[1][4]-p[0][4],az=p[1][5]-p[0][5],bx=p[2][3]-p[0][3],by=p[2][4]-p[0][4],bz=p[2][5]-p[0][5];
+ let nx=ay*bz-az*by,ny=az*bx-ax*bz,nz=ax*by-ay*bx;const nl=Math.hypot(nx,ny,nz)||1;
+ const b=0.3+0.7*Math.abs((nx*L[0]+ny*L[1]+nz*L[2])/nl);
+ polys.push({p,d:(p[0][2]+p[1][2]+p[2][2]+p[3][2])/4,c:`hsla(${hue},${sat}%,${Math.min(95,li*b+glow)}%,${alpha})`});
+}
+function cyl(x,r,a,oy){return[x,r*Math.cos(a)+oy,r*Math.sin(a)];}
+function build(t,focus,ex){
+ polys=[];
+ const lpA=t*3.2,hpA=t*5.6;
+ for(const pt of parts){
+  const gr=G[pt.g];let ox=0,oy=0,alpha=1;
+  if(gr.ei>=0)ox=(gr.ei-3)*95*ex+ (gr.ei>=0? (gr.x*0.15)*ex:0);
+  if(pt.g==='lps')oy=-170*ex;if(pt.g==='hps')oy=-215*ex;
+  if(pt.g==='case'){alpha=pt.alpha*(1-ex);if(alpha<0.02)continue;}
+  else if(pt.alpha)alpha=pt.alpha;
+  const hi=focus.includes(pt.g),dim=focus.length&&!hi;
+  let li=dim?24:48,glow=hi?14:0,sat=dim?gr.s*0.4:gr.s;
+  if(pt.g==='comb'&&hi)glow=22+6*Math.sin(t*20);
+  const rot=pt.shaft==='lp'?lpA:pt.shaft==='hp'?hpA:0;
+  if(pt.t==='disc'){
+   const x=pt.x+ox;
+   for(let i=0;i<pt.n;i++){const a=rot+i*TAU/pt.n,d=pt.tw,c=pt.c;
+    quad([cyl(x-c,pt.rh,a-d,oy),cyl(x+c,pt.rh,a+d,oy),cyl(x+c*0.7,pt.rt,a+d*1.8,oy),cyl(x-c*0.7,pt.rt,a-d*1.8,oy)],gr.h,sat,li+8,alpha,glow);}
+  }else{
+   const seg=pt.seg,a0=pt.half?PI:0,span=pt.half?PI:TAU;
+   for(let i=0;i<seg;i++){const a=a0+rot+i*span/seg,b=a0+rot+(i+1)*span/seg;
+    quad([cyl(pt.x0+ox,pt.r0,a,oy),cyl(pt.x1+ox,pt.r1,a,oy),cyl(pt.x1+ox,pt.r1,b,oy),cyl(pt.x0+ox,pt.r0,b,oy)],gr.h,sat,li,alpha,glow);}
+  }
+ }
+ polys.sort((a,b)=>b.d-a.d);
+}
+// particles
+const pr=[];for(let i=0;i<360;i++)pr.push({k:i%6===0?1:0,u:Math.random(),a:Math.random()*TAU,r:Math.random(),s:0.15+Math.random()*0.1});
+function coreR(x){if(x<-160)return lerp(110,60,ss(-330,-160,x));if(x<-35)return lerp(56,46,ss(-160,-35,x));if(x<205)return lerp(58,75,ss(60,205,x));return 50;}
+function temp(x){return x<-140?0.05:x<-30?lerp(0.1,0.4,(x+140)/110):x<10?0.4+(x+30)/40*0.6:x<70?1:Math.max(0.55,1-(x-70)/300);}
+const scenes=[
+ {a:0,b:5,f:[],tag:'TURBOFAN',cap:'suck · squeeze · bang · blow',tx:0,yaw:-0.6},
+ {a:5,b:11,f:['fan'],tag:'1  SUCK',cap:'The fan pulls in a huge mass of air. Most of it bypasses the core and makes most of the thrust.',tx:-170,yaw:-0.85},
+ {a:11,b:17,f:['lpc','hpc'],tag:'2  SQUEEZE',cap:'Compressor stages squeeze the air about 40 times, heating it.',tx:-110,yaw:-0.45},
+ {a:17,b:23,f:['comb'],tag:'3  BANG',cap:"Fuel burns hotter than the turbine metal's melting point.",tx:20,yaw:-0.3},
+ {a:23,b:29,f:['hpt','lpt'],tag:'4  BLOW',cap:'The blades survive on cooling air and heat-resistant coatings.',tx:120,yaw:0.35},
+ {a:29,b:35,f:['lps','hps'],tag:'TWO SHAFTS',cap:'Two shafts, one inside the other, spinning at different speeds.',tx:0,yaw:0.55},
+ {a:35,b:42,f:[],tag:'EXPLODED VIEW',cap:'Every stage, pulled apart.',tx:0,yaw:0.1}
+];
+function wrap(txt,x,y,w,lh){const ws=txt.split(' ');let l='';for(const wd of ws){if(g.measureText(l+wd).width>w&&l){g.fillText(l,x,y);y+=lh;l='';}l+=wd+' ';}g.fillText(l,x,y);}
+function frame(now){
+ if(start===null)start=now;let t=(T0+(now-start)/1000)%window.DUR;
+ let si=scenes.findIndex(s=>t>=s.a&&t<s.b);if(si<0)si=0;const S=scenes[si],Pv=scenes[Math.max(0,si-1)];
+ const k=ss(S.a,S.a+2,t);
+ tx=lerp(Pv.tx,S.tx,k);yaw=lerp(Pv.yaw,S.yaw,k)+0.05*Math.sin(t*0.4);
+ const ex=ss(35.5,38.5,t)*(1-ss(41.3,42,t));
+ pitch=0.32+0.1*ex;D=lerp(si===0?1100:820,1350,ex);ty=-70*ex;
+ if(si===5)D=760;
+ g.fillStyle='#04070c';g.fillRect(0,0,1280,720);
+ const grd=g.createRadialGradient(640,380,50,640,380,700);grd.addColorStop(0,'rgba(40,70,110,0.35)');grd.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=grd;g.fillRect(0,0,1280,720);
+ build(t,S.f,ex);
+ for(const q of polys){g.fillStyle=q.c;g.beginPath();g.moveTo(q.p[0][0],q.p[0][1]);for(let i=1;i<4;i++)g.lineTo(q.p[i][0],q.p[i][1]);g.closePath();g.fill();}
+ // air particles
+ const pa=1-ex;if(pa>0.02){g.globalCompositeOperation='lighter';
+  for(const p of pr){p.u=(p.u+0.004*(p.k?1.2:1))%1;let x,r,col;
+   if(p.k){x=-330+p.u*560;r=coreR(x)-6+p.r*12;const te=temp(x);col=`hsla(${lerp(205,15,te)},100%,${lerp(60,60,te)}%,${0.8*pa})`;}
+   else{x=-330+p.u*450;r=106+p.r*36;col=`rgba(120,190,255,${0.55*pa*(S.f.includes('fan')?1.6:1)})`;}
+   if(x>60&&!p.k)continue;
+   const v=P(x,r*Math.cos(p.a),r*Math.sin(p.a));const sz=(p.k?3:2.2)*F/v[2];g.fillStyle=col;g.fillRect(v[0]-sz/2,v[1]-sz/2,sz,sz);
+   if(si===4&&p.k&&x>75&&x<205&&p.r<0.25){g.fillStyle=`rgba(150,220,255,${pa})`;g.fillRect(v[0]-1,v[1]-1,2,2);}
+  }
+  if(si===3){for(let i=0;i<40;i++){const a=i*TAU/40+t*0.3,x=10+((t*80+i*37)%50),r=58;const v=P(x,r*Math.cos(a),r*Math.sin(a));const s=(6+4*Math.sin(t*30+i))*F/v[2];
+   const fg=g.createRadialGradient(v[0],v[1],0,v[0],v[1],s);fg.addColorStop(0,'rgba(255,230,150,0.9)');fg.addColorStop(1,'rgba(255,60,0,0)');g.fillStyle=fg;g.fillRect(v[0]-s,v[1]-s,2*s,2*s);}}
+  g.globalCompositeOperation='source-over';}
+ // labels
+ g.font='600 14px Helvetica,Arial,sans-serif';g.textBaseline='middle';
+ const lab=[];
+ if(ex>0.5){for(const k2 in G){const gr=G[k2];if(gr.ei<0&&k2!=='lps'&&k2!=='hps')continue;
+   let x,y;if(gr.ei>=0){x=gr.x+(gr.ei-3)*95*ex+gr.x*0.15*ex;y=gr.ei%2?-120:130;}else{x=k2==='lps'?230:150;y=k2==='lps'?-170:-215;}
+   lab.push([k2,x,y,gr.ei>=0?(gr.ei%2?-1:1):-1]);}}
+ else if(S.f.length&&t>S.a+0.8){for(const k2 of S.f){const gr=G[k2];lab.push([k2,k2==='lps'?-235:k2==='hps'?-135:gr.x,k2==='lps'?9:k2==='hps'?17:90,k2==='hps'?-1:1]);}}
+ const la=ex>0.5?ss(37.5,38.5,t):ss(S.a+0.8,S.a+1.5,t);
+ lab.forEach(([k2,x,y,dir],i)=>{const v=P(x,y,0);const ly=dir>0?v[1]-60-(ex>0.5?0:i*28):v[1]+55+(ex>0.5?0:i*28);
+  const nm=G[k2].n,w=g.measureText(nm).width+16;let lx=Math.min(1270-w,Math.max(10,v[0]-w/2));
+  g.globalAlpha=la;g.strokeStyle='rgba(255,255,255,0.6)';g.beginPath();g.moveTo(v[0],v[1]);g.lineTo(v[0],ly);g.stroke();
+  g.fillStyle='rgba(8,14,24,0.85)';g.fillRect(lx,ly-12,w,24);g.strokeStyle=`hsl(${G[k2].h},70%,60%)`;g.strokeRect(lx,ly-12,w,24);
+  g.fillStyle='#fff';g.fillText(nm,lx+8,ly);g.globalAlpha=1;});
+ // captions
+ const ca=ss(S.a,S.a+0.8,t)*(1-ss(S.b-0.5,S.b,t));g.globalAlpha=ca;
+ g.fillStyle='rgba(0,0,0,0.55)';g.fillRect(0,600,1280,120);
+ g.textBaseline='alphabetic';g.fillStyle='#ffb347';g.font='800 30px Helvetica,Arial,sans-serif';g.fillText(S.tag,60,645);
+ g.fillStyle='#e8eef6';g.font='22px Helvetica,Arial,sans-serif';wrap(S.cap,60,682,1160,28);
+ g.globalAlpha=1;
+ g.fillStyle='rgba(255,255,255,0.5)';g.font='13px Helvetica,Arial,sans-serif';g.fillText('TWO-SPOOL HIGH-BYPASS TURBOFAN · CUTAWAY',60,40);
+ g.fillStyle='rgba(255,255,255,0.15)';g.fillRect(60,52,300,3);g.fillStyle='#ffb347';g.fillRect(60,52,300*t/window.DUR,3);
+ if(si===5){g.font='16px Helvetica,Arial,sans-serif';g.fillStyle='hsl(120,60%,65%)';g.fillText('LP spool: fan + LP compressor + LP turbine',820,40);g.fillStyle='hsl(280,60%,72%)';g.fillText('HP spool: HP compressor + HP turbine',820,64);}
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></body></html>

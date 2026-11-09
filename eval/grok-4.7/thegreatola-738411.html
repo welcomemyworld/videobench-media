@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Atlas Notes — product demo</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#stage{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:center center}
+canvas{display:block}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+window.DUR=24;
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+const q=new URLSearchParams(location.search);
+const off=Math.max(0,parseFloat(q.get('t'))||0);
+let origin=null;
+function fit(){
+  const s=Math.min(innerWidth/1280,innerHeight/720);
+  document.getElementById('stage').style.transform='translate(-50%,-50%) scale('+s+')';
+}
+addEventListener('resize',fit);fit();
+function clamp(a,b,x){return Math.max(a,Math.min(b,x))}
+function ease(t){t=clamp(0,1,t);return t*t*(3-2*t)}
+function seg(t,a,b){return ease((t-a)/(b-a))}
+function lerp(a,b,t){return a+(b-a)*t}
+function rr(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+function glow(x,y,r,col){
+  const g=ctx.createRadialGradient(x,y,0,x,y,r);
+  g.addColorStop(0,col);g.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,y,r,0,7);ctx.fill();
+}
+const notes=[
+  {t:'Field notes — kiln 4',c:'#e8d7c3',tag:'Research',x:0},
+  {t:'Interview: Mara Chen',c:'#d7e6f2',tag:'People',x:0},
+  {t:'Hypothesis board',c:'#e4ecd4',tag:'Lab',x:0},
+  {t:'Cite graph draft',c:'#efe3f0',tag:'Writing',x:0},
+  {t:'Monday synthesis',c:'#f3ead2',tag:'Weekly',x:0},
+  {t:'Open questions',c:'#dce8e4',tag:'Lab',x:0}
+];
+function frame(t){
+  ctx.clearRect(0,0,1280,720);
+  const bg=ctx.createLinearGradient(0,0,1280,720);
+  bg.addColorStop(0,'#0c1016');bg.addColorStop(1,'#141820');
+  ctx.fillStyle=bg;ctx.fillRect(0,0,1280,720);
+  glow(240,120,420,'rgba(90,140,255,.18)');
+  glow(1080,620,380,'rgba(255,170,90,.12)');
+  const intro=1-seg(t,2.2,3.4);
+  const app=seg(t,2.6,3.8);
+  const open=seg(t,8.2,9.4);
+  const write=seg(t,9.6,15.2);
+  const map=seg(t,15.4,16.8);
+  const share=seg(t,19.2,20.4);
+  const out=seg(t,22.2,23.6);
+  ctx.save();
+  ctx.globalAlpha=intro*(1-out*0.3);
+  ctx.fillStyle='#f4efe6';
+  ctx.font='600 18px Georgia, serif';
+  ctx.textAlign='center';
+  ctx.fillText('ATLAS NOTES',640,300);
+  ctx.font='italic 42px Georgia, serif';
+  ctx.fillText('A spatial notebook for researchers.',640,360);
+  ctx.font='16px sans-serif';
+  ctx.fillStyle='#b7c0cc';
+  ctx.fillText('Capture interviews, link evidence, and share a living brief.',640,410);
+  ctx.restore();
+  if(app>0.01){
+    ctx.save();
+    ctx.globalAlpha=app*(1-out);
+    const yLift=lerp(30,0,app);
+    ctx.translate(0,yLift);
+    rr(70,50,1140,620,22);
+    ctx.fillStyle='#f6f3ee';ctx.fill();
+    ctx.fillStyle='#1c2430';
+    rr(70,50,220,620,22);ctx.fill();
+    ctx.fillRect(220,50,70,620);
+    ctx.fillStyle='#f4efe6';
+    ctx.font='600 15px Georgia, serif';
+    ctx.textAlign='left';
+    ctx.fillText('Atlas Notes',96,92);
+    ctx.font='13px sans-serif';
+    ctx.fillStyle='#9aa6b5';
+    ['Library','Canvas','People','Archive'].forEach((n,i)=>{
+      ctx.fillStyle=i===0?'#f4efe6':'#8b97a6';
+      rr(92,130+i*44,170,34,8);
+      if(i===0){ctx.fillStyle='#2a3546';ctx.fill();ctx.fillStyle='#f4efe6';}
+      ctx.fillText(n,108,152+i*44);
+    });
+    ctx.fillStyle='#1b2430';
+    ctx.font='28px Georgia, serif';
+    ctx.fillText('Library',320,108);
+    ctx.font='14px sans-serif';
+    ctx.fillStyle='#6b7582';
+    ctx.fillText('6 notes · Climate ceramics lab',320,134);
+    const hover=Math.floor((t*0.7)%6);
+    notes.forEach((n,i)=>{
+      const col=i%3,row=(i/3)|0;
+      const x=320+col*280,y=170+row*210;
+      const lift=i===hover&&open<0.2? -6:0;
+      ctx.save();ctx.translate(0,lift*(1-open));
+      rr(x,y,260,180,14);
+      ctx.fillStyle=n.c;ctx.fill();
+      ctx.fillStyle='#5c5146';
+      ctx.font='12px sans-serif';
+      ctx.fillText(n.tag.toUpperCase(),x+16,y+28);
+      ctx.fillStyle='#1c1916';
+      ctx.font='18px Georgia, serif';
+      ctx.fillText(n.t,x+16,y+78);
+      ctx.strokeStyle='rgba(40,30,20,.15)';
+      ctx.beginPath();
+      for(let k=0;k<4;k++){ctx.moveTo(x+16,y+100+k*14);ctx.lineTo(x+220,y+100+k*14);}
+      ctx.stroke();
+      ctx.restore();
+    });
+    if(open>0){
+      ctx.globalAlpha=app*open*(1-map*0.15);
+      rr(250,90,900,540,16);
+      ctx.fillStyle='#fffdf9';ctx.fill();
+      ctx.fillStyle='#8a8176';
+      ctx.font='12px sans-serif';
+      ctx.fillText('LIBRARY  /  FIELD NOTES',278,128);
+      ctx.fillStyle='#1c1916';
+      ctx.font='32px Georgia, serif';
+      ctx.fillText('Field notes — kiln 4',278,172);
+      const lines=[
+        'Firing 3 held at 1180°C for 40 minutes.',
+        'Glaze sample B crawled along the rim — likely thick slip.',
+        'Mara noted the same crack pattern in the 2019 shards.',
+        'Link: Interview with Mara Chen, minute 12.',
+        'Next: photograph cross-section before Monday synthesis.'
+      ];
+      ctx.font='18px Georgia, serif';
+      ctx.fillStyle='#2a2622';
+      const shown=write*lines.join(' ').length;
+      let left=shown,yy=230;
+      lines.forEach(line=>{
+        const take=Math.max(0,Math.min(line.length,left));
+        left-=line.length+1;
+        ctx.fillText(line.slice(0,take),278,yy);
+        yy+=40;
+      });
+      if(write>0.15&&write<0.98){
+        const cx2=278+ctx.measureText(lines[Math.min(4,Math.floor(write*5))].slice(0,8)).width;
+        ctx.fillRect(286+(write*420)%240,yy-78,2,22);
+      }
+      rr(278,470,120,32,8);ctx.fillStyle='#1c2430';ctx.fill();
+      ctx.fillStyle='#f6f3ee';ctx.font='13px sans-serif';ctx.fillText('Link note',298,491);
+      rr(410,470,110,32,8);ctx.fillStyle='#efe8dc';ctx.fill();
+      ctx.fillStyle='#1c2430';ctx.fillText('Cite',444,491);
+    }
+    if(map>0.02){
+      ctx.globalAlpha=app*map*(1-share*0.4);
+      rr(250,90,900,540,16);
+      ctx.fillStyle='#10161f';ctx.fill();
+      ctx.fillStyle='#d5deea';
+      ctx.font='14px sans-serif';
+      ctx.fillText('Canvas · evidence map',278,128);
+      const nodes=[[420,280],[620,220],[780,340],[560,420],[900,240],[480,500]];
+      const labels=['Kiln 4','Mara','Shards','Hypothesis','Cite','Monday'];
+      ctx.strokeStyle='rgba(150,180,220,.45)';ctx.lineWidth=1.5;
+      [[0,1],[1,2],[0,3],[3,5],[2,4],[1,4]].forEach(([a,b])=>{
+        ctx.beginPath();ctx.moveTo(nodes[a][0],nodes[a][1]);ctx.lineTo(nodes[b][0],nodes[b][1]);ctx.stroke();
+      });
+      nodes.forEach((p,i)=>{
+        ctx.beginPath();ctx.arc(p[0],p[1],i===0?16:11,0,7);
+        ctx.fillStyle=i===0?'#f0c27a':'#7eb0ff';ctx.fill();
+        ctx.fillStyle='#e8eef6';ctx.font='13px sans-serif';
+        ctx.fillText(labels[i],p[0]+18,p[1]+4);
+      });
+    }
+    if(share>0.02){
+      ctx.globalAlpha=app*share;
+      rr(430,220,420,250,16);
+      ctx.fillStyle='#fffdf9';ctx.fill();
+      ctx.fillStyle='#1c1916';
+      ctx.font='22px Georgia, serif';
+      ctx.textAlign='left';
+      ctx.fillText('Share with the lab',458,268);
+      ctx.font='14px sans-serif';
+      ctx.fillStyle='#5c6570';
+      ctx.fillText('Living brief · view only',458,298);
+      ctx.fillText('mara@lab.edu   added',458,340);
+      ctx.fillText('studio@kiln.co   added',458,368);
+      rr(458,400,160,36,8);ctx.fillStyle='#1c2430';ctx.fill();
+      ctx.fillStyle='#f6f3ee';ctx.fillText('Copy link',496,423);
+    }
+    ctx.restore();
+  }
+  ctx.globalAlpha=1;
+  ctx.fillStyle='rgba(255,255,255,.55)';
+  ctx.font='13px sans-serif';
+  ctx.textAlign='left';
+  ctx.fillText('Atlas Notes  ·  for research teams who think in links',70,700);
+  const p=t/window.DUR;
+  ctx.fillStyle='rgba(255,255,255,.15)';
+  ctx.fillRect(70,688,180,2);
+  ctx.fillStyle='#f0c27a';
+  ctx.fillRect(70,688,180*p,2);
+}
+function loop(now){
+  if(origin===null) origin=now/1000-off;
+  let t=(now/1000-origin)%window.DUR;
+  if(t<0)t+=window.DUR;
+  frame(t);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

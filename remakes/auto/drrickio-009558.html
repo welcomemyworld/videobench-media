@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<!-- Note: external assets can't be loaded under these constraints, and using a real company's logo/brand for a made-up launch could mislead viewers. So this is an original, fully hand-drawn launch video for a fictional SaaS, "Flowdesk", in the style of modern product-launch reels. -->
+<html><head><meta charset="utf-8"><title>Flowdesk Launch</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=32;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px'}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),T0=parseFloat(q.get('t')||0),st=performance.now();
+const cl=v=>Math.max(0,Math.min(1,v)),eo=v=>1-Math.pow(1-cl(v),3),eio=v=>{v=cl(v);return v<.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2};
+const back=v=>{v=cl(v);const s=1.7;return 1+(s+1)*Math.pow(v-1,3)+s*Math.pow(v-1,2)};
+const F='-apple-system,"Segoe UI",Helvetica,Arial,sans-serif';
+function rr(X,Y,w,h,r){x.beginPath();x.roundRect(X,Y,w,h,r)}
+function txt(s,X,Y,sz,col,w=700,al='center',a=1){x.globalAlpha=a;x.fillStyle=col;x.font=`${w} ${sz}px ${F}`;x.textAlign=al;x.textBaseline='middle';x.fillText(s,X,Y);x.globalAlpha=1}
+function grad(a,b){const g=x.createLinearGradient(0,0,1280,720);g.addColorStop(0,a);g.addColorStop(1,b);return g}
+function bg(t){x.fillStyle='#07070c';x.fillRect(0,0,1280,720);
+ for(let i=0;i<3;i++){const px=640+Math.cos(t*.3+i*2.1)*380,py=360+Math.sin(t*.4+i*1.7)*200;
+  const g=x.createRadialGradient(px,py,0,px,py,420);g.addColorStop(0,['rgba(124,92,255,.35)','rgba(0,200,255,.22)','rgba(255,80,160,.18)'][i]);g.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=g;x.fillRect(0,0,1280,720)}
+ x.strokeStyle='rgba(255,255,255,.04)';x.lineWidth=1;for(let i=0;i<1280;i+=64){x.beginPath();x.moveTo(i,0);x.lineTo(i,720);x.stroke()}for(let j=0;j<720;j+=64){x.beginPath();x.moveTo(0,j);x.lineTo(1280,j);x.stroke()}}
+function logo(X,Y,s,a=1,rot=0){x.save();x.translate(X,Y);x.rotate(rot);x.scale(s,s);x.globalAlpha=a;
+ rr(-40,-40,80,80,22);const g=x.createLinearGradient(-40,-40,40,40);g.addColorStop(0,'#8b5cff');g.addColorStop(1,'#00c8ff');x.fillStyle=g;x.fill();
+ x.strokeStyle='#fff';x.lineWidth=9;x.lineCap='round';x.beginPath();x.moveTo(-18,-14);x.lineTo(18,-14);x.moveTo(-18,2);x.lineTo(8,2);x.moveTo(-18,18);x.lineTo(-2,18);x.stroke();x.restore();x.globalAlpha=1}
+function scene1(t){// logo reveal 0-4
+ const a=back(t/1.1);logo(640,330-eo((t-1.2)/.8)*30,a,1,(1-eo(t/1.1))*-1.2);
+ for(let i=0;i<24;i++){const k=eo((t-.2)/1.2),an=i/24*6.283,r=60+k*260;x.globalAlpha=(1-k)*.8;x.fillStyle=i%2?'#8b5cff':'#00c8ff';x.beginPath();x.arc(640+Math.cos(an)*r,330+Math.sin(an)*r,4,0,7);x.fill()}x.globalAlpha=1;
+ const k=eo((t-1.3)/.8);txt('Flowdesk',640,420+(1-k)*20,64,'#fff',800,'center',k);
+ txt('INTRODUCING',640,250-(1-eo((t-1.6)/.6))*10,16,'#a9a3ff',600,'center',eo((t-1.6)/.6)*(1-eo((t-3.5)/.5)));}
+function scene2(t){// kinetic tagline 4-9
+ const L=[['Your team\u2019s work.',0],['One place.',.6],['Zero chaos.',1.4]];
+ L.forEach(([s,d],i)=>{const k=eo((t-d)/.6),o=1-eo((t-4.4)/.5);x.save();x.beginPath();x.rect(0,180+i*120,1280,120);x.clip();
+  const col=i==2?grad('#8b5cff','#00c8ff'):'#fff';txt(s,640,240+i*120+(1-k)*110,92,col,800,'center',o);x.restore()});}
+function win(t,X,Y,W,H,title){x.save();x.shadowColor='rgba(124,92,255,.35)';x.shadowBlur=60;rr(X,Y,W,H,16);x.fillStyle='#12121b';x.fill();x.restore();
+ x.strokeStyle='rgba(255,255,255,.1)';rr(X,Y,W,H,16);x.stroke();
+ ['#ff5f57','#febc2e','#28c840'].forEach((cc,i)=>{x.fillStyle=cc;x.beginPath();x.arc(X+22+i*20,Y+20,6,0,7);x.fill()});
+ txt(title,X+W/2,Y+20,13,'#8a8aa0',500);
+ x.fillStyle='#0e0e15';x.fillRect(X,Y+40,190,H-40);
+ ['Inbox','My Tasks','Projects','Docs','AI Assistant'].forEach((s,i)=>{if(i==2){rr(X+10,Y+60+i*36,170,30,8);x.fillStyle='rgba(139,92,255,.2)';x.fill()}
+  x.fillStyle=i==2?'#a98bff':'#555';rr(X+22,Y+69+i*36,12,12,3);x.fill();txt(s,X+44,Y+75+i*36,14,i==2?'#fff':'#9a9ab0',500,'left')});}
+function scene3(t){// kanban 9-15
+ const k=eo(t/1),Y=110+(1-k)*400,X=140,W=1000,H=520;x.save();x.globalAlpha=1-eo((t-5.5)/.5);
+ win(t,X,Y,W,H,'flowdesk.app / Product Launch');
+ const cols=[['To do','#ff6b9a'],['In progress','#ffb84d'],['Done','#3ddc97']];
+ const cards=[['Write launch post',0],['Record demo',0],['Design landing page',1],['Pricing review',1],['Beta feedback',2],['Ship onboarding',2]];
+ cols.forEach(([n,cc],i)=>{const cx=X+215+i*262;x.fillStyle=cc;x.beginPath();x.arc(cx+6,Y+72,5,0,7);x.fill();txt(n,cx+20,Y+72,15,'#fff',600,'left')});
+ cards.forEach(([n,ci],i)=>{let col=ci,mx=0;const mv=eio((t-2.4)/1);if(i==2){mx=mv*262;if(mv>=1)col=2}
+  const cx=X+210+(i==2?ci*262+mx:col*262),cy=Y+95+(i%2)*90+(i==2?-mv*8:0),ka=back((t-.6-i*.12)/.6);if(ka<=0)return;
+  x.save();x.translate(cx+120,cy+38);x.scale(ka,ka);if(i==2&&mv>0&&mv<1){x.rotate(.04);x.shadowColor='rgba(0,0,0,.6)';x.shadowBlur=30}
+  rr(-120,-38,240,76,10);x.fillStyle='#1c1c28';x.fill();x.strokeStyle=i==2&&mv>0?'#8b5cff':'rgba(255,255,255,.08)';x.stroke();x.shadowBlur=0;
+  txt(n,-104,-12,15,'#eee',600,'left');x.fillStyle=cols[i==2&&mv>=1?2:ci][1];rr(-104,8,50,14,7);x.fill();
+  x.fillStyle='#8b5cff';x.beginPath();x.arc(96,14,10,0,7);x.fill();x.restore()});
+ if(t>2.2&&t<3.8){const mv=eio((t-2.4)/1);const px=X+430+mv*262,py=Y+150;x.fillStyle='#fff';x.beginPath();x.moveTo(px,py);x.lineTo(px+4,py+18);x.lineTo(px+9,py+12);x.lineTo(px+17,py+13);x.closePath();x.fill()}
+ x.restore();const ka=eo((t-3.6)/.5)*(1-eo((t-5.4)/.4));
+ rr(440,40,400,52,26);x.globalAlpha=ka;x.fillStyle='rgba(255,255,255,.08)';x.fill();x.globalAlpha=1;txt('Drag. Drop. Done.',640,66,24,'#fff',700,'center',ka);}
+function scene4(t){// AI command bar 15-21
+ const a=eo(t/.6)*(1-eo((t-5.5)/.5));x.globalAlpha=a;
+ txt('Meet Flowdesk AI',640,120,52,grad('#c9b8ff','#7fe3ff'),800,'center',a);x.globalAlpha=a;
+ const W=760,X=260,Y=200,s=back(t/.7);x.save();x.translate(640,Y+40);x.scale(s,s);x.translate(-640,-Y-40);
+ x.shadowColor='rgba(0,200,255,.4)';x.shadowBlur=50;rr(X,Y,W,80,18);x.fillStyle='#14141f';x.fill();x.shadowBlur=0;
+ x.strokeStyle=grad('#8b5cff','#00c8ff');x.lineWidth=2;rr(X,Y,W,80,18);x.stroke();
+ const q='Summarize this week and plan next sprint',n=Math.floor(cl((t-.8)/1.8)*q.length);
+ txt('\u2726',X+36,Y+40,26,'#a98bff',700);txt(q.slice(0,n)+((t*2|0)%2&&n<q.length?'|':''),X+66,Y+40,22,'#fff',500,'left',1);x.restore();
+ const res=['\u2713  14 tasks shipped \u2014 velocity up 32%','\u2713  3 blockers flagged on Design','\u2713  Sprint 12 drafted: 18 tasks, 5 owners'];
+ res.forEach((r,i)=>{const k=eo((t-2.9-i*.35)/.5);if(k<=0)return;x.globalAlpha=a*k;rr(X,320+i*72+(1-k)*20,W,58,12);x.fillStyle='rgba(255,255,255,.05)';x.fill();
+  txt(r,X+28,349+i*72+(1-k)*20,20,'#e6e6f0',500,'left',a*k)});x.globalAlpha=1;}
+function scene5(t){// stats 21-26.5
+ const o=1-eo((t-5)/.5);txt('Teams move faster with Flowdesk',640,170,40,'#fff',700,'center',eo(t/.6)*o);
+ [['3.2x','faster planning',3.2,1],['40%','fewer meetings',40,0],['10k+','teams onboard',10,0]].forEach(([l,s,v,d],i)=>{
+  const k=eo((t-.4-i*.2)/.8),cx=280+i*360,cy=380+(1-k)*40;x.globalAlpha=k*o;rr(cx-150,cy-100,300,200,20);x.fillStyle='rgba(255,255,255,.05)';x.fill();x.strokeStyle='rgba(255,255,255,.1)';x.stroke();
+  const n=eio((t-.5-i*.2)/1.4)*v;const val=d?n.toFixed(1)+'x':i==1?Math.round(n)+'%':Math.round(n)+'k+';
+  txt(val,cx,cy-20,72,grad('#c9b8ff','#7fe3ff'),800,'center',k*o);txt(s,cx,cy+50,20,'#9a9ab0',500,'center',k*o)});x.globalAlpha=1;}
+function scene6(t){// CTA 26.5-32
+ const k=back(t/.8);logo(640,240,k);txt('Flowdesk',640,340,60,'#fff',800,'center',eo((t-.3)/.6));
+ txt('Available today. Free for teams up to 10.',640,400,24,'#b0b0c8',500,'center',eo((t-.7)/.6));
+ const b=eo((t-1.1)/.6),p=1+Math.sin(t*4)*.02*(t>2);x.save();x.translate(640,480);x.scale(b*p,b*p);x.shadowColor='rgba(139,92,255,.7)';x.shadowBlur=40;
+ rr(-150,-30,300,60,30);x.fillStyle=grad('#8b5cff','#00c8ff');x.fill();x.shadowBlur=0;x.restore();
+ txt('Get started \u2192',640,480,22,'#fff',700,'center',b);txt('flowdesk.app',640,560,18,'#7a7a90',500,'center',eo((t-1.5)/.6));
+ x.globalAlpha=eo((t-4.7)/.6);x.fillStyle='#000';x.fillRect(0,0,1280,720);x.globalAlpha=1;}
+const S=[[0,4,scene1],[4,9,scene2],[9,15,scene3],[15,21,scene4],[21,26.5,scene5],[26.5,32,scene6]];
+function frame(){const T=((performance.now()-st)/1000+T0)%DUR;bg(T);
+ for(const[a,b,f]of S)if(T>=a&&T<b){x.save();f(T-a);x.restore();const fl=1-cl((T-a)/.25);if(a>0&&fl>0){x.globalAlpha=fl*.5;x.fillStyle='#fff';x.fillRect(0,0,1280,720);x.globalAlpha=1}}
+ const vg=x.createRadialGradient(640,360,300,640,360,800);vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(0,0,0,.6)');x.fillStyle=vg;x.fillRect(0,0,1280,720);
+ requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

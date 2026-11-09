@@ -1,0 +1,60 @@
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000;height:100%;overflow:hidden}canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+window.DUR=20;const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px'}fit();onresize=fit;
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t')||0)||0,t0=performance.now();
+const W=1400,H=330;const band=document.createElement('canvas');band.width=W;band.height=H;const b=band.getContext('2d');
+function cl(v){return Math.max(0,Math.min(1,v))}
+function horse(g,X,Y,s,col){g.save();g.translate(X,Y);g.scale(s,s);g.fillStyle=col;
+g.fillRect(-60,-70,120,45);g.fillRect(40,-115,22,55);g.beginPath();g.moveTo(40,-118);g.lineTo(90,-108);g.lineTo(88,-92);g.lineTo(60,-95);g.fill();
+for(const lx of[-55,-35,30,48])g.fillRect(lx,-28,10,40);g.fillRect(-75,-22,160,10);
+for(const wx of[-58,0,58]){g.beginPath();g.arc(wx,-6,14,0,7);g.fill()}
+g.fillRect(-72,-68,12,30);g.restore()}
+function man(g,X,Y,s,col,ph){g.save();g.translate(X,Y);g.scale(s,s);g.fillStyle=col;g.strokeStyle=col;g.lineWidth=5;
+g.beginPath();g.arc(0,-62,8,0,7);g.fill();g.beginPath();g.moveTo(-8,-70);g.lineTo(0,-82);g.lineTo(8,-70);g.fill();
+g.fillRect(-6,-54,12,28);g.beginPath();g.moveTo(-3,-26);g.lineTo(-10+Math.sin(ph)*6,0);g.moveTo(3,-26);g.lineTo(10-Math.sin(ph)*6,0);g.moveTo(4,-48);g.lineTo(26,-80);g.stroke();
+g.beginPath();g.arc(-10,-42,12,0,7);g.fill();g.restore()}
+function paint(t){const n=cl((t-9)/5);// night
+b.fillStyle=`rgb(${200-150*n|0},${100-70*n|0},${40-20*n|0})`;b.fillRect(0,0,W,H);
+const ink=n>.5?'#e8a25a':'#140c08';
+b.fillStyle=ink;for(let i=0;i<W;i+=40){b.fillRect(i,8,30,6);b.fillRect(i,H-14,30,6)}
+// meander border
+b.strokeStyle=ink;b.lineWidth=3;for(let i=0;i<W;i+=28){b.beginPath();b.moveTo(i,40);b.lineTo(i,24);b.lineTo(i+20,24);b.lineTo(i+20,34);b.lineTo(i+10,34);b.stroke()}
+// city wall at x 700-1100
+b.fillStyle=ink;b.fillRect(700,110,400,170);for(let i=700;i<1100;i+=30)b.fillRect(i,95,18,15);
+b.fillRect(740,70,50,40);b.fillRect(1010,70,50,40);
+const gate=cl((t-4)/2)-cl((t-8)/2);b.fillStyle=n>.5?'#3a1a0a':'#c8642a';b.fillRect(870,180,90,100);b.fillStyle=ink;b.fillRect(870,180,90,100*(1-gate));
+// stars/moon
+if(n>0){b.fillStyle=`rgba(255,220,150,${n})`;b.beginPath();b.arc(420,90,26,0,7);b.fill();for(let i=0;i<30;i++)b.fillRect((i*197)%W,50+(i*53)%40,2,2)}
+// greek ships left
+b.fillStyle=ink;for(let k=0;k<2;k++){const sx=60+k*170;b.beginPath();b.moveTo(sx,250);b.lineTo(sx+140,250);b.lineTo(sx+120,275);b.lineTo(sx+20,275);b.fill();b.fillRect(sx+68,170,4,80);b.globalAlpha=t<6?1:cl(1-(t-6)/2);b.beginPath();b.moveTo(sx+72,175);b.lineTo(sx+120,230);b.lineTo(sx+72,230);b.fill();b.globalAlpha=1}
+// horse path
+const hx=t<3?420:t<8?420+(t-3)/5*495:915+(t>8?Math.min(t-8,1)*60:0);
+horse(b,hx,280,1.1,ink);
+// trojans pulling
+if(t<8.5)for(let k=0;k<3;k++)man(b,hx+120+k*40,280,.9,ink,t*6+k);
+// celebration inside
+if(t>9&&t<14)for(let k=0;k<3;k++)man(b,1150+k*55,280,.9,ink,t*3+k);
+// warriors emerge
+if(t>13){const m=cl((t-13)/3);for(let k=0;k<5;k++){const kk=cl(m*5-k);man(b,975+k*50*kk,280-60*(1-kk),.9,ink,t*8+k)}}
+// fire
+if(t>16){const f=cl((t-16)/2);for(let i=0;i<9;i++){const fx=720+i*45,fh=(40+20*Math.sin(t*9+i))*f;b.fillStyle='rgba(255,140,30,.85)';b.beginPath();b.moveTo(fx-14,112);b.quadraticCurveTo(fx,112-fh*1.6,fx+14,112);b.fill()}}}
+function frame(){const t=((performance.now()-t0)/1000+off)%DUR;paint(t);
+const n=cl((t-9)/5);x.fillStyle=`rgb(${30-25*n|0},${20-17*n|0},${18-8*n|0})`;x.fillRect(0,0,1280,720);
+const cx=640,rot=-(t/DUR)*W*.75;
+// vase silhouette: radius function y
+const top=60,bot=680;function R(y){const u=(y-top)/(bot-top);if(u<.12)return 120-u*300;if(u<.2)return 84;return 90+230*Math.sin(Math.PI*Math.min(1,(u-.18)/.86))**.8}
+// draw slices
+for(let y=top;y<bot;y+=2){const r=R(y);const u=(y-top)/(bot-top);
+for(let s=-r;s<r;s+=3){const a=Math.asin(s/r),sh=Math.cos(a);
+const bandY=(u-.33)/.42;let col;
+if(bandY>0&&bandY<1){const px=((a/Math.PI*W*.5+rot)%W+W)%W;const d=b.getImageData(px|0,bandY*H|0,1,1).data;col=d}else{const dark=(u*30|0)%7==0;col=dark?[200,110,50]:[22,12,8]}
+const L=.35+.75*sh*(1-.3*(s/r));x.fillStyle=`rgb(${col[0]*L|0},${col[1]*L|0},${col[2]*L|0})`;x.fillRect(cx+s,y,3,2)}}
+// handles
+x.strokeStyle='#160c08';x.lineWidth=14;for(const d of[-1,1]){x.beginPath();x.moveTo(cx+d*86,140);x.bezierCurveTo(cx+d*190,110,cx+d*230,200,cx+d*240,260);x.stroke()}
+const caps=[[0,'Ten years of war before the walls of Troy'],[3,'The Greeks leave a great wooden horse'],[7,'Troy pulls the gift inside its gates'],[10,'Night falls; the city celebrates'],[13,'Hidden warriors climb out of the horse'],[16.5,'They open the gates — Troy burns']];
+let cap=caps[0];for(const k of caps)if(t>=k[0])cap=k;const a=cl((t-cap[0])*2);
+x.globalAlpha=a;x.fillStyle='#f0d2a0';x.font='italic 30px Georgia,serif';x.textAlign='center';x.fillText(cap[1],640,40);x.globalAlpha=1;
+x.font='20px Georgia,serif';x.fillStyle='#a07850';x.fillText('THE TROJAN HORSE',640,708);
+requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

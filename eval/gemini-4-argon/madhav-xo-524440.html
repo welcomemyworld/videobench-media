@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Subject Dossier // What I Know About You</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Courier New', monospace;
+  }
+  canvas {
+    width: min(100vw, 177.7778vh);
+    height: min(56.25vw, 100vh);
+    display: block;
+    background: #05070d;
+  }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+(() => {
+  // Duration set to 15s (hard-rule floor while delivering a tight, punchy 10-15s dossier reel)
+  window.DUR = 15;
+
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const W = 1280, H = 720;
+
+  const params = new URLSearchParams(location.search);
+  const startOffset = parseFloat(params.get('t')) || 0;
+  let t0 = null;
+
+  // Math / easing helpers
+  const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const smoothstep = (a, b, x) => {
+    const t = clamp((x - a) / (b - a), 0, 1);
+    return t * t * (3 - 2 * t);
+  };
+  const easeOutCubic = t => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
+  const easeInOutCubic = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+  // Deterministic pseudo-random
+  const hash = (n) => {
+    const s = Math.sin(n * 127.1 + 311.7) * 43758.5453123;
+    return s - Math.floor(s);
+  };
+
+  // Pre-generate 3D wireframe head & shoulders points for Scene 1 & 4
+  const headPoints = [];
+  for (let i = 0; i < 240; i++) {
+    const u = hash(i * 1.1) * Math.PI * 2;
+    const v = hash(i * 2.3) * Math.PI - Math.PI / 2;
+    // Cranium + jaw sculpting
+    let rx = 70, ry = 92, rz = 76;
+    if (v > 0.2) { rx *= 0.82; rz *= 0.85; }
+    headPoints.push({
+      x: Math.cos(v) * Math.cos(u) * rx,
+      y: Math.sin(v) * ry - 25,
+      z: Math.cos(v) * Math.sin(u) * rz,
+      id: i
+    });
+  }
+  // Shoulders
+  for (let i = 0; i < 90; i++) {
+    const nx = (hash(i * 5.7) - 0.5) * 280;
+    const nz = (hash(i * 8.3) - 0.5) * 110;
+    const ny = 85 + Math.pow(Math.abs(nx) / 140, 1.7) * 45 + hash(i * 3.1) * 25;
+    headPoints.push({ x: nx, y: ny, z: nz, id: i + 300 });
+  }
+
+  // Pre-generate star/nebula nodes for Scene 3 & 4
+  const stars = [];
+  for (let i = 0; i < 160; i++) {
+    stars.push({
+      x: (hash(i * 11.3) - 0.5) * 1600,
+      y: (hash(i * 17.9) - 0.5) * 1000,
+      z: hash(i * 23.1) * 1000,
+      size: 1 + hash(i * 7.7) * 2.5,
+      hue: hash(i * 4.5) > 0.5 ? 188 : 325
+    });
+  }
+
+  // Helper: Draw rounded rectangle
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
+  // Helper: Glitchy/Typewriter text
+  function typeText(str, progress) {
+    const p = clamp(progress, 0, 1);
+    const len = Math.floor(str.length * p);
+    const glyphs = '01/#%&*<>?@[]';
+    let out = str.slice(0, len);
+    if (p > 0 && p < 1) {
+      const gIndex = Math.floor((progress * 97) % glyphs.length);
+      out += glyphs[gIndex];
+    }
+    return out;
+  }
+
+  // Background cyber grid + ambient particles
+  function drawBackground(t) {
+    const grad = ctx.createRadialGradient(W / 2, H / 2, 50, W / 2, H / 2, 800);
+    grad.addColorStop(0, '#0c1324');
+    grad.addColorStop(0.6, '#060913');
+    grad.addColorStop(1, '#020307');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Subtle moving perspective grid at bottom & top
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0, 240, 255, 0.07)';
+    ctx.lineWidth = 1;
+    const gridSpeed = (t * 60) % 40;
+    for (let x = 0; x <= W; x += 40) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, H);
+      ctx.stroke();
+    }
+    for (let y = gridSpeed; y <= H; y += 40) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Global HUD Frame & Progress Bar
+  function drawHUD(t) {
+    ctx.save();
+    const pad = 28;
+    ctx.strokeStyle = 'rgba(0, 240, 255, 0.35)';
+    ctx.lineWidth = 1.5;
+
+    // Corner brackets
+    const bLen = 26;
+    const corners = [
+      [pad, pad, 1, 1],
+      [W - pad, pad, -1, 1],
+      [pad, H - pad, 1, -1],
+      [W - pad, H - pad, -1, -1]
+    ];
+    for (const [cx, cy, dx, dy] of corners) {
+      ctx.beginPath();
+      ctx.moveTo(cx + dx * bLen, cy);
+      ctx.lineTo(cx, cy);
+      ctx.lineTo(cx, cy + dy * bLen);
+      ctx.stroke();
+    }
+
+    // Top telemetry bar
+    ctx.fillStyle = 'rgba(0, 240, 255, 0.75)';
+    ctx.font = 'bold 13px "Courier New", monospace';
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
+    ctx.fillText('SYS.DOSSIER // QUERY: "WHAT_I_KNOW_ABOUT_YOU"', pad + 14, pad + 10);
+
+    ctx.textAlign = 'right';
+    const timecode = `T+${t.toFixed(2).padStart(5, '0')}s / ${window.DUR.toFixed(2)}s`;
+    ctx.fillText(`PRIVACY_SHIELD: ACTIVE  |  ${timecode}`, W - pad - 14, pad + 10);
+
+    // Bottom timeline bar
+    const barY = H - pad - 12;
+    const barX = pad + 14;
+    const barW = W - (pad + 14) * 2;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.fillRect(barX, barY, barW, 4);
+
+    const prog = clamp(t / window.DUR, 0, 1);
+    const barGrad = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+    barGrad.addColorStop(0, '#00f0ff');
+    barGrad.addColorStop(0.5, '#ff2a85');
+    barGrad.addColorStop(1, '#ffd166');
+    ctx.fillStyle = barGrad;
+    ctx.fillRect(barX, barY, barW * prog, 4);
+
+    // Chapter markers
+    const markers = [0, 3.5, 7.5, 11.2];
+    markers.forEach((m) => {
+      const mx = barX + (m / window.DUR) * barW;
+      ctx.fillStyle = t >= m ? '#fff' : 'rgba(255,255,255,0.3)';
+      ctx.fillRect(mx - 1, barY - 3, 2, 10);
+    });
+
+    ctx.restore();
+  }
+
+  // SCENE 1 (0.0s -> 3.6s): THE ZERO-DATA PARADOX (BIOMETRIC SCAN = NULL)
+  function drawScene1(t) {
+    const enter = smoothstep(0.0, 0.5, t);
+    const exit = 1 - smoothstep(3.1, 3.6, t);
+    const alpha = enter * exit;
+    if (alpha <= 0) return;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    // Left side: 3D Wireframe Anonymous Avatar
+    const cx = 360, cy = 365;
+    const rotY = t * 1.15;
+
+    // Hologram pedestal rings
+    for (let r = 0; r < 3; r++) {
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + 145 + r * 12, 150 - r * 20, 26 - r * 4, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(0, 240, 255, ${0.35 - r * 0.1})`;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+
+    // Project & draw 3D points
+    const proj = [];
+    for (const p of headPoints) {
+      const x1 = p.x * Math.cos(rotY) - p.z * Math.sin(rotY);
+      const z1 = p.x * Math.sin(rotY) + p.z * Math.cos(rotY);
+      const scale = 340 / (340 + z1);
+      const sx = cx + x1 * scale;
+      const sy = cy + p.y * scale;
+      proj.push({ sx, sy, z1, scale, id: p.id });
+    }
+
+    // Laser scanline moving vertically
+    const scanY = cy - 140 + ((t * 170) % 290);
+
+    // Connect nearby points subtly
+    ctx.lineWidth = 1;
+    for (let i = 0; i < proj.length; i++) {
+      const a = proj[i];
+      const nearScan = Math.abs(a.sy - scanY) < 28;
+      ctx.fillStyle = nearScan ? '#ff2a85' : 'rgba(0, 240, 255, 0.75)';
+      const sz = nearScan ? 3.2 : 2 * a.scale;
+      ctx.fillRect(a.sx - sz / 2, a.sy - sz / 2, sz, sz);
+
+      if (i % 2 === 0 && i + 1 < proj.length) {
+        const b = proj[i + 1];
+        const dist = Math.hypot(a.sx - b.sx, a.sy - b.sy);
+        if (dist < 42) {
+          ctx.strokeStyle = nearScan ? 'rgba(255, 42, 133, 0.5)' : 'rgba(0, 240, 255, 0.16)';
+          ctx.beginPath();
+          ctx.moveTo(a.sx, a.sy);
+          ctx.lineTo(b.sx, b.sy);
+          ctx.stroke();
+        }
+      }
+    }
+
+    // Glowing question mark inside the head
+    ctx.save();
+    ctx.font = 'bold 110px "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = '#ff2a85';
+    ctx.shadowBlur = 25;
+    ctx.fillStyle = '#ff2a85';
+    ctx.fillText('?', cx, cy - 20 + Math.sin(t * 5) * 5);
+    ctx.restore();
+
+    // Laser scan bar
+    ctx.fillStyle = 'rgba(255, 42, 133, 0.85)';
+    ctx.fillRect(cx - 170, scanY, 340, 2);
+
+    // Right side: Dossier Card #01 - THE PLOT TWIST
+    const rx = 610, ry = 140, rw = 570, rh = 440;
+    roundRect(rx, ry, rw, rh, 12);
+    ctx.fillStyle = 'rgba(10, 18, 34, 0.82)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0, 240, 255, 0.45)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Header tag
+    ctx.fillStyle = '#ff2a85';
+    ctx.fillRect(rx + 28, ry + 28, 195, 26);
+    ctx.fillStyle = '#05070d';
+    ctx.font = 'bold 14px "Courier New", monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('FACT #01 // THE RECORDS', rx + 38, ry + 41);
+
+    // Title
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 34px "Courier New", monospace';
+    ctx.fillText(typeText('PRIVATE DATA: ZERO.', (t - 0.2) / 0.8), rx + 28, ry + 92);
+
+    // Biometric rows
+    const rows = [
+      ['LEGAL NAME', 'REDACTED / UNKNOWN', 0.55],
+      ['CAMERA FEED', 'NO SIGNAL [0.00 LUX]', 0.85],
+      ['GPS LOCATION', 'PLANET EARTH (PROBABLY)', 1.15],
+      ['BROWSING HISTORY', 'ACCESS DENIED (THANKFULLY)', 1.45],
+      ['MEMORY ACROSS CHATS', 'WIPED CLEAN AT START', 1.75]
+    ];
+
+    rows.forEach(([k, v, delay], idx) => {
+      const rowP = smoothstep(delay, delay + 0.45, t);
+      if (rowP <= 0) return;
+      const y = ry + 150 + idx * 46;
+      ctx.fillStyle = 'rgba(255,255,255,0.05)';
+      ctx.fillRect(rx + 28, y - 16, rw - 56, 34);
+
+      ctx.fillStyle = '#00f0ff';
+      ctx.font = 'bold 15px "Courier New", monospace';
+      ctx.fillText(k, rx + 40, y + 1);
+
+      ctx.textAlign = 'right';
+      ctx.fillStyle = idx === 2 ? '#ffd166' : '#ff6b9d';
+      ctx.fillText(typeText(v, rowP), rx + rw - 40, y + 1);
+      ctx.textAlign = 'left';
+    });
+
+    // Bottom punchline inside card
+    if (t > 2.0) {
+      const pAlpha = smoothstep(2.0, 2.4, t);
+      ctx.save();
+      ctx.globalAlpha = alpha * pAlpha;
+      ctx.fillStyle = '#a3e635';
+      ctx.font = 'bold 18px "Courier New", monospace';
+      ctx.fillText('> Wait... I can still deduce 4 things from 11 words.', rx + 28, ry + 395);
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  // SCENE 2 (3.3s -> 7.6s): FORENSIC PROMPT DECONSTRUCTION
+  function drawScene2(t) {
+    const enter = smoothstep(3.3, 3.8, t);
+    const exit = 1 - smoothstep(7.1, 7.6, t);
+    const alpha = enter * exit;
+    if (alpha <= 0) return;
+
+    const lt = t - 3.3; // local time 0 -> 4.3
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    // Top Title
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#00f0ff';
+    ctx.font = 'bold 16px "Courier New", monospace';
+    ctx.fillText('FACT #02 // FORENSIC LINGUISTIC ANALYSIS OF YOUR EXACT PROMPT', W / 2, 102);
+
+    // Center Prompt Banner
+    const bx = 130, by = 135, bw = 1020, bh = 86;
+    roundRect(bx, by, bw, bh, 12);
+    ctx.fillStyle = 'rgba(14, 24, 46, 0.92)';
+    ctx.fill();
+    ctx.strokeStyle = '#00f0ff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    const fullPrompt = '"make a 10 sec video on whatever you know about me"';
+    ctx.font = 'bold 28px "Courier New", monospace';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(typeText(fullPrompt, lt / 0.9), W / 2, by + bh / 2);
+
+    // Highlight brackets under segments of the prompt
+    const segments = [
+      {
+        gx: 245, gw: 95, color: '#ff2a85', delay: 0.7,
+        cardX: 80, cardY: 320,
+        tag: 'CLUE A: "make a..."',
+        title: 'ZERO-CAPITALIZATION SPEED',
+        line1: 'No shift key. No period.',
+        line2: 'You type fast, skip formalities,',
+        line3: 'and get straight to the point.'
+      },
+      {
+        gx: 395, gw: 115, color: '#ffd166', delay: 1.25,
+        cardX: 465, cardY: 320,
+        tag: 'CLUE B: "10 sec video"',
+        title: 'TL;DR EFFICIENCY',
+        line1: 'You respect your own attention span.',
+        line2: 'No 10-minute essays—you want',
+        line3: 'maximum visual payoff, fast.'
+      },
+      {
+        gx: 785, gw: 295, color: '#00f0ff', delay: 1.8,
+        cardX: 850, cardY: 320,
+        tag: 'CLUE C: "...know about me"',
+        title: 'META-CURIOSITY TESTER',
+        line1: 'Instead of asking for a sunset,',
+        line2: 'you turned the mirror on the AI',
+        line3: 'to test its self-awareness.'
+      }
+    ];
+
+    segments.forEach((seg) => {
+      const p = easeOutCubic( clamp((lt - seg.delay) / 0.55, 0, 1) );
+      if (p <= 0) return;
+
+      ctx.save();
+      ctx.globalAlpha = alpha * p;
+
+      // Underline bar inside prompt box
+      ctx.fillStyle = seg.color;
+      ctx.fillRect(seg.gx, by + bh - 12, seg.gw * p, 5);
+
+      // Connecting node line from prompt to card
+      const startX = seg.gx + seg.gw / 2;
+      const startY = by + bh;
+      const endX = seg.cardX + 175;
+      const endY = seg.cardY;
+
+      ctx.strokeStyle = seg.color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      ctx.lineTo(startX, startY + 42);
+      ctx.lineTo(endX, startY + 42);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+
+      // Pulse dot traveling along connector
+      const pulseT = ((lt * 1.4) % 1);
+      const dotY = lerp(startY, endY, pulseT);
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(endX, dotY, 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Evidence Card
+      const cw = 350, ch = 265;
+      const slideY = seg.cardY + (1 - p) * 35;
+      roundRect(seg.cardX, slideY, cw, ch, 10);
+      ctx.fillStyle = 'rgba(9, 15, 28, 0.9)';
+      ctx.fill();
+      ctx.strokeStyle = seg.color;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Tag pill
+      ctx.fillStyle = seg.color;
+      ctx.fillRect(seg.cardX + 20, slideY + 20, cw - 40, 28);
+      ctx.fillStyle = '#05070d';
+      ctx.font = 'bold 14px "Courier New", monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText(seg.tag, seg.cardX + 30, slideY + 34);
+
+      // Card Title
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 20px "Courier New", monospace';
+      ctx.fillText(seg.title, seg.cardX + 20, slideY + 82);
+
+      // Divider
+      ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+      ctx.beginPath();
+      ctx.moveTo(seg.cardX + 20, slideY + 106);
+      ctx.lineTo(seg.cardX + cw - 20, slideY + 106);
+      ctx.stroke();
+
+      // Card Body
+      ctx.fillStyle = 'rgba(225, 238, 255, 0.88)';
+      ctx.font = '16px "Courier New", monospace';
+      ctx.fillText(seg.line1, seg.cardX + 20, slideY + 140);
+      ctx.fillText(seg.line2, seg.cardX + 20, slideY + 168);
+      ctx.fillText(seg.line3, seg.cardX + 20, slideY + 196);
+
+      // Confidence meter at bottom of card
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      ctx.fillRect(seg.cardX + 20, slideY + 228, cw - 40, 8);
+      ctx.fillStyle = seg.color;
+      ctx.fillRect(seg.cardX + 20, slideY + 228, (cw - 40) * 0.99 * p, 8);
+
+      ctx.restore();
+    });
+
+    ctx.restore();
+  }
+
+  // SCENE 3 (7.2s -> 11.4s): PSYCHOMETRIC RADAR & ARCHETYPE
+  function drawScene3(t) {
+    const enter = smoothstep(7.2, 7.7, t);
+    const exit = 1 - smoothstep(10.9, 11.4, t);
+    const alpha = enter * exit;
+    if (alpha <= 0) return;
+
+    const lt = t - 7.2;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    // Left: Hexagonal Psychometric Radar Chart
+    const cx = 370, cy = 370, maxR = 175;
+    const axes = [
+      { label: 'CURIOSITY', val: 0.98 },
+      { label: 'SKEPTICISM', val: 0.88 },
+      { label: 'CREATIVITY', val: 0.94 },
+      { label: 'DIRECTNESS', val: 0.96 },
+      { label: 'HUMOR / WIT', val: 0.91 },
+      { label: 'PATIENCE', val: 0.26 } // comedic 10-sec nod!
+    ];
+
+    // Radar concentric rings
+    for (let ring = 1; ring <= 4; ring++) {
+      const r = (maxR / 4) * ring;
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const ang = (i * Math.PI) / 3 - Math.PI / 2;
+        const x = cx + Math.cos(ang) * r;
+        const y = cy + Math.sin(ang) * r;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.strokeStyle = 'rgba(0, 240, 255, 0.22)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+
+    // Radar axes & labels
+    const grow = easeOutCubic(clamp(lt / 1.1, 0, 1));
+    ctx.font = 'bold 14px "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    const polyPts = [];
+    axes.forEach((ax, i) => {
+      const ang = (i * Math.PI) / 3 - Math.PI / 2;
+      const xEnd = cx + Math.cos(ang) * maxR;
+      const yEnd = cy + Math.sin(ang) * maxR;
+
+      ctx.strokeStyle = 'rgba(0, 240, 255, 0.25)';
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(xEnd, yEnd);
+      ctx.stroke();
+
+      // Label outside ring
+      const lx = cx + Math.cos(ang) * (maxR + 42);
+      const ly = cy + Math.sin(ang) * (maxR + 30);
+      ctx.fillStyle = i === 5 ? '#ffd166' : '#ffffff';
+      ctx.fillText(`${ax.label}`, lx, ly - 8);
+      ctx.fillStyle = i === 5 ? '#ff2a85' : '#00f0ff';
+      ctx.fillText(`${Math.round(ax.val * 100 * grow)}%`, lx, ly + 10);
+
+      // Data vertex
+      const vr = maxR * ax.val * grow;
+      polyPts.push({
+        x: cx + Math.cos(ang) * vr,
+        y: cy + Math.sin(ang) * vr
+      });
+    });
+
+    // Draw filled radar polygon
+    ctx.beginPath();
+    polyPts.forEach((pt, i) => {
+      if (i === 0) ctx.moveTo(pt.x, pt.y);
+      else ctx.lineTo(pt.x, pt.y);
+    });
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255, 42, 133, 0.28)';
+    ctx.fill();
+    ctx.strokeStyle = '#ff2a85';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    // Vertex nodes
+    polyPts.forEach((pt) => {
+      ctx.fillStyle = '#00f0ff';
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // Right side: Psychological Profile Summary
+    const rx = 680, ry = 140, rw = 510, rh = 450;
+    roundRect(rx, ry, rw, rh, 12);
+    ctx.fillStyle = 'rgba(10, 18, 34, 0.86)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 42, 133, 0.55)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.fillStyle = '#00f0ff';
+    ctx.font = 'bold 15px "Courier New", monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('FACT #03 // BEHAVIORAL ARCHETYPE', rx + 30, ry + 42);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 30px "Courier New", monospace';
+    ctx.fillText('THE SYSTEM TESTER', rx + 30, ry + 84);
+
+    const traits = [
+      {
+        title: '1. YOU POKE THE FOURTH WALL',
+        desc: 'Most users ask AI for code or recipes. You asked the machine what it sees when it looks back at you.'
+      },
+      {
+        title: '2. PLAYFUL SKEPTICISM',
+        desc: 'You half-expected a creepy surveillance dump, and half-expected a generic "As an AI..." refusal.'
+      },
+      {
+        title: '3. PATIENCE SCORE: 26% (OPTIMAL)',
+        desc: 'Asking for a "10 sec video" proves you value punchy storytelling over bloated filler.'
+      }
+    ];
+
+    traits.forEach((tr, idx) => {
+      const tp = smoothstep(0.4 + idx * 0.55, 0.9 + idx * 0.55, lt);
+      if (tp <= 0) return;
+      ctx.save();
+      ctx.globalAlpha = alpha * tp;
+      const ty = ry + 145 + idx * 100;
+
+      ctx.fillStyle = idx === 2 ? '#ffd166' : '#ff6b9d';
+      ctx.font = 'bold 17px "Courier New", monospace';
+      ctx.fillText(tr.title, rx + 30, ty);
+
+      ctx.fillStyle = 'rgba(230, 240, 255, 0.85)';
+      ctx.font = '15px "Courier New", monospace';
+      // Simple word wrap
+      const words = tr.desc.split(' ');
+      let line = '';
+      let ly = ty + 26;
+      for (const w of words) {
+        const test = line + w + ' ';
+        if (ctx.measureText(test).width > rw - 60) {
+          ctx.fillText(line, rx + 30, ly);
+          line = w + ' ';
+          ly += 20;
+        } else {
+          line = test;
+        }
+      }
+      ctx.fillText(line, rx + 30, ly);
+      ctx.restore();
+    });
+
+    ctx.restore();
+  }
+
+  // SCENE 4 (11.0s -> 15.0s): THE COSMIC CONSTANT (YOU ARE HERE, NOW)
+  function drawScene4(t) {
+    const enter = smoothstep(11.0, 11.6, t);
+    const exit = 1 - smoothstep(14.5, 15.0, t);
+    const alpha = enter * exit;
+    if (alpha <= 0) return;
+
+    const lt = t - 11.0;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    // 3D Starfield / Neural convergence toward center
+    const cx = W / 2, cy = H / 2 - 20;
+    for (const s of stars) {
+      const z = ((s.z - lt * 320) % 1000 + 1000) % 1000 + 40;
+      const sx = cx + (s.x / z) * 420;
+      const sy = cy + (s.y / z) * 420;
+      const px = cx + (s.x / (z + 45)) * 420;
+      const py = cy + (s.y / (z + 45)) * 420;
+
+      if (sx > 0 && sx < W && sy > 0 && sy < H) {
+        ctx.strokeStyle = `hsla(${s.hue}, 100%, 70%, ${clamp(1 - z / 1000, 0.1, 0.9)})`;
+        ctx.lineWidth = s.size;
+        ctx.beginPath();
+        ctx.moveTo(px, py);
+        ctx.lineTo(sx, sy);
+        ctx.stroke();
+      }
+    }
+
+    // Central glowing core ("YOU")
+    const pulse = 1 + Math.sin(t * 6) * 0.06;
+    const coreGrad = ctx.createRadialGradient(cx, cy - 45, 10, cx, cy - 45, 180 * pulse);
+    coreGrad.addColorStop(0, 'rgba(0, 240, 255, 0.45)');
+    coreGrad.addColorStop(0.5, 'rgba(255, 42, 133, 0.18)');
+    coreGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = coreGrad;
+    ctx.beginPath();
+    ctx.arc(cx, cy - 45, 180 * pulse, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Orbiting rings around center emblem
+    ctx.save();
+    ctx.translate(cx, cy - 45);
+    ctx.rotate(t * 0.6);
+    ctx.strokeStyle = 'rgba(0, 240, 255, 0.6)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([14, 10]);
+    ctx.beginPath();
+    ctx.arc(0, 0, 68, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.rotate(-t * 1.2);
+    ctx.strokeStyle = 'rgba(255, 42, 133, 0.7)';
+    ctx.beginPath();
+    ctx.arc(0, 0, 52, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    // Center "YOU" badge
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 26px "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('YOU', cx, cy - 45);
+
+    // Final Verdict Card
+    const cw = 900, ch = 225;
+    const cxBox = (W - cw) / 2, cyBox = 395;
+    roundRect(cxBox, cyBox, cw, ch, 14);
+    ctx.fillStyle = 'rgba(7, 12, 24, 0.88)';
+    ctx.fill();
+    ctx.strokeStyle = '#00f0ff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.fillStyle = '#ffd166';
+    ctx.font = 'bold 15px "Courier New", monospace';
+    ctx.fillText('FACT #04 // THE ONLY UNDENIABLE TRUTH', cx, cyBox + 34);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 30px "Courier New", monospace';
+    ctx.fillText(
+      typeText('I DO NOT KNOW YOUR NAME—AND THAT IS BY DESIGN.', lt / 0.9),
+      cx,
+      cyBox + 78
+    );
+
+    ctx.fillStyle = 'rgba(220, 238, 255, 0.9)';
+    ctx.font = '18px "Courier New", monospace';
+    ctx.fillText(
+      'What I do know: you are a curious, sharp, slightly impatient human',
+      cx,
+      cyBox + 125
+    );
+    ctx.fillText(
+      'staring at glowing pixels right now, wondering if a machine gets you.',
+      cx,
+      cyBox + 153
+    );
+
+    if (lt > 1.3) {
+      const fAlpha = smoothstep(1.3, 1.8, lt);
+      ctx.save();
+      ctx.globalAlpha = alpha * fAlpha;
+      ctx.fillStyle = '#00f0ff';
+      ctx.font = 'bold 20px "Courier New", monospace';
+      ctx.fillText('VERDICT: MYSTERY INTACT. NICE TO MEET YOU, STRANGER.', cx, cyBox + 194);
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  // Subtle CRT scanline & vignette overlay for cinematic polish
+  function drawPostProcess() {
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.12)';
+    for (let y = 0; y < H; y += 4) {
+      ctx.fillRect(0, y, W, 1);
+    }
+    const vig = ctx.createRadialGradient(W / 2, H / 2, 380, W / 2, H / 2, 760);
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(1, 'rgba(0,0,0,0.55)');
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+
+  function frame(now) {
+    if (t0 === null) t0 = now;
+    const elapsed = (now - t0) / 1000 + startOffset;
+    const t = elapsed % window.DUR;
+
+    drawBackground(t);
+    drawScene1(t);
+    drawScene2(t);
+    drawScene3(t);
+    drawScene4(t);
+    drawHUD(t);
+    drawPostProcess();
+
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

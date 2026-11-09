@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Human Heart 3D</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=32;
+const cv=document.getElementById('c'),X=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),T0=performance.now()-(parseFloat(q.get('t'))||0)*1000;
+// ---------- geometry ----------
+const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],add=(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]],mul=(a,s)=>[a[0]*s,a[1]*s,a[2]*s];
+const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],len=a=>Math.hypot(a[0],a[1],a[2]),nrm=a=>mul(a,1/(len(a)||1));
+function ellipsoid(c,r,nu=14,nv=9){const P=(i,j)=>{const u=i/nu*Math.PI*2,v=j/nv*Math.PI;return[c[0]+r[0]*Math.sin(v)*Math.cos(u),c[1]+r[1]*Math.cos(v),c[2]+r[2]*Math.sin(v)*Math.sin(u)]};
+ const t=[];for(let i=0;i<nu;i++)for(let j=0;j<nv;j++){const a=P(i,j),b=P(i+1,j),d=P(i,j+1),e=P(i+1,j+1);if(j>0)t.push([a,b,e]);if(j<nv-1)t.push([a,e,d]);}return t;}
+function tube(pts,r,n=8){const t=[],rings=[];for(let i=0;i<pts.length;i++){const d=nrm(sub(pts[Math.min(i+1,pts.length-1)],pts[Math.max(i-1,0)]));
+ let u=nrm(cross(d,Math.abs(d[1])<.9?[0,1,0]:[1,0,0])),w=cross(d,u);const rr=typeof r=='number'?r:r[i];
+ rings.push([...Array(n)].map((_,k)=>{const a=k/n*Math.PI*2;return add(pts[i],add(mul(u,Math.cos(a)*rr),mul(w,Math.sin(a)*rr)))}));}
+ for(let i=0;i<rings.length-1;i++)for(let k=0;k<n;k++){const a=rings[i][k],b=rings[i][(k+1)%n],c=rings[i+1][k],d=rings[i+1][(k+1)%n];t.push([a,b,d],[a,d,c]);}return t;}
+function disc(c,nv,r,n=12){const t=[];let u=nrm(cross(nv,[0,1,0.3])),w=cross(nrm(nv),u);for(let k=0;k<n;k++){const a=k/n*Math.PI*2,b=(k+1)/n*Math.PI*2;
+ t.push([c,add(c,add(mul(u,Math.cos(a)*r),mul(w,Math.sin(a)*r))),add(c,add(mul(u,Math.cos(b)*r),mul(w,Math.sin(b)*r)))]);}return t;}
+function smooth(p,s=6){const o=[];for(let i=0;i<p.length-1;i++)for(let k=0;k<s;k++){const f=k/s,a=p[Math.max(i-1,0)],b=p[i],c=p[i+1],d=p[Math.min(i+2,p.length-1)];
+ o.push([0,1,2].map(j=>.5*(2*b[j]+(-a[j]+c[j])*f+(2*a[j]-5*b[j]+4*c[j]-d[j])*f*f+(-a[j]+3*b[j]-3*c[j]+d[j])*f*f*f)));}o.push(p[p.length-1]);return o;}
+// beat phase helpers
+const sysV=p=>p>.15&&p<.5?Math.sin((p-.15)/.35*Math.PI):0, sysA=p=>p<.15?Math.sin(p/.15*Math.PI):0;
+const MUS=[150,22,28],DMUS=[120,18,30],RED=[220,30,35],BLUE=[50,80,200],VAL=[235,215,190],NERV=[255,210,60];
+const parts=[];
+function P(name,info,col,a,c,tris,sf,ex){parts.push({name,info,col,a,c,tris,sf:sf||(()=>1),ex});}
+P('Left ventricle','The strongest chamber — pumps oxygen-rich blood out to the whole body.',MUS,.78,[25,-30,-5],ellipsoid([25,-30,-5],[38,55,36]),p=>1-.09*sysV(p),[60,-50,-30]);
+P('Right ventricle','Pumps oxygen-poor blood to the lungs to pick up oxygen.',DMUS,.78,[-18,-18,22],ellipsoid([-18,-18,22],[34,44,26]),p=>1-.09*sysV(p),[-60,-50,55]);
+P('Right atrium','Receives oxygen-poor blood returning from the body.',[110,30,60],.78,[-42,30,10],ellipsoid([-42,30,10],[25,24,22]),p=>1-.1*sysA(p),[-80,30,20]);
+P('Left atrium','Receives fresh oxygen-rich blood coming back from the lungs.',[160,40,40],.78,[28,36,-18],ellipsoid([28,36,-18],[26,20,22]),p=>1-.1*sysA(p),[60,30,-60]);
+P('Aorta','The body\'s main artery — carries red blood from the left ventricle to everything.',RED,.95,[0,75,-15],tube(smooth([[6,18,0],[8,60,-2],[2,96,-12],[-18,104,-26],[-30,82,-36],[-32,30,-42],[-32,-10,-44]]),9),p=>1+.04*sysV(p),[10,90,-50]);
+P('Pulmonary artery','Carries blue, oxygen-poor blood from the right ventricle to the lungs.',BLUE,.95,[0,55,15],tube(smooth([[-10,14,26],[-8,48,24],[6,66,8],[34,68,-6],[56,64,-8]]),8),p=>1+.04*sysV(p),[0,80,60]);
+P('Superior vena cava','Brings oxygen-poor blood back from the head and arms.',[60,70,170],.95,[-46,80,8],tube([[-47,118,6],[-45,80,8],[-43,46,10]],8),null,[-90,90,0]);
+P('Inferior vena cava','Brings oxygen-poor blood back from the lower body.',[60,70,170],.95,[-42,-25,4],tube([[-44,-55,0],[-43,-20,3],[-42,12,6]],8),null,[-90,-70,0]);
+P('Pulmonary veins','Return freshly oxygenated red blood from the lungs to the left atrium.',[200,50,50],.95,[58,34,-22],[...tube([[80,46,-18],[62,42,-18],[44,38,-16]],5),...tube([[78,22,-28],[60,26,-26],[44,30,-20]],5)],null,[90,10,-70]);
+const sm=x=>x*x*(3-2*x);
+P('Tricuspid valve','Lets blood pass from right atrium to right ventricle, then snaps shut.',VAL,1,[-26,8,16],disc([-26,8,16],[0.4,1,0.2],10),p=>.25+.75*sysV(p)+.0,[-30,0,90]);
+P('Mitral valve','Two-flap valve between left atrium and left ventricle; closes when the ventricle squeezes.',VAL,1,[22,12,-6],disc([22,12,-6],[-0.3,1,-.2],10),p=>.25+.75*sysV(p),[100,0,-10]);
+P('Pulmonary valve','Opens to let blood out into the pulmonary artery, then stops backflow.',VAL,1,[-10,18,26],disc([-10,18,26],[0,1,0],8),p=>1-.8*sysV(p),[-20,40,110]);
+P('Aortic valve','Opens as the left ventricle fires blood into the aorta; shuts to stop it leaking back.',VAL,1,[6,20,0],disc([6,20,0],[0,1,0],8),p=>1-.8*sysV(p),[40,50,10]);
+P('SA node','The natural pacemaker — fires the electric spark that starts every heartbeat.',NERV,1,[-46,48,24],ellipsoid([-46,48,24],[5,5,5],8,6),p=>1+.6*Math.max(0,1-p*8),[-110,60,50]);
+P('AV node & bundle of His','Delays the signal, then wires it down the septum into both ventricles.',NERV,1,[0,-20,8],[...ellipsoid([-6,8,8],[4,4,4],8,5),...tube(smooth([[-6,8,8],[0,-22,8],[-14,-58,16]]),1.8,6),...tube(smooth([[0,-22,8],[14,-50,4],[26,-72,0]]),1.8,6)],null,[0,-120,90]);
+P('Coronary arteries','Feed the heart muscle itself with oxygen-rich blood.',[230,40,40],1,[12,-25,40],[...tube(smooth([[6,22,24],[12,0,40],[16,-40,40],[22,-78,22]]),2.6,6),...tube(smooth([[-30,18,30],[-38,-10,36],[-34,-40,40]]),2.4,6)],p=>1-.06*sysV(p),[20,-20,130]);
+P('Coronary veins','Drain used blue blood from the heart muscle back into the right atrium.',[70,100,230],1,[30,-30,32],[...tube(smooth([[-14,-70,26],[4,-50,36],[30,-20,38],[48,0,10]]),2.4,6),...tube(smooth([[44,-60,26],[54,-30,24],[52,0,8]]),2.2,6)],p=>1-.06*sysV(p),[110,-40,90]);
+// blood paths
+const paths=[{c:BLUE,p:smooth([[-44,118,6],[-44,50,10],[-38,25,14],[-26,8,16],[-20,-30,24],[-10,-10,28],[-10,20,26],[-8,48,24],[6,66,8],[34,68,-6],[56,64,-8]],5)},
+{c:BLUE,p:smooth([[-44,-55,0],[-42,10,6],[-36,22,14],[-26,8,16],[-22,-25,22],[-10,-5,28],[-9,30,25],[6,66,8],[56,64,-8]],5)},
+{c:[230,30,30],p:smooth([[80,46,-18],[44,38,-16],[26,30,-14],[22,12,-6],[24,-40,-4],[10,-5,0],[6,18,0],[8,60,-2],[2,96,-12],[-18,104,-26],[-30,82,-36],[-32,-10,-44]],5)}];
+// ---------- interaction ----------
+let yawOff=0,pitchOff=0,zoom=1,drag=null,manual=false,mouse=null,lastMove=-99;
+cv.addEventListener('mousedown',e=>{const m=pt(e);if(m[0]>1090&&m[0]<1250&&m[1]>30&&m[1]<80){manual=!manual;return;}drag=m;});
+addEventListener('mouseup',()=>drag=null);
+cv.addEventListener('mousemove',e=>{const m=pt(e);mouse=m;lastMove=performance.now();if(drag){yawOff+=(m[0]-drag[0])*.008;pitchOff+=(m[1]-drag[1])*.006;drag=m;}});
+cv.addEventListener('wheel',e=>{e.preventDefault();zoom=Math.max(.5,Math.min(2.5,zoom*Math.exp(-e.deltaY*.001)));},{passive:false});
+function pt(e){const r=cv.getBoundingClientRect();return[(e.clientX-r.left)*1280/r.width,(e.clientY-r.top)*720/r.height];}
+// ---------- render ----------
+const L=nrm([-.4,.6,.7]);let cur=[640,360];
+function frame(now){
+ const t=((now-T0)/1000)%DUR,p=(t*1.05)%1;
+ // timeline
+ let ex=t<8?0:t<10?sm((t-8)/2):t<21?1:t<23?1-sm((t-21)/2):0; if(manual)ex=1-ex;
+ const yaw=t*.35+yawOff,pitch=.18+.12*Math.sin(t*.3)+pitchOff,cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pitch),sp=Math.sin(pitch);
+ const dist=(330+ex*140)/zoom;
+ const view=v=>{let x=v[0]*cy+v[2]*sy,z=-v[0]*sy+v[2]*cy,y=v[1];const y2=y*cp-z*sp,z2=y*sp+z*cp;return[x,y2,z2];};
+ const proj=v=>{const s=720/(dist-v[2]);return[640+v[0]*s,370-v[1]*s,v[2]];};
+ // hover target
+ let hov=-1;
+ const sched=[[11,0],[12.2,4],[13.4,9],[14.6,10],[15.8,13],[17,14],[18.2,5],[19.4,15],[24,2],[25.5,12],[27,6],[28.5,1],[30,11]];
+ const centers=parts.map(pa=>proj(view(add(pa.c,mul(pa.ex,ex)))));
+ let tgt=null;const real=now-lastMove<2500&&mouse;
+ if(real)tgt=mouse;else{for(const s of sched)if(t>=s[0]&&t<s[0]+1.3)tgt=centers[s[1]].slice(0,2);}
+ if(tgt){cur[0]+=(tgt[0]-cur[0])*.15;cur[1]+=(tgt[1]-cur[1])*.15;}
+ // background
+ const g=X.createRadialGradient(640,360,50,640,360,700);g.addColorStop(0,'#1c0d12');g.addColorStop(1,'#000');X.fillStyle=g;X.fillRect(0,0,1280,720);
+ const items=[];
+ parts.forEach((pa,i)=>{const s=pa.sf(p),off=mul(pa.ex,ex);
+  pa._box=[1e9,1e9,-1e9,-1e9];
+  for(const tr of pa.tris){const w=tr.map(v=>add(add(pa.c,mul(sub(v,pa.c),s)),off)),vv=w.map(view),pp=vv.map(proj);
+   const n=nrm(cross(sub(vv[1],vv[0]),sub(vv[2],vv[0])));
+   for(const q of pp){pa._box[0]=Math.min(pa._box[0],q[0]);pa._box[1]=Math.min(pa._box[1],q[1]);pa._box[2]=Math.max(pa._box[2],q[0]);pa._box[3]=Math.max(pa._box[3],q[1]);}
+   items.push({z:(vv[0][2]+vv[1][2]+vv[2][2])/3,pp,n,i});}});
+ // pick hover: smallest-box part containing cursor, near center preference
+ if(tgt){let best=1e9;parts.forEach((pa,i)=>{const b=pa._box;if(cur[0]>b[0]&&cur[0]<b[2]&&cur[1]>b[1]&&cur[1]<b[3]){const d=Math.hypot(cur[0]-centers[i][0],cur[1]-centers[i][1])+(b[2]-b[0])*.2;if(d<best){best=d;hov=i;}}});}
+ // blood particles
+ const pf=Math.max(0,1-ex*1.6);
+ if(pf>0)paths.forEach((pa,k)=>{const n=pa.p.length;for(let j=0;j<26;j++){let f=((j/26)+t*.22+(t%1.05<.5?0:0)+k*.13)%1;f=(f+.04*Math.sin(p*6.28))%1;
+  const a=Math.floor(f*(n-1)),b=pa.p[a],c=pa.p[a+1],u=f*(n-1)-a,w=[b[0]+(c[0]-b[0])*u+Math.sin(j*7)*2,b[1]+(c[1]-b[1])*u+Math.cos(j*5)*2,b[2]+(c[2]-b[2])*u];
+  const v=view(w);items.push({z:v[2],dot:proj(v),c:pa.c,a:pf});}});
+ items.sort((a,b)=>a.z-b.z);
+ X.lineJoin='round';
+ for(const it of items){
+  if(it.dot){const d=it.dot,r=3.2*720/dist;X.fillStyle=`rgba(${it.c},${it.a})`;X.beginPath();X.arc(d[0],d[1],r,0,7);X.fill();continue;}
+  const pa=parts[it.i],h=it.i==hov;let sh=.3+.7*Math.abs(it.n[0]*L[0]+it.n[1]*L[1]+it.n[2]*L[2]);
+  const spec=Math.pow(Math.max(0,Math.abs(it.n[2])*.6+sh*.4),14)*90;
+  let c=pa.col.map(x=>Math.min(255,Math.round(x*sh*(h?1.55:1)+spec+(h?40:0))));
+  let a=pa.a;if(ex>0.3&&pa.a<1)a=Math.min(1,pa.a+ex*.2);if(hov>=0&&!h)a*=.55;
+  X.fillStyle=X.strokeStyle=`rgba(${c},${a})`;X.lineWidth=.6;
+  const q=it.pp;X.beginPath();X.moveTo(q[0][0],q[0][1]);X.lineTo(q[1][0],q[1][1]);X.lineTo(q[2][0],q[2][1]);X.closePath();X.fill();X.stroke();}
+ // electric pulse glow
+ const sa=centers[13],gl=Math.max(0,1-p*6);if(gl>0){const rg=X.createRadialGradient(sa[0],sa[1],0,sa[0],sa[1],40);rg.addColorStop(0,`rgba(255,230,120,${gl*.7})`);rg.addColorStop(1,'rgba(255,230,120,0)');X.fillStyle=rg;X.fillRect(sa[0]-40,sa[1]-40,80,80);}
+ // labels
+ X.font='14px sans-serif';X.textBaseline='middle';
+ if(ex>.4){const lab=parts.map((pa,i)=>({i,x:centers[i][0],y:centers[i][1],ly:centers[i][1]})).sort((a,b)=>a.y-b.y);
+  for(let k=1;k<lab.length;k++)for(let m=0;m<k;m++){if(Math.abs(lab[k].x-lab[m].x)<170&&lab[k].ly-lab[m].ly<20)lab[k].ly=lab[m].ly+20;}
+  X.globalAlpha=Math.min(1,(ex-.4)*2.5);
+  for(const l of lab){const right=l.x>640,lx=l.x+(right?60:-60),ly=Math.max(20,Math.min(700,l.ly)),tw=X.measureText(parts[l.i].name).width;
+   X.strokeStyle='rgba(255,255,255,.5)';X.lineWidth=1;X.beginPath();X.moveTo(l.x,l.y);X.lineTo(lx,ly);X.stroke();
+   X.fillStyle=l.i==hov?'rgba(255,220,120,.95)':'rgba(10,10,20,.75)';const bx=Math.max(4,Math.min(1276-tw-12,right?lx:lx-tw-12));X.fillRect(bx,ly-10,tw+12,20);
+   X.fillStyle=l.i==hov?'#000':'#fff';X.fillText(parts[l.i].name,bx+6,ly);}
+  X.globalAlpha=1;}
+ // title / ECG
+ X.fillStyle='#fff';X.font='bold 26px sans-serif';X.fillText('The Human Heart',30,40);
+ X.font='14px sans-serif';X.fillStyle='#bbb';X.fillText('Drag to orbit · scroll to zoom · hover a part',30,68);
+ X.strokeStyle='#4f4';X.lineWidth=2;X.beginPath();for(let i=0;i<200;i++){const ph=((t*1.05-(200-i)/200*2)%1+1)%1;let y=0;if(ph<.1)y=-6*Math.sin(ph/.1*Math.PI);else if(ph>.15&&ph<.2)y=(ph<.17?8:ph<.185?-34:10);else if(ph>.35&&ph<.5)y=-9*Math.sin((ph-.35)/.15*Math.PI);X.lineTo(30+i,110+y);}X.stroke();
+ X.fillStyle='#4f4';X.fillText(Math.round(63)+' bpm',240,110);
+ // button
+ const pressed=(t>7.7&&t<8.1)||(t>20.7&&t<21.1);
+ X.fillStyle=pressed?'#c33':'#601820';X.fillRect(1090,30+(pressed?2:0),160,50);X.strokeStyle='#f88';X.lineWidth=2;X.strokeRect(1090,30+(pressed?2:0),160,50);
+ X.fillStyle='#fff';X.font='bold 20px sans-serif';X.textAlign='center';X.fillText(ex>.5?'Assemble':'Explode',1170,56+(pressed?2:0));X.textAlign='left';
+ // tooltip
+ if(hov>=0){const pa=parts[hov];X.font='bold 18px sans-serif';const w1=X.measureText(pa.name).width;X.font='15px sans-serif';const w2=X.measureText(pa.info).width,W=Math.max(w1,w2)+30;
+  X.fillStyle='rgba(15,10,20,.88)';X.fillRect(640-W/2,640,W,60);X.strokeStyle='#f5c86a';X.strokeRect(640-W/2,640,W,60);
+  X.fillStyle='#f5c86a';X.font='bold 18px sans-serif';X.fillText(pa.name,640-W/2+15,658);X.fillStyle='#eee';X.font='15px sans-serif';X.fillText(pa.info,640-W/2+15,683);}
+ // cursor
+ if(tgt&&!real){X.fillStyle='#fff';X.strokeStyle='#000';X.lineWidth=1.5;X.beginPath();X.moveTo(cur[0],cur[1]);X.lineTo(cur[0],cur[1]+20);X.lineTo(cur[0]+5,cur[1]+15);X.lineTo(cur[0]+13,cur[1]+15);X.closePath();X.fill();X.stroke();}
+ requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

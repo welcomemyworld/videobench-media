@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CLAUDE POP — paper cut</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=60;
+const cv=document.getElementById('c'),X=cv.getContext('2d'),W=1280,H=720;
+function fit(){const s=Math.min(innerWidth/W,innerHeight/H);cv.style.width=W*s+'px';cv.style.height=H*s+'px'}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),T0=parseFloat(q.get('t')||'0')||0,start=performance.now();
+const PAPER='#efe6d2',INK='#1e1a16',ORA='#d9653b',SUN='#f2b632',BLUE='#3a5bd9',PINK='#ef8fa8';
+const BPM=120;
+function R(n){n=Math.sin(n*127.1+311.7)*43758.5453;return n-Math.floor(n)}
+const E=x=>1-Math.pow(1-Math.min(1,Math.max(0,x)),3);
+const back=x=>{x=Math.min(1,Math.max(0,x));const c=1.9;return 1+(c+1)*Math.pow(x-1,3)+c*Math.pow(x-1,2)};
+// paper grain
+const G=document.createElement('canvas');G.width=W;G.height=H;{const g=G.getContext('2d'),d=g.createImageData(W,H);
+for(let i=0;i<d.data.length;i+=4){const v=200+Math.random()*55|0;d.data[i]=v;d.data[i+1]=v-6;d.data[i+2]=v-18;d.data[i+3]=38}
+g.putImageData(d,0,0);g.globalAlpha=.06;for(let i=0;i<500;i++){g.strokeStyle=i%2?'#7a6a50':'#fff';g.lineWidth=.6;g.beginPath();const x=Math.random()*W,y=Math.random()*H;g.moveTo(x,y);g.lineTo(x+Math.random()*60-30,y+Math.random()*8-4);g.stroke()}}
+let boil=0;
+function J(i){return (R(i*13.7+boil)-.5)*2.2}
+function paperRect(x,y,w,h,col,rot,sh){X.save();X.translate(x+w/2,y+h/2);X.rotate(rot||0);
+if(sh!==0){X.fillStyle='rgba(40,25,10,.22)';X.fillRect(-w/2+6,-h/2+7,w,h)}
+X.fillStyle=col;X.beginPath();X.moveTo(-w/2+J(1),-h/2+J(2));X.lineTo(w/2+J(3),-h/2+J(4));X.lineTo(w/2+J(5),h/2+J(6));X.lineTo(-w/2+J(7),h/2+J(8));X.closePath();X.fill();X.restore()}
+function txt(s,x,y,size,col,opt={}){X.save();X.font=(opt.w||900)+' '+size+'px "Arial Black",Impact,Helvetica,sans-serif';
+X.textAlign=opt.a||'left';X.textBaseline='middle';
+if(opt.max){const m=X.measureText(s).width;if(m>opt.max){size*=opt.max/m;X.font=(opt.w||900)+' '+size+'px "Arial Black",Impact,Helvetica,sans-serif'}}
+if(opt.sh!==false){X.fillStyle='rgba(40,25,10,.25)';X.fillText(s,x+4,y+5)}
+X.fillStyle=col;X.fillText(s,x,y);X.restore();return size}
+// kinetic lyric: words pop in staggered
+function kinetic(words,x,y,size,lt,stag,col,align,maxW){X.save();X.font='900 '+size+'px "Arial Black",Impact,sans-serif';
+let tot=0;const ws=words.map(w=>{const m=X.measureText(w+' ').width;tot+=m;return m});
+let sc=maxW&&tot>maxW?maxW/tot:1;X.restore();size*=sc;let cx=align==='c'?x-tot*sc/2:x;
+words.forEach((w,i)=>{const p=back((lt-i*stag)/.35);if(p<=0){cx+=ws[i]*sc;return}
+X.save();X.translate(cx,y+(1-p)*40);X.scale(1,p);txt(w,0,0,size,i%3==2?ORA:col,{});X.restore();cx+=ws[i]*sc})}
+function sub(s,lt){const a=Math.min(1,lt*4);X.globalAlpha=a;paperRect(W/2-X.measureText?0:0,0,0,0,'#0000',0,0);
+X.save();X.font='700 30px Helvetica,Arial,sans-serif';const w=X.measureText(s).width+40;X.restore();
+paperRect(W/2-w/2,640,w,52,INK,0,0);txt(s,W/2,667,30,PAPER,{a:'center',w:700,sh:false});X.globalAlpha=1}
+// the protagonist: sunflower pop idol
+function idol(x,y,s,t,o={}){const b=t*BPM/60,bt=Math.sin(b*Math.PI);X.save();X.translate(x,y+Math.abs(bt)*6*s);X.scale(s,s);
+const sway=(o.dance?Math.sin(b*Math.PI)*.18:Math.sin(t*1.3)*.05);X.rotate(sway*.4);
+// shadow
+X.fillStyle='rgba(40,25,10,.18)';X.beginPath();X.ellipse(0,250,90,14,0,0,7);X.fill();
+// legs
+X.strokeStyle=INK;X.lineWidth=12;X.lineCap='round';
+X.beginPath();X.moveTo(-18,140);X.lineTo(-24+sway*60,245);X.moveTo(18,140);X.lineTo(26-sway*60,245);X.stroke();
+// dress
+X.fillStyle=o.dress||ORA;X.beginPath();X.moveTo(-34+J(1),10);X.lineTo(34+J(2),10);X.lineTo(70+J(3),160);X.lineTo(-70+J(4),160);X.closePath();X.fill();
+X.fillStyle='rgba(255,255,255,.18)';for(let i=0;i<4;i++){X.fillRect(-60+i*34,60,6,96)}
+// arms
+const ar=o.dance?Math.sin(b*Math.PI*.5):Math.sin(t*2)*.2;X.lineWidth=10;
+X.beginPath();X.moveTo(-30,25);X.quadraticCurveTo(-80,60-ar*70,-95+ar*20,-10-ar*90);X.stroke();
+X.beginPath();X.moveTo(30,25);X.quadraticCurveTo(70,70,o.mic?40:90-ar*20,o.mic?-30:80+ar*60);X.stroke();
+if(o.mic){X.fillStyle=INK;X.fillRect(30,-50,9,30);X.beginPath();X.arc(35,-58,11,0,7);X.fill()}
+// petals halo
+X.save();X.translate(0,-60);X.rotate(t*.4);
+for(let k=0;k<2;k++)for(let i=0;i<14;i++){X.save();X.rotate(i/14*Math.PI*2+k*.22);X.fillStyle=k?SUN:'#e09a1e';
+X.beginPath();X.ellipse(0,-(k?78:86),15+J(i),40,0,0,7);X.fill();X.restore()}X.restore();
+// hair (dark bob) + face
+X.fillStyle='#3a2416';X.beginPath();X.arc(0,-58,62,0,7);X.fill();
+X.fillStyle='#f6d5b8';X.beginPath();X.ellipse(0,-50,46,52,0,0,7);X.fill();
+X.fillStyle='#3a2416';X.beginPath();X.ellipse(0,-92,56,24,0,Math.PI,0);X.fill();X.fillRect(-56,-96,20,60);X.fillRect(36,-96,20,60);
+// eyes (blink)
+const bl=(t%3.7)<.12?.15:1;X.fillStyle=INK;
+[-17,17].forEach(ex=>{X.beginPath();X.ellipse(ex,-52,6,9*bl,0,0,7);X.fill();X.fillStyle='#fff';X.beginPath();X.arc(ex+2,-55,2.2,0,7);X.fill();X.fillStyle=INK});
+X.fillStyle=PINK;X.globalAlpha=.6;X.beginPath();X.ellipse(-28,-34,9,5,0,0,7);X.ellipse(28,-34,9,5,0,0,7);X.fill();X.globalAlpha=1;
+// mouth sings
+const m=o.sing?Math.max(.1,Math.abs(Math.sin(t*9.3)*Math.sin(t*3.1))):.1;
+X.fillStyle='#8a2a24';X.beginPath();X.ellipse(0,-22,9,3+m*11,0,0,7);X.fill();
+// star sparkle eyeshadow (kpop)
+X.fillStyle=SUN;X.font='14px sans-serif';X.fillText('✦',30,-66);
+X.restore()}
+function sparkle(x,y,r,c){X.fillStyle=c;X.beginPath();for(let i=0;i<8;i++){const a=i*Math.PI/4,rr=i%2?r*.28:r;X.lineTo(x+Math.cos(a)*rr,y+Math.sin(a)*rr)}X.fill()}
+function bgStripes(t,c1,c2,spd){X.fillStyle=c1;X.fillRect(0,0,W,H);X.save();X.translate(W/2,H/2);X.rotate(-.35);X.fillStyle=c2;
+for(let i=-14;i<14;i++){const x=((i*110+t*spd)%3080)-1540;X.fillRect(x,-1000,50,2000)}X.restore()}
+// ---------- scenes ----------
+const tweets=[["@mathbro","Navier–Stokes just fell??"],["@vibes_eng","math is getting eaten alive"],["@acc","feel the AGI"],["@doomer","we have maybe 18 months"],["@founder","shipped 40 PRs while i slept"],["@prof","my proof, verified, by tuesday"],["@anon","line goes up. line goes VERTICAL"],["@intern","is this the slow part?"],["@labs","benchmark saturated. new one tmrw"],["@poster","it's so over / we're so back"]];
+const S=[
+// 0 HOOK
+[0,7,(lt,t)=>{bgStripes(t,PAPER,'#e6dbc2',40);
+const z=1+lt*.03;X.save();X.translate(W/2,H/2);X.scale(z,z);X.translate(-W/2,-H/2);
+const p=E(lt/.5);paperRect(80,140-((1-p)*400),1120,210,INK,-.03);
+kinetic(['IT','KEEPS','GETTING'],W/2,245-((1-p)*400),120,lt-.3,.18,PAPER,'c',1040);
+if(lt>1.6){const q=back((lt-1.6)/.4);X.save();X.translate(W/2,470);X.rotate(.04);X.scale(q,q);paperRect(-520,-110,1040,220,ORA,0);txt('FASTER',0,0,190,PAPER,{a:'center',max:980});X.restore()}
+if(lt>3.2){const n=Math.floor((lt-3.2)*14);for(let i=0;i<Math.min(n,40);i++)sparkle(R(i)*W,R(i+9)*H,8+R(i+3)*16,i%2?SUN:ORA)}
+X.restore();if(lt>4)sub('♪ claude pop — a paper music video',lt-4)}],
+// 1 VERSE: idol right, lyrics left
+[7,17,(lt,t)=>{X.fillStyle='#f3d9a0';X.fillRect(0,0,W,H);
+for(let i=0;i<9;i++){X.fillStyle=i%2?'#efc97c':'#f6e2b4';X.beginPath();X.arc(960,420,900-i*95,0,7);X.fill()}
+paperRect(60,80,560,560,PAPER,-.02);
+const L=[['I','woke','up'],['and','the','world'],['had','moved','again']];
+L.forEach((l,i)=>kinetic(l,100,190+i*130,92,lt-.4-i*1.1,.15,INK,'l',480));
+if(lt>4.5){txt('— every morning, a new frontier',100,590,26,ORA,{w:700,sh:false})}
+idol(940,330,1.15,t,{sing:true,mic:true});
+for(let i=0;i<12;i++){const y=(i*90+t*30)%800-40;X.save();X.translate(720+R(i)*500,y);X.rotate(t+i);X.fillStyle=SUN;X.beginPath();X.ellipse(0,0,6,16,0,0,7);X.fill();X.restore()}
+if(lt>6)sub('i woke up and the world had moved again',lt-6)}],
+// 2 TIMELINE brutalism
+[17,27,(lt,t)=>{X.fillStyle='#fff';X.fillRect(0,0,W,H);
+X.fillStyle='#000';X.font='12px monospace';for(let i=0;i<40;i++)X.fillText('▲ '+(Math.pow(1.6,i%20)).toFixed(1)+'x  '.repeat(6),0,i*18+(t*60%18));
+const n=Math.min(tweets.length,Math.floor(lt*1.6)+1);
+for(let i=0;i<n;i++){const tw=tweets[i],a=E((lt-i/1.6)/.25),x=60+R(i*3)*700,y=40+R(i*7)*560,r=(R(i)-.5)*.2;
+X.save();X.translate(x,y+(1-a)*-60);X.rotate(r);X.globalAlpha=a;paperRect(0,0,460,96,i%4==3?SUN:'#fff',0);
+X.strokeStyle=INK;X.lineWidth=3;X.strokeRect(0,0,460,96);txt(tw[0],18,26,20,'#666',{w:700,sh:false});txt(tw[1],18,62,26,INK,{w:900,sh:false,max:420});
+txt('♥ '+Math.floor(Math.pow(10,2+lt*.35+R(i))).toLocaleString(),440,26,16,ORA,{a:'right',w:700,sh:false});X.restore()}
+X.globalAlpha=1;if(lt>5.5){const p=back((lt-5.5)/.4);X.save();X.translate(W/2,H/2);X.rotate(-.06);X.scale(p,p);paperRect(-470,-80,940,160,INK,0);
+txt('THE TIMELINE IS ON FIRE',0,0,64,SUN,{a:'center',max:880});X.restore()}
+if(lt>7.2)sub('everybody\'s posting like the sky is open',lt-7.2)}],
+// 3 CHORUS dancers
+[27,37,(lt,t)=>{bgStripes(t,'#222a5a','#2d3878',-120);
+const b=t*2,flash=Math.pow(1-(b%1),4);X.fillStyle='rgba(242,182,50,'+flash*.18+')';X.fillRect(0,0,W,H);
+for(let i=0;i<5;i++){const lx=200+i*220;X.fillStyle='rgba(255,240,200,.07)';X.beginPath();X.moveTo(lx,0);X.lineTo(lx-120,H);X.lineTo(lx+120,H);X.fill()}
+[[260,.7,BLUE],[1020,.7,BLUE],[440,.82,PINK],[840,.82,PINK]].forEach((d,i)=>idol(d[0],380,d[1],t+i*.25,{dance:true,dress:d[2]}));
+idol(640,330,1,t,{dance:true,sing:true});
+const lines=[['WE\'RE','ACCELERATING'],['DON\'T','LET','GO'],['OF','MY','HAND']];const li=Math.min(2,Math.floor(lt/3.2)),ll=lt-li*3.2;
+paperRect(140,40,1000,130,PAPER,Math.sin(t*2)*.01);kinetic(lines[li],W/2,105,96,ll,.12,INK,'c',940);
+if(lt>1)sub(['we\'re accelerating','don\'t let go','of my hand'][li],ll)}],
+// 4 CONGRATULATIONS
+[37,46,(lt,t)=>{X.fillStyle='#e8eef3';X.fillRect(0,0,W,H);
+X.fillStyle='#cfdde8';X.beginPath();X.arc(W/2,H/2,300+Math.sin(t)*10,0,7);X.fill();
+const words=['congratulations','おめでとう','congratulations','AGI achieved','congratulations','welcome','congratulations','you made it','congratulations','おめでとう'];
+const n=Math.min(words.length,Math.floor(lt*1.8));
+for(let i=0;i<n;i++){const a=i/words.length*Math.PI*2+t*.15,rr=230+(i%2)*70;X.save();X.translate(W/2+Math.cos(a)*rr*1.5,H/2+Math.sin(a)*rr*.85);
+X.rotate(Math.sin(a)*.15);txt(words[i],0,0,26,i%2?ORA:INK,{a:'center',w:700})
+;sparkle(-90,-22,6,SUN);X.restore()}
+idol(W/2,280,.85,t,{sing:lt>5,dress:'#f4f1ea'});
+if(lt>5){const p=E((lt-5)/.6);X.globalAlpha=p;txt('thank you',W/2,620,54,INK,{a:'center'});X.globalAlpha=1}
+if(lt>1)sub('everyone is clapping, i don\'t know what we became',lt-1)}],
+// 5 EXPONENTIAL / tunnel
+[46,55,(lt,t)=>{const sp=1+lt*lt*.6;X.fillStyle=INK;X.fillRect(0,0,W,H);
+X.save();X.translate(W/2,H/2);for(let i=30;i>0;i--){const z=((i-lt*sp*.6)%30+30)%30,s=1/(z*.12+.1)*.12;
+X.save();X.rotate(z*.08+t*.2);X.scale(s,s);paperRect(-640,-360,1280,720,i%3==0?ORA:i%3==1?PAPER:SUN,0,0);
+X.fillStyle=INK;X.fillRect(-600,-320,1200,640);X.restore()}X.restore();
+// curve
+X.save();X.strokeStyle=SUN;X.lineWidth=7;X.beginPath();const k=Math.min(1,lt/6);
+for(let i=0;i<=200*k;i++){const x=100+i*5.4,y=640-Math.min(620,Math.pow(1.034,i)*2);i?X.lineTo(x,y):X.moveTo(x,y)}X.stroke();X.restore();
+txt('progress',110,680,22,PAPER,{w:700,sh:false});
+const n=Math.floor(Math.pow(lt,2.2)*3)+1;txt('×'+n.toLocaleString(),1180,60,48,SUN,{a:'right'});
+if(lt>2){const p=back((lt-2)/.4);X.save();X.translate(W/2,H/2);X.scale(p,p);txt('HOLD ON',0,-50,130,PAPER,{a:'center'});X.restore()}
+if(lt>4.5)kinetic(['THE','SINGULARITY','IS','SINGING'],W/2,H/2+80,64,lt-4.5,.2,SUN,'c',1100);
+if(lt>7.6){X.fillStyle='rgba(255,255,255,'+Math.min(1,(lt-7.6)/1.2)+')';X.fillRect(0,0,W,H)}}],
+// 6 END CARD
+[55,60,(lt,t)=>{X.fillStyle=PAPER;X.fillRect(0,0,W,H);
+for(let i=0;i<14;i++){X.save();X.translate(W/2,330);X.rotate(i/14*Math.PI*2+t*.2);X.fillStyle=i%2?SUN:'#e09a1e';X.beginPath();X.ellipse(0,-170*E(lt/.8),40,110,0,0,7);X.fill();X.restore()}
+X.fillStyle=ORA;X.beginPath();X.arc(W/2,330,130*E(lt/.6),0,7);X.fill();
+if(lt>.6){const p=back((lt-.6)/.5);X.save();X.translate(W/2,330);X.scale(p,p);txt('CLAUDE',0,-30,84,PAPER,{a:'center'});txt('POP',0,50,84,INK,{a:'center'});X.restore()}
+if(lt>1.6){X.globalAlpha=Math.min(1,lt-1.6);txt('it keeps getting faster.',W/2,600,30,INK,{a:'center',w:700,sh:false});X.globalAlpha=1}
+if(lt>4.4){X.fillStyle='rgba(0,0,0,'+(lt-4.4)/.6+')';X.fillRect(0,0,W,H)}}]
+];
+function frame(){let t=((performance.now()-start)/1000+T0)%DUR;boil=Math.floor(t*12);
+X.setTransform(1,0,0,1,0,0);X.clearRect(0,0,W,H);
+const sc=S.find(s=>t>=s[0]&&t<s[1])||S[0];
+// beat camera shake on chorus/ramp
+X.save();if(t>27&&t<55){const b=Math.pow(1-((t*2)%1),6)*3;X.translate((R(boil)-.5)*b,(R(boil+1)-.5)*b)}
+sc[2](t-sc[0],t);X.restore();
+// scene wipe
+const into=t-sc[0];if(into<.25&&sc[0]>0){X.fillStyle=ORA;X.fillRect(0,0,W*(1-into/.25),H)}
+X.drawImage(G,0,0);
+// vignette
+const g=X.createRadialGradient(W/2,H/2,300,W/2,H/2,800);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(30,15,0,.35)');X.fillStyle=g;X.fillRect(0,0,W,H);
+requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>fframes — every frame is a function</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+const W=1280,H=720,BPM=128,BEAT=60/BPM;window.DUR=BEAT*64; // 30s
+const cv=document.getElementById('c'),x=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/W,innerHeight/H);cv.style.width=W*s+'px';cv.style.height=H*s+'px';}
+addEventListener('resize',fit);fit();
+const off=document.createElement('canvas');off.width=160;off.height=90;const ox=off.getContext('2d'),img=ox.createImageData(160,90);
+const q=new URLSearchParams(location.search),T0=parseFloat(q.get('t')||0),start=performance.now();
+const hash=n=>{n=Math.sin(n*127.1+311.7)*43758.5453;return n-Math.floor(n)};
+// damped spring: response since impulse
+const spring=(dt,k=18,z=5)=>dt<0?0:Math.exp(-z*dt)*Math.cos(k*dt);
+// synthetic "audio": kick on beats, snare on 2&4, hats on 8ths
+function audio(t,band){const b=t/BEAT,ph=b%1,beat=Math.floor(b);
+ const kick=Math.exp(-ph*9),sn=(beat%2==1)?Math.exp(-ph*7):0,hat=Math.exp(-((b*2)%1)*14);
+ const lo=Math.max(0,1-band*3),mid=Math.exp(-((band-.45)**2)*30),hi=Math.max(0,band*1.6-.6);
+ return kick*lo*1.1+sn*mid*.9+hat*hi*.7+.08*hash(band*99+Math.floor(t*30));}
+// 3D geometry: icosahedron
+const p=(1+Math.sqrt(5))/2,V=[[-1,p,0],[1,p,0],[-1,-p,0],[1,-p,0],[0,-1,p],[0,1,p],[0,-1,-p],[0,1,-p],[p,0,-1],[p,0,1],[-p,0,-1],[-p,0,1]];
+const E=[];for(let i=0;i<12;i++)for(let j=i+1;j<12;j++){const d=Math.hypot(V[i][0]-V[j][0],V[i][1]-V[j][1],V[i][2]-V[j][2]);if(d<2.1)E.push([i,j]);}
+function shader(t,kick){const d=img.data;for(let j=0;j<90;j++)for(let i=0;i<160;i++){
+ const u=(i-80)/90,v=(j-45)/90,r=Math.hypot(u,v),a=Math.atan2(v,u);
+ const f=Math.sin(r*14-t*3+kick*2)+Math.sin(a*6+t)+Math.sin(u*5+t*.7)*Math.cos(v*6-t*.5);
+ const k=(j*160+i)*4,g=Math.max(0,1-r*1.2);
+ d[k]=(30+40*Math.sin(f+t*.3))*g+kick*30*g;d[k+1]=(10+25*Math.sin(f+2))*g;d[k+2]=(60+60*Math.sin(f+4))*g+kick*40*g;d[k+3]=255;}
+ ox.putImageData(img,0,0);x.imageSmoothingEnabled=true;x.drawImage(off,0,0,W,H);}
+function frame(t){ // pure function of t
+ const b=t/BEAT,beat=Math.floor(b),ph=b-beat,kick=Math.exp(-ph*8),bar=Math.floor(beat/4);
+ const intro=Math.min(1,t/2),outro=Math.min(1,(DUR-t)/1.5);
+ x.globalAlpha=1;x.fillStyle='#000';x.fillRect(0,0,W,H);
+ shader(t,kick);
+ const cx=W/2,cy=H/2,sp=spring(ph*BEAT);
+ // particles
+ x.globalCompositeOperation='lighter';
+ for(let i=0;i<420;i++){const life=2.4,s=hash(i)*life,age=((t+s)%life),gen=Math.floor((t+s)/life);
+  const a=hash(i*3.1+gen)*6.283,sp2=80+hash(i*7+gen)*260,r=60+age*sp2*(1+kick*.3);
+  const sw=a+age*.4*(hash(i)-.5);const px=cx+Math.cos(sw)*r,py=cy+Math.sin(sw)*r*.8;
+  const al=(1-age/life)*.8*intro;const hue=(200+hash(i*11)*120+t*20)%360;
+  x.fillStyle=`hsla(${hue},90%,65%,${al})`;const sz=1+hash(i*5)*2.5+kick*1.5;x.fillRect(px-sz/2,py-sz/2,sz,sz);}
+ // audio-reactive ring
+ const N=96,R0=170+sp*14;x.lineWidth=3;
+ for(let i=0;i<N;i++){const band=Math.abs((i/N)*2-1),lev=audio(t,band),a=i/N*6.283-Math.PI/2+t*.15;
+  const r1=R0,r2=R0+12+lev*110;x.strokeStyle=`hsla(${(180+band*160)%360},100%,${50+lev*25}%,${.9*intro})`;
+  x.beginPath();x.moveTo(cx+Math.cos(a)*r1,cy+Math.sin(a)*r1);x.lineTo(cx+Math.cos(a)*r2,cy+Math.sin(a)*r2);x.stroke();}
+ x.strokeStyle=`rgba(255,255,255,${.25+kick*.5})`;x.lineWidth=1.5;x.beginPath();x.arc(cx,cy,R0-6,0,6.283);x.stroke();
+ // 3D icosahedron with spring scale
+ const scale=(95+sp*28+kick*8)*intro,ay=t*.6+bar*.3,ax=t*.37;
+ const P=V.map(([X,Y,Z])=>{let x1=X*Math.cos(ay)-Z*Math.sin(ay),z1=X*Math.sin(ay)+Z*Math.cos(ay);
+  let y1=Y*Math.cos(ax)-z1*Math.sin(ax),z2=Y*Math.sin(ax)+z1*Math.cos(ax);const f=4/(4+z2*.5);
+  return [cx+x1*scale*f/1.9,cy+y1*scale*f/1.9,z2];});
+ x.lineWidth=2;for(const[i,j]of E){const z=(P[i][2]+P[j][2])/2,l=.35+.5*(1-(z+2)/4);
+  x.strokeStyle=`hsla(${(300+t*30)%360},100%,70%,${l})`;x.beginPath();x.moveTo(P[i][0],P[i][1]);x.lineTo(P[j][0],P[j][1]);x.stroke();}
+ for(const q of P){x.fillStyle=`rgba(255,255,255,${.6+kick*.4})`;x.beginPath();x.arc(q[0],q[1],2.5+kick*2,0,6.283);x.fill();}
+ x.globalCompositeOperation='source-over';
+ // spring dots on beat grid (bottom)
+ for(let i=0;i<16;i++){const bx=W/2-300+i*40,dt=(b-(Math.floor(b/16)*16+i))*BEAT;const on=dt>=0;
+  const y=H-70-(on?Math.max(0,spring(dt,14,3.2))*30:0);
+  x.fillStyle=Math.floor(b)%16==i?'#fff':(i%4==0?'#ff4fa8':'#4fd7ff');x.globalAlpha=on?.95:.3;
+  x.beginPath();x.arc(bx,y,i%4==0?7:5,0,6.283);x.fill();}
+ x.globalAlpha=1;
+ // flash
+ if(beat%4==0){x.fillStyle=`rgba(255,255,255,${Math.exp(-ph*14)*.12})`;x.fillRect(0,0,W,H);}
+ // text
+ x.fillStyle='#fff';x.font='600 26px monospace';x.textAlign='left';x.fillText('fframes',40,56);
+ x.font='16px monospace';x.fillStyle='rgba(200,220,255,.75)';x.fillText('fn frame(t: f32) -> Svg  // every frame is a function',40,84);
+ x.textAlign='right';x.fillStyle='#fff';x.font='600 22px monospace';
+ x.fillText(`${BPM} BPM`,W-40,56);x.font='16px monospace';x.fillStyle='rgba(200,220,255,.75)';
+ x.fillText(`bar ${bar+1}.${beat%4+1}   t=${t.toFixed(3)}s`,W-40,84);
+ x.textAlign='center';x.fillStyle='rgba(255,255,255,.5)';x.font='13px monospace';
+ x.fillText('particles · 3D geometry · springs · shaders · audio-reactive ring',W/2,H-24);
+ // vignette + fade
+ const g=x.createRadialGradient(cx,cy,200,cx,cy,800);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,0,0,.7)');
+ x.fillStyle=g;x.fillRect(0,0,W,H);
+ const fa=1-Math.min(intro,outro);if(fa>0){x.fillStyle=`rgba(0,0,0,${fa})`;x.fillRect(0,0,W,H);}
+}
+function loop(now){const t=((now-start)/1000+T0)%DUR;frame(t);requestAnimationFrame(loop);}
+requestAnimationFrame(loop);
+</script></body></html>

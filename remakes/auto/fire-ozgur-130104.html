@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Account Intro</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+// NOTE: No attachments arrived with the prompt and external files are not allowed,
+// so the logo and X cover are recreated procedurally as stand-ins.
+// Edit BRAND below to personalize.
+const BRAND={name:"Your Brand",handle:"@yourhandle",tag:"Design · Ideas · Stories",mono:"YB",c1:"#6a5cff",c2:"#00d4ff",c3:"#ff4fa3"};
+window.DUR=15;
+const cv=document.getElementById('c'),x=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)||0;const t0=performance.now()-off*1000;
+const cl=v=>Math.max(0,Math.min(1,v)),E=v=>{v=cl(v);return v<.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2},EO=v=>1-Math.pow(1-cl(v),3);
+const R=(a,b,t)=>cl((t-a)/(b-a));
+let seed=7;const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
+const P=[];for(let i=0;i<160;i++)P.push({a:rnd()*6.283,r:300+rnd()*600,s:1+rnd()*2.5,o:rnd()});
+function grad(a,b,c){const g=x.createLinearGradient(a[0],a[1],b[0],b[1]);c.forEach((k,i)=>g.addColorStop(i/(c.length-1),k));return g;}
+function logo(cx,cy,s,p,t){ // procedural logo mark
+ x.save();x.translate(cx,cy);x.scale(s,s);
+ const g=grad([-80,-80],[80,80],[BRAND.c1,BRAND.c2,BRAND.c3]);
+ x.lineCap='round';x.lineWidth=10;x.strokeStyle=g;
+ for(let i=0;i<3;i++){const pp=E(R(i*.12,.6+i*.12,p));x.beginPath();x.rotate(t*.2*(i%2?-1:1));x.arc(0,0,78-i*16,i*2.1,i*2.1+pp*Math.PI*1.6);x.stroke();}
+ x.setTransform(1,0,0,1,0,0);x.translate(cx,cy);x.scale(s,s);
+ const f=EO(R(.5,1,p));x.globalAlpha=f;x.fillStyle='#fff';x.font='800 52px Helvetica,Arial,sans-serif';x.textAlign='center';x.textBaseline='middle';
+ x.fillText(BRAND.mono,0,2+(1-f)*14);x.restore();
+}
+function cover(X,Y,W,H,t){ // procedural X cover banner
+ x.save();x.beginPath();x.rect(X,Y,W,H);x.clip();
+ x.fillStyle=grad([X,Y],[X+W,Y+H],['#120c3a','#1d1660','#0b2a4a']);x.fillRect(X,Y,W,H);
+ for(let k=0;k<6;k++){x.beginPath();x.moveTo(X,Y+H);
+  for(let i=0;i<=W;i+=16){x.lineTo(X+i,Y+H*(.35+k*.1)+Math.sin(i*.006+t*(.6+k*.15)+k)*28*(1+k*.2));}
+  x.lineTo(X+W,Y+H);x.closePath();x.globalAlpha=.18;x.fillStyle=[BRAND.c1,BRAND.c2,BRAND.c3][k%3];x.fill();}
+ x.globalAlpha=.5;x.fillStyle='#fff';for(let i=0;i<60;i++){const px=X+((i*137.5+t*20*(i%3+1))%W),py=Y+(i*61)%H;x.fillRect(px,py,1.5,1.5);}
+ x.restore();
+}
+function txt(s,X,Y,size,w,c,a,al){x.globalAlpha=a;x.fillStyle=c;x.font=`${w} ${size}px Helvetica,Arial,sans-serif`;x.textAlign=al||'center';x.textBaseline='middle';x.fillText(s,X,Y);x.globalAlpha=1;}
+function frame(){
+ const t=((performance.now()-t0)/1000)%DUR;
+ x.setTransform(1,0,0,1,0,0);x.globalAlpha=1;
+ x.fillStyle=grad([0,0],[0,720],['#05040f','#0a0820']);x.fillRect(0,0,1280,720);
+ // ambient glow
+ const gl=x.createRadialGradient(640,360,0,640,360,600);gl.addColorStop(0,'rgba(106,92,255,.18)');gl.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=gl;x.fillRect(0,0,1280,720);
+ // particles converge (0-3s), drift afterwards
+ const cp=E(R(0,2.4,t));
+ P.forEach((p,i)=>{const r=p.r*(1-cp*.85)+Math.sin(t+i)*6,a=p.a+t*.15*(i%2?1:-1);
+  x.globalAlpha=(.3+.5*p.o)*(1-R(13.6,15,t));x.fillStyle=[BRAND.c1,BRAND.c2,BRAND.c3][i%3];
+  x.beginPath();x.arc(640+Math.cos(a)*r,360+Math.sin(a)*r*.6,p.s,0,7);x.fill();});
+ x.globalAlpha=1;
+ // Scene1: logo reveal 0.6-4.5
+ if(t<4.8){const out=E(R(3.8,4.8,t));logo(640,330-out*40,1.3*(1-out*.4),R(.6,2.6,t),t);
+  x.globalAlpha=1-out;txt(BRAND.name.toUpperCase(),640,500,40,'700','#fff',EO(R(2.2,3,t))*(1-out));
+  const lw=EO(R(2.5,3.4,t))*220;x.fillStyle=grad([640-lw,0],[640+lw,0],['rgba(0,0,0,0)',BRAND.c2,'rgba(0,0,0,0)']);x.globalAlpha=1-out;x.fillRect(640-lw,535,lw*2,2);x.globalAlpha=1;}
+ // Scene2: profile card with cover 4.4-11.5
+ if(t>4.4&&t<11.8){
+  const a=EO(R(4.4,5.4,t)),o=E(R(11,11.8,t));const W=900,X=190,Y=110+(1-a)*60-o*40;
+  x.save();x.globalAlpha=a*(1-o);
+  x.fillStyle='#0f0f17';x.shadowColor='rgba(106,92,255,.4)';x.shadowBlur=60;x.beginPath();x.roundRect(X,Y,W,500,24);x.fill();x.shadowBlur=0;
+  x.beginPath();x.roundRect(X,Y,W,500,24);x.clip();
+  const wipe=E(R(4.8,6,t));cover(X,Y,W*wipe,250,t);
+  txt(BRAND.tag.toUpperCase(),X+W/2,Y+120,26,'700','#fff',EO(R(5.6,6.4,t))*.9);
+  x.restore();x.save();x.globalAlpha=a*(1-o);
+  // avatar
+  const ap=EO(R(5.8,6.6,t));x.fillStyle='#0f0f17';x.beginPath();x.arc(X+120,Y+250,78*ap,0,7);x.fill();
+  x.fillStyle='#16152a';x.beginPath();x.arc(X+120,Y+250,70*ap,0,7);x.fill();
+  if(ap>.1)logo(X+120,Y+250,.75*ap,R(6,7.5,t),t);
+  x.restore();const A=a*(1-o);
+  txt(BRAND.name,X+40,Y+370,38,'800','#fff',A*EO(R(6.6,7.2,t)),'left');
+  txt(BRAND.handle,X+40,Y+412,24,'400','#8b8ba7',A*EO(R(6.9,7.5,t)),'left');
+  const st=EO(R(7.4,8.6,t));
+  txt(Math.round(st*1280)+" Following",X+40,Y+458,20,'600','#cfcfe6',A*st,'left');
+  txt((st*48.2).toFixed(1)+"K Followers",X+250,Y+458,20,'600','#cfcfe6',A*st,'left');
+  // follow button press
+  const fb=R(8.8,9.3,t),pressed=t>9.1;const bs=1-Math.sin(fb*Math.PI)*.08;
+  x.save();x.globalAlpha=A*EO(R(7,7.6,t));x.translate(X+W-120,Y+300);x.scale(bs,bs);
+  x.fillStyle=pressed?'rgba(0,0,0,0)':'#fff';x.strokeStyle=pressed?'#55556a':'#fff';x.lineWidth=2;
+  x.beginPath();x.roundRect(-80,-24,160,48,24);x.fill();x.stroke();
+  x.fillStyle=pressed?'#fff':'#000';x.font='700 20px Helvetica,Arial';x.textAlign='center';x.textBaseline='middle';x.fillText(pressed?'Following':'Follow',0,1);x.restore();
+  if(t>9.1&&t<10.2){const r=R(9.1,10.2,t);x.strokeStyle=BRAND.c2;x.globalAlpha=(1-r)*A;x.lineWidth=3;x.beginPath();x.roundRect(X+W-200-r*20,Y+276-r*20,160+r*40,48+r*40,24+r*20);x.stroke();x.globalAlpha=1;}
+  // cursor
+  const cu=E(R(7.8,8.9,t));const cx=X+W+100-cu*190,cy=Y+520-cu*210;x.globalAlpha=A*R(7.6,8,t)*(1-R(10,10.5,t));
+  x.fillStyle='#fff';x.beginPath();x.moveTo(cx,cy);x.lineTo(cx,cy+26);x.lineTo(cx+7,cy+19);x.lineTo(cx+18,cy+19);x.closePath();x.fill();x.globalAlpha=1;
+ }
+ // Scene3: outro 11.6-15
+ if(t>11.6){const a=EO(R(11.6,12.6,t)),o=R(14.2,15,t);
+  logo(640,280,1.1,R(11.6,13,t),t);
+  txt("Follow along on X",640,450,48,'800','#fff',a*(1-o));
+  const b=EO(R(12.3,13.1,t));x.globalAlpha=b*(1-o);
+  x.fillStyle=grad([520,0],[760,0],[BRAND.c1,BRAND.c2]);x.beginPath();x.roundRect(640-140,505,280,54,27);x.fill();
+  txt(BRAND.handle,640,533,26,'700','#fff',b*(1-o));}
+ // letterbox + fade
+ x.fillStyle='#000';x.fillRect(0,0,1280,22);x.fillRect(0,698,1280,22);
+ const f=Math.max(1-R(0,.6,t),R(14.4,15,t));if(f>0){x.globalAlpha=f;x.fillRect(0,0,1280,720);x.globalAlpha=1;}
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></body></html>

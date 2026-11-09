@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>ESCAPE THE ORBIT</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}body{display:flex;align-items:center;justify-content:center}canvas{width:min(100vw,177.78vh);height:min(56.25vw,100vh);display:block}</style>
+</head><body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=20;
+const C=document.getElementById('c'),X=C.getContext('2d');
+const BG='#080D23',WH='#FFF4DD',CO='#FF654F',BL='#6685FF';
+const cl=(v,a=0,b=1)=>Math.min(b,Math.max(a,v)),E=u=>{u=cl(u);return u*u*(3-2*u)},E2=u=>{u=cl(u);return u<.5?4*u*u*u:1-Math.pow(-2*u+2,3)/2},L=(a,b,k)=>a+(b-a)*k;
+const fnt=(it,s)=>it?`italic 700 ${s}px Georgia,"Times New Roman",serif`:`800 ${s}px "Helvetica Neue",Helvetica,Arial,sans-serif`;
+// ---- analytic ellipse with arc-length table
+const CX=640,CY=660,A=760,B=300,N=4000,TH=[],LS=[0];
+for(let i=0;i<=N;i++){TH[i]=i/N*Math.PI*2;if(i){const t0=TH[i-1],t1=TH[i];LS[i]=LS[i-1]+Math.hypot(A*(Math.sin(t1)-Math.sin(t0)),B*(Math.cos(t1)-Math.cos(t0)))}}
+const PER=LS[N];
+function ell(s){s=((s%PER)+PER)%PER;let lo=0,hi=N;while(hi-lo>1){const m=(lo+hi)>>1;LS[m]<=s?lo=m:hi=m}const k=(s-LS[lo])/(LS[hi]-LS[lo]||1),th=L(TH[lo],TH[hi],k);return{x:CX+A*Math.sin(th),y:CY-B*Math.cos(th),a:Math.atan2(B*Math.sin(th),A*Math.cos(th)),th}}
+const THD=0.97;let sD=0;for(let i=0;i<=N;i++)if(TH[i]<=THD)sD=LS[i];
+const pD=ell(sD),DX=Math.cos(pD.a),DY=Math.sin(pD.a),NX=DY,NY=-DX,KB=0.00005;
+function path(s){if(s<=sD)return ell(s);const d=s-sD;return{x:pD.x+DX*d+NX*KB*d*d,y:pD.y+DY*d+NY*KB*d*d,a:Math.atan2(DY+NY*2*KB*d,DX+NX*2*KB*d)}}
+// ---- glyph layout (measured once at 100px, scaled)
+function line(parts){const g=[];let x=0;for(const p of parts){X.font=fnt(p.it,100);for(let i=0;i<p.t.length;i++){const a=X.measureText(p.t.slice(0,i)).width,b=X.measureText(p.t.slice(0,i+1)).width;g.push({ch:p.t[i],it:p.it,x:x+a,w:b-a,gi:p.g})}x+=X.measureText(p.t).width}g.forEach(q=>q.c=q.x+q.w/2-x/2);return{g,W:x}}
+const P1=line([{t:'We choose ',g:0},{t:'to go ',g:1},{t:'to the moon',g:2}]);
+const P2=line([{t:'not because ',g:0},{t:'they are ',g:1},{t:'easy,',g:2}]);
+const P3=line([{t:'but because ',g:0},{t:'they are ',g:1},{t:'hard',it:1,g:2}]);
+const PE=line([{t:'[…]',g:0}]);
+const R1=[0,.9,1.8],R2=[7,7.5,8],R3=[10.5,10.9,11.3];
+const F1=72,F2=92,F3=90,FIN=[[P1,54,190],[PE,54,282],[P2,54,374],[P3,62,474]],LX=110;
+// ---- motion functions (pure functions of t)
+function s1(t){if(t<3.5)return 0;if(t<6){const u=(t-3.5)/2.5;return 400*u*u}const w=cl(t-6,0,1);return 400+320*(w-w*w/2)}
+const T3=12.4,A3=120;
+function tr3(t){const u=cl(t-T3,0,99);return u<2.1?A3*u*u:A3*4.41+2*A3*2.1*(u-2.1)}
+const s3=t=>sD-P3.W*F3/100/2+tr3(t);
+function cam(t){const pb=E2((t-3.5)/2.5),vm=E2((t-T3)/2.1);let fx=640,fy=L(360,CY,pb),sc=L(.8,.6,pb);if(t>T3){const p=path(s3(t));fx=L(fx,p.x,vm);fy=L(fy,p.y,vm)}return{fx,fy,sc,rot:-70*Math.PI/180*E2((t-12.6)/1.9)}}
+function W2S(c,x,y){const dx=(x-c.fx)*c.sc,dy=(y-c.fy)*c.sc,co=Math.cos(c.rot),si=Math.sin(c.rot);return[640+dx*co-dy*si,360+dx*si+dy*co]}
+const wrap=a=>{while(a>Math.PI/2)a-=Math.PI;while(a<-Math.PI/2)a+=Math.PI;return a};
+function glyph(q,x,y,a,size,al,col){if(al<=0.003)return;X.save();X.globalAlpha=al;X.translate(x,y);X.rotate(a);X.font=fnt(q.it,size);X.fillStyle=col||WH;X.fillText(q.ch,-q.w*size/200,0);X.restore()}
+function rev(t,st,q){return E((t-st[q.gi]-q.c*0.0004-(q.x/100)*0.02)/0.45)}
+// ---- render
+function render(t){
+t=cl(t,0,DUR);const c=cam(t);X.setTransform(1,0,0,1,0,0);X.fillStyle=BG;X.fillRect(0,0,1280,720);
+const wA=1-E((t-17)/1.1);X.textBaseline='alphabetic';
+if(wA>0){X.save();X.globalAlpha=wA;
+// orbit with opening
+const gap=0.09*E((t-T3)/0.6),seg=[];for(let i=0;i<=360;i++){const th=THD+gap+(Math.PI*2-gap)*i/360;seg.push(W2S(c,CX+A*Math.sin(th),CY-B*Math.cos(th)))}
+X.strokeStyle=BL;X.lineWidth=1.1;X.globalAlpha=wA*.85;X.beginPath();seg.forEach((p,i)=>i?X.lineTo(p[0],p[1]):X.moveTo(p[0],p[1]));X.stroke();
+// instrument ticks + focal axis
+X.globalAlpha=wA*.4;X.beginPath();for(let s=0;s<PER;s+=PER/96){const e=ell(s);let d=e.th-THD;d=((d%(2*Math.PI))+2*Math.PI)%(2*Math.PI);if(d<gap+.01)continue;const big=Math.round(s/(PER/96))%8==0?14:6,nx=-Math.sin(e.a),ny=Math.cos(e.a),a=W2S(c,e.x,e.y),b=W2S(c,e.x-nx*big,e.y-ny*big);X.moveTo(a[0],a[1]);X.lineTo(b[0],b[1])}X.stroke();
+const fc=Math.sqrt(A*A-B*B),a1=W2S(c,CX-A-60,CY),a2=W2S(c,CX+A+60,CY);X.globalAlpha=wA*.22;X.setLineDash([2,7]);X.beginPath();X.moveTo(a1[0],a1[1]);X.lineTo(a2[0],a2[1]);X.stroke();X.setLineDash([]);
+const f2=W2S(c,CX-fc,CY);X.globalAlpha=wA*.5;X.beginPath();X.arc(f2[0],f2[1],3,0,7);X.stroke();
+// lunar mark -> crescent
+const mg=E2((t-14.5)/2.5),mp=W2S(c,CX+fc,CY),mr=(10+mg*70)*c.sc;
+X.globalAlpha=wA;X.fillStyle=WH;X.beginPath();X.arc(mp[0],mp[1],mr,0,7);X.fill();
+if(mg>0){X.fillStyle=BG;X.beginPath();X.arc(mp[0]-mr*.45*mg*Math.cos(c.rot),mp[1]-mr*.45*mg*Math.sin(c.rot),mr*.92,0,7);X.fill();X.strokeStyle=BL;X.globalAlpha=wA*.6*mg;X.beginPath();X.arc(mp[0],mp[1],mr*1.6,0,7);X.stroke()}
+// departure trajectory
+if(t>T3){const tail=s3(t)-P3.W*F3/200;X.strokeStyle=CO;X.globalAlpha=wA*.35;X.lineWidth=1.1;X.beginPath();for(let s=sD;s<sD+5000;s+=40){const p=path(s),q=W2S(c,p.x,p.y);s==sD?X.moveTo(q[0],q[1]):X.lineTo(q[0],q[1])}X.stroke();
+if(tail>sD){X.globalAlpha=wA;X.lineWidth=2;X.beginPath();for(let s=sD;s<=tail;s+=Math.max(8,(tail-sD)/80)){const p=path(s),q=W2S(c,p.x,p.y);s==sD?X.moveTo(q[0],q[1]):X.lineTo(q[0],q[1])}X.stroke()}
+// trailing marks: equal time steps -> expanding spacing; streak length = blur
+X.lineCap='round';for(let k=1;k<26;k++){const tk=t-k*.13;if(tk<T3)break;const sk=s3(tk)-P3.W*F3/200-20,p=path(sk),q=W2S(c,p.x,p.y),v=(tr3(tk+.01)-tr3(tk))*100,ln=Math.max(1.5,v*.03*c.sc),an=p.a+c.rot;X.globalAlpha=wA*(1-k/26);X.lineWidth=2.4;X.beginPath();X.moveTo(q[0]-Math.cos(an)*ln,q[1]-Math.sin(an)*ln);X.lineTo(q[0],q[1]);X.stroke()}}
+X.restore();
+// phrase 1 on orbit
+let a1A=t<6.2?1:L(1,.28,E((t-6.2)/.8));if(t>10.5)a1A=L(a1A,.14,E((t-10.5)/1));
+const kc=E2((t-3.5)/1),kt=E((t-4.3)/1.2),sc1=s1(t),an1=ell(sc1);
+for(const q of P1.g){const o=q.c*F1/100,pp=ell(sc1+o),sx=an1.x+o*Math.cos(0),sy=an1.y,wx=L(sx,pp.x,kc),wy=L(sy,pp.y,kc),r=rev(t,R1,q),s=W2S(c,wx,wy+(1-r)*18);glyph(q,s[0],s[1],wrap(pp.a*kt+c.rot),F1*c.sc,r*a1A*wA)}
+// omission marker in central opening
+const oa=E((t-6)/.6)*wA*(t>10.5?L(1,.45,E((t-10.5)/1)):1),oc=W2S(c,CX,CY+26);
+for(const q of PE.g){glyph(q,oc[0]+q.c*.8*c.sc,oc[1],c.rot,80*c.sc,oa)}
+// phrase 2 near side, "easy," one smooth arc
+const a2A=t>10.6?L(1,.3,E((t-10.6)/1)):1,ue=E2((t-9.1)/1.2);
+X.strokeStyle=CO;
+for(const q of P2.g){let ox=q.c*F2/100,oy=0,ang=0;if(q.gi==2){ox+=150*Math.sin(Math.PI*2*ue)*.5*(1-Math.cos(Math.PI*ue))*0+90*Math.sin(Math.PI*2*ue)*.0;const ph=Math.PI*ue;ox+=-160*Math.sin(2*ph)*.35;oy=-150*Math.sin(ph);ang=-.35*Math.sin(2*ph)}const r=rev(t,R2,q),s=W2S(c,CX+ox,960+oy+(1-r)*18);glyph(q,s[0],s[1],ang+c.rot,F2*c.sc,r*a2A*wA)}
+if(t>9.1&&t<10.8){X.save();X.globalAlpha=wA*.5*(1-E((t-10.3)/.5));X.lineWidth=1;X.beginPath();const c0=P2.g.filter(q=>q.gi==2),cx0=(c0[0].c+c0[c0.length-1].c)/2*F2/100;for(let i=0;i<=40;i++){const ph=Math.PI*ue*i/40,s=W2S(c,CX+cx0-160*Math.sin(2*ph)*.35,960-30-150*Math.sin(ph));i?X.lineTo(s[0],s[1]):X.moveTo(s[0],s[1])}X.stroke();X.restore()}
+}
+// final editorial composition
+const fa=E((t-17.3)/1.1),kf=E2((t-17)/1.6);
+if(fa>0){X.save();X.globalAlpha=fa;X.strokeStyle=CO;X.lineWidth=2;X.beginPath();const pts=[[-20,690],[560,700],[1210,520],[1300,-20]];const n=Math.round(120*E((t-17)/1.6));for(let i=0;i<=n;i++){const u=i/120,m=1-u,x=m*m*m*pts[0][0]+3*m*m*u*pts[1][0]+3*m*u*u*pts[2][0]+u*u*u*pts[3][0],y=m*m*m*pts[0][1]+3*m*m*u*pts[1][1]+3*m*u*u*pts[2][1]+u*u*u*pts[3][1];i?X.lineTo(x,y):X.moveTo(x,y)}X.stroke();
+X.strokeStyle=BL;X.lineWidth=1;X.globalAlpha=fa*.35;X.beginPath();X.ellipse(330,700,520,120,-.08,Math.PI*1.04,Math.PI*1.96);X.stroke();
+X.globalAlpha=fa;X.fillStyle=WH;X.beginPath();X.arc(1150,150,42,0,7);X.fill();X.fillStyle=BG;X.beginPath();X.arc(1131,140,39,0,7);X.fill();X.strokeStyle=BL;X.globalAlpha=fa*.6;X.beginPath();X.arc(1150,150,66,0,7);X.stroke();
+X.globalAlpha=fa;for(let li=0;li<3;li++){const[P,sz,y]=FIN[li];for(const q of P.g)glyph(q,LX+(q.x+q.w/2)*sz/100,y,0,sz,fa)}
+X.globalAlpha=fa*.7;X.font='500 18px "Helvetica Neue",Helvetica,Arial,sans-serif';X.fillStyle=WH;X.fillText('John F. Kennedy — Rice University, September 12, 1962',LX,600);X.restore()}
+// phrase 3: the tracked travelers
+const kb=E2((t-T3)/.8),sc3=s3(t),an3=path(sc3),aS=W2S(c,an3.x,an3.y);
+for(const q of P3.g){const o=q.c*F3/100,pp=path(sc3+o),ws=W2S(c,pp.x,pp.y),sz=F3*c.sc,r=rev(t,R3,q);
+let x=L(aS[0]+o*c.sc,ws[0],kb),y=L(aS[1],ws[1],kb)+(1-r)*16,a=L(0,wrap(pp.a+c.rot),kb);
+const[,fs,fy]=FIN[3];x=L(x,LX+(q.x+q.w/2)*fs/100,kf);y=L(y,fy,kf);a=L(a,0,kf);glyph(q,x,y,a,L(sz,fs,kf),r)}
+}
+// ---- playback / seeking
+let paused=false,t0=0,start=performance.now();
+const q=parseFloat(new URLSearchParams(location.search).get('t'));if(!isNaN(q))t0=q%DUR;
+function loop(now){if(!paused){let t=t0+(now-start)/1000;t%=DUR;render(t)}requestAnimationFrame(loop)}
+window.seek=t=>{paused=true;render(cl(+t||0,0,DUR))};
+window.frame=n=>window.seek(n/60);
+render(t0);window.ready=true;requestAnimationFrame(loop);
+</script></body></html>

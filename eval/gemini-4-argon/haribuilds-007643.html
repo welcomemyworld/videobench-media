@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Point Nemo: The Oceanic Pole of Inaccessibility</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+  }
+  canvas {
+    width: 100vw; height: 56.25vw;
+    max-height: 100vh; max-width: 177.78vh;
+    background: #03070e; display: block;
+    box-shadow: 0 0 40px rgba(0, 229, 255, 0.15);
+  }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+(() => {
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const W = 1280, H = 720;
+
+  window.DUR = 36;
+  const urlParams = new URLSearchParams(window.location.search);
+  const tOffset = parseFloat(urlParams.get('t')) || 0;
+
+  // Color Palette
+  const C = {
+    bg: '#030812',
+    grid: 'rgba(0, 195, 255, 0.08)',
+    gridBright: 'rgba(0, 195, 255, 0.22)',
+    cyan: '#00e5ff',
+    cyanDim: 'rgba(0, 229, 255, 0.3)',
+    orange: '#ff5500',
+    amber: '#ffaa00',
+    white: '#eef7ff',
+    muted: '#6c8da8',
+    landFill: '#081b2e',
+    landStroke: '#1a4973'
+  };
+
+  // Math & Easing Helpers
+  const clamp = (v, min = 0, max = 1) => Math.max(min, Math.min(max, v));
+  const lerp = (a, b, t) => a + (b - a) * clamp(t);
+  const easeOutCubic = t => 1 - Math.pow(1 - clamp(t), 3);
+  const easeInOutCubic = t => {
+    t = clamp(t);
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  };
+  const norm = (t, a, b) => clamp((t - a) / (b - a));
+  const fade = (t, s, e, fi = 0.8, fo = 0.8) => {
+    if (t < s || t > e) return 0;
+    return Math.min(clamp((t - s) / fi), clamp((e - t) / fo));
+  };
+
+  // Simplified Pacific Rim Continents [lon, lat] (East-positive, -180 to 180)
+  // Point Nemo is at [-123.39, -48.88]
+  const continents = [
+    // South America
+    [[-80,10],[-75,11],[-60,5],[-50,0],[-35,-6],[-40,-20],[-48,-28],[-58,-38],[-65,-48],[-68,-55],[-74,-52],[-75,-42],[-71,-30],[-70,-18],[-78,-10],[-81,-5]],
+    // North America
+    [[-165,65],[-140,70],[-120,60],[-105,45],[-80,25],[-80,10],[-90,15],[-105,20],[-115,32],[-124,42],[-130,52],[-150,60],[-165,60]],
+    // Antarctica
+    [[-180,-73],[-150,-76],[-130,-74],[-105,-73],[-75,-70],[-60,-64],[-57,-68],[-40,-75],[0,-72],[60,-68],[120,-67],[165,-71],[172,-78],[180,-76],[180,-89],[-180,-89]],
+    // Australia
+    [[114,-22],[122,-17],[136,-12],[142,-11],[150,-22],[153,-28],[149,-37],[140,-38],[130,-32],[115,-34],[113,-26]],
+    // New Zealand
+    [[173,-35],[178,-38],[175,-41],[172,-43],[167,-46],[166,-45],[171,-41],[174,-37]]
+  ];
+
+  // Nearest islands to Point Nemo
+  const islands = [
+    { name: 'DUCIE ISLAND (PITCAIRN)', lon: -124.78, lat: -24.68, dist: 2688, align: 'bottom' },
+    { name: 'MOTU NUI (EASTER IS.)', lon: -105.45, lat: -27.20, dist: 2688, align: 'right' },
+    { name: 'MAHER ISLAND (ANTARCTICA)', lon: -126.36, lat: -72.97, dist: 2688, align: 'top' }
+  ];
+
+  // Spacecraft Cemetery Data
+  const spacecraft = [
+    { name: 'SALYUT 1-6 (USSR)', year: 1971, mass: '18.9 t', count: '6 STATIONS', desc: 'First generation orbital stations', dLon: -4, dLat: 2 },
+    { name: 'MIR SPACE STATION', year: 2001, mass: '142.0 t', count: '1 CORE + 6 MODULES', desc: 'Largest artificial satellite deorbited', dLon: -8, dLat: 5 },
+    { name: 'TIANGONG-1 & 2 (CNSA)', year: 2018, mass: '17.1 t', count: '2 STATIONS', desc: 'Chinese prototype space laboratories', dLon: 5, dLat: -3 },
+    { name: 'PROGRESS / ATV / HTV', year: 1978, mass: '~1,400 t', count: '250+ VESSELS', desc: 'Automated ISS & Mir resupply freighters', dLon: 3, dLat: 3 },
+    { name: 'ISS (PLANNED DEORBIT)', year: 2031, mass: '419.7 t', count: 'FINAL RESTING PLACE', desc: 'Targeted splashdown via USDV tug', dLon: 0, dLat: 0, future: true }
+  ];
+
+  // Pre-generate debris cloud around Point Nemo
+  const debrisCloud = [];
+  for (let i = 0; i < 260; i++) {
+    const a = (i * 137.5) * Math.PI / 180;
+    const r = Math.pow((i + 1) / 260, 0.65);
+    // Elongated footprint along orbital inclination (~51.6 deg)
+    const rot = -0.65;
+    const x = r * Math.cos(a) * 18;
+    const y = r * Math.sin(a) * 7;
+    const dLon = x * Math.cos(rot) - y * Math.sin(rot);
+    const dLat = x * Math.sin(rot) + y * Math.cos(rot);
+    debrisCloud.push({
+      lon: -123.39 + dLon,
+      lat: -48.88 + dLat,
+      size: (i % 7 === 0) ? 2.5 : 1.3,
+      delay: (i / 260)
+    });
+  }
+
+  // Pre-generate stars
+  const stars = Array.from({ length: 180 }, (_, i) => ({
+    x: ((i * 7919) % W),
+    y: ((i * 6271) % H),
+    r: ((i % 3) + 1) * 0.5,
+    phase: i * 0.7
+  }));
+
+  // 3D Orthographic Globe Projection
+  function projectGlobe(lon, lat, cLon, cLat, R, cx, cy) {
+    const lam = lon * Math.PI / 180;
+    const phi = lat * Math.PI / 180;
+    const lam0 = cLon * Math.PI / 180;
+    const phi0 = cLat * Math.PI / 180;
+
+    const dLam = lam - lam0;
+    const cosPhi = Math.cos(phi);
+    const sinPhi = Math.sin(phi);
+    const cosPhi0 = Math.cos(phi0);
+    const sinPhi0 = Math.sin(phi0);
+    const cosDLam = Math.cos(dLam);
+
+    const cosC = sinPhi0 * sinPhi + cosPhi0 * cosPhi * cosDLam;
+    const x = R * cosPhi * Math.sin(dLam);
+    const y = -R * (cosPhi0 * sinPhi - sinPhi0 * cosPhi * cosDLam);
+
+    return { x: cx + x, y: cy + y, z: cosC, visible: cosC >= -0.05 };
+  }
+
+  // Draw HUD brackets
+  function drawCornerBrackets(x, y, w, h, len, color, alpha = 1) {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    // TL
+    ctx.moveTo(x, y + len); ctx.lineTo(x, y); ctx.lineTo(x + len, y);
+    // TR
+    ctx.moveTo(x + w - len, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + len);
+    // BR
+    ctx.moveTo(x + w, y + h - len); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w - len, y + h);
+    // BL
+    ctx.moveTo(x + len, y + h); ctx.lineTo(x, y + h); ctx.lineTo(x, y + h - len);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawBackground(t) {
+    const grad = ctx.createRadialGradient(W * 0.5, H * 0.5, 50, W * 0.5, H * 0.5, 800);
+    grad.addColorStop(0, '#071426');
+    grad.addColorStop(1, '#02050a');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Subtle stars
+    ctx.fillStyle = '#ffffff';
+    for (const s of stars) {
+      const tw = 0.15 + 0.25 * Math.sin(t * 2 + s.phase);
+      ctx.globalAlpha = tw;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Telemetry background grid
+    ctx.strokeStyle = 'rgba(0, 229, 255, 0.03)';
+    ctx.lineWidth = 1;
+    const step = 40;
+    ctx.beginPath();
+    for (let x = 0; x <= W; x += step) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+    for (let y = 0; y <= H; y += step) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+    ctx.stroke();
+  }
+
+  function drawTopHUD(t) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0, 229, 255, 0.25)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(32, 54); ctx.lineTo(W - 32, 54);
+    ctx.moveTo(32, H - 36); ctx.lineTo(W - 32, H - 36);
+    ctx.stroke();
+
+    ctx.fillStyle = C.cyan;
+    ctx.font = '600 12px monospace';
+    ctx.letterSpacing = '2px';
+    ctx.fillText('GEO-TELEMETRY // POLE OF INACCESSIBILITY', 32, 38);
+
+    // Chapter indicator
+    let chapter = '01 / GLOBAL ISOLATION';
+    if (t >= 11 && t < 21.5) chapter = '02 / ORBITAL PROXIMITY PARADOX';
+    else if (t >= 21.5 && t < 32) chapter = '03 / SPACECRAFT CEMETERY';
+    else if (t >= 32) chapter = '04 / SUMMARY DOSSIER';
+
+    ctx.textAlign = 'right';
+    ctx.fillStyle = C.white;
+    ctx.fillText(chapter, W - 32, 38);
+
+    // Bottom progress bar
+    const prog = clamp(t / window.DUR);
+    ctx.fillStyle = 'rgba(0, 229, 255, 0.15)';
+    ctx.fillRect(32, H - 24, W - 64, 4);
+    ctx.fillStyle = C.cyan;
+    ctx.fillRect(32, H - 24, (W - 64) * prog, 4);
+
+    ctx.textAlign = 'left';
+    ctx.font = '11px monospace';
+    ctx.fillStyle = C.muted;
+    ctx.fillText(`LAT: 48°52.6′S   LON: 123°23.6′W   DEPTH: 4,000M`, 32, H - 44);
+    ctx.textAlign = 'right';
+    ctx.fillText(`T+00:${t.toFixed(1).padStart(4, '0')}s`, W - 32, H - 44);
+    ctx.restore();
+  }
+
+  function renderGlobe(cLon, cLat, R, cx, cy, alpha) {
+    if (alpha <= 0.01) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    // Atmosphere outer glow
+    const atmos = ctx.createRadialGradient(cx, cy, R * 0.9, cx, cy, R * 1.12);
+    atmos.addColorStop(0, 'rgba(0, 180, 255, 0.18)');
+    atmos.addColorStop(1, 'rgba(0, 180, 255, 0)');
+    ctx.fillStyle = atmos;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R * 1.12, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Ocean sphere
+    const sphereGrad = ctx.createRadialGradient(cx - R * 0.3, cy - R * 0.3, R * 0.1, cx, cy, R);
+    sphereGrad.addColorStop(0, '#09233d');
+    sphereGrad.addColorStop(0.7, '#051324');
+    sphereGrad.addColorStop(1, '#020912');
+    ctx.fillStyle = sphereGrad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Clip to globe
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.clip();
+
+    // Graticule (Lat/Lon lines)
+    ctx.strokeStyle = C.grid;
+    ctx.lineWidth = 1;
+    for (let lon = -180; lon < 180; lon += 20) {
+      ctx.beginPath();
+      let started = false;
+      for (let lat = -80; lat <= 80; lat += 5) {
+        const p = projectGlobe(lon, lat, cLon, cLat, R, cx, cy);
+        if (p.z > 0) {
+          if (!started) { ctx.moveTo(p.x, p.y); started = true; }
+          else ctx.lineTo(p.x, p.y);
+        } else started = false;
+      }
+      ctx.stroke();
+    }
+    for (let lat = -80; lat <= 80; lat += 20) {
+      ctx.beginPath();
+      let started = false;
+      for (let lon = -180; lon <= 180; lon += 5) {
+        const p = projectGlobe(lon, lat, cLon, cLat, R, cx, cy);
+        if (p.z > 0) {
+          if (!started) { ctx.moveTo(p.x, p.y); started = true; }
+          else ctx.lineTo(p.x, p.y);
+        } else started = false;
+      }
+      ctx.stroke();
+    }
+
+    // Continents
+    ctx.fillStyle = C.landFill;
+    ctx.strokeStyle = C.landStroke;
+    ctx.lineWidth = 1.5;
+    for (const poly of continents) {
+      ctx.beginPath();
+      let started = false;
+      for (let i = 0; i < poly.length; i++) {
+        const p = projectGlobe(poly[i][0], poly[i][1], cLon, cLat, R, cx, cy);
+        if (p.visible) {
+          if (!started) { ctx.moveTo(p.x, p.y); started = true; }
+          else ctx.lineTo(p.x, p.y);
+        }
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    ctx.restore(); // Unclip
+
+    // Globe Rim
+    ctx.strokeStyle = 'rgba(0, 229, 255, 0.45)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  // SCENE 1: Point Nemo & The 2,688 km Void (0s - 12s)
+  function drawScene1(t) {
+    const a = fade(t, 0, 12, 0.8, 1.0);
+    if (a <= 0) return;
+
+    const rotP = easeInOutCubic(norm(t, 0, 3.5));
+    const cLon = lerp(-40, -123.39, rotP);
+    const cLat = lerp(-15, -48.88, rotP);
+    const R = lerp(220, 245, rotP);
+    const cx = 430, cy = 370;
+
+    renderGlobe(cLon, cLat, R, cx, cy, a);
+
+    ctx.save();
+    ctx.globalAlpha = a;
+
+    const nemo = projectGlobe(-123.39, -48.88, cLon, cLat, R, cx, cy);
+
+    // Draw 2,688 km Void Circle on Globe
+    const ringP = easeOutCubic(norm(t, 3.2, 6.0));
+    if (ringP > 0 && nemo.z > 0) {
+      // 2688 km is 24.17 degrees of arc
+      const angRad = 24.17 * (Math.PI / 180) * ringP;
+      const rPx = R * Math.sin(angRad);
+
+      // Filled radar zone
+      const zGrad = ctx.createRadialGradient(nemo.x, nemo.y, 2, nemo.x, nemo.y, rPx);
+      zGrad.addColorStop(0, 'rgba(0, 229, 255, 0.18)');
+      zGrad.addColorStop(0.8, 'rgba(0, 229, 255, 0.06)');
+      zGrad.addColorStop(1, 'rgba(0, 229, 255, 0.25)');
+      ctx.fillStyle = zGrad;
+      ctx.beginPath();
+      ctx.arc(nemo.x, nemo.y, rPx, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Dashed perimeter
+      ctx.strokeStyle = C.cyan;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.arc(nemo.x, nemo.y, rPx, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Distance lines to the 3 islands
+      const islP = easeOutCubic(norm(t, 4.8, 7.8));
+      if (islP > 0) {
+        islands.forEach((isl, idx) => {
+          const ip = easeOutCubic(norm(t, 4.8 + idx * 0.7, 6.5 + idx * 0.7));
+          if (ip <= 0) return;
+          const pt = projectGlobe(isl.lon, isl.lat, cLon, cLat, R, cx, cy);
+          const curX = lerp(nemo.x, pt.x, ip);
+          const curY = lerp(nemo.y, pt.y, ip);
+
+          ctx.strokeStyle = 'rgba(255, 170, 0, 0.65)';
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.moveTo(nemo.x, nemo.y);
+          ctx.lineTo(curX, curY);
+          ctx.stroke();
+
+          if (ip > 0.85) {
+            ctx.fillStyle = C.amber;
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.font = '600 11px monospace';
+            ctx.fillStyle = C.white;
+            ctx.textAlign = 'center';
+            const ly = isl.align === 'top' ? pt.y + 18 : (isl.align === 'bottom' ? pt.y - 10 : pt.y - 10);
+            const lx = isl.align === 'right' ? pt.x + 40 : pt.x;
+            ctx.fillText(isl.name, lx, ly);
+          }
+        });
+      }
+    }
+
+    // Point Nemo Reticle
+    if (nemo.z > 0.2) {
+      const pulse = (t * 1.8) % 1;
+      ctx.strokeStyle = C.orange;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(nemo.x, nemo.y, 6 + pulse * 26, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255, 85, 0, ${1 - pulse})`;
+      ctx.stroke();
+
+      ctx.fillStyle = C.orange;
+      ctx.beginPath();
+      ctx.arc(nemo.x, nemo.y, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.font = '700 13px monospace';
+      ctx.fillStyle = C.orange;
+      ctx.textAlign = 'left';
+      ctx.fillText('POINT NEMO', nemo.x + 12, nemo.y + 4);
+    }
+
+    // Right Data Dossier Panel
+    const px = 750, py = 120, pw = 470, ph = 480;
+    ctx.fillStyle = 'rgba(5, 15, 28, 0.78)';
+    ctx.fillRect(px, py, pw, ph);
+    drawCornerBrackets(px, py, pw, ph, 16, C.cyan, 0.8);
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = C.cyan;
+    ctx.font = '600 13px monospace';
+    ctx.fillText('LOCATION BRIEFING // SOUTH PACIFIC GYRE', px + 28, py + 42);
+
+    ctx.fillStyle = C.white;
+    ctx.font = '700 42px sans-serif';
+    ctx.fillText('POINT NEMO', px + 28, py + 92);
+
+    ctx.fillStyle = C.muted;
+    ctx.font = '16px sans-serif';
+    ctx.fillText('The Oceanic Pole of Inaccessibility — the farthest', px + 28, py + 124);
+    ctx.fillText('location on Earth from any speck of dry land.', px + 28, py + 146);
+
+    // Animated Stat Counters
+    const cntP = easeOutCubic(norm(t, 3.0, 7.0));
+    const distKm = Math.round(2688 * cntP);
+    const areaKm = (22.7 * cntP).toFixed(1);
+
+    // Stat Box 1
+    ctx.fillStyle = 'rgba(0, 229, 255, 0.06)';
+    ctx.fillRect(px + 28, py + 178, pw - 56, 92);
+    ctx.fillStyle = C.amber;
+    ctx.font = '700 40px monospace';
+    ctx.fillText(`${distKm.toLocaleString()} KM`, px + 46, py + 230);
+    ctx.fillStyle = C.white;
+    ctx.font = '600 12px monospace';
+    ctx.fillText('DISTANCE TO NEAREST LANDMASS (1,451 NAUTICAL MILES)', px + 46, py + 254);
+
+    // Stat Box 2
+    ctx.fillStyle = 'rgba(0, 229, 255, 0.06)';
+    ctx.fillRect(px + 28, py + 288, pw - 56, 92);
+    ctx.fillStyle = C.cyan;
+    ctx.font = '700 40px monospace';
+    ctx.fillText(`${areaKm}M KM²`, px + 46, py + 340);
+    ctx.fillStyle = C.white;
+    ctx.font = '600 12px monospace';
+    ctx.fillText('SURROUNDING OCEAN VOID (LARGER THAN FORMER USSR)', px + 46, py + 364);
+
+    // Coordinates Footer
+    ctx.fillStyle = C.muted;
+    ctx.font = '13px monospace';
+    ctx.fillText('COORDINATES : 48°52.6′S, 123°23.6′W', px + 28, py + 418);
+    ctx.fillText('NAMED AFTER : CAPTAIN NEMO (LATIN: "NO ONE")', px + 28, py + 442);
+
+    ctx.restore();
+  }
+
+  // SCENE 2: Orbital Altitude vs Terrestrial Distance (11s - 22.5s)
+  function drawScene2(t) {
+    const a = fade(t, 11, 22.5, 1.0, 1.0);
+    if (a <= 0) return;
+
+    ctx.save();
+    ctx.globalAlpha = a;
+
+    // Title Header
+    ctx.textAlign = 'left';
+    ctx.fillStyle = C.cyan;
+    ctx.font = '600 13px monospace';
+    ctx.fillText('PROXIMITY PARADOX // VERTICAL VS. HORIZONTAL ISOLATION', 64, 102);
+    ctx.fillStyle = C.white;
+    ctx.font = '700 32px sans-serif';
+    ctx.fillText('CLOSER TO ASTRONAUTS THAN HUMANS ON LAND', 64, 140);
+
+    // Scale: 1 km = 0.34 px
+    const scale = 0.34;
+    const nX = 210, nY = 540; // Point Nemo origin on ocean curve
+    const landX = nX + 2688 * scale; // 210 + 914 = 1124
+    const issAltPx = 408 * scale; // ~139 px
+    const issY = nY - issAltPx;
+
+    // Draw Earth Curvature Cross-Section
+    ctx.fillStyle = '#051529';
+    ctx.strokeStyle = C.cyan;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(64, nY + 40);
+    ctx.quadraticCurveTo((nX + landX) * 0.5, nY - 35, 1216, nY + 40);
+    ctx.lineTo(1216, 650);
+    ctx.lineTo(64, 650);
+    ctx.closePath();
+    ctx.fill();
+
+    // Ocean Surface Curve
+    ctx.beginPath();
+    ctx.moveTo(64, nY + 40);
+    ctx.quadraticCurveTo((nX + landX) * 0.5, nY - 35, 1216, nY + 40);
+    ctx.stroke();
+
+    // Helper for y on curve at x
+    const getCurveY = (x) => {
+      const u = (x - 64) / (1216 - 64);
+      const midY = nY - 35;
+      return (1 - u) * (1 - u) * (nY + 40) + 2 * (1 - u) * u * midY + u * u * (nY + 40);
+    };
+
+    const nemoCurveY = getCurveY(nX);
+    const landCurveY = getCurveY(landX);
+
+    // Draw orbital arc at 408 km above surface
+    ctx.strokeStyle = 'rgba(0, 229, 255, 0.25)';
+    ctx.setLineDash([5, 6]);
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(64, nY + 40 - issAltPx);
+    ctx.quadraticCurveTo((nX + landX) * 0.5, nY - 35 - issAltPx, 1216, nY + 40 - issAltPx);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 1. Vertical Measurement to ISS (408 km)
+    const vProg = easeOutCubic(norm(t, 12.2, 15.0));
+    const curIssY = nemoCurveY - issAltPx * vProg;
+
+    // Vertical beam
+    ctx.strokeStyle = C.cyan;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(nX, nemoCurveY);
+    ctx.lineTo(nX, curIssY);
+    ctx.stroke();
+
+    // Expanding sonar rings along vertical line
+    if (vProg > 0.8) {
+      const pRing = (t * 2) % 1;
+      ctx.strokeStyle = `rgba(0, 229, 255, ${1 - pRing})`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(nX, nemoCurveY - issAltPx, 8 + pRing * 28, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Moving ISS Icon along orbit
+    const issOrbitU = clamp((t - 11) / 11.5);
+    const issMoveX = lerp(nX - 90, nX + 140, issOrbitU);
+    const issMoveY = getCurveY(issMoveX) - issAltPx;
+
+    // Draw ISS Silhouette at (nX, nemoCurveY - issAltPx) and tracking ghost
+    const drawISS = (x, y, scaleSz) => {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(scaleSz, scaleSz);
+      ctx.strokeStyle = C.white;
+      ctx.fillStyle = C.cyan;
+      ctx.lineWidth = 2;
+      // Main truss
+      ctx.beginPath(); ctx.moveTo(-26, 0); ctx.lineTo(26, 0); ctx.stroke();
+      // Central pressurized modules
+      ctx.fillRect(-6, -5, 12, 10);
+      // 4 Solar Array Wings
+      [-20, -12, 12, 20].forEach(sx => {
+        ctx.fillStyle = 'rgba(0, 229, 255, 0.75)';
+        ctx.fillRect(sx - 3, -16, 6, 12);
+        ctx.fillRect(sx - 3, 4, 6, 12);
+      });
+      ctx.restore();
+    };
+
+    drawISS(nX, nemoCurveY - issAltPx, 1.1);
+
+    // ISS Label
+    ctx.fillStyle = C.cyan;
+    ctx.font = '700 28px monospace';
+    ctx.fillText(`${Math.round(408 * vProg)} KM`, nX + 26, nemoCurveY - issAltPx * 0.5 + 8);
+    ctx.fillStyle = C.white;
+    ctx.font = '600 13px monospace';
+    ctx.fillText('LOW EARTH ORBIT (ISS)', nX - 75, nemoCurveY - issAltPx - 28);
+    ctx.fillStyle = C.muted;
+    ctx.font = '12px monospace';
+    ctx.fillText('OVERHEAD PASS: ~90 MIN PERIOD', nX - 75, nemoCurveY - issAltPx - 44);
+
+    // 2. Horizontal Measurement to Ducie Island (2,688 km)
+    const hProg = easeInOutCubic(norm(t, 14.5, 18.5));
+    if (hProg > 0) {
+      ctx.strokeStyle = C.orange;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      const steps = 60;
+      const maxStep = Math.floor(steps * hProg);
+      for (let i = 0; i <= maxStep; i++) {
+        const sx = lerp(nX, landX, i / steps);
+        const sy = getCurveY(sx);
+        if (i === 0) ctx.moveTo(sx, sy);
+        else ctx.lineTo(sx, sy);
+      }
+      ctx.stroke();
+
+      const curHX = lerp(nX, landX, hProg);
+      const curHY = getCurveY(curHX);
+      ctx.fillStyle = C.orange;
+      ctx.beginPath();
+      ctx.arc(curHX, curHY, 5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Distance counter along arc
+      ctx.textAlign = 'center';
+      ctx.fillStyle = C.orange;
+      ctx.font = '700 30px monospace';
+      ctx.fillText(`${Math.round(2688 * hProg).toLocaleString()} KM`, (nX + curHX) * 0.5, curHY - 24);
+      ctx.fillStyle = C.white;
+      ctx.font = '600 12px monospace';
+      ctx.fillText('TERRESTRIAL DISTANCE TO NEAREST INHABITED / DRY LAND', (nX + curHX) * 0.5, curHY - 6);
+    }
+
+    // Point Nemo Marker
+    ctx.fillStyle = C.white;
+    ctx.beginPath();
+    ctx.arc(nX, nemoCurveY, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.textAlign = 'center';
+    ctx.font = '700 13px monospace';
+    ctx.fillStyle = C.cyan;
+    ctx.fillText('POINT NEMO', nX, nemoCurveY + 26);
+    ctx.fillStyle = C.muted;
+    ctx.font = '11px monospace';
+    ctx.fillText('0 KM ORIGIN', nX, nemoCurveY + 42);
+
+    // Nearest Land Marker (Ducie Island)
+    ctx.fillStyle = C.amber;
+    ctx.beginPath();
+    ctx.moveTo(landX - 18, landCurveY);
+    ctx.lineTo(landX, landCurveY - 16);
+    ctx.lineTo(landX + 18, landCurveY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = C.amber;
+    ctx.font = '700 13px monospace';
+    ctx.fillText('DUCIE ISLAND', landX, landCurveY + 26);
+    ctx.fillStyle = C.muted;
+    ctx.font = '11px monospace';
+    ctx.fillText('PITCAIRN GROUP', landX, landCurveY + 42);
+
+    // Direct Bar Comparison Box (Top Right)
+    const bx = 540, by = 175, bw = 660, bh = 185;
+    ctx.fillStyle = 'rgba(5, 16, 30, 0.85)';
+    ctx.fillRect(bx, by, bw, bh);
+    drawCornerBrackets(bx, by, bw, bh, 14, C.cyan, 0.7);
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = C.white;
+    ctx.font = '700 15px monospace';
+    ctx.fillText('RATIO ANALYSIS: LAND IS 6.6× FARTHER THAN SPACE', bx + 24, by + 34);
+
+    // Bar 1: ISS
+    const maxBarW = 430;
+    const b1W = maxBarW * (408 / 2688) * vProg;
+    ctx.fillStyle = C.muted;
+    ctx.font = '12px monospace';
+    ctx.fillText('ORBITAL ALTITUDE (ISS CREW)', bx + 24, by + 68);
+    ctx.fillStyle = 'rgba(0, 229, 255, 0.15)';
+    ctx.fillRect(bx + 24, by + 76, maxBarW, 20);
+    ctx.fillStyle = C.cyan;
+    ctx.fillRect(bx + 24, by + 76, b1W, 20);
+    ctx.fillStyle = C.cyan;
+    ctx.font = '700 15px monospace';
+    ctx.fillText('408 KM', bx + 34 + b1W, by + 91);
+
+    // Bar 2: Land
+    const b2W = maxBarW * hProg;
+    ctx.fillStyle = C.muted;
+    ctx.font = '12px monospace';
+    ctx.fillText('SURFACE DISTANCE TO LAND', bx + 24, by + 124);
+    ctx.fillStyle = 'rgba(255, 85, 0, 0.15)';
+    ctx.fillRect(bx + 24, by + 132, maxBarW, 20);
+    ctx.fillStyle = C.orange;
+    ctx.fillRect(bx + 24, by + 132, b2W, 20);
+    ctx.fillStyle = C.orange;
+    ctx.font = '700 15px monospace';
+    ctx.fillText(`${Math.round(2688 * hProg)} KM`, bx + 34 + b2W, by + 147);
+
+    ctx.restore();
+  }
+
+  // SCENE 3: The Oceanic Spacecraft Cemetery (21.5s - 32.5s)
+  function drawScene3(t) {
+    const a = fade(t, 21.5, 32.5, 1.0, 1.0);
+    if (a <= 0) return;
+
+    const cLon = -123.39, cLat = -48.88;
+    const R = 330;
+    const cx = 420, cy = 380;
+
+    renderGlobe(cLon, cLat, R, cx, cy, a);
+
+    ctx.save();
+    ctx.globalAlpha = a;
+
+    const nemo = projectGlobe(cLon, cLat, cLon, cLat, R, cx, cy);
+
+    // Target Radar Grid around Point Nemo
+    ctx.strokeStyle = 'rgba(255, 85, 0, 0.25)';
+    ctx.lineWidth = 1;
+    [45, 95, 150].forEach(rad => {
+      ctx.beginPath();
+      ctx.arc(nemo.x, nemo.y, rad, 0, Math.PI * 2);
+      ctx.stroke();
+    });
+    ctx.beginPath();
+    ctx.moveTo(nemo.x - 170, nemo.y); ctx.lineTo(nemo.x + 170, nemo.y);
+    ctx.moveTo(nemo.x, nemo.y - 170); ctx.lineTo(nemo.x, nemo.y + 170);
+    ctx.stroke();
+
+    // Plot 260+ Deorbited Debris Footprints
+    const debProg = clamp((t - 22.2) / 6.5);
+    for (const d of debrisCloud) {
+      if (debProg < d.delay) continue;
+      const pt = projectGlobe(d.lon, d.lat, cLon, cLat, R, cx, cy);
+      const localA = clamp((debProg - d.delay) * 5);
+      ctx.fillStyle = d.size > 2 ? C.orange : C.amber;
+      ctx.globalAlpha = a * localA * 0.78;
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, d.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = a;
+
+    // Animated Re-entry Trajectories (Glowing atmospheric arcs from NW to Point Nemo)
+    spacecraft.forEach((sc, idx) => {
+      const startT = 22.3 + idx * 1.3;
+      const p = clamp((t - startT) / 1.4);
+      if (p <= 0) return;
+
+      const target = projectGlobe(cLon + sc.dLon, cLat + sc.dLat, cLon, cLat, R, cx, cy);
+      const startX = cx - 260 + idx * 20;
+      const startY = cy - 230 - idx * 12;
+      const ctrlX = (startX + target.x) * 0.5 + 40;
+      const ctrlY = (startY + target.y) * 0.5 - 90;
+
+      // Draw trajectory curve up to p
+      ctx.strokeStyle = sc.future ? C.cyan : C.orange;
+      ctx.lineWidth = sc.future ? 2.2 : 1.8;
+      if (sc.future) ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      const segs = 30;
+      const maxS = Math.floor(segs * easeOutCubic(p));
+      let tipX = startX, tipY = startY;
+      for (let s = 0; s <= maxS; s++) {
+        const u = s / segs;
+        const x = (1 - u) * (1 - u) * startX + 2 * (1 - u) * u * ctrlX + u * u * target.x;
+        const y = (1 - u) * (1 - u) * startY + 2 * (1 - u) * u * ctrlY + u * u * target.y;
+        if (s === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+        tipX = x; tipY = y;
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Fireball head / impact marker
+      ctx.fillStyle = sc.future ? C.cyan : '#ffffff';
+      ctx.beginPath();
+      ctx.arc(tipX, tipY, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (p >= 0.98) {
+        ctx.font = '700 11px monospace';
+        ctx.fillStyle = sc.future ? C.cyan : C.amber;
+        ctx.textAlign = 'left';
+        ctx.fillText(sc.name.split(' ')[0] + ' [' + sc.year + ']', target.x + 8, target.y + 4);
+      }
+    });
+
+    // Right Dossier: Deorbit Manifest
+    const px = 750, py = 96, pw = 480, ph = 530;
+    ctx.fillStyle = 'rgba(5, 14, 26, 0.86)';
+    ctx.fillRect(px, py, pw, ph);
+    drawCornerBrackets(px, py, pw, ph, 16, C.orange, 0.85);
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = C.orange;
+    ctx.font = '600 12px monospace';
+    ctx.fillText('SOUTH PACIFIC OCEAN UNINHABITED AREA (SPOUA)', px + 24, py + 36);
+
+    ctx.fillStyle = C.white;
+    ctx.font = '700 28px sans-serif';
+    ctx.fillText('SPACECRAFT CEMETERY', px + 24, py + 72);
+
+    // Total deorbited counter
+    const totalCount = Math.round(300 * easeOutCubic( clamp((t - 22) / 5) ));
+    ctx.fillStyle = 'rgba(255, 85, 0, 0.1)';
+    ctx.fillRect(px + 24, py + 90, pw - 48, 58);
+    ctx.fillStyle = C.orange;
+    ctx.font = '700 32px monospace';
+    ctx.fillText(`${totalCount}+ SPACECRAFT`, px + 38, py + 130);
+    ctx.fillStyle = C.muted;
+    ctx.font = '11px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText('DEORBITED SINCE 1971', px + pw - 38, py + 125);
+
+    // Table of historic vessels
+    ctx.textAlign = 'left';
+    spacecraft.forEach((sc, i) => {
+      const rowY = py + 172 + i * 68;
+      const rowA = clamp((t - (22.4 + i * 1.1)) / 0.8);
+      if (rowA <= 0) return;
+
+      ctx.save();
+      ctx.globalAlpha = a * rowA;
+      ctx.fillStyle = sc.future ? 'rgba(0, 229, 255, 0.08)' : 'rgba(255, 255, 255, 0.03)';
+      ctx.fillRect(px + 24, rowY, pw - 48, 56);
+
+      ctx.fillStyle = sc.future ? C.cyan : C.amber;
+      ctx.fillRect(px + 24, rowY, 4, 56);
+
+      ctx.fillStyle = C.white;
+      ctx.font = '700 14px monospace';
+      ctx.fillText(`${sc.name}`, px + 38, rowY + 22);
+
+      ctx.fillStyle = C.muted;
+      ctx.font = '12px sans-serif';
+      ctx.fillText(sc.desc, px + 38, rowY + 42);
+
+      ctx.textAlign = 'right';
+      ctx.fillStyle = sc.future ? C.cyan : C.orange;
+      ctx.font = '700 14px monospace';
+      ctx.fillText(`${sc.year} // ${sc.mass}`, px + pw - 36, rowY + 22);
+
+      ctx.fillStyle = C.muted;
+      ctx.font = '11px monospace';
+      ctx.fillText(sc.count, px + pw - 36, rowY + 42);
+      ctx.restore();
+    });
+
+    ctx.restore();
+  }
+
+  // SCENE 4: Final Synthesis Card (31.5s - 36s)
+  function drawScene4(t) {
+    const a = fade(t, 31.5, 36.0, 1.0, 0.8);
+    if (a <= 0) return;
+
+    // Subtle background centered globe
+    renderGlobe(-123.39, -48.88, 290, W * 0.5, H * 0.5, a * 0.28);
+
+    ctx.save();
+    ctx.globalAlpha = a;
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = C.cyan;
+    ctx.font = '600 14px monospace';
+    ctx.fillText('48°52.6′S  123°23.6′W // EARTH’S MOST ISOLATED COORDINATE', W * 0.5, 155);
+
+    ctx.fillStyle = C.white;
+    ctx.font = '700 54px sans-serif';
+    ctx.fillText('POINT NEMO', W * 0.5, 215);
+
+    ctx.fillStyle = C.muted;
+    ctx.font = '18px sans-serif';
+    ctx.fillText('Where terrestrial remoteness meets orbital finality in the South Pacific Gyre', W * 0.5, 252);
+
+    const cards = [
+      {
+        label: 'TERRESTRIAL ISOLATION',
+        val: '2,688 KM',
+        sub: 'Farthest point from any land',
+        detail: 'Equidistant from Ducie, Motu Nui & Maher Island',
+        color: C.amber
+      },
+      {
+        label: 'VERTICAL PROXIMITY',
+        val: '408 KM',
+        sub: 'Altitude of passing ISS crew',
+        detail: 'Astronauts in orbit are 6.6× closer than people on land',
+        color: C.cyan
+      },
+      {
+        label: 'SPACECRAFT GRAVEYARD',
+        val: '300+ CRAFT',
+        sub: 'Resting at 4,000m ocean depth',
+        detail: 'Mir, Salyut, cargo freighters & the ISS in 2031',
+        color: C.orange
+      }
+    ];
+
+    const cw = 356, ch = 220, gap = 32;
+    const startX = (W - (cw * 3 + gap * 2)) * 0.5;
+    const cy = 320;
+
+    cards.forEach((c, idx) => {
+      const x = startX + idx * (cw + gap);
+      ctx.fillStyle = 'rgba(5, 16, 30, 0.88)';
+      ctx.fillRect(x, cy, cw, ch);
+      drawCornerBrackets(x, cy, cw, ch, 16, c.color, 0.9);
+
+      ctx.textAlign = 'center';
+      ctx.fillStyle = c.color;
+      ctx.font = '600 12px monospace';
+      ctx.fillText(c.label, x + cw * 0.5, cy + 40);
+
+      ctx.fillStyle = C.white;
+      ctx.font = '700 44px monospace';
+      ctx.fillText(c.val, x + cw * 0.5, cy + 102);
+
+      ctx.fillStyle = c.color;
+      ctx.font = '600 14px sans-serif';
+      ctx.fillText(c.sub, x + cw * 0.5, cy + 142);
+
+      ctx.fillStyle = C.muted;
+      ctx.font = '13px sans-serif';
+      ctx.fillText(c.detail, x + cw * 0.5, cy + 174);
+    });
+
+    ctx.restore();
+  }
+
+  function frame(now) {
+    const t = ((now * 0.001) + tOffset) % window.DUR;
+
+    drawBackground(t);
+    drawScene1(t);
+    drawScene2(t);
+    drawScene3(t);
+    drawScene4(t);
+    drawTopHUD(t);
+
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

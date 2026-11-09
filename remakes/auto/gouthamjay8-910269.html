@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flowline — Launch</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=32;
+const cv=document.getElementById('c'),x=cv.getContext('2d'),W=1280,H=720;
+function fit(){const s=Math.min(innerWidth/W,innerHeight/H);cv.style.transform=`scale(${s}) translate(-50%,-50%)`;cv.style.left='50%';cv.style.top='50%';cv.style.transformOrigin='0 0';cv.style.transform=`translate(-50%,-50%) scale(${s})`;cv.style.transformOrigin='center';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),T0=parseFloat(q.get('t')||0)||0,start=performance.now();
+const cl=v=>Math.max(0,Math.min(1,v)),eo=t=>1-Math.pow(1-cl(t),4),eio=t=>{t=cl(t);return t<.5?8*t*t*t*t:1-Math.pow(-2*t+2,4)/2};
+const bk=t=>{t=cl(t);const c=1.70158;return 1+(c+1)*Math.pow(t-1,3)+c*Math.pow(t-1,2)};
+const lerp=(a,b,t)=>a+(b-a)*t;
+const F='-apple-system,"Segoe UI",Helvetica,Arial,sans-serif';
+const A1='#7c5cff',A2='#22d3ee',A3='#ff5c9a';
+let R=1;function rnd(){R=(R*16807)%2147483647;return R/2147483647}
+const P=[...Array(90)].map(()=>({x:rnd()*W,y:rnd()*H,s:rnd()*2+.5,v:rnd()*.4+.1}));
+function rr(X,Y,w,h,r){x.beginPath();x.roundRect(X,Y,w,h,r)}
+function txt(s,X,Y,size,col,wt=700,al='center',a=1,sp=0){x.globalAlpha=a;x.fillStyle=col;x.font=`${wt} ${size}px ${F}`;x.textAlign=al;x.textBaseline='middle';if(x.letterSpacing!==undefined)x.letterSpacing=sp+'px';x.fillText(s,X,Y);x.globalAlpha=1;if(x.letterSpacing!==undefined)x.letterSpacing='0px'}
+function grad(X1,Y1,X2,Y2){const g=x.createLinearGradient(X1,Y1,X2,Y2);g.addColorStop(0,A1);g.addColorStop(.5,A2);g.addColorStop(1,A3);return g}
+function bg(t){x.fillStyle='#07070d';x.fillRect(0,0,W,H);
+ const blobs=[[A1,300+Math.sin(t*.3)*120,250],[A2,980+Math.cos(t*.25)*100,480],[A3,640,700+Math.sin(t*.4)*80]];
+ for(const[c,bx,by]of blobs){const g=x.createRadialGradient(bx,by,0,bx,by,520);g.addColorStop(0,c+'40');g.addColorStop(1,c+'00');x.fillStyle=g;x.fillRect(0,0,W,H)}
+ x.strokeStyle='rgba(255,255,255,.035)';x.lineWidth=1;const o=(t*12)%60;
+ for(let i=-60;i<W+60;i+=60){x.beginPath();x.moveTo(i+o,0);x.lineTo(i+o,H);x.stroke()}
+ for(let j=-60;j<H+60;j+=60){x.beginPath();x.moveTo(0,j+o);x.lineTo(W,j+o);x.stroke()}
+ for(const p of P){const yy=(p.y-t*p.v*40+H*10)%H;x.fillStyle=`rgba(255,255,255,${.15+p.s*.12})`;x.fillRect(p.x,yy,p.s,p.s)}}
+function logo(cx,cy,s,t,a=1){x.save();x.translate(cx,cy);x.scale(s,s);x.globalAlpha=a;
+ rr(-40,-40,80,80,22);x.fillStyle=grad(-40,-40,40,40);x.fill();
+ x.strokeStyle='#fff';x.lineWidth=7;x.lineCap='round';x.beginPath();
+ for(let i=0;i<=30;i++){const u=i/30,px=-22+u*44,py=Math.sin(u*Math.PI*2+t*3)*10;i?x.lineTo(px,py):x.moveTo(px,py)}x.stroke();
+ x.restore();x.globalAlpha=1}
+// window chrome with dashboard
+function dash(t,cx,cy,sc,rot){x.save();x.translate(cx,cy);x.scale(sc,sc);x.transform(1,0,Math.sin(rot)*.15,1,0,0);
+ const w=900,h=520,X=-w/2,Y=-h/2;
+ x.shadowColor='rgba(124,92,255,.5)';x.shadowBlur=60;rr(X,Y,w,h,18);x.fillStyle='#11111c';x.fill();x.shadowBlur=0;
+ x.strokeStyle='rgba(255,255,255,.1)';x.lineWidth=1.5;x.stroke();
+ ['#ff5f57','#febc2e','#28c840'].forEach((c,i)=>{x.fillStyle=c;x.beginPath();x.arc(X+22+i*20,Y+20,6,0,7);x.fill()});
+ x.fillStyle='rgba(255,255,255,.04)';x.fillRect(X,Y+40,180,h-40);
+ ['Overview','Workflows','Analytics','Team','Settings'].forEach((s,i)=>{const sel=i==1;if(sel){rr(X+12,Y+62+i*40,156,32,8);x.fillStyle='rgba(124,92,255,.25)';x.fill()}txt(s,X+30,Y+78+i*40,14,sel?'#fff':'#8a8aa0',sel?600:500,'left')});
+ // workflow nodes
+ const nodes=[['Trigger: New lead',X+230,Y+80],['AI: Enrich data',X+430,Y+170],['Route to Sales',X+250,Y+270],['Send Slack alert',X+500,Y+300]];
+ for(let i=0;i<nodes.length-1;i++){const p=eo((t-.4-i*.35)/.5),[,ax,ay]=nodes[i],[,bx,by]=nodes[i+1];
+  x.strokeStyle=grad(ax,ay,bx,by);x.lineWidth=2.5;x.setLineDash([6,6]);x.lineDashOffset=-t*30;x.beginPath();x.moveTo(ax+80,ay+20);x.lineTo(lerp(ax+80,bx+80,p),lerp(ay+20,by+20,p));x.stroke();x.setLineDash([])}
+ nodes.forEach(([s,nx,ny],i)=>{const p=bk((t-i*.35)/.5);if(p<=0)return;x.save();x.translate(nx+80,ny+20);x.scale(p,p);rr(-80,-20,160,40,10);x.fillStyle='#1c1c2e';x.fill();x.strokeStyle=[A1,A2,A3,'#28c840'][i];x.lineWidth=1.5;x.stroke();x.fillStyle=[A1,A2,A3,'#28c840'][i];x.beginPath();x.arc(-62,0,5,0,7);x.fill();txt(s,-50,0,13,'#e8e8f5',600,'left');x.restore()});
+ // chart card
+ const cX=X+640,cY=Y+70;rr(cX,cY,240,180,12);x.fillStyle='rgba(255,255,255,.04)';x.fill();
+ txt('Tasks automated',cX+16,cY+22,12,'#8a8aa0',500,'left');txt(Math.round(eo((t-1)/2)*12840).toLocaleString('en-US'),cX+16,cY+50,26,'#fff',800,'left');
+ for(let i=0;i<9;i++){const hh=(30+i*9+Math.sin(i)*12)*eo((t-1.2-i*.08)/.6);rr(cX+18+i*24,cY+165-hh,14,hh,4);x.fillStyle=grad(0,cY+80,0,cY+170);x.fill()}
+ // line chart
+ const lX=X+640,lY=Y+270;rr(lX,lY,240,220,12);x.fillStyle='rgba(255,255,255,.04)';x.fill();txt('Hours saved',lX+16,lY+22,12,'#8a8aa0',500,'left');
+ const lp=eo((t-1.5)/1.8);x.beginPath();for(let i=0;i<=40*lp;i++){const u=i/40,px=lX+16+u*208,py=lY+190-u*120-Math.sin(u*9)*14;i?x.lineTo(px,py):x.moveTo(px,py)}x.strokeStyle=A2;x.lineWidth=3;x.stroke();
+ // cursor
+ const ct=cl((t-2)/2.5),kx=lerp(X+700,X+330,eio(ct)),ky=lerp(Y+460,Y+290,eio(ct));
+ if(t>2){x.fillStyle='#fff';x.beginPath();x.moveTo(kx,ky);x.lineTo(kx,ky+22);x.lineTo(kx+6,ky+16);x.lineTo(kx+15,ky+16);x.closePath();x.fill();
+  if(ct>=1){const r=eo((t-4.5)/.6);x.strokeStyle=`rgba(255,255,255,${1-r})`;x.lineWidth=2;x.beginPath();x.arc(kx,ky,r*30,0,7);x.stroke()}}
+ x.restore()}
+function words(arr,cy,t,size){ // kinetic word reveal
+ x.font=`800 ${size}px ${F}`;const ws=arr.map(a=>x.measureText(a[0]+' ').width),tot=ws.reduce((a,b)=>a+b,0);let px=W/2-tot/2;
+ arr.forEach(([w,c],i)=>{const p=eo((t-i*.12)/.6);x.save();x.beginPath();x.rect(px-10,cy-size,ws[i]+20,size*2);x.clip();
+  txt(w,px,cy+(1-p)*size*1.2,size,c==1?grad(px,0,px+ws[i],0):'#fff',800,'left',p);x.restore();px+=ws[i]});}
+function card(t,i,title,desc,cx,cy){const p=bk((t-i*.2)/.7);if(p<=0)return;x.save();x.translate(cx,cy+(1-cl(p))*80);x.globalAlpha=cl(p);
+ rr(-170,-150,340,300,22);x.fillStyle='rgba(20,20,34,.85)';x.fill();x.strokeStyle='rgba(255,255,255,.1)';x.stroke();
+ const c=[A1,A2,A3][i];const g=x.createRadialGradient(0,-60,0,0,-60,120);g.addColorStop(0,c+'55');g.addColorStop(1,c+'00');x.fillStyle=g;x.fillRect(-170,-150,340,200);
+ rr(-34,-100,68,68,18);x.fillStyle=c;x.fill();x.strokeStyle='#fff';x.lineWidth=4;x.lineCap='round';x.lineJoin='round';x.beginPath();
+ const s=t*2;if(i==0){x.moveTo(-6,-88);x.lineTo(-14,-66);x.lineTo(2,-66);x.lineTo(-6,-44)}
+ else if(i==1){for(let k=0;k<3;k++){x.moveTo(-14+k*14,-46);x.lineTo(-14+k*14,-46-(12+k*8+Math.sin(s+k)*4))}}
+ else{x.arc(-8,-70,9,0,7);x.moveTo(17,-70);x.arc(10,-70,7,0,7)}x.stroke();
+ txt(title,0,20,28,'#fff',800);desc.forEach((d,k)=>txt(d,0,64+k*26,16,'#a0a0b8',500));x.restore()}
+function frame(now){let t=((now-start)/1000+T0)%DUR;bg(t);
+ // Scene 1: logo 0-4.5
+ if(t<4.8){const a=1-cl((t-4.2)/.6);const s=bk(t/.9);
+  for(let k=0;k<3;k++){const r=eo((t-.1-k*.15)/1.4);x.strokeStyle=`rgba(124,92,255,${(1-r)*.6*a})`;x.lineWidth=2;x.beginPath();x.arc(W/2,330,r*500,0,7);x.stroke()}
+  const sh=eio((t-1.2)/.8)*150;logo(W/2-sh,330,s*1.4,t,a);
+  x.save();x.beginPath();x.rect(W/2-sh+70,250,600,160);x.clip();txt('Flowline',W/2-sh+80-(1-eo((t-1.4)/.8))*200,330,92,'#fff',800,'left',a,-2);x.restore();
+  txt('INTRODUCING',W/2,200,16,A2,700,'center',eo((t-2)/.6)*a,6);
+  txt('Workflows that run themselves.',W/2,470,26,'#b8b8d0',500,'center',eo((t-2.5)/.6)*a)}
+ // Scene 2: problem 4.5-9
+ else if(t<9){const l=t-4.5,a=1-cl((l-3.9)/.5);x.globalAlpha=a;
+  words([['Your',0],['team',0],['is',0],['drowning',1]],290,l,76);words([['in',0],['busywork.',0]],380,l-.5,76);
+  const tags=['Copy-paste','Status updates','Manual reports','Data entry','Follow-ups'];
+  tags.forEach((s,i)=>{const p=eo((l-1.2-i*.12)/.5),ang=i/5*6.28+l*.3;const tx=W/2+Math.cos(ang)*480,ty=330+Math.sin(ang)*250;
+   x.globalAlpha=p*a*.8;rr(tx-80,ty-20,160,40,20);x.fillStyle='rgba(255,92,154,.15)';x.fill();x.strokeStyle='rgba(255,92,154,.5)';x.stroke();txt(s,tx,ty,15,'#ffb3cf',600,'center',p*a)});
+  const sw=eio((l-2.6)/.6);x.globalAlpha=a;rr(W/2-160,470,320*sw,6,3);x.fillStyle=grad(W/2-160,0,W/2+160,0);x.fill();
+  txt('There\'s a better way.',W/2,520,26,'#cfcfe6',600,'center',eo((l-3)/.5)*a);x.globalAlpha=1}
+ // Scene 3: product 9-16
+ else if(t<16){const l=t-9,a=1-cl((l-6.5)/.5);x.globalAlpha=a;
+  txt('Build automations visually. In minutes.',W/2,60,30,'#fff',800,'center',eo(l/.6)*a);
+  const sc=lerp(.6,.95,eo(l/1.2))+l*.008;x.globalAlpha=a*cl(l/.5);dash(l-.6,W/2,390,sc,(1-eo(l/1.2))*1.2);x.globalAlpha=1}
+ // Scene 4: features 16-22.5
+ else if(t<22.5){const l=t-16,a=1-cl((l-6)/.5);x.globalAlpha=a;
+  txt('EVERYTHING YOU NEED',W/2,100,15,A2,700,'center',eo(l/.5)*a,6);words([['One',0],['platform.',0],['Zero',0],['friction.',1]],150,l,48);
+  x.globalAlpha=a;card(l-.5,0,'Automate',['Drag-and-drop flows','with 300+ integrations'],W/2-370,420);
+  card(l-.5,1,'Analyze',['Live insights on every','process you run'],W/2,420);
+  card(l-.5,2,'Collaborate',['Share, review and ship','together in real time'],W/2+370,420);x.globalAlpha=1}
+ // Scene 5: stats 22.5-27.5
+ else if(t<27.5){const l=t-22.5,a=1-cl((l-4.5)/.5);
+  txt('Teams ship faster with Flowline',W/2,140,40,'#fff',800,'center',eo(l/.6)*a);
+  const st=[[10,'x','faster workflows'],[40,'h','saved per person / month'],[99.9,'%','uptime SLA']];
+  st.forEach(([v,u,lab],i)=>{const p=eo((l-.4-i*.2)/1.6),cx=W/2+(i-1)*380,cy=360;x.globalAlpha=a*cl(p*2);
+   x.strokeStyle='rgba(255,255,255,.08)';x.lineWidth=8;x.beginPath();x.arc(cx,cy,110,0,7);x.stroke();
+   x.strokeStyle=grad(cx-110,0,cx+110,0);x.lineCap='round';x.beginPath();x.arc(cx,cy,110,-1.57,-1.57+6.28*p*(v>50?.999:v/(i?45:12)));x.stroke();
+   txt((i==2?(v*p).toFixed(1):Math.round(v*p))+u,cx,cy-6,58,'#fff',800,'center',a*cl(p*2));txt(lab,cx,cy+160,18,'#a0a0b8',500,'center',a*cl(p*2))});x.globalAlpha=1}
+ // Scene 6: CTA 27.5-32
+ else{const l=t-27.5,a=1-cl((l-4)/.5);const s=bk(l/.8);logo(W/2,220,s*1.2,t,a);
+  words([['Automate',0],['the',0],['boring.',0],['Ship',0],['the',0],['brilliant.',1]],360,l-.3,52);
+  const bp=bk((l-1.2)/.7);if(bp>0){x.save();x.translate(W/2,480);x.scale(bp,bp);x.globalAlpha=a;x.shadowColor=A1;x.shadowBlur=30+Math.sin(l*4)*10;
+   rr(-170,-32,340,64,32);x.fillStyle=grad(-170,0,170,0);x.fill();x.shadowBlur=0;txt('Start free — flowline.app',0,0,22,'#fff',700,'center',a);x.restore()}
+  txt('No credit card required · Live today',W/2,560,16,'#8a8aa0',500,'center',eo((l-1.8)/.6)*a)}
+ // vignette + letterbox
+ const v=x.createRadialGradient(W/2,H/2,300,W/2,H/2,800);v.addColorStop(0,'rgba(0,0,0,0)');v.addColorStop(1,'rgba(0,0,0,.6)');x.fillStyle=v;x.fillRect(0,0,W,H);
+ x.fillStyle=grad(0,0,W,0);x.fillRect(0,H-3,W*(t/DUR),3);
+ requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto — readsotto.app</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=60;
+const cv=document.getElementById('c'),x=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||'0')||0;
+const t0=performance.now()-off*1000;
+
+const S=[
+ {a:0,title:"Sotto",sub:"readsotto.app",say:"Meet Sotto, a reading app you can find at read sotto dot app."},
+ {a:10,title:"What's in a name?",sub:"sotto voce · Italian · “under the voice”",say:"The name comes from the Italian phrase sotto voce, meaning under the voice: quiet, close, and personal."},
+ {a:20,title:"Reading is a quiet act",sub:"focus · attention · calm",say:"Good reading happens in that quiet space, where your attention can settle on one page at a time."},
+ {a:30,title:"Make it a habit",sub:"a few pages a day add up",say:"Small, steady sessions build lasting habits. A few pages each day can become dozens of books a year."},
+ {a:40,title:"Read, reflect, return",sub:"notice · remember · come back",say:"Pause to reflect on what you read, and return to it. That is how ideas truly stay with you."},
+ {a:50,title:"Try it yourself",sub:"readsotto.app",say:"Visit read sotto dot app to explore it yourself, and find your quiet place to read."}
+];
+let spoken=-1;
+function speak(i){
+ try{if(!window.speechSynthesis)return;speechSynthesis.cancel();
+ const u=new SpeechSynthesisUtterance(S[i].say);u.rate=0.95;u.pitch=1;u.lang='en-US';speechSynthesis.speak(u);}catch(e){}
+}
+const ease=v=>v<0?0:v>1?1:v*v*(3-2*v);
+function wrap(txt,w){const ws=txt.split(' '),L=[];let l='';for(const s of ws){const tt=l?l+' '+s:s;if(x.measureText(tt).width>w){L.push(l);l=s}else l=tt}L.push(l);return L}
+
+// procedural floating letters
+const P=[];for(let i=0;i<70;i++)P.push({x:Math.random()*1280,y:Math.random()*720,s:10+Math.random()*26,v:4+Math.random()*12,c:"abcdefghijklmnopqrstuvwxyz"[i%26],p:Math.random()*6});
+
+function book(cx,cy,sc,t,open){
+ x.save();x.translate(cx,cy);x.scale(sc,sc);
+ x.fillStyle='#2a1d14';x.fillRect(-170,-110,340,220);
+ const a=open;
+ for(const sd of[-1,1]){x.save();x.scale(sd,1);
+  x.fillStyle='#f3ead8';x.beginPath();x.moveTo(0,-100);x.quadraticCurveTo(80,-112-6*a,160*a+4,-100);x.lineTo(160*a+4,100);x.quadraticCurveTo(80,92,0,100);x.fill();
+  x.strokeStyle='rgba(80,60,40,.35)';x.lineWidth=2;
+  for(let j=0;j<9;j++){const yy=-70+j*18;x.beginPath();x.moveTo(18,yy);x.lineTo(18+(120-((j*37)%40))*a,yy);x.stroke();}
+  x.restore();}
+ x.restore();
+}
+
+function frame(){
+ const T=((performance.now()-t0)/1000)%DUR;
+ let i=0;for(let k=0;k<S.length;k++)if(T>=S[k].a)i=k;
+ if(i!==spoken){spoken=i;speak(i);}
+ const lt=T-S[i].a;
+ const g=x.createRadialGradient(640,360,50,640,360,800);
+ const hue=[30,20,200,140,260,30][i];
+ g.addColorStop(0,`hsl(${hue},35%,16%)`);g.addColorStop(1,'#050506');
+ x.fillStyle=g;x.fillRect(0,0,1280,720);
+ x.textAlign='center';x.textBaseline='middle';
+ for(const p of P){const y=(p.y-T*p.v+720*5)%760-20;x.globalAlpha=.08+.06*Math.sin(T+p.p);x.fillStyle='#f5e6c8';x.font=`italic ${p.s}px Georgia,serif`;x.fillText(p.c,(p.x+Math.sin(T*.3+p.p)*20),y);}
+ x.globalAlpha=1;
+ const fin=ease(lt/1.2),fout=1-ease((lt-9.2)/0.8),al=fin*fout;
+ x.globalAlpha=al;
+ // scene visual
+ const cy=300;
+ if(i===0||i===5){book(640,cy+10,1.1,T,ease(lt/2.5));
+  x.fillStyle='rgba(255,220,150,.15)';x.beginPath();x.arc(640,cy,220+10*Math.sin(T*2),0,7);x.fill();}
+ else if(i===1){for(let k=0;k<3;k++){x.strokeStyle=`rgba(245,230,200,${.5-k*.15})`;x.lineWidth=3;x.beginPath();x.arc(640,cy,60+k*45+((lt*30)%45),-0.6,0.6);x.stroke();x.beginPath();x.arc(640,cy,60+k*45+((lt*30)%45),Math.PI-0.6,Math.PI+0.6);x.stroke();}
+  x.fillStyle='#f5e6c8';x.font='italic 64px Georgia,serif';x.fillText('sotto voce',640,cy);}
+ else if(i===2){book(640,cy,1,T,1);x.fillStyle='rgba(255,230,160,.25)';const ly=cy-70+((lt*20)%150);x.fillRect(470,ly,340,10);}
+ else if(i===3){for(let d=0;d<30;d++){const r=Math.floor(d/10),c=d%10,on=d<lt*3.2;x.fillStyle=on?'#e7b866':'rgba(255,255,255,.1)';x.fillRect(430+c*44,cy-80+r*60,30,44);}}
+ else if(i===4){const lb=['read','reflect','return'];for(let k=0;k<3;k++){const an=-Math.PI/2+k*2.094+lt*.4,px=640+Math.cos(an)*120,py=cy+Math.sin(an)*120;x.fillStyle='#e7b866';x.beginPath();x.arc(px,py,42,0,7);x.fill();x.fillStyle='#1a120a';x.font='bold 20px Georgia,serif';x.fillText(lb[k],px,py);}
+  x.strokeStyle='rgba(245,230,200,.3)';x.lineWidth=2;x.beginPath();x.arc(640,cy,120,0,7);x.stroke();}
+ // titles
+ x.fillStyle='#fbf3e3';x.font='bold 54px Georgia,serif';x.fillText(S[i].title,640,90-(1-fin)*20);
+ x.fillStyle='#d9b77a';x.font='italic 26px Georgia,serif';x.fillText(S[i].sub,640,520);
+ // caption
+ x.font='24px Helvetica,Arial,sans-serif';const L=wrap(S[i].say,1000);
+ x.fillStyle='rgba(0,0,0,.55)';x.fillRect(120,580,1040,30+L.length*32);
+ x.fillStyle='#fff';L.forEach((l,k)=>x.fillText(l,640,610+k*32));
+ x.globalAlpha=1;
+ // progress
+ x.fillStyle='rgba(255,255,255,.12)';x.fillRect(0,714,1280,6);x.fillStyle='#e7b866';x.fillRect(0,714,1280*T/DUR,6);
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

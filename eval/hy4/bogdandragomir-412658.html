@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ULTRACODE // Autonomous Software Engineering</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+  canvas {
+    width: 100vw; height: 100vh;
+    object-fit: contain;
+    background: #050508;
+  }
+</style>
+</head>
+<body>
+<script>
+const DUR = 24;
+window.DUR = DUR;
+
+const params = new URLSearchParams(location.search);
+const startOffset = parseFloat(params.get('t')) || 0;
+let startPerf = performance.now();
+let lastScheduledT = startOffset;
+
+const canvas = document.createElement('canvas');
+canvas.width = 1280; canvas.height = 720;
+document.body.appendChild(canvas);
+const ctx = canvas.getContext('2d', { alpha: false });
+
+// --- MATH & UTILS ---
+const smooth = (a, b, t) => Math.max(0, Math.min(1, (t - a) / (b - a)));
+const midiToFreq = m => 440 * Math.pow(2, (m - 69) / 12);
+const setGlow = (c, b) => { ctx.shadowColor = c; ctx.shadowBlur = b; };
+const clearGlow = () => { ctx.shadowBlur = 0; };
+
+function project(x, y, z, fov=600) {
+    let s = fov / (fov + z);
+    return { x: 640 + x * s, y: 360 + y * s, s: s };
+}
+
+// --- AUDIO ENGINE ---
+let audioCtx, masterGain, compressor, convolver, noiseBuffer;
+let suspendStart = null;
+
+function initAudio() {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0.55;
+    
+    compressor = audioCtx.createDynamicsCompressor();
+    compressor.threshold.value = -14;
+    compressor.ratio.value = 4;
+    compressor.attack.value = 0.003;
+    compressor.release.value = 0.25;
+    
+    masterGain.connect(compressor);
+    compressor.connect(audioCtx.destination);
+    
+    // Procedural Reverb IR
+    let len = audioCtx.sampleRate * 2.5;
+    let buf = audioCtx.createBuffer(2, len, audioCtx.sampleRate);
+    for(let c=0; c<2; c++) {
+        let d = buf.getChannelData(c);
+        for(let i=0; i<len; i++) d[i] = (Math.random()*2 - 1) * Math.pow(1 - i/len, 2.5);
+    }
+    convolver = audioCtx.createConvolver();
+    convolver.buffer = buf;
+    let revGain = audioCtx.createGain();
+    revGain.gain.value = 0.5;
+    convolver.connect(revGain);
+    revGain.connect(compressor);
+    
+    // Global Noise Buffer
+    let nLen = audioCtx.sampleRate * 2;
+    noiseBuffer = audioCtx.createBuffer(1, nLen, audioCtx.sampleRate);
+    let nData = noiseBuffer.getChannelData(0);
+    for (let i=0; i<nLen; i++) nData[i] = Math.random()*2 - 1;
+    
+    if (audioCtx.state === 'suspended') suspendStart = performance.now();
+}
+
+function connectOut(node, wet=0) {
+    node.connect(masterGain);
+    if (wet > 0) {
+        let send = audioCtx.createGain();
+        send.gain.value = wet;
+        node.connect(send);
+        send.connect(convolver);
+    }
+}
+
+function playSynth(midi, at, dur, type, vol, cutoff, isPad=false, wet=0.2) {
+    let osc = audioCtx.createOscillator();
+    let gain = audioCtx.createGain();
+    let filter = audioCtx.createBiquadFilter();
+    
+    osc.type = type;
+    osc.frequency.value = midiToFreq(midi);
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(cutoff, at);
+    
+    if (isPad) filter.frequency.linearRampToValueAtTime(cutoff * 2, at + dur);
+    else filter.frequency.exponentialRampToValueAtTime(Math.max(100, cutoff*0.2), at + dur);
+    
+    let atk = isPad ? dur * 0.2 : 0.015;
+    gain.gain.setValueAtTime(0, at);
+    gain.gain.linearRampToValueAtTime(vol, at + atk);
+    gain.gain.exponentialRampToValueAtTime(0.001, at + dur);
+    
+    osc.connect(filter); filter.connect(gain);
+    connectOut(gain, wet);
+    osc.start(at); osc.stop(at + dur + 0.1);
+}
+
+function playPad(notes, at, dur, vol) {
+    notes.forEach(n => playSynth(n, at, dur, 'sawtooth', vol/notes.length, 400, true, 0.8));
+    notes.forEach(n => playSynth(n+12, at, dur, 'triangle', vol/notes.length, 800, true, 0.8));
+}
+
+function playKick(at) {
+    let osc = audioCtx.createOscillator();
+    let gain = audioCtx.createGain();
+    osc.frequency.setValueAtTime(150, at);
+    osc.frequency.exponentialRampToValueAtTime(0.01, at + 0.4);
+    gain.gain.setValueAtTime(1.2, at);
+    gain.gain.exponentialRampToValueAtTime(0.001, at + 0.4);
+    osc.connect(gain); connectOut(gain, 0);
+    osc.start(at); osc.stop(at + 0.4);
+}
+
+function playNoise(at, dur, type, freq, vol, wet=0) {
+    let src = audioCtx.createBufferSource();
+    src.buffer = noiseBuffer;
+    let filter = audioCtx.createBiquadFilter();
+    filter.type = type; filter.frequency.value = freq;
+    let gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(vol, at);
+    gain.gain.exponentialRampToValueAtTime(0.001, at + dur);
+    src.connect(filter); filter.connect(gain); 
+    connectOut(gain, wet);
+    src.start(at, 0, dur);
+}
+
+function playImpact(at) {
+    let osc = audioCtx.createOscillator();
+    let gain = audioCtx.createGain();
+    osc.frequency.setValueAtTime(120, at);
+    osc.frequency.exponentialRampToValueAtTime(20, at + 1.5);
+    gain.gain.setValueAtTime(1.2, at);
+    gain.gain.exponentialRampToValueAtTime(0.001, at + 1.5);
+    osc.connect(gain); connectOut(gain, 0.2);
+    osc.start(at); osc.stop(at + 1.5);
+    
+    let src = audioCtx.createBufferSource();
+    src.buffer = noiseBuffer;
+    let filter = audioCtx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(8000, at);
+    filter.frequency.exponentialRampToValueAtTime(100, at + 1.5);
+    let ng = audioCtx.createGain();
+    ng.gain.setValueAtTime(0.6, at);
+    ng.gain.exponentialRampToValueAtTime(0.001, at + 1.5);
+    src.connect(filter); filter.connect(ng); connectOut(ng, 0.9);
+    src.start(at, 0, 1.5);
+}
+
+function scheduleNotes(fromT, toT, currentT) {
+    let spb = 0.5; // 120 BPM
+    let startBeat = Math.floor(fromT / spb);
+    let endBeat = Math.ceil(toT / spb);
+    
+    for (let b = startBeat; b < endBeat; b++) {
+        let t_beat = b * spb;
+        let at = audioCtx.currentTime + (t_beat - currentT);
+        if (at < audioCtx.currentTime - 0.1) continue;
+        if (at < audioCtx.currentTime) at = audioCtx.currentTime;
+        
+        let lb = ((b % 48) + 48) % 48; // Loop beat 0..47
+        
+        // Drums
+        if (lb >= 8 && lb < 40 && b % 2 === 0) playKick(at);
+        if (lb >= 8 && lb < 40 && b % 4 === 2) playNoise(at, 0.2, 'highpass', 1200, 0.35, 0.3);
+        if (lb >= 4 && lb < 44) playNoise(at, 0.05, 'highpass', 7500, lb >= 24 ? 0.12 : 0.06, 0.1);
+        
+        // Bass
+        if (lb >= 8 && lb < 40) {
+            let bass = lb < 32 ? [36,36,40,36,43,36,40,43] : [41,41,45,41,48,41,45,48];
+            playSynth(bass[b%8], at, spb*0.8, 'sawtooth', 0.3, 350, false, 0);
+        }
+        
+        // Arp (16ths)
+        for (let sub = 0; sub < 2; sub++) {
+             let t_sub = t_beat + sub * spb/2;
+             if (t_sub >= fromT && t_sub < toT) {
+                 let a_sub = audioCtx.currentTime + (t_sub - currentT);
+                 if (a_sub < audioCtx.currentTime) a_sub = audioCtx.currentTime;
+                 if (lb >= 16 && lb < 40) {
+                     let arp = lb < 32 ? [60,64,67,71,72,71,67,64] : [65,69,72,76,77,76,72,69];
+                     playSynth(arp[(b*2 + sub)%8], a_sub, spb*0.4, 'square', 0.07, 2500, false, 0.15);
+                 }
+             }
+        }
+        
+        // Pads & Lead
+        if (lb === 24) playPad([48, 55, 60, 64], at, spb*8, 0.5); // Cmaj7
+        if (lb === 32) playPad([53, 60, 65, 69], at, spb*8, 0.5); // Fmaj7
+        if (lb >= 24 && lb < 40) {
+            let lead = [72,0,76,0,79,0,76,0, 77,0,76,0,72,0,69,0];
+            let n = lead[lb - 24];
+            if (n > 0) playSynth(n, at, spb*1.5, 'triangle', 0.22, 3000, false, 0.6);
+        }
+        
+        // Intro Atmos
+        if (lb < 8 && b % 2 === 0) playSynth(36 + (b%4)*5, at, spb*2, 'sine', 0.2, 800, true, 0.5);
+        
+        // Impacts
+        if (lb === 0 || lb === 8 || lb === 24 || lb === 40) playImpact(at);
+    }
+}
+
+// --- VISUAL ENGINE ---
+const particles = Array.from({length: 450}, () => ({
+    x: (Math.random()-0.5)*2200,
+    y: (Math.random()-0.5)*1400,
+    z: Math.random()*2000,
+    isCode: Math.random() > 0.6,
+    c: Math.random() > 0.5 ? '#00f0ff' : '#bd00ff',
+    s: Math.random()*2 + 0.8
+}));
+particles.forEach(p => { if(p.isCode) p.c = '#00ff66'; });
+
+function drawBackground(t) {
+    let drop = smooth(11.5, 12.5, t) * (1 - smooth(20, 22, t));
+    let g = ctx.createRadialGradient(640, 360, 0, 640, 360, 800);
+    g.addColorStop(0, drop > 0 ? `rgb(${8+drop*15}, ${5+drop*5}, ${18+drop*35})` : '#050508');
+    g.addColorStop(1, '#020203');
+    ctx.fillStyle = g;
+    ctx.fillRect(-50, -50, 1380, 820);
+}
+
+function drawGrid(t, T) {
+    ctx.strokeStyle = `rgba(0, 240, 255, ${0.14 * (1 - smooth(23, 24, t))})`;
+    ctx.lineWidth = 1;
+    let spd = t < 12 ? 350 : 80;
+    let off = (T * spd) % 100;
+    for(let z = 0; z < 2000; z += 100) {
+        let zz = z - off;
+        if (zz < 10) continue;
+        let p1 = project(-2000, 360, zz), p2 = project(2000, 360, zz);
+        ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+        let p3 = project(-2000, -360, zz), p4 = project(2000, -360, zz);
+        ctx.beginPath(); ctx.moveTo(p3.x, p3.y); ctx.lineTo(p4.x, p4.y); ctx.stroke();
+    }
+    for(let x = -2000; x <= 2000; x += 200) {
+        let p1 = project(x, 360, 0), p2 = project(x, 360, 2000);
+        ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+        let p3 = project(x, -360, 0), p4 = project(x, -360, 2000);
+        ctx.beginPath(); ctx.moveTo(p3.x, p3.y); ctx.lineTo(p4.x, p4.y); ctx.stroke();
+    }
+}
+
+function drawParticles(t, T, kp) {
+    let speed = t < 4 ? 60 : (t < 12 ? 650 : 120);
+    let conv = smooth(4, 8, t) * (1 - smooth(11, 12, t));
+    let expl = smooth(11.8, 12.5, t);
+    let calm = smooth(20, 22, t);
+    let dropE = smooth(12, 13, t) * (1 - calm);
+    
+    particles.forEach(p => {
+        let pz = (p.z - T * speed) % 2000;
+        if (pz < 0) pz += 2000;
+        
+        let px = p.x * (1 - conv * 0.9) * (1 + expl * 2.2 * (1 - calm));
+        let py = p.y * (1 - conv * 0.9) * (1 + expl * 2.2 * (1 - calm));
+        
+        let pr = project(px, py, pz);
+        let alpha = Math.min(1, (2000 - pz)/400) * Math.min(1, pz/200);
+        
+        ctx.fillStyle = p.c;
+        ctx.globalAlpha = alpha * (0.4 + kp*0.6) * (1 - smooth(23, 24, t));
+        ctx.beginPath();
+        ctx.arc(pr.x, pr.y, p.s * pr.s * (1 + dropE*0.5), 0, Math.PI*2);
+        ctx.fill();
+        
+        if (t > 4 && t < 12) {
+            let trail = p.isCode ? 350 : 120;
+            let p2 = project(px, py, pz + trail);
+            ctx.strokeStyle = p.c;
+            ctx.lineWidth = pr.s * (p.isCode ? 2 : 1);
+            ctx.beginPath(); ctx.moveTo(pr.x, pr.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+        }
+    });
+    ctx.globalAlpha = 1;
+}
+
+function drawCube(t, T, kp) {
+    let vis = smooth(4, 6, t) * (1 - smooth(11.8, 12.2, t));
+    if (vis <= 0) return;
+    let expl = smooth(11.7, 12.2, t);
+    let rx = T * 0.5, ry = T * 0.8;
+    let size = (140 + kp * 20) * (1 + expl * 6);
+    
+    let v = [[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]];
+    let pv = v.map(p => {
+        let x=p[0]*size, y=p[1]*size, z=p[2]*size;
+        let y1 = y*Math.cos(rx) - z*Math.sin(rx);
+        let z1 = y*Math.sin(rx) + z*Math.cos(rx);
+        let x2 = x*Math.cos(ry) + z1*Math.sin(ry);
+        let z2 = -x*Math.sin(ry) + z1*Math.cos(ry);
+        return project(x2, y1, z2 + 600);
+    });
+    
+    let edges = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+    ctx.strokeStyle = `rgba(0, 240, 255, ${vis})`;
+    ctx.lineWidth = 2;
+    setGlow('#00f0ff', 15 * vis);
+    edges.forEach(e => {
+        ctx.beginPath(); ctx.moveTo(pv[e[0]].x, pv[e[0]].y); ctx.lineTo(pv[e[1]].x, pv[e[1]].y); ctx.stroke();
+    });
+    ctx.fillStyle = `rgba(189, 0, 255, ${vis * 0.4})`;
+    ctx.beginPath(); ctx.arc(640, 360, 40 * (1+kp*0.5) * (1+expl*3), 0, Math.PI*2); ctx.fill();
+    clearGlow();
+}
+
+function drawHUD(t, T) {
+    let vis = smooth(0.5, 1.5, t) * (1 - smooth(23, 23.8, t));
+    if(vis <= 0) return;
+    
+    ctx.strokeStyle = `rgba(0, 240, 255, ${0.3 * vis})`;
+    ctx.lineWidth = 1;
+    let pad = 40, len = 30;
+    [[pad,pad,1,1],[1280-pad,pad,-1,1],[pad,720-pad,1,-1],[1280-pad,720-pad,-1,-1]].forEach(c => {
+        ctx.beginPath();
+        ctx.moveTo(c[0], c[1] + c[3]*len);
+        ctx.lineTo(c[0], c[1]);
+        ctx.lineTo(c[0] + c[2]*len, c[1]);
+        ctx.stroke();
+    });
+    
+    let status = t < 4 ? "SYS_BOOT // AWAITING HANDSHAKE" :
+                 t < 8 ? "STREAMING 1.4M TOKENS/SEC..." :
+                 t < 12 ? "RESOLVING GRAPH EDGES..." :
+                 t < 20 ? "SYNTHESIZING ARCHITECTURE..." : "PIPELINE GREEN // READY";
+                 
+    ctx.fillStyle = `rgba(0, 255, 102, ${0.8 * vis})`;
+    ctx.font = '14px "Courier New", monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    let cursor = (Math.floor(T*2)%2 === 0) ? "_" : " ";
+    ctx.fillText(`> ${status}${cursor}`, pad + 15, pad - 15);
+    
+    ctx.textAlign = 'right';
+    ctx.fillStyle = `rgba(0, 240, 255, ${0.6 * vis})`;
+    ctx.fillText(`MEM: ${(Math.sin(T)*10 + 42).toFixed(2)} TB | THRD: 1024 | LAT: 0.0ms`, 1280-pad, 720-pad+20);
+}
+
+function drawTitles(t, T, kp) {
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    // Intro Glitch
+    let iv = smooth(0, 0.5, t) * (1 - smooth(3.5, 4, t));
+    if (iv > 0) {
+        ctx.font = 'bold 32px "Courier New", monospace';
+        let txt = "INITIALIZING NEURAL CONTEXT";
+        let gx = (Math.random()>0.8) ? (Math.random()-0.5)*20 : 0;
+        let gy = (Math.random()>0.9) ? (Math.random()-0.5)*6 : 0;
+        ctx.fillStyle = `rgba(255, 0, 85, ${iv * 0.6})`;
+        ctx.fillText(txt, 640 - gx, 360 - gy);
+        ctx.fillStyle = `rgba(255, 255, 255, ${iv})`;
+        setGlow('#00f0ff', 10);
+        ctx.fillText(txt, 640 + gx, 360 + gy);
+        clearGlow();
+    }
+    
+    // ULTRACODE Reveal
+    let lv = smooth(11.9, 12.2, t) * (1 - smooth(20.5, 22, t));
+    if (lv > 0) {
+        let scale = 1 + (1-smooth(12, 13, t))*1.5 + kp*0.02;
+        ctx.save();
+        ctx.translate(640, 320);
+        ctx.scale(scale, scale);
+        ctx.font = '900 110px "Arial Black", "Segoe UI", Impact, sans-serif';
+        let txt = "ULTRACODE";
+        let ca = 3 + kp*4 + (1-smooth(12, 13, t))*15;
+        
+        ctx.globalAlpha = lv * 0.7;
+        ctx.fillStyle = '#ff0055'; ctx.fillText(txt, -ca, 0);
+        ctx.fillStyle = '#00f0ff'; ctx.fillText(txt, ca, 0);
+        
+        ctx.globalAlpha = lv;
+        ctx.fillStyle = '#ffffff';
+        setGlow('#00f0ff', 30 + kp*20);
+        ctx.fillText(txt, 0, 0);
+        clearGlow();
+        ctx.restore();
+        
+        let bw = 420 * smooth(12.2, 13, t) * lv;
+        ctx.fillStyle = `rgba(0, 240, 255, ${lv})`;
+        setGlow('#00f0ff', 15);
+        ctx.fillRect(640 - bw/2, 385, bw, 3);
+        clearGlow();
+        
+        let tags = ["AUTONOMOUS SOFTWARE ENGINEERING", "FULL-REPO CONTEXT", "AGENTIC REFACTORING", "SHIP AT THE SPEED OF THOUGHT"];
+        let ti = Math.floor((t - 12) / 2);
+        if (ti >= 0 && ti < 4) {
+            let tt = (t - 12) % 2;
+            let tv = smooth(0, 0.2, tt) * (1 - smooth(1.7, 2, tt)) * lv;
+            ctx.font = '500 22px "Segoe UI", Roboto, sans-serif';
+            ctx.fillStyle = `rgba(0, 240, 255, ${tv})`;
+            setGlow('#00f0ff', 10);
+            ctx.fillText(tags[ti].split('').join(' '), 640, 430);
+            clearGlow();
+        }
+    }
+    
+    // Outro URL
+    let uv = smooth(20, 21, t) * (1 - smooth(23.2, 23.8, t));
+    if (uv > 0) {
+        ctx.font = 'bold 28px "Courier New", monospace';
+        ctx.fillStyle = `rgba(0, 255, 102, ${uv})`;
+        ctx.fillText("> DEPLOYMENT_READY", 640, 300);
+        
+        let url = "https://t.co/wQXZTaqf1b";
+        ctx.font = 'bold 46px "Segoe UI", Roboto, sans-serif';
+        ctx.fillStyle = `rgba(255, 255, 255, ${uv})`;
+        setGlow('#00f0ff', 20);
+        ctx.fillText(url, 640, 370);
+        clearGlow();
+        
+        if (Math.floor(T*2)%2 === 0) {
+            let tw = ctx.measureText(url).width;
+            ctx.fillStyle = `rgba(0, 240, 255, ${uv})`;
+            ctx.fillRect(640 + tw/2 + 12, 350, 16, 40);
+        }
+        let sy = 340 + ((T*150)%60);
+        ctx.fillStyle = `rgba(0, 240, 255, ${0.4 * uv})`;
+        ctx.fillRect(380, sy, 520, 2);
+    }
+}
+
+function drawFX(t) {
+    let b4 = smooth(3.9, 4.0, t) * (1 - smooth(4.0, 4.5, t));
+    if(b4 > 0) {
+        ctx.fillStyle = `rgba(0, 240, 255, ${b4})`;
+        ctx.fillRect(0, 340, 1280, 40);
+        setGlow('#00f0ff', 50);
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 358, 1280, 4);
+        clearGlow();
+    }
+    let b12 = Math.pow(1 - smooth(11.9, 12.4, t), 2);
+    if(b12 > 0) {
+        ctx.fillStyle = `rgba(255, 255, 255, ${b12 * 0.9})`;
+        ctx.fillRect(0, 0, 1280, 720);
+    }
+    let b20 = smooth(19.9, 20.0, t) * (1 - smooth(20.0, 20.4, t));
+    if(b20 > 0) {
+        for(let i=0;i<12;i++){
+            ctx.fillStyle = i%2 ? `rgba(0,240,255,${b20})` : `rgba(189,0,255,${b20})`;
+            ctx.fillRect(Math.random()*1280, Math.random()*720, Math.random()*400+100, Math.random()*30+5);
+        }
+    }
+}
+
+function drawPost() {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.12)';
+    for(let y=0; y<720; y+=4) ctx.fillRect(0, y, 1280, 2);
+    
+    let g = ctx.createRadialGradient(640, 360, 250, 640, 360, 850);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(1, 'rgba(0,0,0,0.85)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 1280, 720);
+}
+
+function render(visT, T) {
+    drawBackground(visT);
+    
+    let sx = 0, sy = 0;
+    if (visT > 11.8 && visT < 12.5) {
+        let amp = (1 - smooth(11.8, 12.5, visT)) * 20;
+        sx = (Math.random()-0.5)*amp;
+        sy = (Math.random()-0.5)*amp;
+    }
+    let kp = Math.pow(1 - ( (T/0.5) % 1 ), 4);
+    sx += Math.sin(T * 13) * kp * 1.5;
+    sy += Math.cos(T * 17) * kp * 1.5;
+
+    ctx.save();
+    ctx.translate(640, 360);
+    ctx.scale(1.03, 1.03);
+    ctx.translate(-640 + sx, -360 + sy);
+    
+    drawGrid(visT, T);
+    drawParticles(visT, T, kp);
+    drawCube(visT, T, kp);
+    ctx.restore();
+    
+    drawHUD(visT, T);
+    drawTitles(visT, T, kp);
+    drawFX(visT);
+    drawPost();
+}
+
+// --- MAIN LOOP ---
+initAudio();
+
+document.addEventListener('click', () => {
+    if (audioCtx.state === 'suspended') {
+        audioCtx.resume().then(() => {
+            if (suspendStart !== null) {
+                startPerf += performance.now() - suspendStart;
+                suspendStart = null;
+            }
+        });
+    }
+});
+
+function update() {
+    requestAnimationFrame(update);
+    let nowPerf = performance.now();
+    
+    if (audioCtx.state === 'suspended') {
+        if (suspendStart === null) suspendStart = nowPerf;
+        render(startOffset % DUR, startOffset);
+        ctx.fillStyle = "rgba(0,0,0,0.75)";
+        ctx.fillRect(0,0,1280,720);
+        ctx.fillStyle = "#00f0ff";
+        ctx.font = "bold 28px 'Courier New', monospace";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        setGlow('#00f0ff', 20);
+        ctx.fillText("[ CLICK TO INITIALIZE AUDIO ]", 640, 360);
+        clearGlow();
+        return;
+    }
+    
+    let T = startOffset + (nowPerf - startPerf) / 1000;
+    let visT = T % DUR;
+    
+    if (lastScheduledT < T + 0.25) {
+        scheduleNotes(lastScheduledT, T + 0.25, T);
+        lastScheduledT = T + 0.25;
+    }
+    
+    render(visT, T);
+}
+requestAnimationFrame(update);
+</script>
+</body>
+</html>

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Claude Code setup: dry run plan</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#s{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+canvas{display:block}
+</style></head><body><div id="s"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+window.DUR=48;
+const st=document.getElementById('s'),c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const k=Math.min(innerWidth/1280,innerHeight/720);st.style.transform=`scale(${k}) translate(-50%,-50%)`;st.style.left='50%';st.style.top='50%';st.style.transform=`translate(-50%,-50%) scale(${k})`;}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||'0')||0;const t0=performance.now()-off*1000;
+const G='#7ee787',R='#ff7b72',Y='#e3b341',B='#79c0ff',W='#c9d1d9',D='#6e7681',P='#d2a8ff';
+// scenes: [start, title, lines[[color,text]]]
+const S=[
+[0,'Plan overview',[[D,'$ claude: rebuild setup (dry run, nothing written)'],[W,''],[W,'1  Subagents: explorer / worker / researcher'],[W,'2  ~/.claude/settings.json: effortLevel, advisorModel'],[W,'3  Scan env for anything disabling the advisor'],[W,'4  One line in ~/.claude/CLAUDE.md'],[W,''],[Y,'Mode: diff-only until you say "go"']]],
+[7,'Step 1 · Subagents',[[D,'$ ls ~/.claude/agents .claude/agents'],[W,'checking for roles: explorer, worker, researcher'],[W,''],[G,'existing role found   → keep as is'],[Y,'existing, other model → list only, do not edit'],[B,'missing role          → draft new file'],[W,''],[D,'--- /dev/null'],[D,'+++ ~/.claude/agents/<role>.md'],[G,'+---'],[G,'+name: <role>'],[G,'+description: <what this role does>'],[G,'+model: opus'],[G,'+effort: medium'],[G,'+---']]],
+[17,'Step 2 · Main session',[[D,'--- ~/.claude/settings.json'],[D,'+++ ~/.claude/settings.json'],[W,' {'],[R,'-  "effortLevel": "<current>",'],[G,'+  "effortLevel": "high",'],[G,'+  "advisorModel": "fable",'],[W,'   ...existing keys unchanged'],[W,' }']]],
+[25,'Step 3 · Advisor blockers (report only)',[[D,'$ env | grep, plus settings.json "env" blocks'],[W,''],[R,'CLAUDE_CODE_DISABLE_ADVISOR_TOOL  disables advisor directly'],[R,'DISABLE_TELEMETRY                 can block feature flags'],[R,'flag-fetch blockers (e.g. nonessential traffic)'],[Y,'CLAUDE_CODE_EFFORT_LEVEL          overrides subagent effort'],[W,''],[W,'For each: where set, value, impact'],[Y,'No edits. Findings reported to you.']]],
+[34,'Step 4 · CLAUDE.md',[[D,'--- ~/.claude/CLAUDE.md'],[D,'+++ ~/.claude/CLAUDE.md'],[W,' ...existing content'],[G,'+Consult the advisor before a large plan, when an error'],[G,'+repeats, and before marking a long task done.']]],
+[41,'Status',[[W,'Diffs shown: 1, 2, 4   Report: 3'],[W,'Files written: 0'],[W,''],[Y,'Waiting for your "go".'],[D,'(Illustrative dry run. Real output depends on your machine.)']]]];
+function scene(t){let i=0;for(let k=0;k<S.length;k++)if(t>=S[k][0])i=k;return i}
+function node(px,py,w,h,lab,sub,on,col){x.fillStyle=on?'#161b22':'#0d1117';x.strokeStyle=on?col:'#30363d';x.lineWidth=on?2.5:1.2;x.beginPath();x.roundRect(px-w/2,py-h/2,w,h,10);x.fill();x.stroke();
+x.fillStyle=on?col:W;x.font='600 17px monospace';x.textAlign='center';x.fillText(lab,px,py-3);x.fillStyle=D;x.font='13px monospace';x.fillText(sub,px,py+17);x.textAlign='left'}
+function line(a,b,cc,d,on){x.strokeStyle=on?G:'#30363d';x.lineWidth=on?2:1.2;x.beginPath();x.moveTo(a,b);x.bezierCurveTo(a,(b+d)/2,cc,(b+d)/2,cc,d);x.stroke()}
+function frame(){
+const t=((performance.now()-t0)/1000)%DUR;const i=scene(t);const sc=S[i],lt=t-sc[0];
+const g=x.createLinearGradient(0,0,0,720);g.addColorStop(0,'#0b0f17');g.addColorStop(1,'#05070b');x.fillStyle=g;x.fillRect(0,0,1280,720);
+x.fillStyle=W;x.font='600 26px sans-serif';x.fillText('Claude Code setup',40,52);x.fillStyle=D;x.font='15px sans-serif';x.fillText('dry run · diffs first · nothing touched until "go"',40,76);
+// tree
+const s1=i==1,s2=i==2,s3=i==3,s4=i==4,p=0.5+0.5*Math.sin(t*4);
+x.fillStyle='#0d1117';x.strokeStyle='#21262d';x.beginPath();x.roundRect(30,100,470,580,14);x.fill();x.stroke();
+line(265,250,120,400,s1);line(265,250,265,400,s1);line(265,250,410,400,s1);
+node(265,140,250,60,'advisor','model: fable',s2||s3||s4,P);
+x.strokeStyle=(s3)?R:'#30363d';x.setLineDash([6,5]);x.beginPath();x.moveTo(265,170);x.lineTo(265,215);x.stroke();x.setLineDash([]);
+if(s3){x.fillStyle=R;x.globalAlpha=p;x.font='13px monospace';x.fillText('blockers?',280,198);x.globalAlpha=1}
+node(265,245,260,60,'main session','effortLevel: high',s2,B);
+['explorer','worker','researcher'].forEach((n,k)=>node(120+k*145,430,132,60,n,'opus · medium',s1,G));
+x.fillStyle=s4?Y:D;x.font='14px monospace';x.fillText('~/.claude/CLAUDE.md',60,540);
+x.fillStyle=s4?W:'#484f58';x.font='13px monospace';['advisor before: large plan,','repeated error, long task done'].forEach((l,k)=>x.fillText(l,60,565+k*20));
+x.fillStyle=D;x.fillText('files written: 0',60,650);
+// terminal
+x.fillStyle='#0d1117';x.strokeStyle='#30363d';x.beginPath();x.roundRect(530,100,720,580,14);x.fill();x.stroke();
+x.fillStyle='#161b22';x.beginPath();x.roundRect(530,100,720,38,[14,14,0,0]);x.fill();
+[R,Y,G].forEach((cc,k)=>{x.fillStyle=cc;x.beginPath();x.arc(554+k*20,119,6,0,7);x.fill()});
+x.fillStyle=W;x.font='600 16px sans-serif';x.fillText(sc[1],624,125);
+x.font='16px monospace';let chars=lt*70,y=172;
+for(const [cc,tx] of sc[2]){if(chars<=0)break;const n=Math.min(tx.length,Math.floor(chars));x.fillStyle=cc;x.fillText(tx.slice(0,n),556,y);chars-=tx.length+4;y+=29}
+if(Math.floor(t*2)%2){x.fillStyle=W;x.fillRect(556,y-16,9,18)}
+// progress
+x.fillStyle='#21262d';x.fillRect(530,692,720,4);x.fillStyle=B;x.fillRect(530,692,720*t/DUR,4);
+requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

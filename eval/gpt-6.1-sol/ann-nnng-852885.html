@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FLOW — Make your next move</title>
+<style>
+*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;background:#000;overflow:hidden}body{display:grid;place-items:center}canvas{display:block;width:min(100vw,177.77778vh);height:min(100vh,56.25vw)}
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720" aria-label="FLOW: a fifteen-second motion design concept film"></canvas>
+<script>
+window.DUR=15;
+const canvas=document.getElementById('stage'),c=canvas.getContext('2d');
+const W=1280,H=720,PI=Math.PI,TAU=PI*2;
+const ink='#101115',paper='#f0eee7',lime='#d5ff63',violet='#ae8bff',orange='#ff7654',muted='#92938e';
+const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const ease=v=>{v=clamp(v);return 1-Math.pow(1-v,3)};
+const smooth=v=>{v=clamp(v);return v*v*(3-2*v)};
+const mix=(a,b,v)=>a+(b-a)*v;
+const offset=Number(new URLSearchParams(location.search).get('t'))||0;
+let start;
+function rect(x,y,w,h,r=0,fill){c.beginPath();c.roundRect(x,y,w,h,r);if(fill){c.fillStyle=fill;c.fill()}}
+function line(x,y,a,b,col,w=1){c.beginPath();c.moveTo(x,y);c.lineTo(a,b);c.strokeStyle=col;c.lineWidth=w;c.stroke()}
+function txt(s,x,y,size=20,col=paper,weight=600,align='left'){
+ c.fillStyle=col;c.font=`${weight} ${size}px Arial, Helvetica, sans-serif`;c.textAlign=align;c.textBaseline='alphabetic';c.fillText(s,x,y);
+}
+function spaced(s,x,y,size=11,col=muted,gap=2){
+ c.fillStyle=col;c.font=`600 ${size}px Arial, Helvetica, sans-serif`;c.textAlign='left';
+ for(const ch of s){c.fillText(ch,x,y);x+=c.measureText(ch).width+gap}
+}
+function circle(x,y,r,col){c.beginPath();c.arc(x,y,r,0,TAU);c.fillStyle=col;c.fill()}
+function pill(s,x,y,w,col=paper,bg=null){
+ rect(x,y,w,31,16,bg||'#ffffff0c');if(!bg){c.strokeStyle='#ffffff2a';c.lineWidth=1;c.stroke()}
+ txt(s,x+w/2,y+20,11,col,600,'center');
+}
+function arrow(x,y,len,col,w=2){line(x,y,x+len,y,col,w);line(x+len-9,y-9,x+len,y,col,w);line(x+len-9,y+9,x+len,y,col,w)}
+function star(x,y,r,col,rot=0,n=8){
+ c.save();c.translate(x,y);c.rotate(rot);c.beginPath();
+ for(let i=0;i<n*2;i++){const a=i*PI/n,rr=i%2?r*.46:r;let px=Math.cos(a)*rr,py=Math.sin(a)*rr;i?c.lineTo(px,py):c.moveTo(px,py)}
+ c.closePath();c.fillStyle=col;c.fill();c.restore();
+}
+function logo(x,y,scale=1,col=paper){
+ c.save();c.translate(x,y);c.scale(scale,scale);
+ c.strokeStyle=col;c.lineWidth=4;c.lineCap='round';
+ for(let i=0;i<3;i++){c.beginPath();c.moveTo(i*8,18);c.bezierCurveTo(i*8+9,18,i*8-2,0,i*8+10,0);c.stroke()}
+ txt('FLOW',43,20,25,col,800);c.restore();
+}
+function grid(t,col='#ffffff08',step=40){
+ c.strokeStyle=col;c.lineWidth=1;c.beginPath();
+ let off=(t*8)%step;
+ for(let x=-step+off;x<W;x+=step){c.moveTo(x,0);c.lineTo(x,H)}
+ for(let y=0;y<H;y+=step){c.moveTo(0,y);c.lineTo(W,y)}c.stroke();
+}
+function backdrop(t){
+ c.fillStyle=ink;c.fillRect(0,0,W,H);
+ const g=c.createRadialGradient(990,315,0,990,315,760);g.addColorStop(0,'#292331');g.addColorStop(1,ink);c.fillStyle=g;c.fillRect(0,0,W,H);
+ grid(t,'#ffffff04',80);
+}
+function header(t,dark=false){
+ const col=dark?ink:paper;
+ logo(48,34,.9,col);
+ spaced('MOTION DESIGN STUDIO',202,53,10,dark?'#525448':muted,1.6);
+ spaced('CONCEPT / 001',1231-115,53,10,dark?'#525448':muted,1.4);
+}
+function footer(t,col=muted){
+ spaced('IDEA → MOTION → IMPACT',48,679,10,col,1.5);
+ line(895,675,1167,675,col===muted?'#ffffff24':'#10111533');
+ line(895,675,895+272*t/15,675,col,2);
+ txt(String(Math.floor(t)).padStart(2,'0')+' / 15',1232,679,10,col,500,'right');
+}
+function reveal(s,x,y,size,time,delay=0,col=paper,weight=800){
+ const p=ease((time-delay)/.6);
+ c.save();c.beginPath();c.rect(x-4,y-size-8,1000,size+19);c.clip();
+ txt(s,x,y+(1-p)*(size+20),size,col,weight);c.restore();
+}
+function motif(x,y,r,t,col=lime){
+ c.save();c.translate(x,y);c.rotate(t*.45);
+ for(let i=0;i<3;i++){
+  c.save();c.rotate(i*PI/3);c.strokeStyle=col;c.lineWidth=r*.12;
+  c.beginPath();c.ellipse(0,0,r,r*.36,0,0,TAU);c.stroke();c.restore();
+ }
+ circle(0,0,r*.19,ink);c.restore();
+}
+function intro(s,t){
+ const p=ease(s/.85);
+ c.save();c.translate(0,22*(1-p));
+ pill('MEET FLOW',49,117,106,lime);
+ reveal('GOOD IDEAS',44,243,91,s,.08);
+ reveal('DON’T',44,339,91,s,.19);
+ reveal('STAND STILL.',44,435,91,s,.3);
+ c.globalAlpha=smooth((s-.8)/.5);
+ txt('Give every idea a life of its own.',49,499,22,muted,400);
+ line(49,548,270,548,'#ffffff24');
+ spaced('A NEW WAY TO MAKE MOTION',49,574,11,paper,1.8);
+ c.restore();
+ c.save();c.translate(980,343);c.scale(p,p);c.rotate(-.25+s*.18);
+ const gr=c.createRadialGradient(0,0,15,0,0,265);gr.addColorStop(0,'#ad89ff28');gr.addColorStop(1,'#ad89ff00');
+ c.fillStyle=gr;c.fillRect(-300,-300,600,600);
+ for(let i=0;i<16;i++){
+  const a=i/16*TAU+s*.8;const r=183+18*Math.sin(i*.8+s*2);
+  c.save();c.translate(Math.cos(a)*r,Math.sin(a)*r);c.rotate(a+PI/2);
+  rect(-30,-55,60,110,30,i%4===0?orange:i%3===0?violet:lime);c.restore();
+ }
+ circle(0,0,121,ink);
+ motif(0,0,83,s, paper);
+ c.restore();
+ c.save();c.globalAlpha=smooth((s-.6)/.5);
+ line(830,593,1130,593,'#ffffff24');
+ circle(838,616,3,lime);spaced('NOT MADE TO SIT STILL.',853,620,10,paper,1.5);c.restore();
+}
+function bezierPoint(u){
+ let a=1-u;
+ return {x:a*a*a*95+3*a*a*u*225+3*a*u*u*340+u*u*u*525,y:a*a*a*220+3*a*a*u*30+3*a*u*u*305+u*u*u*88};
+}
+function editor(s,t){
+ reveal('Your ideas. In full flow.',48,150,55,s,0,paper,700);
+ pill('DESIGN + ANIMATE',1001,114,230,lime);
+ let e=ease(s/.65);
+ c.save();c.translate(0,(1-e)*90);c.globalAlpha=e;
+ c.shadowColor='#0008';c.shadowBlur=35;rect(48,180,1184,453,17,'#1a1b20');c.shadowBlur=0;
+ rect(49,181,1182,41,16,'#24252b');
+ circle(70,202,4,orange);circle(85,202,4,'#e5be60');circle(100,202,4,lime);
+ txt('Untitled / Moving ideas',129,207,11,'#d0d0ce',500);
+ pill('PREVIEW',1061,188,94,paper,'#ffffff0e');
+ rect(1170,188,47,27,6,lime);txt('↗',1193,207,17,ink,600,'center');
+ rect(49,223,165,304,0,'#191a1e');
+ spaced('LAYERS',66,251,10,muted,1.4);
+ const layers=['Orbit / shape','Motion path','Background'];
+ layers.forEach((v,i)=>{
+  const yy=273+i*43;rect(59,yy,145,34,6,i===0?'#d5ff6318':'#ffffff04');
+  circle(76,yy+17,5,i===0?lime:i===1?violet:muted);txt(v,90,yy+21,11,i===0?lime:paper,500);
+ });
+ line(66,422,196,422,'#ffffff13');spaced('TOOLKIT',66,449,9,muted,1.4);
+ ['↖','□','○','T'].forEach((v,i)=>{rect(65+i*34,464,27,27,5,'#ffffff0c');txt(v,78+i*34,483,16,paper,500,'center')});
+ rect(215,223,790,304,0,'#101115');
+ c.save();c.beginPath();c.rect(215,223,790,304);c.clip();
+ for(let i=0;i<24;i++)for(let j=0;j<9;j++)circle(232+i*34,234+j*34,.7,'#ffffff18');
+ c.translate(267,221);
+ c.strokeStyle='#ae8bff';c.lineWidth=2;c.setLineDash([5,6]);c.beginPath();c.moveTo(95,220);c.bezierCurveTo(225,30,340,305,525,88);c.stroke();c.setLineDash([]);
+ line(95,220,225,30,'#ae8bff44');line(525,88,340,305,'#ae8bff44');
+ [[95,220],[225,30],[340,305],[525,88]].forEach(p=>circle(p[0],p[1],4,violet));
+ let u=(s*.39)%1,pt=bezierPoint(u);
+ c.save();c.translate(pt.x,pt.y);c.rotate(s*1.6);star(0,0,56,lime,0,8);
+ c.strokeStyle='#d5ff6366';c.lineWidth=1;c.strokeRect(-67,-67,134,134);
+ [[-67,-67],[67,-67],[-67,67],[67,67]].forEach(p=>rect(p[0]-3,p[1]-3,6,6,0,lime));c.restore();
+ txt('make it move',270,257,39,'#f0eee729',800);
+ c.restore();
+ rect(1006,223,225,304,0,'#191a1e');
+ spaced('MOTION',1026,251,10,muted,1.4);
+ txt('Follow path',1026,279,15,paper,600);
+ ['Position','Rotation','Scale'].forEach((v,i)=>{
+  txt(v,1026,319+i*39,11,muted,500);
+  rect(1123,303+i*39,88,25,5,'#ffffff08');
+  txt(i===0?Math.round(105+Math.sin(s*2)*70)+' px':i===1?Math.round(s*90)+'°':'100%',1199,320+i*39,11,paper,500,'right');
+ });
+ txt('EASING',1026,445,9,muted,600);
+ c.strokeStyle=lime;c.lineWidth=2;c.beginPath();c.moveTo(1030,496);c.bezierCurveTo(1130,496,1080,462,1195,462);c.stroke();
+ line(49,527,1231,527,'#ffffff15');txt('▶',69,554,13,lime);
+ txt('00:'+String(Math.floor(s*30)).padStart(2,'0'),96,554,11,paper,500);
+ txt('TIMELINE',198,554,10,muted,600);
+ const left=298;
+ for(let i=0;i<15;i++){let x=left+i*61;line(x,568,x,622,'#ffffff08');txt((i*.25).toFixed(2),x,554,9,muted,400)}
+ rect(left,575,909,16,4,'#ae8bff4a');rect(left,599,909,16,4,'#d5ff6333');
+ for(let i=0;i<7;i++){const x=left+50+i*135;c.save();c.translate(x,583);c.rotate(PI/4);rect(-3,-3,6,6,0,violet);c.restore()}
+ const px=left+((s*.39)%1)*909;line(px,562,px,627,lime,2);
+ c.beginPath();c.moveTo(px-5,561);c.lineTo(px+5,561);c.lineTo(px,567);c.closePath();c.fillStyle=lime;c.fill();
+ c.restore();
+}
+function features(s,t){
+ reveal('Less friction. More expression.',48,155,52,s,0,paper,700);
+ const labels=['Shape it.','Time it.','Send it.'],sub=['Build something unmistakable.','Find your perfect rhythm.','Put your ideas out in the world.'],colors=[violet,lime,orange];
+ for(let i=0;i<3;i++){
+  let p=ease((s-i*.14)/.65);let x=48+i*403;
+  c.save();c.translate(x,196+(1-p)*110);c.globalAlpha=p;
+  rect(0,0,378,425,20,colors[i]);
+  spaced('0'+(i+1)+' / '+['CREATE','ANIMATE','SHARE'][i],25,32,10,ink,1.5);
+  c.save();c.beginPath();c.rect(0,49,378,265);c.clip();
+  if(i===0){
+   c.save();c.translate(189,174);c.rotate(s*.5);
+   for(let k=0;k<6;k++){c.save();c.rotate(k*PI/3);rect(23,-28,100,56,28,ink);c.restore()}
+   circle(0,0,38,paper);c.restore();
+   circle(61,73,7,ink);circle(318,257,7,ink);
+   line(61,73,106,104,'#10111555');line(318,257,273,224,'#10111555');
+  } else if(i===1){
+   for(let k=0;k<9;k++){
+    let xx=49+k*35;let hh=30+130*(.5+.5*Math.sin(s*4-k*.63));
+    rect(xx-10,178-hh/2,20,hh,10,ink);
+   }
+   line(35,278,343,278,'#10111544');circle(35+((s*.4)%1)*308,278,7,ink);
+  } else {
+   c.save();c.translate(189,171);c.rotate(-.13+Math.sin(s*2)*.07);
+   rect(-106,-80,212,160,12,ink);rect(-94,-68,188,136,6,paper);
+   motif(0,0,49,s,orange);
+   c.restore();
+   circle(292,244,28,ink);arrow(278,244,27,orange,3);
+   pill('MP4',24,274,61,ink,'#10111510');pill('GIF',92,274,54,ink,'#10111510');pill('WEB',153,274,60,ink,'#10111510');
+  }
+  c.restore();
+  txt(labels[i],25,352,43,ink,800);
+  txt(sub[i],25,389,15,ink,500);
+  c.restore();
+ }
+}
+function ribbon(t,x,y,r,col){
+ c.save();c.translate(x,y);c.rotate(-.35);
+ for(let j=34;j>=0;j--){
+  let u=j/34,a=u*TAU*1.35+t*.6;
+  let xx=Math.cos(a)*r*(.42+u*.56),yy=Math.sin(a)*r*.63;
+  c.save();c.translate(xx,yy);c.rotate(a+t*.15);
+  c.fillStyle=j%6===0?paper:col;
+  c.globalAlpha=.48+u*.52;
+  rect(-48,-12,96,24,12,c.fillStyle);
+  c.restore();
+ }
+ c.restore();
+}
+function limitless(s,t){
+ let p=ease(s/.65);
+ c.save();c.globalAlpha=p;
+ spaced('YOUR NEXT GREAT IDEA STARTS HERE',49,145,11,lime,1.6);
+ reveal('One canvas.',44,265,83,s,.05);
+ reveal('Infinite',44,356,83,s,.15);
+ reveal('moves.',44,447,83,s,.25,lime);
+ txt('A space to design, animate, and explore.',49,504,21,muted,400);
+ pill('BUILT FOR YOUR IMAGINATION',49,553,274);
+ c.save();c.translate(935,356);c.scale(p,p);
+ const g=c.createRadialGradient(0,0,0,0,0,340);g.addColorStop(0,'#ae8bff35');g.addColorStop(1,'#ae8bff00');c.fillStyle=g;c.fillRect(-340,-340,680,680);
+ c.strokeStyle='#ffffff16';c.lineWidth=1;
+ [156,234,294].forEach(r=>{c.beginPath();c.ellipse(0,0,r,r*.86,-.35,0,TAU);c.stroke()});
+ ribbon(s,0,0,229,violet);
+ circle(0,0,87,lime);motif(0,0,51,s,ink);
+ for(let i=0;i<3;i++){
+  let a=s*.45+i*TAU/3;
+  let x=Math.cos(a)*274,y=Math.sin(a)*224;
+  c.save();c.translate(x,y);c.rotate(Math.sin(s+i)*.2);
+  rect(-48,-31,96,62,10,i===1?orange:paper);
+  if(i===0){line(-23,10,-2,-11,ink,3);line(-2,-11,22,10,ink,3)}
+  if(i===1){star(0,0,22,ink,s*.7)}
+  if(i===2){txt('Aa',0,11,29,ink,700,'center')}
+  c.restore();
+ }
+ c.restore();c.restore();
+}
+function end(s,t){
+ const p=ease(s/.6);
+ c.fillStyle=lime;c.fillRect(0,0,W,H);
+ grid(t,'#10111508',80);
+ c.save();c.globalAlpha=p;
+ spaced('MEET YOUR MOTION DESIGN STUDIO',49,145,11,ink,1.8);
+ c.save();c.translate(47,171);c.scale(1+(1-p)*.15,1+(1-p)*.15);
+ txt('FLOW',-5,145,175,ink,900);c.restore();
+ reveal('Make your',48,419,67,s,.1,ink,700);
+ reveal('next move.',48,493,67,s,.2,ink,700);
+ rect(49,548,246,55,28,ink);
+ txt('Bring your ideas to life',72,581,15,lime,600);arrow(257,575,16,lime,2);
+ c.save();c.translate(949,355);c.rotate(-s*.2);c.scale(p,p);
+ for(let i=0;i<12;i++){
+  c.save();c.rotate(i*TAU/12+s*.35);
+  rect(116,-32,134,64,32,ink);c.restore();
+ }
+ circle(0,0,88,ink);motif(0,0,52,s,lime);
+ c.restore();
+ c.restore();
+ header(t,true);footer(t,'#424b2a');
+}
+const scenes=[
+ {a:0,b:2.8,fn:intro},
+ {a:2.8,b:6.3,fn:editor},
+ {a:6.3,b:9.4,fn:features},
+ {a:9.4,b:12,fn:limitless},
+ {a:12,b:15,fn:end}
+];
+function draw(t){
+ backdrop(t);
+ let idx=scenes.findIndex(q=>t>=q.a&&t<q.b);if(idx<0)idx=4;
+ const q=scenes[idx],s=t-q.a;
+ if(idx!==4){
+  c.save();
+  const enter=idx===0?1:smooth(s/.22);
+  const leave=idx===3?1:1-smooth((s-(q.b-q.a-.19))/.19);
+  c.globalAlpha=enter*leave;q.fn(s,t);c.restore();
+  header(t);footer(t);
+ }else end(s,t);
+ // Crisp editorial transition wipes.
+ for(let i=1;i<scenes.length;i++){
+  let d=t-scenes[i].a;
+  if(d>-.13&&d<.22){
+   let z=(d+.13)/.35;
+   let x=mix(-W,W,smooth(z));
+   c.fillStyle=i===4?lime:paper;
+   c.beginPath();c.moveTo(x-150,0);c.lineTo(x+300,0);c.lineTo(x+100,H);c.lineTo(x-350,H);c.closePath();c.fill();
+  }
+ }
+ // A restrained film-grain texture, generated without external assets.
+ c.globalAlpha=.026;c.fillStyle=paper;
+ for(let i=0;i<850;i++){
+  const xx=((i*137.37+Math.floor(t*24)*19.7)%1280);
+  const yy=((i*i*13.11+Math.floor(t*24)*31.1)%720);
+  c.fillRect(xx,yy,1,1);
+ }
+ c.globalAlpha=1;
+}
+function frame(now){
+ if(start===undefined)start=now;
+ const t=(((now-start)/1000+offset)%window.DUR+window.DUR)%window.DUR;
+ draw(t);requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

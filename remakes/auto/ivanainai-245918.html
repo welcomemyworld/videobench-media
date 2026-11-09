@@ -1,0 +1,59 @@
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000;height:100%;overflow:hidden}canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+window.DUR=30;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px'}fit();addEventListener('resize',fit);
+const q=new URLSearchParams(location.search),t0=performance.now()-(parseFloat(q.get('t'))||0)*1000;
+let R=1;function rnd(){R=(R*16807)%2147483647;return R/2147483647}
+// petal geometry in local coords: u along length 0..1, v across -1..1
+const NP=5,petals=[];
+for(let i=0;i<NP;i++){const cells=[];
+ for(let a=0;a<7;a++)for(let b=0;b<6;b++)cells.push({a,b,h:rnd()*20-10,l:rnd()*12});
+ petals.push({ang:i/NP*Math.PI*2+0.2,cells,w:0.95+rnd()*0.15});}
+function width(u){return Math.sin(Math.pow(u,0.75)*Math.PI)*(0.55+0.45*u)}
+function P(p,u,v,T,open){// 3D point
+ const L=260*p.w, wd=width(u)*150;
+ let r=u*L, y=v*wd+ Math.sin(u*9+v*4+T*0.8)*6*u;
+ const lift=(1-open)*1.2+0.25;let z=Math.sin(u*Math.PI*0.9)*90*lift*u - u*u*40 + Math.cos(v*5+u*14)*8*u + v*v*25*u;
+ const ca=Math.cos(p.ang),sa=Math.sin(p.ang);
+ return[r*ca-y*sa,r*sa+y*ca,z];}
+let ry,rx,rz;
+function proj(p){let [X,Y,Z]=p;let a=X*Math.cos(rz)-Y*Math.sin(rz),b=X*Math.sin(rz)+Y*Math.cos(rz);X=a;Y=b;
+ let y2=Y*Math.cos(rx)-Z*Math.sin(rx),z2=Y*Math.sin(rx)+Z*Math.cos(rx);
+ let x3=X*Math.cos(ry)+z2*Math.sin(ry),z3=-X*Math.sin(ry)+z2*Math.cos(ry);
+ const s=900/(900+z3);return[640+x3*s,370+y2*s,z3];}
+function quad(p,u0,u1,v0,v1,T,o){const a=[[u0,v0],[u1,v0],[u1,v1],[u0,v1]].map(e=>proj(P(p,e[0],e[1],T,o)));return a}
+function frame(){
+ const T=((performance.now()-t0)/1000)%DUR;
+ const open=Math.min(1,0.15+T/12)*(T>26?1-(T-26)/4*0.85:1);
+ ry=Math.sin(T*0.21)*0.5; rx=0.55+Math.sin(T*0.17)*0.25; rz=T*0.06;
+ const g=x.createRadialGradient(640,360,50,640,360,800);g.addColorStop(0,'#1a0d14');g.addColorStop(1,'#020103');x.fillStyle=g;x.fillRect(0,0,1280,720);
+ const polys=[];
+ petals.forEach((p,pi)=>{p.cells.forEach(cl=>{const u0=cl.a/7,u1=(cl.a+1)/7,v0=cl.b/3-1,v1=(cl.b+1)/3-1;
+  const q4=quad(p,u0,u1,v0,v1,T,open);const z=(q4[0][2]+q4[2][2])/2;
+  const u=(u0+u1)/2;let h=u<0.22?340:(350+u*25+cl.h)%360,l=u<0.22?18+cl.l:38+cl.l+u*14+8*Math.sin(T*1.3+pi+cl.a);
+  polys.push({q:q4,z,col:`hsla(${h},${u<0.22?70:88}%,${l}%,0.78)`,p,u0,u1,v0,v1});});});
+ polys.sort((a,b)=>b.z-a.z);
+ x.lineJoin='round';
+ for(const k of polys){x.beginPath();k.q.forEach((e,i)=>i?x.lineTo(e[0],e[1]):x.moveTo(e[0],e[1]));x.closePath();
+  x.globalCompositeOperation='lighter';x.fillStyle=k.col;x.fill();x.globalCompositeOperation='source-over';
+  x.strokeStyle='rgba(20,8,10,0.92)';x.lineWidth=3.2;x.stroke();
+  // fine veins
+  x.strokeStyle='rgba(255,220,180,0.18)';x.lineWidth=0.7;x.beginPath();
+  for(let s=1;s<3;s++){const v=k.v0+(k.v1-k.v0)*s/3;for(let j=0;j<=4;j++){const u=k.u0+(k.u1-k.u0)*j/4;const e=proj(P(k.p,u,v*(1-0.1*u),T,open));j?x.lineTo(e[0],e[1]):x.moveTo(e[0],e[1]);}}x.stroke();}
+ // lead outline of petals
+ x.strokeStyle='#120608';x.lineWidth=5;
+ petals.forEach(p=>{x.beginPath();for(let j=0;j<=40;j++){const u=j<=20?j/20:2-j/20,v=j<=20?-1:1;const e=proj(P(p,u,v,T,open));j?x.lineTo(e[0],e[1]):x.moveTo(e[0],e[1]);}x.stroke();});
+ // staminal column
+ const base=proj([0,0,0]);let prev=base;
+ for(let i=1;i<=12;i++){const s=i/12,pt=proj([Math.sin(s*2+T*0.5)*10,0,s*170*(0.6+open*0.4)]);
+  x.strokeStyle='#2a0a0e';x.lineWidth=9-s*4;x.beginPath();x.moveTo(prev[0],prev[1]);x.lineTo(pt[0],pt[1]);x.stroke();
+  x.strokeStyle='hsl(345,70%,40%)';x.lineWidth=4-s*2;x.stroke();prev=pt;
+  if(i>6)for(let k=0;k<3;k++){const a=k*2.1+i;const e=proj([Math.sin(s*2+T*0.5)*10+Math.cos(a)*14,Math.sin(a)*14,s*170*(0.6+open*0.4)]);
+   x.fillStyle=`hsla(${45+k*5},95%,${55+8*Math.sin(T*2+i+k)}%,0.95)`;x.beginPath();x.arc(e[0],e[1],3,0,7);x.fill();}}
+ for(let k=0;k<5;k++){const a=k/5*6.28+T*0.3,e=proj([Math.cos(a)*12,Math.sin(a)*12,175*(0.6+open*0.4)]);x.fillStyle='#ff3a5a';x.strokeStyle='#100';x.lineWidth=2;x.beginPath();x.arc(e[0],e[1],6,0,7);x.fill();x.stroke();}
+ // glow
+ const gl=x.createRadialGradient(640,370,0,640,370,380);gl.addColorStop(0,'rgba(255,90,90,0.08)');gl.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=gl;x.fillRect(0,0,1280,720);
+ x.fillStyle=`rgba(230,200,190,${Math.min(1,T/3)*0.6})`;x.font='300 18px Georgia,serif';x.textAlign='center';x.fillText('HIBISCUS  ·  vitrail',640,680);
+ requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

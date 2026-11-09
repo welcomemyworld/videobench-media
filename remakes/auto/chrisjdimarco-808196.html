@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Vigilance — A Motion Reel</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=60;
+const cv=document.getElementById('c'),X=cv.getContext('2d');
+const W=1280,H=720;
+function fit(){const s=Math.min(innerWidth/W,innerHeight/H);cv.style.width=W*s+'px';cv.style.height=H*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const OFF=parseFloat(q.get('t')||'0')||0;
+const T0=performance.now();
+const FONT='"Helvetica Neue",Helvetica,Arial,sans-serif',SERIF='Georgia,"Times New Roman",serif';
+const GOLD='#f2c14e',RED='#e63946',CYAN='#4cc9f0',CREAM='#f1ece2',INK='#0b0d14';
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const eo=t=>1-Math.pow(1-cl(t),3);
+const eio=t=>{t=cl(t);return t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2};
+const eb=t=>{t=cl(t);const c1=1.70158,c3=c1+1;return 1+c3*Math.pow(t-1,3)+c1*Math.pow(t-1,2)};
+const lerp=(a,b,t)=>a+(b-a)*t;
+let seed=7;const rnd=()=>{seed=(seed*16807)%2147483647;return seed/2147483647};
+
+// kinetic text: per-char rise reveal, out fade
+function KT(s,x,y,size,t,o={}){
+  const col=o.c||CREAM,w=o.w||'800',f=o.f||FONT,al=o.a||'center',sp=o.sp||0,st=o.st||0.025,out=o.out;
+  X.save();X.font=`${w} ${size}px ${f}`;X.textBaseline='middle';
+  const chars=[...s];let ws=chars.map(ch=>X.measureText(ch).width+sp);
+  const tot=ws.reduce((a,b)=>a+b,0)-sp;
+  let cx=al==='center'?x-tot/2:al==='right'?x-tot:x;
+  for(let i=0;i<chars.length;i++){
+    const p=eo((t-i*st)/0.5);
+    let a=p;if(out!==undefined)a*=1-eo((t-out-i*st*0.5)/0.35);
+    if(a>0.01){X.globalAlpha=a;X.fillStyle=col;
+      X.save();X.beginPath();X.rect(cx-4,y-size*0.75,ws[i]+8,size*1.5);X.clip();
+      X.fillText(chars[i],cx,y+(1-p)*size*0.9);X.restore();}
+    cx+=ws[i];
+  }
+  X.restore();return tot;
+}
+function bar(x,y,w,h,c,a=1){X.globalAlpha=a;X.fillStyle=c;X.fillRect(x,y,w,h);X.globalAlpha=1;}
+function bg(c1,c2){const g=X.createRadialGradient(W/2,H/2,50,W/2,H/2,800);g.addColorStop(0,c1);g.addColorStop(1,c2);X.fillStyle=g;X.fillRect(0,0,W,H);}
+function gridBg(t,col,a){X.strokeStyle=col;X.globalAlpha=a;X.lineWidth=1;const o=(t*20)%60;
+  X.beginPath();for(let x=-60+o;x<W;x+=60){X.moveTo(x,0);X.lineTo(x,H);}for(let y=-60+o;y<H;y+=60){X.moveTo(0,y);X.lineTo(W,y);}X.stroke();X.globalAlpha=1;}
+function label(n,txt,t){ // corner chapter marker
+  const a=eo(t/0.6);X.globalAlpha=a;X.font=`700 14px ${FONT}`;X.fillStyle=GOLD;X.textBaseline='middle';X.textAlign='left';
+  X.fillText(n,60,50);X.fillStyle=CREAM;X.globalAlpha=a*0.7;X.fillText(txt.toUpperCase(),100,50);
+  bar(60,64,140*a,2,GOLD,a);X.globalAlpha=1;
+}
+
+// sample text points for intro
+function samplePts(lines,size,step){
+  const o=document.createElement('canvas');o.width=W;o.height=H;const c=o.getContext('2d');
+  c.fillStyle='#fff';c.textAlign='center';c.textBaseline='middle';c.font=`900 ${size}px ${FONT}`;
+  lines.forEach((l,i)=>c.fillText(l,W/2,H/2+(i-(lines.length-1)/2)*size*1.05));
+  const d=c.getImageData(0,0,W,H).data,p=[];
+  for(let y=0;y<H;y+=step)for(let x=0;x<W;x+=step)if(d[(y*W+x)*4+3]>128)p.push([x,y]);
+  return p;
+}
+const P1=samplePts(['VIGILANCE'],190,6);
+const parts=P1.map(p=>({tx:p[0],ty:p[1],sx:rnd()*W*1.6-W*.3,sy:rnd()*H*1.6-H*.3,d:rnd()*0.8,c:rnd()<.12?GOLD:CREAM}));
+const crowd=[];for(let i=0;i<260;i++)crowd.push({x:rnd()*W,y:470+rnd()*250,r:2+rnd()*3,ph:rnd()*6.28});
+const blobs=[];for(let i=0;i<90;i++){const a=rnd()*6.28,r=120+rnd()*260;blobs.push({x:W/2+Math.cos(a)*r*1.6,y:H/2+Math.sin(a)*r*0.9,r:6+rnd()*14,d:rnd(),c:[CYAN,GOLD,CREAM,'#90be6d','#f28482'][i%5]});}
+
+// ---------- SCENES ----------
+const S=[
+ [0,7,function(t){ // intro particles
+   bg('#141826',INK);gridBg(t,'#2a3350',0.35);
+   for(const p of parts){const k=eio((t-0.3-p.d)/2.2);
+     const x=lerp(p.sx,p.tx,k)+Math.sin(t*3+p.ty)*(1-k)*20,y=lerp(p.sy,p.ty,k);
+     X.fillStyle=p.c;X.globalAlpha=0.4+0.6*k;X.fillRect(x-1.5,y-1.5,3+(t>3.4?2*eo((t-3.4)/.4):0),3);}
+   X.globalAlpha=1;
+   const g=eo((t-3.3)/0.5);bar(W/2-420*g,H/2+120,840*g,3,GOLD);
+   KT('THE PRICE OF FREEDOM IS',W/2,H/2-140,26,t-3.6,{c:GOLD,sp:8,w:'700',out:6.3});
+   KT('A SHOWREEL ON DEMOCRACY, MARKETS & POWER',W/2,H/2+160,18,t-4.2,{sp:5,w:'500',out:6.2});
+   if(t>6.2){X.globalAlpha=eo((t-6.2)/.6);X.fillStyle=INK;X.fillRect(0,0,W,H);X.globalAlpha=1;}
+ }],
+ [7,14,function(t){ // informed public
+   bg('#0e1a2b','#05070c');label('01','The Informed Public',t);
+   const cols=32,rows=12;
+   for(let j=0;j<rows;j++)for(let i=0;i<cols;i++){
+     const x=80+i*(1120/(cols-1)),y=170+j*34,d=Math.hypot(i-cols/2,j-rows/2);
+     const k=eo((t*9-d)/4);const r=2+k*5+Math.sin(t*4+i*.5+j)*k*1.2;
+     X.fillStyle=k>.5?(((i*7+j*3)%11==0)?GOLD:CYAN):'#2b3a55';X.globalAlpha=0.3+0.7*k;
+     X.beginPath();X.arc(x,y,r,0,7);X.fill();
+     if(k>.9&&(i+j)%5==0){X.strokeStyle=CYAN;X.globalAlpha=.25;X.beginPath();X.arc(x,y,r+6+Math.sin(t*3+i)*3,0,7);X.stroke();}
+   }
+   X.globalAlpha=1;
+   const g=X.createLinearGradient(0,330,0,720);g.addColorStop(0,'rgba(5,7,12,0)');g.addColorStop(.35,'rgba(5,7,12,.92)');X.fillStyle=g;X.fillRect(0,330,W,390);
+   KT('Democracy runs on one fuel:',W/2,520,30,t-1.2,{w:'400',f:SERIF,out:6.3});
+   KT('AN INFORMED PUBLIC.',W/2,585,64,t-1.8,{c:CYAN,sp:4,out:6.3});
+   KT('A citizen who cannot see the truth cannot defend it.',W/2,650,20,t-3.2,{w:'400',c:'#9fb3c8',out:6.4});
+ }],
+ [14,22,function(t){ // Adam Smith
+   bg('#2a2216','#0b0906');label('02','Lessons from Adam Smith',t);
+   X.save();X.translate(330,380);
+   for(let i=0;i<4;i++){X.rotate(t*0.1*(i%2?-1:1));X.strokeStyle=GOLD;X.globalAlpha=.15+i*.08;X.lineWidth=1+i;
+     X.setLineDash([4+i*6,8+i*4]);X.beginPath();X.arc(0,0,90+i*42,0,6.28*eo(t/1.5));X.stroke();}
+   X.restore();X.setLineDash([]);X.globalAlpha=1;
+   // balance scale tipping
+   const tilt=Math.sin(t*1.3)*0.18*(1-eo((t-4.5)/2));
+   X.save();X.translate(330,380);X.strokeStyle=CREAM;X.lineWidth=4;X.fillStyle=CREAM;
+   X.beginPath();X.moveTo(0,-90);X.lineTo(0,110);X.stroke();X.fillRect(-60,108,120,6);
+   X.rotate(tilt);X.beginPath();X.moveTo(-140,-90);X.lineTo(140,-90);X.stroke();
+   for(const s of[-1,1]){X.save();X.translate(s*140,-90);X.rotate(-tilt);X.lineWidth=1.5;
+     X.beginPath();X.moveTo(0,0);X.lineTo(-35,70);X.moveTo(0,0);X.lineTo(35,70);X.stroke();
+     X.fillStyle=s<0?GOLD:CYAN;X.beginPath();X.ellipse(0,72,42,9,0,0,7);X.fill();
+     X.font=`700 12px ${FONT}`;X.textAlign='center';X.fillStyle=CREAM;X.fillText(s<0?'PROFIT':'PUBLIC GOOD',0,100);X.restore();}
+   X.restore();
+   const x0=620;bar(x0,200,4,300*eo((t-.5)/1),GOLD);
+   KT('“People of the same trade seldom meet',x0+30,235,28,t-.9,{a:'left',f:SERIF,w:'400',st:.012,out:7.3});
+   KT('together… but the conversation ends in a',x0+30,275,28,t-1.3,{a:'left',f:SERIF,w:'400',st:.012,out:7.3});
+   KT('conspiracy against the public.”',x0+30,315,28,t-1.7,{a:'left',f:SERIF,w:'400',st:.012,c:GOLD,out:7.3});
+   KT('— ADAM SMITH, THE WEALTH OF NATIONS, 1776',x0+30,365,14,t-2.6,{a:'left',w:'700',sp:3,c:'#bba98a',out:7.3});
+   KT('Free markets need fair rules,',x0+30,440,26,t-3.6,{a:'left',w:'800',out:7.3});
+   KT('competition, and a moral compass.',x0+30,478,26,t-4.0,{a:'left',w:'800',c:GOLD,out:7.3});
+ }],
+ [22,30,function(t){ // corruption pyramid
+   bg('#1b0d12','#060305');label('03','Crony Capitalism',t);
+   const lv=7,top=150;
+   for(let l=0;l<lv;l++){const n=l+1,bw=64,y=top+l*48,k=eb((t-0.2-(lv-l)*.12)/.7);
+     for(let i=0;i<n;i++){const x=W/2-(n*bw)/2+i*bw;
+       X.globalAlpha=cl(k);X.fillStyle=l==0?GOLD:`hsl(350,${40+l*5}%,${30-l*2}%)`;
+       X.fillRect(x+3,y+(1-k)*-60,bw-6,42);}}
+   X.globalAlpha=1;
+   // coins flowing up from crowd
+   for(let i=0;i<70;i++){const ph=((t*0.45+i/70)%1),sx=100+((i*137)%1080),k=eio(ph);
+     const x=lerp(sx,W/2,k),y=lerp(700,top+20,k)-Math.sin(k*3.14)*80;
+     if(t>1){X.fillStyle=GOLD;X.globalAlpha=Math.sin(ph*3.14);X.beginPath();X.arc(x,y,3+k*2,0,7);X.fill();}}
+   X.globalAlpha=1;
+   for(const c of crowd){X.fillStyle='#4a2a33';X.beginPath();X.arc(c.x,c.y+Math.sin(t*2+c.ph)*2,c.r,0,7);X.fill();}
+   X.fillStyle='rgba(6,3,5,.75)';X.fillRect(0,520,W,200);
+   KT('When officials sell influence',W/2,575,34,t-1.4,{out:7.3});
+   KT('and corporations buy it,',W/2,620,34,t-1.8,{out:7.3});
+   KT('THE MARKET STOPS SERVING THE PEOPLE.',W/2,672,26,t-2.6,{c:RED,sp:4,out:7.3});
+ }],
+ [30,38,function(t){ // consolidation
+   bg('#0c1418','#030506');label('04','Consolidation',t);
+   const k=eio((t-1)/4.5);let alive=0;
+   for(const b of blobs){const kk=cl((k-b.d*0.8)/0.2);if(kk<1)alive++;
+     const x=lerp(b.x,W/2,eio(kk)),y=lerp(b.y,H/2-30,eio(kk));
+     X.globalAlpha=1-kk*.9;X.fillStyle=b.c;X.beginPath();X.arc(x,y,b.r*(1-kk*.5),0,7);X.fill();}
+   const R=10+k*130+Math.sin(t*3)*k*4;
+   X.globalAlpha=1;const g=X.createRadialGradient(W/2,H/2-30,0,W/2,H/2-30,R);g.addColorStop(0,'#ff6b6b');g.addColorStop(1,'#7a0f18');
+   X.fillStyle=g;X.beginPath();X.arc(W/2,H/2-30,R,0,7);X.fill();
+   X.strokeStyle=RED;X.globalAlpha=.4*k;X.lineWidth=2;X.beginPath();X.arc(W/2,H/2-30,R+20+Math.sin(t*2)*6,0,7);X.stroke();X.globalAlpha=1;
+   const n=Math.max(1,alive+1);
+   X.font=`900 64px ${FONT}`;X.textAlign='right';X.fillStyle=CREAM;X.globalAlpha=eo(t/.6)*(1-eo((t-7.3)/.4));
+   X.fillText(String(n).padStart(2,'0'),1200,140);X.font=`700 13px ${FONT}`;X.fillStyle='#8aa';X.fillText('INDEPENDENT VOICES',1200,185);X.globalAlpha=1;
+   KT('Many choices become few. Few become one.',W/2,580,32,t-1.2,{out:7.3});
+   KT('Concentrated power always asks for more.',W/2,630,24,t-2.6,{w:'400',f:SERIF,c:'#f28482',out:7.3});
+ }],
+ [38,46,function(t){ // fascism warning
+   X.fillStyle='#120406';X.fillRect(0,0,W,H);label('05','The Recurring Threat',t);
+   const step=(Math.floor(t*2.4)+eio((t*2.4)%1));
+   for(let r=0;r<9;r++){const y=120+r*62,s=r%2?1:-1;
+     for(let i=-2;i<18;i++){const x=((i*90+step*30*s)%1800+1800)%1800-200;
+       X.fillStyle=RED;X.globalAlpha=0.08+0.05*(r%3);X.fillRect(x,y,50,40);}}
+   X.globalAlpha=1;
+   const g=eo(t/.8);X.fillStyle=RED;X.beginPath();X.moveTo(0,0);X.lineTo(W*g*.55,0);X.lineTo(W*g*.35,H);X.lineTo(0,H);X.fill();
+   KT('FASCISM',60+0,210,120,t-.5,{a:'left',c:'#120406',sp:-2,out:7.3});
+   KT('rarely kicks down the door.',60,300,30,t-1.2,{a:'left',c:'#120406',f:SERIF,w:'400',out:7.3});
+   const L=['It arrives through apathy,','through propaganda,','through fear,','and through a public too tired to look.'];
+   L.forEach((s,i)=>KT(s,1220,390+i*52,i==3?28:34,t-2.2-i*.6,{a:'right',c:i==3?GOLD:CREAM,w:i==3?'400':'800',f:i==3?SERIF:FONT,out:7.3}));
+ }],
+ [46,53,function(t){ // they know better / the people rise
+   bg('#0e1220','#03040a');label('06','Who Decides?',t);
+   const k=eio((t-3)/2);
+   // spotlight cone from tiny elite
+   X.globalAlpha=.25*(1-k);const g=X.createLinearGradient(0,120,0,520);g.addColorStop(0,GOLD);g.addColorStop(1,'rgba(242,193,78,0)');
+   X.fillStyle=g;X.beginPath();X.moveTo(W/2-20,150);X.lineTo(W/2+20,150);X.lineTo(W/2+300,520);X.lineTo(W/2-300,520);X.fill();X.globalAlpha=1;
+   X.fillStyle=GOLD;X.beginPath();X.arc(W/2,135,12*(1-k*.6),0,7);X.fill();
+   for(const c of crowd){const rise=k*(c.y-300)*0.9*(0.6+0.4*Math.sin(c.ph));
+     X.fillStyle=k>.05?CYAN:'#2a3550';X.globalAlpha=.4+.6*k;X.beginPath();X.arc(c.x,c.y-rise-80,c.r+k*1.5,0,7);X.fill();}
+   X.globalAlpha=1;
+   KT('The oldest claim of the ruling class:',W/2,230,28,t-.6,{w:'400',f:SERIF,out:3});
+   KT('“WE KNOW BETTER.”',W/2,295,62,t-1.1,{c:GOLD,out:3});
+   KT('Our answer:',W/2,230,28,t-3.4,{w:'400',f:SERIF,out:6.3});
+   KT('POWER ANSWERS TO THE PEOPLE.',W/2,295,56,t-3.8,{c:CYAN,out:6.3});
+ }],
+ [53,60,function(t){ // finale
+   bg('#151a28',INK);gridBg(t,'#262f48',.3);
+   const words=[['STAY INFORMED.',CYAN],['STAY VIGILANT.',GOLD],['STAY FREE.',CREAM]];
+   words.forEach((w,i)=>{const d=.3+i*.55;const g=eo((t-d)/.5);
+     bar(W/2-320,200+i*100-30,8,60*g,w[1]);KT(w[0],W/2-290,200+i*100,64,t-d,{a:'left',c:w[1],sp:2,out:5.8});});
+   const g=eo((t-2.4)/.8);bar(W/2-320,530,640*g,2,'#556');
+   KT('Prosperity and liberty are never permanent. They are maintained.',W/2,570,20,t-2.8,{w:'400',f:SERIF,c:'#c9c3b5',st:.01,out:5.9});
+   if(t>6){X.globalAlpha=eo((t-6)/.8);X.fillStyle='#000';X.fillRect(0,0,W,H);X.globalAlpha=1;}
+ }]
+];
+function wipe(lt){ // transition sweep near scene start
+  if(lt>0.7)return;const k=eio(lt/0.7);
+  const cs=[GOLD,RED,CYAN];
+  cs.forEach((c,i)=>{const x=lerp(-200,W+600,cl(k*1.4-i*.15));X.fillStyle=c;X.globalAlpha=.9;
+    X.beginPath();X.moveTo(x,0);X.lineTo(x+120,0);X.lineTo(x-80,H);X.lineTo(x-200,H);X.fill();});
+  X.globalAlpha=1;
+}
+function frame(now){
+  const t=(((now-T0)/1000+OFF)%DUR+DUR)%DUR;
+  X.setTransform(1,0,0,1,0,0);X.globalAlpha=1;X.textAlign='left';
+  for(const s of S)if(t>=s[0]&&t<s[1]){s[2](t-s[0]);if(s[0]>0)wipe(t-s[0]);break;}
+  // letterbox + progress
+  bar(0,0,W,22,'#000');bar(0,H-22,W,22,'#000');bar(0,H-3,W*t/DUR,3,GOLD,.8);
+  // vignette
+  const v=X.createRadialGradient(W/2,H/2,300,W/2,H/2,820);v.addColorStop(0,'rgba(0,0,0,0)');v.addColorStop(1,'rgba(0,0,0,.55)');X.fillStyle=v;X.fillRect(0,0,W,H);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

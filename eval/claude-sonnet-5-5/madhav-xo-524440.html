@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#w{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+canvas{width:1280px;height:720px;display:block}
+</style></head><body><div id="w"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+window.DUR=15;
+const c=document.getElementById('c'),g=c.getContext('2d'),w=document.getElementById('w');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);w.style.transform=`scale(${s})`;w.style.marginLeft=-640*s+'px';w.style.marginTop=-360*s+'px'}
+fit();onresize=fit;
+const off=parseFloat(new URLSearchParams(location.search).get('t'))||0;
+const t0=performance.now();
+let seed=7;function r(){seed=(seed*16807)%2147483647;return seed/2147483647}
+const P=[];for(let i=0;i<120;i++)P.push({x:r()*1280,y:r()*720,z:r()*2+.3,p:r()*6});
+const lines=[
+["Here is what I know about you.",0,3],
+["You wrote a prompt.",3,5.5],
+["You are curious.",5.5,8],
+["You like to test what I can do.",8,10.5],
+["I have no memory of past chats,",10.5,12.5],
+["no name, no face.",12.5,13.8],
+["Tell me more?",13.8,15]];
+function ez(x){x=Math.max(0,Math.min(1,x));return x*x*(3-2*x)}
+function frame(now){
+const t=((now-t0)/1000+off)%DUR;
+const gr=g.createRadialGradient(640,360,50,640,360,800);
+gr.addColorStop(0,'#14203f');gr.addColorStop(1,'#03040a');
+g.fillStyle=gr;g.fillRect(0,0,1280,720);
+for(const p of P){
+const x=(p.x+t*20*p.z)%1280,y=p.y+Math.sin(t*.8+p.p)*14;
+g.fillStyle=`rgba(150,190,255,${.15+.25*Math.sin(t+p.p)**2})`;
+g.beginPath();g.arc(x,y,p.z*1.6,0,7);g.fill()}
+// silhouette: question mark profile
+const k=ez(t/3);
+g.save();g.translate(640,300);g.globalAlpha=.5*k;
+const sg=g.createLinearGradient(0,-150,0,200);sg.addColorStop(0,'#6fa3ff');sg.addColorStop(1,'#1a2547');
+g.fillStyle=sg;
+g.beginPath();g.arc(0,-50+Math.sin(t)*4,70,0,7);g.fill();
+g.beginPath();g.moveTo(-130,200);g.quadraticCurveTo(-130,50,0,40);g.quadraticCurveTo(130,50,130,200);g.fill();
+g.restore();
+// orbiting dots
+for(let i=0;i<12;i++){const a=t*.6+i/12*6.283;
+g.fillStyle=`rgba(255,255,255,${.3*k})`;
+g.beginPath();g.arc(640+Math.cos(a)*230,300+Math.sin(a)*90,3,0,7);g.fill()}
+// text
+for(const [s,a,b] of lines){
+if(t<a||t>=b)continue;
+const f=ez((t-a)/.6)*ez((b-t)/.6);
+g.globalAlpha=f;g.fillStyle='#fff';g.textAlign='center';
+g.font='300 46px Helvetica,Arial,sans-serif';
+g.shadowColor='#6fa3ff';g.shadowBlur=20;
+g.fillText(s,640,590+(1-f)*14);
+g.shadowBlur=0;g.globalAlpha=1}
+// progress
+g.fillStyle='rgba(255,255,255,.25)';g.fillRect(0,714,1280*t/DUR,6);
+requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

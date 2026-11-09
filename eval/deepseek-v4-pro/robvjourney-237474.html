@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>No Hands Labs — Motion Graphic</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;background:#000;overflow:hidden;display:flex;align-items:center;justify-content:center}
+  canvas{max-width:100vw;max-height:100vh;display:block;background:#050508}
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const W = 1280, H = 720, CX = W / 2, CY = H / 2;
+  window.DUR = 15;
+
+  const params = new URLSearchParams(window.location.search);
+  const startOffset = params.get('t') ? parseFloat(params.get('t')) : 0;
+
+  const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const smooth = t => t * t * (3 - 2 * t);
+  const easeOut = t => 1 - Math.pow(1 - t, 4);
+  const easeIn = t => t * t * t * t;
+  const easeInOut = t => t < 0.5 ? 2*t*t*(3-4*t) : 1 - Math.pow(-2*t+2,4)/2;
+  const rand = (a, b) => a + Math.random() * (b - a);
+
+  // ----- Particle systems -----
+  const bgParticles = [];
+  for (let i = 0; i < 90; i++) {
+    bgParticles.push({
+      x: rand(0, W), y: rand(0, H),
+      vx: rand(-4, 4), vy: rand(-3, 3),
+      r: rand(0.5, 2.5), baseAlpha: rand(0.1, 0.4),
+      twinkleSpeed: rand(1, 3), twinkleOffset: rand(0, 10)
+    });
+  }
+
+  const orbitParticles = [];
+  const ORBIT_COUNT = 28;
+  for (let i = 0; i < ORBIT_COUNT; i++) {
+    const angle = (i / ORBIT_COUNT) * Math.PI * 2;
+    orbitParticles.push({
+      baseAngle: angle,
+      radius: rand(130, 200),
+      speed: rand(0.3, 0.8) * (i % 2 === 0 ? 1 : -1),
+      r: rand(1.5, 4),
+      hue: i % 3 === 0 ? '#ff00e6' : '#00f0ff',
+      verticalOffset: rand(-15, 15),
+      phaseOffset: rand(0, Math.PI * 2)
+    });
+  }
+
+  const burstParticles = [];
+  for (let i = 0; i < 60; i++) {
+    const angle = rand(0, Math.PI * 2);
+    const speed = rand(100, 600);
+    burstParticles.push({
+      x: CX, y: CY,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      r: rand(1, 3.5),
+      life: 0,
+      maxLife: rand(0.5, 1.8),
+      hue: i % 4 === 0 ? '#ff00e6' : (i % 3 === 0 ? '#7b2dff' : '#00f0ff')
+    });
+  }
+
+  const convergeParticles = [];
+  for (let i = 0; i < 50; i++) {
+    const angle = rand(0, Math.PI * 2);
+    const dist = rand(300, 800);
+    convergeParticles.push({
+      startX: CX + Math.cos(angle) * dist,
+      startY: CY + Math.sin(angle) * dist * 0.6,
+      x: CX + Math.cos(angle) * dist,
+      y: CY + Math.sin(angle) * dist * 0.6,
+      targetX: CX + rand(-10, 10),
+      targetY: CY + rand(-10, 10),
+      r: rand(1, 3),
+      delay: rand(0, 0.8),
+      hue: '#00f0ff'
+    });
+  }
+
+  // ----- Helper: draw spaced text -----
+  function drawSpacedText(ctx2, text, x, y, font, color, spacing = 0, alpha = 1) {
+    ctx2.save();
+    ctx2.font = font;
+    ctx2.fillStyle = color;
+    ctx2.globalAlpha = alpha;
+    ctx2.textAlign = 'center';
+    ctx2.textBaseline = 'middle';
+    if (spacing === 0) {
+      ctx2.fillText(text, x, y);
+    } else {
+      const totalWidth = ctx2.measureText(text).width + spacing * (text.length - 1);
+      let startX = x - totalWidth / 2;
+      for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        const chWidth = ctx2.measureText(ch).width;
+        ctx2.fillText(ch, startX + chWidth / 2, y);
+        startX += chWidth + spacing;
+      }
+    }
+    ctx2.restore();
+  }
+
+  // ----- Glitchy text with RGB split and slice artifacts -----
+  function drawGlitchyText(ctx2, text, x, y, font, color, glitchAmt, time, alpha = 1) {
+    ctx2.save();
+    ctx2.textAlign = 'center';
+    ctx2.textBaseline = 'middle';
+    ctx2.font = font;
+    ctx2.globalAlpha = alpha;
+
+    if (glitchAmt < 0.01) {
+      ctx2.fillStyle = color;
+      ctx2.fillText(text, x, y);
+      ctx2.restore();
+      return;
+    }
+
+    const split = glitchAmt * 10;
+    ctx2.globalAlpha = alpha * 0.55;
+    ctx2.fillStyle = '#ff0033';
+    ctx2.fillText(text, x - split, y + split * 0.2);
+    ctx2.fillStyle = '#00ccff';
+    ctx2.fillText(text, x + split, y - split * 0.2);
+    ctx2.globalAlpha = alpha;
+    ctx2.fillStyle = color;
+    ctx2.fillText(text, x, y);
+
+    const numSlices = Math.floor(glitchAmt * 7) + 1;
+    for (let i = 0; i < numSlices; i++) {
+      const sliceY = y - 50 + Math.random() * 100;
+      const sliceH = 1 + Math.random() * 7;
+      const offsetX = (Math.random() - 0.5) * glitchAmt * 80;
+      ctx2.save();
+      ctx2.beginPath();
+      ctx2.rect(x - 350, sliceY, 700, sliceH);
+      ctx2.clip();
+      ctx2.globalAlpha = alpha * rand(0.3, 0.8);
+      ctx2.fillStyle = Math.random() > 0.5 ? '#00f0ff' : '#ff00e6';
+      ctx2.fillText(text, x + offsetX, y);
+      ctx2.restore();
+    }
+    ctx2.restore();
+  }
+
+  // ----- Draw hexagon with build progress -----
+  function drawHexagon(ctx2, cx, cy, radius, rotation, buildProgress, color, glowIntensity, lineWidth = 3) {
+    const vertices = [];
+    for (let i = 0; i < 6; i++) {
+      const angle = rotation + (i * Math.PI / 3) - Math.PI / 2;
+      vertices.push({ x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius });
+    }
+    ctx2.save();
+    ctx2.shadowColor = color;
+    ctx2.shadowBlur = glowIntensity * 30;
+    ctx2.strokeStyle = color;
+    ctx2.lineWidth = lineWidth;
+    ctx2.lineCap = 'round';
+    ctx2.lineJoin = 'round';
+    const totalSegments = 6;
+    const fullSegments = Math.floor(buildProgress * totalSegments);
+    const partialProgress = (buildProgress * totalSegments) - fullSegments;
+    for (let i = 0; i < totalSegments; i++) {
+      if (i < fullSegments) {
+        ctx2.globalAlpha = 1;
+        ctx2.beginPath();
+        ctx2.moveTo(vertices[i].x, vertices[i].y);
+        ctx2.moveTo(vertices[i].x, vertices[i].y);
+        ctx2.lineTo(vertices[(i + 1) % 6].x, vertices[(i + 1) % 6].y);
+        ctx2.stroke();
+      } else if (i === fullSegments && partialProgress > 0) {
+        ctx2.globalAlpha = partialProgress;
+        const ex = lerp(vertices[i].x, vertices[(i + 1) % 6].x, partialProgress);
+        const ey = lerp(vertices[i].y, vertices[(i + 1) % 6].y, partialProgress);
+        ctx2.beginPath();
+        ctx2.moveTo(vertices[i].x, vertices[i].y);
+        ctx2.lineTo(ex, ey);
+        ctx2.stroke();
+      }
+    }
+    ctx2.globalAlpha = 1;
+    ctx2.restore();
+  }
+
+  function drawInnerHexagon(ctx2, cx, cy, radius, rotation, alpha, color, glowIntensity) {
+    const vertices = [];
+    const offsetAngle = Math.PI / 6;
+    for (let i = 0; i < 6; i++) {
+      const angle = rotation + offsetAngle + (i * Math.PI / 3) - Math.PI / 2;
+      vertices.push({ x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius });
+    }
+    ctx2.save();
+    ctx2.shadowColor = color;
+    ctx2.shadowBlur = glowIntensity * 18;
+    ctx2.strokeStyle = color;
+    ctx2.lineWidth = 1.5;
+    ctx2.globalAlpha = alpha;
+    ctx2.beginPath();
+    for (let i = 0; i < 6; i++) {
+      if (i === 0) ctx2.moveTo(vertices[i].x, vertices[i].y);
+      else ctx2.lineTo(vertices[i].x, vertices[i].y);
+    }
+    ctx2.closePath();
+    ctx2.stroke();
+    ctx2.restore();
+  }
+
+  // ----- Grid background -----
+  function drawGrid(ctx2, time, intensity) {
+    ctx2.save();
+    ctx2.globalAlpha = intensity * 0.06;
+    ctx2.strokeStyle = '#00f0ff';
+    ctx2.lineWidth = 0.5;
+    const spacing = 80;
+    for (let x = -spacing; x < W + spacing; x += spacing) {
+      ctx2.beginPath();
+      ctx2.moveTo(x, 0);
+      ctx2.lineTo(x, H);
+      ctx2.stroke();
+    }
+    for (let y = -spacing; y < H + spacing; y += spacing) {
+      ctx2.beginPath();
+      ctx2.moveTo(0, y);
+      ctx2.lineTo(W, y);
+      ctx2.stroke();
+    }
+    ctx2.restore();
+  }
+
+  // ----- Scan lines -----
+  function drawScanlines(ctx2, intensity) {
+    if (intensity < 0.01) return;
+    ctx2.save();
+    ctx2.globalAlpha = intensity * 0.12;
+    ctx2.fillStyle = '#ffffff';
+    for (let y = 0; y < H; y += 4) {
+      ctx2.fillRect(0, y, W, 1);
+    }
+    ctx2.restore();
+  }
+
+  // ----- Vignette -----
+  function drawVignette(ctx2, intensity) {
+    const grad = ctx2.createRadialGradient(CX, CY, H * 0.25, CX, CY, H * 0.95);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(0.6, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, `rgba(0,0,0,${clamp(intensity, 0, 1) * 0.85})`);
+    ctx2.save();
+    ctx2.fillStyle = grad;
+    ctx2.fillRect(0, 0, W, H);
+    ctx2.restore();
+  }
+
+  // ----- Central glow -----
+  function drawCentralGlow(ctx2, cx, cy, radius, intensity, color1, color2) {
+    const grad = ctx2.createRadialGradient(cx, cy, 0, cx, cy, radius);
+    grad.addColorStop(0, color1);
+    grad.addColorStop(0.4, color2);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx2.save();
+    ctx2.globalAlpha = intensity * 0.6;
+    ctx2.fillStyle = grad;
+    ctx2.beginPath();
+    ctx2.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx2.fill();
+    ctx2.restore();
+  }
+
+  // ----- Typewriter helper -----
+  function getTypedText(text, progress) {
+    return text.substring(0, Math.floor(progress * text.length));
+  }
+
+  // ----- Main animation loop -----
+  function animate() {
+    const now = performance.now() / 1000;
+    const rawT = (startOffset + now) % window.DUR;
+    const t = rawT;
+
+    // Clear
+    ctx.fillStyle = '#050508';
+    ctx.fillRect(0, 0, W, H);
+
+    // Background radial gradient
+    const bgGrad = ctx.createRadialGradient(CX, CY, 0, CX, CY, 700);
+    bgGrad.addColorStop(0, '#0a0a1e');
+    bgGrad.addColorStop(0.45, '#060610');
+    bgGrad.addColorStop(1, '#020204');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Grid intensity
+    const gridIntensity = smooth(clamp(t / 2.5, 0, 1)) * smooth(clamp((14.5 - t) / 1.5, 0, 1));
+    drawGrid(ctx, t, gridIntensity);
+
+    // ---- Particles ----
+    // Background dust
+    for (const p of bgParticles) {
+      if (t < 0.3) {
+        p.x = CX + Math.cos(p.twinkleOffset * 10 + t * 20) * 300 * easeOut(t / 0.3);
+        p.y = CY + Math.sin(p.twinkleOffset * 5 + t * 20) * 200 * easeOut(t / 0.3);
+      } else {
+        p.x += p.vx * 0.016;
+        p.y += p.vy * 0.016;
+      }
+      if (p.x < -10) p.x = W + 10;
+      if (p.x > W + 10) p.x = -10;
+      if (p.y < -10) p.y = H + 10;
+      if (p.y > H + 10) p.y = -10;
+      const twinkle = 0.5 + 0.5 * Math.sin(t * p.twinkleSpeed + p.twinkleOffset);
+      const alpha = p.baseAlpha * twinkle * (0.5 + 0.5 * smooth(clamp(t / 1.5, 0, 1))) * smooth(clamp((14.8 - t) / 1, 0, 1));
+      ctx.save();
+      ctx.globalAlpha = clamp(alpha, 0, 0.6);
+      ctx.fillStyle = '#8ab4ff';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Burst particles (opening)
+    for (const p of burstParticles) {
+      if (t < 2.5) {
+        const life = t / 2.5;
+        p.life = life;
+        const lx = CX + p.vx * life * 1.6;
+        const ly = CY + p.vy * life * 1.6;
+        const alpha = (1 - life) * 0.9;
+        if (alpha > 0) {
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = p.hue;
+          ctx.shadowColor = p.hue;
+          ctx.shadowBlur = 8;
+          ctx.beginPath();
+          ctx.arc(lx, ly, p.r * (1 - life * 0.5), 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+    }
+
+    // Converge particles (finale)
+    for (const p of convergeParticles) {
+      const convergeStart = 13.2;
+      const convergeEnd = 14.6;
+      if (t > convergeStart && t < convergeEnd) {
+        const prog = clamp((t - convergeStart - p.delay) / (convergeEnd - convergeStart), 0, 1);
+        const easedProg = easeIn(prog);
+        const px = lerp(p.startX, p.targetX, easedProg);
+        const py = lerp(p.startY, p.targetY, easedProg);
+        const alpha = prog < 0.7 ? 0.8 : (1 - (prog - 0.7) / 0.3) * 0.8;
+        ctx.save();
+        ctx.globalAlpha = clamp(alpha, 0, 0.9);
+        ctx.fillStyle = p.hue;
+        ctx.shadowColor = p.hue;
+        ctx.shadowBlur = 6;
+        ctx.beginPath();
+        ctx.arc(px, py, p.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      } else if (t >= convergeEnd) {
+        ctx.save();
+        ctx.globalAlpha = 0.2;
+        ctx.fillStyle = p.hue;
+        ctx.beginPath();
+        ctx.arc(p.targetX, p.targetY, p.r * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // ---- Orbiting particles ----
+    const orbitActive = smooth(clamp((t - 4.5) / 1.5, 0, 1)) * smooth(clamp((14.5 - t) / 1.5, 0, 1));
+    if (orbitActive > 0.01) {
+      for (const p of orbitParticles) {
+        const angle = p.baseAngle + t * p.speed + p.phaseOffset * 0.5 * Math.sin(t * 0.7 + p.phaseOffset);
+        const r = p.radius + Math.sin(t * 1.5 + p.phaseOffset) * p.verticalOffset;
+        const px = CX + Math.cos(angle) * r;
+        const py = CY + Math.sin(angle) * r * 0.85;
+        const alpha = orbitActive * (0.55 + 0.45 * Math.sin(t * 2 + p.phaseOffset));
+        ctx.save();
+        ctx.globalAlpha = clamp(alpha, 0, 0.9);
+        ctx.fillStyle = p.hue;
+        ctx.shadowColor = p.hue;
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.arc(px, py, p.r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // ---- Hexagon system ----
+    const hexBuildStart = 3.2;
+    const hexBuildEnd = 5.0;
+    const hexBuild = smooth(clamp((t - hexBuildStart) / (hexBuildEnd - hexBuildStart), 0, 1));
+    const hexRotation = t * 0.3 + Math.sin(t * 0.5) * 0.1;
+    const hexGlow = 0.6 + 0.4 * Math.sin(t * 1.8) * orbitActive;
+    const hexFade = smooth(clamp((14.4 - t) / 0.8, 0, 1));
+
+    if (hexBuild > 0.01 && hexFade > 0.01) {
+      // Outer hexagon
+      drawHexagon(ctx, CX, CY, 155, hexRotation, hexBuild, '#00f0ff', hexGlow * hexFade, 3);
+      // Inner hexagon
+      const innerAlpha = smooth(clamp((t - 5.5) / 1.5, 0, 1)) * hexFade;
+      if (innerAlpha > 0.01) {
+        drawInnerHexagon(ctx, CX, CY, 105, hexRotation * 1.3, innerAlpha * 0.7, '#ff00e6', hexGlow * hexFade);
+      }
+      // Second inner hexagon (smaller)
+      const innerAlpha2 = smooth(clamp((t - 7.0) / 1.5, 0, 1)) * hexFade;
+      if (innerAlpha2 > 0.01) {
+        drawInnerHexagon(ctx, CX, CY, 55, hexRotation * 1.7 + 0.2, innerAlpha2 * 0.5, '#7b2dff', hexGlow * hexFade * 0.6);
+      }
+      // Center point glow
+      const centerGlowIntensity = (0.4 + 0.3 * Math.sin(t * 2.5)) * innerAlpha2 * hexFade;
+      if (centerGlowIntensity > 0.01) {
+        drawCentralGlow(ctx, CX, CY, 90, centerGlowIntensity * 2, 'rgba(0,240,255,0.4)', 'rgba(255,0,230,0.15)');
+      }
+    }
+
+    // ---- Text ----
+    // Title "NO HANDS" — glitch in
+    const titleInStart = 1.2;
+    const titleInEnd = 2.0;
+    const titleIn = smooth(clamp((t - titleInStart) / (titleInEnd - titleInStart), 0, 1));
+    const titleGlitchAmt = (1 - titleIn) * 0.6 + (t > 6.5 && t < 7.5 ? 0.3 : 0) + (t > 12.5 && t < 13.5 ? 0.4 : 0) + (t > 13.5 ? Math.max(0, 0.5 - (t - 13.5) * 2) * 0.5 : 0);
+    const titleFade = smooth(clamp((14.2 - t) / 0.7, 0, 1));
+    if (titleIn > 0.01 && titleFade > 0.01) {
+      const titleAlpha = titleIn * titleFade;
+      drawGlitchyText(ctx, 'NO HANDS', CX, 295, 'bold 96px "Arial Black", Impact, sans-serif', '#ffffff', titleGlitchAmt * titleIn, t, titleAlpha);
+    }
+
+    // "LABS" — appears slightly later
+    const labsInStart = 2.2;
+    const labsInEnd = 3.2;
+    const labsIn = smooth(clamp((t - labsInStart) / (labsInEnd - labsInStart), 0, 1));
+    const labsGlitchAmt = (1 - labsIn) * 0.5 + (t > 7.0 && t < 7.8 ? 0.35 : 0) + (t > 13.0 && t < 13.8 ? 0.4 : 0) + (t > 13.8 ? Math.max(0, 0.4 - (t - 13.8) * 2) * 0.5 : 0);
+    const labsFade = smooth(clamp((14.2 - t) / 0.7, 0, 1));
+    if (labsIn > 0.01 && labsFade > 0.01) {
+      const labsAlpha = labsIn * labsFade;
+      drawGlitchyText(ctx, 'LABS', CX, 390, 'bold 82px "Arial Black", Impact, sans-serif', '#ff00e6', labsGlitchAmt * labsIn, t, labsAlpha);
+    }
+
+    // Divider line
+    const dividerIn = smooth(clamp((t - 3.8) / 0.6, 0, 1)) * smooth(clamp((14.2 - t) / 0.7, 0, 1));
+    if (dividerIn > 0.01) {
+      const lineWidth = lerp(0, 320, dividerIn);
+      ctx.save();
+      ctx.globalAlpha = dividerIn * 0.7;
+      ctx.strokeStyle = '#00f0ff';
+      ctx.lineWidth = 1.5;
+      ctx.shadowColor = '#00f0ff';
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.moveTo(CX - lineWidth, 430);
+      ctx.lineTo(CX + lineWidth, 430);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Tagline "AUTONOMOUS SYSTEMS" — typewriter
+    const tagStart = 6.0;
+    const tagEnd = 8.5;
+    const tagProg = smooth(clamp((t - tagStart) / (tagEnd - tagStart), 0, 1));
+    const tagFade = smooth(clamp((14.0 - t) / 0.9, 0, 1));
+    if (tagProg > 0.01 && tagFade > 0.01) {
+      const tagText1 = getTypedText('AUTONOMOUS', tagProg * 2);
+      const tagText2 = tagProg > 0.5 ? getTypedText('SYSTEMS', (tagProg - 0.5) * 2) : '';
+      const tagAlpha = tagFade * (0.8 + 0.2 * Math.sin(t * 3));
+      if (tagText1.length > 0) {
+        drawSpacedText(ctx, tagText1 + (tagProg < 0.5 ? '▌' : ''), CX, 475, '28px "Courier New", monospace', '#8ab4ff', 12, tagAlpha);
+      }
+      if (tagText2.length > 0) {
+        drawSpacedText(ctx, tagText2 + (tagProg < 1 ? '▌' : ''), CX, 510, '28px "Courier New", monospace', '#8ab4ff', 12, tagAlpha * 0.9);
+      }
+    }
+
+    // URL "nohandslabs.com"
+    const urlStart = 9.2;
+    const urlEnd = 10.5;
+    const urlIn = smooth(clamp((t - urlStart) / (urlEnd - urlStart), 0, 1));
+    const urlFade = smooth(clamp((14.0 - t) / 0.8, 0, 1));
+    if (urlIn > 0.01 && urlFade > 0.01) {
+      const urlPulse = 0.7 + 0.3 * Math.sin(t * 2.2);
+      const urlAlpha = urlIn * urlFade * urlPulse;
+      ctx.save();
+      ctx.shadowColor = '#00f0ff';
+      ctx.shadowBlur = 20 * urlPulse * urlFade;
+      drawSpacedText(ctx, 'nohandslabs.com', CX, 625, '34px "Courier New", monospace', '#00f0ff', 6, urlAlpha);
+      ctx.restore();
+    }
+
+    // ---- Scan lines and vignette ----
+    const scanIntensity = 0.25 + 0.2 * Math.sin(t * 5) + (t > 5 && t < 6 ? 0.5 : 0) + (t > 12.5 ? (t - 12.5) * 0.8 : 0);
+    drawScanlines(ctx, scanIntensity);
+    const vignetteIntensity = 0.5 + 0.2 * Math.sin(t * 1.4) + (t > 13.5 ? (t - 13.5) * 0.6 : 0);
+    drawVignette(ctx, vignetteIntensity);
+
+    // ---- Final flash ----
+    if (t > 14.4 && t < 15.0) {
+      const flashProg = clamp((t - 14.4) / 0.55, 0, 1);
+      const flashAlpha = Math.sin(flashProg * Math.PI) * 0.8;
+      ctx.save();
+      ctx.globalAlpha = flashAlpha;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, W, H);
+      ctx.restore();
+    }
+
+    // ---- Glitch band effect ----
+    if ((t > 6.4 && t < 6.7) || (t > 12.3 && t < 12.8) || (t > 13.8 && t < 14.2)) {
+      const glitchBandAlpha = 0.25;
+      ctx.save();
+      ctx.globalAlpha = glitchBandAlpha;
+      for (let i = 0; i < 20; i++) {
+        const gy = Math.random() * H;
+        const gh = rand(2, 14);
+        const gx = (Math.random() - 0.5) * 60;
+        ctx.fillStyle = Math.random() > 0.5 ? 'rgba(0,240,255,0.6)' : 'rgba(255,0,230,0.6)';
+        ctx.fillRect(gx, gy, W, gh);
+      }
+      ctx.restore();
+    }
+
+    // ---- Energy pulse rings (periodic) ----
+    const pulsePeriod = 2.5;
+    const pulsePhase = (t % pulsePeriod) / pulsePeriod;
+    if (pulsePhase < 0.5 && t > 4.0 && t < 13.5) {
+      const pulseProg = pulsePhase * 2;
+      const pulseRadius = 60 + pulseProg * 250;
+      const pulseAlpha = (1 - pulseProg) * 0.3;
+      ctx.save();
+      ctx.globalAlpha = pulseAlpha;
+      ctx.strokeStyle = '#00f0ff';
+      ctx.lineWidth = 2;
+      ctx.shadowColor = '#00f0ff';
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.arc(CX, CY, pulseRadius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    requestAnimationFrame(animate);
+  }
+
+  requestAnimationFrame(animate);
+})();
+</script>
+</body>
+</html>

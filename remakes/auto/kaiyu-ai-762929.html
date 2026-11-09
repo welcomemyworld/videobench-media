@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8"><title>蜘蛛の糸 モーションコミック</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=54;
+const C=document.getElementById('c'),X=C.getContext('2d'),W=1280,H=720;
+function fit(){const s=Math.min(innerWidth/W,innerHeight/H);C.style.width=W*s+'px';C.style.height=H*s+'px'}
+addEventListener('resize',fit);fit();
+const off=parseFloat(new URLSearchParams(location.search).get('t')||0)||0;const T0=performance.now()-off*1000;
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),ez=v=>{v=cl(v);return v*v*(3-2*v)};
+function R(n){let x=Math.sin(n*127.1)*43758.5;return x-Math.floor(x)}
+// --- drawing helpers
+function cap(txt,x,y,a,big){if(a<=0)return;X.save();X.globalAlpha=a;X.font=(big?'bold 30px':'24px')+' serif';
+ const lines=txt.split('\n');let w=0;lines.forEach(l=>w=Math.max(w,X.measureText(l).width));const lh=big?40:34;
+ X.fillStyle='rgba(250,244,225,.94)';X.strokeStyle='#111';X.lineWidth=3;X.fillRect(x,y,w+36,lines.length*lh+20);X.strokeRect(x,y,w+36,lines.length*lh+20);
+ X.fillStyle='#1a1208';lines.forEach((l,i)=>X.fillText(l,x+18,y+lh*(i+1)-4));X.restore()}
+function bubble(txt,x,y,a){if(a<=0)return;X.save();X.globalAlpha=a;X.font='bold 30px serif';const w=X.measureText(txt).width;
+ X.fillStyle='#fff';X.strokeStyle='#000';X.lineWidth=4;X.beginPath();X.moveTo(x+40,y+60);X.lineTo(x+20,y+100);X.lineTo(x+80,y+60);
+ X.ellipse(x+w/2+30,y+30,w/2+50,42,0,0,7);X.fill();X.stroke();X.fillStyle='#000';X.fillText(txt,x+30,y+42);X.restore()}
+function frame(a){X.save();X.strokeStyle='#000';X.lineWidth=14;X.strokeRect(7,7,W-14,H-14);X.strokeStyle='#e8dcc0';X.lineWidth=3;X.strokeRect(18,18,W-36,H-36);X.restore();
+ if(a<1){X.fillStyle='rgba(0,0,0,'+(1-a)+')';X.fillRect(0,0,W,H)}}
+function lotus(x,y,s,c){X.save();X.translate(x,y);X.scale(s,s);X.fillStyle='#3d7a4a';X.beginPath();X.ellipse(0,8,60,16,0,0,7);X.fill();
+ for(let i=-3;i<=3;i++){X.save();X.rotate(i*.32);X.fillStyle=c||'#f6c9d8';X.beginPath();X.ellipse(0,-24,11,30,0,0,7);X.fill();X.strokeStyle='#d98aa6';X.stroke();X.restore()}
+ X.fillStyle='#ffe58a';X.beginPath();X.arc(0,-6,7,0,7);X.fill();X.restore()}
+function man(x,y,s,ph,col,climb){X.save();X.translate(x,y);X.scale(s,s);X.strokeStyle=col;X.fillStyle=col;X.lineWidth=7;X.lineCap='round';
+ const a=Math.sin(ph);X.beginPath();X.arc(0,-50,13,0,7);X.fill();X.beginPath();X.moveTo(0,-36);X.lineTo(0,10);
+ if(climb){X.moveTo(0,-30);X.lineTo(-14,-60-a*14);X.lineTo(-3,-80-a*16);X.moveTo(0,-30);X.lineTo(14,-60+a*14);X.lineTo(3,-80+a*16);
+ X.moveTo(0,10);X.lineTo(-16,30+a*10);X.lineTo(-3,48+a*8);X.moveTo(0,10);X.lineTo(16,30-a*10);X.lineTo(3,48-a*8)}
+ else{X.moveTo(0,-28);X.lineTo(-24,-10+a*20);X.moveTo(0,-28);X.lineTo(24,-10-a*20);X.moveTo(0,10);X.lineTo(-14,45);X.moveTo(0,10);X.lineTo(14,45)}
+ X.stroke();X.restore()}
+function spider(x,y,s){X.save();X.translate(x,y);X.scale(s,s);X.strokeStyle='#222';X.lineWidth=2;
+ for(let i=0;i<4;i++)for(const d of[-1,1]){X.beginPath();X.moveTo(0,0);X.quadraticCurveTo(d*12,-6+i*5,d*18,4+i*5);X.stroke()}
+ X.fillStyle='#111';X.beginPath();X.arc(0,0,6,0,7);X.arc(0,-8,4,0,7);X.fill();X.restore()}
+// thread: from (x0,y0) length L, sway, returns point function
+function threadPts(x0,y0,L,t,amp){const p=[];const n=40;for(let i=0;i<=n;i++){const u=i/n,y=y0+u*L;
+ p.push([x0+Math.sin(t*1.6-u*4)*amp*u*u+Math.sin(t*3.1-u*9)*amp*.25*u,y])}return p}
+function drawThread(p,a){X.save();X.globalAlpha=a;X.shadowColor='#cfe8ff';X.shadowBlur=12;X.strokeStyle='#eaf4ff';X.lineWidth=2;
+ X.beginPath();p.forEach((q,i)=>i?X.lineTo(q[0],q[1]):X.moveTo(q[0],q[1]));X.stroke();X.restore()}
+function hell(t,dark){const g=X.createLinearGradient(0,0,0,H);g.addColorStop(0,'#120203');g.addColorStop(1,dark?'#3a0606':'#6a0a08');X.fillStyle=g;X.fillRect(0,0,W,H);
+ for(let i=0;i<40;i++){const x=R(i)*W,y=H-((t*40+R(i+9)*H)%H);X.fillStyle='rgba(255,'+(90+R(i+3)*80|0)+',30,'+(.3+R(i+5)*.4)+')';X.beginPath();X.arc(x,y,1.5+R(i+7)*2,0,7);X.fill()}
+ X.fillStyle='#200';for(let i=0;i<9;i++){X.beginPath();const b=i*150-40;X.moveTo(b,H);X.lineTo(b+40+R(i)*40,H-180-R(i+2)*160);X.lineTo(b+150,H);X.fill()}}
+function bloodPool(t,y){X.fillStyle='#5a0000';X.fillRect(0,y,W,H-y);X.strokeStyle='rgba(255,60,40,.35)';X.lineWidth=2;
+ for(let k=0;k<6;k++){X.beginPath();for(let x=0;x<=W;x+=20)X.lineTo(x,y+k*22+Math.sin(x*.02+t*2+k)*4);X.stroke()}}
+function paradise(t){const g=X.createLinearGradient(0,0,0,H);g.addColorStop(0,'#fff6dc');g.addColorStop(.6,'#f1e2b8');g.addColorStop(1,'#bfd7c6');X.fillStyle=g;X.fillRect(0,0,W,H);
+ X.save();X.globalAlpha=.25;X.fillStyle='#fff';for(let i=0;i<12;i++){X.beginPath();X.ellipse((R(i)*W+t*10)%(W+200)-100,80+R(i+4)*200,120,26,0,0,7);X.fill()}X.restore();
+ const pg=X.createLinearGradient(0,420,0,H);pg.addColorStop(0,'#9fc7c0');pg.addColorStop(1,'#5f8f8e');X.fillStyle=pg;X.fillRect(0,430,W,H);
+ for(let i=0;i<9;i++)lotus(80+i*150+Math.sin(t+i)*4,470+(i%3)*70,.8+(i%2)*.3)}
+function buddha(x,y,s,a){X.save();X.globalAlpha=a;X.translate(x,y);X.scale(s,s);
+ const g=X.createRadialGradient(0,-120,10,0,-120,160);g.addColorStop(0,'rgba(255,230,140,.9)');g.addColorStop(1,'rgba(255,230,140,0)');X.fillStyle=g;X.beginPath();X.arc(0,-120,160,0,7);X.fill();
+ X.fillStyle='#e9c98a';X.strokeStyle='#8a6a30';X.lineWidth=3;X.beginPath();X.moveTo(-70,120);X.quadraticCurveTo(-80,-40,0,-60);X.quadraticCurveTo(80,-40,70,120);X.closePath();X.fill();X.stroke();
+ X.fillStyle='#f3dcae';X.beginPath();X.ellipse(0,-110,36,44,0,0,7);X.fill();X.stroke();X.fillStyle='#5a4020';X.beginPath();X.arc(0,-150,30,Math.PI,0);X.fill();
+ X.strokeStyle='#5a4020';X.beginPath();X.arc(-13,-108,7,.2,2.9);X.moveTo(20,-108);X.arc(13,-108,7,.2,2.9);X.stroke();X.restore()}
+// --- scenes
+function render(t){X.setTransform(1,0,0,1,0,0);X.clearRect(0,0,W,H);
+ if(t<8){const u=t;paradise(t);buddha(1000-u*20,560,1.3,ez(u/1.5));X.save();X.globalAlpha=ez(u-.5)*(1-ez(u-6.5));X.font='bold 96px serif';X.fillStyle='#3a2408';X.textAlign='center';X.fillText('蜘蛛の糸',470,250);X.font='26px serif';X.fillText('― 芥川龍之介 原作より ―',470,300);X.restore();
+  cap('ある日の事でございます。\n御釈迦様は極楽の蓮池のふちを\n独りでぶらぶら御歩きになっていました。',40,500,ez(u-3)*(1-ez(u-7.6)));frame(ez(u)*(1-ez(u-7.6)))}
+ else if(t<15){const u=t-8;const z=1+u*.08;X.save();X.translate(W/2,H/2);X.scale(z,z);X.translate(-W/2,-H/2);hell(t);bloodPool(t,470);
+  for(let i=0;i<14;i++)man(80+i*85+Math.sin(t+i)*8,500+(i%3)*30,.7,t*3+i,'#1a0000');man(640,495,1,t*2,'#000');X.restore();
+  X.save();X.globalAlpha=.35*(1-ez(u/2));X.fillStyle='#9fc7c0';X.fillRect(0,0,W,H);X.restore();
+  cap('蓮池の底は、ちょうど地獄の底に当たっておりました。',40,40,ez(u-.5)*(1-ez(u-6.5)));cap('大泥棒の犍陀多（かんだた）。\nたった一度だけ、小さな蜘蛛を助けたことがある。',520,560,ez(u-3)*(1-ez(u-6.5)));frame(ez(u)*(1-ez(u-6.6)))}
+ else if(t<24){const u=t-15;
+  if(u<3){paradise(t);buddha(640,620,1.6,1);const hx=740,hy=380;spider(hx+10,hy-30+Math.sin(t*4)*3,1.4);drawThread([[hx+10,hy-30],[hx+10,hy-30+u*30]],1);
+   cap('御釈迦様は蓮の葉の上の蜘蛛の糸を\nそっと御手に御取りになって…',40,40,ez(u-.3)*(1-ez(u-2.8)))}
+  else{const v=u-3;// drop shot: camera follows tip down
+   const L=ez(v/5.5)*3000;const cam=Math.max(0,L-500);X.save();X.translate(0,-cam);
+   const g=X.createLinearGradient(0,0,0,3600);g.addColorStop(0,'#d9eef0');g.addColorStop(.15,'#3e6f74');g.addColorStop(.35,'#090b14');g.addColorStop(.8,'#1a0303');g.addColorStop(1,'#5a0606');X.fillStyle=g;X.fillRect(0,-50,W,3700);
+   for(let i=0;i<120;i++){X.fillStyle=i<40?'rgba(255,255,255,.4)':'rgba(255,120,60,.4)';X.fillRect(R(i)*W,R(i+50)*3600,2,2+R(i+3)*8)}
+   const p=threadPts(640,0,L,t,30);drawThread(p,1);const tip=p[p.length-1];spider(tip[0],tip[1]+8,1.2);
+   X.fillStyle='#fff';X.globalAlpha=.8;X.beginPath();X.arc(tip[0],tip[1],3+Math.sin(t*20),0,7);X.fill();X.restore();
+   cap('はるか下にある地獄の底へ、\nまっすぐにそれを御下ろしなさいました。',40,40,ez(v-.3)*(1-ez(v-5.6)))}
+  frame(ez(u*2)*(1-ez(u-8.6)))}
+ else if(t<34){const u=t-24;hell(t,1);const rise=u*90;X.save();X.translate(0,rise);bloodPool(t,560);for(let i=0;i<8;i++)man(100+i*150,580,.6,t*3+i,'#1a0000');X.restore();
+  const p=threadPts(640,-10,800,t,10);drawThread(p,1);const k=34;const q=p[k];man(q[0],q[1]+20+Math.sin(t*5)*6,1.3,t*5,'#050000',1);
+  X.save();X.globalAlpha=.4;X.fillStyle='#fff';for(let i=0;i<20;i++){X.fillRect(R(i)*W,(R(i+9)*H+u*400)%H,1,30)}X.restore();
+  cap('犍陀多はこの糸をしっかりと両手でつかみながら、\n一生懸命に上へ上へとたぐりのぼり始めました。',40,40,ez(u-.5)*(1-ez(u-5)));
+  if(u>5){cap('「しめた。しめた。」',780,560,ez(u-5.3)*(1-ez(u-9.5)),1)}frame(ez(u)*(1-ez(u-9.6)))}
+ else if(t<41){const u=t-34;hell(t,1);const p=threadPts(640,-10,1200,t,14);drawThread(p,1);man(p[4][0],p[4][1]+60,1.1,t*2,'#050000',1);
+  const n=Math.floor(cl(u/4)*14);for(let i=0;i<n;i++){const k=12+i*2;if(k>40)break;const q=p[Math.min(k,40)];man(q[0]+((i%2)?6:-6),q[1]+Math.sin(t*5+i)*8+(1-cl(u/4))*60,.7-i*.02,t*5+i,'#2a0505',1)}
+  for(let i=0;i<20;i++){const x=R(i+20)*W;if(Math.abs(x-640)<80)continue;man(x,700-cl(u/3)*60+R(i)*30,.5,t*4+i,'#200',1)}
+  cap('ところがふと気がつくと、\n糸の下の方には数限りもない罪人たちが…',40,500,ez(u-.3)*(1-ez(u-3)));
+  bubble('こら、罪人ども。下りろ。下りろ。',700,90,ez(u-3.2)*(1-ez(u-6.7)));frame(ez(u*2)*(1-ez(u-6.6)))}
+ else if(t<47){const u=t-41;const sh=u<.6?(R(t*99)-.5)*20:0;X.save();X.translate(sh,0);hell(t,1);
+  const p=threadPts(640,-10,800,t,10);const cut=10;if(u<.5)drawThread(p,1);else{drawThread(p.slice(0,cut),1);
+   const f=(u-.5);const fall=f*f*300;X.save();X.translate(0,fall);X.rotate(f*.05);drawThread(p.slice(cut),1);X.restore();
+   const cy=p[cut+2][1]+fall;man(640+f*30,cy+40,1.2,t*12,'#050000',0)}
+  if(u<.5)man(p[cut+2][0],p[cut+2][1]+40,1.2,t*6,'#050000',1);
+  if(u>.45&&u<1){X.fillStyle='rgba(255,255,255,'+(1-(u-.45)*2)+')';X.fillRect(0,0,W,H);X.font='bold 90px serif';X.fillStyle='#000';X.fillText('ぷつり',520,p[cut][1]+40)}
+  X.restore();cap('その途端でございます。\n糸は急に犍陀多のぶら下がっている所から\nぷつりと音を立てて断れました。',40,500,ez(u-1.2)*(1-ez(u-5.6)));frame(ez(u*3)*(1-ez(u-5.6)))}
+ else{const u=t-47;paradise(t);buddha(640,640,1.6,1);X.save();X.globalAlpha=.6;drawThread([[740,380],[742,380+Math.min(u*20,40)]],1);X.restore();
+  cap('自分ばかり地獄からぬけ出そうとする無慈悲な心が…\n御釈迦様は悲しそうな御顔をなさりながら、\nまたぶらぶら御歩きになり始めました。',40,40,ez(u-.3)*(1-ez(u-4.5)));
+  X.save();X.globalAlpha=ez(u-4.5);X.fillStyle='rgba(0,0,0,.6)';X.fillRect(0,0,W,H);X.font='bold 64px serif';X.fillStyle='#f6e6c0';X.textAlign='center';X.fillText('― 了 ―',640,380);X.restore();
+  frame(ez(u*2)*(1-ez(u-6.6)))}}
+function loop(){const t=((performance.now()-T0)/1000)%window.DUR;render(t);requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+</script></body></html>

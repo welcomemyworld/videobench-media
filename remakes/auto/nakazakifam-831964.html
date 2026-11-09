@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8"><title>心理学解説</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+const DUR=48;window.DUR=DUR;
+const cv=document.getElementById('c'),x=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)||0;
+const t0=performance.now()-off*1000;
+const F='"Helvetica Neue",Arial,"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif';
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const ease=v=>{v=cl(v);return 1-Math.pow(1-v,3)};
+function R(n){let s=Math.sin(n*127.1)*43758.5453;return s-Math.floor(s)}
+function txt(s,X,Y,size,col,al='center',w='900'){x.font=w+' '+size+'px '+F;x.fillStyle=col;x.textAlign=al;x.textBaseline='middle';x.fillText(s,X,Y)}
+function typeTxt(s,p,X,Y,size,col,al){const n=Math.floor(s.length*cl(p));txt(s.slice(0,n)+(p<1&&Math.floor(p*20)%2?'_':''),X,Y,size,col,al)}
+function grain(t){for(let i=0;i<300;i++){x.fillStyle='rgba(255,255,255,'+(R(i+t*60|0)*0.06)+')';x.fillRect(R(i*3+t)*1280,R(i*7+t*2)*720,2,2)}}
+function bars(){x.fillStyle='#000';x.fillRect(0,0,1280,40);x.fillRect(0,680,1280,40)}
+function hud(t,label){x.font='700 14px monospace';x.fillStyle='rgba(255,255,255,.6)';x.textAlign='left';x.fillText('PSYCH.CORE // '+label,40,62);x.textAlign='right';x.fillText('T+'+t.toFixed(2),1240,62)}
+
+// scenes: [start,dur,fn]
+const S=[];let acc=0;function add(d,f,l){S.push([acc,d,f,l]);acc+=d}
+
+// 1 intro glitch
+add(4,(p,t)=>{x.fillStyle='#000';x.fillRect(0,0,1280,720);
+ for(let i=0;i<40;i++){x.fillStyle='rgba(0,255,200,'+R(i)*0.15+')';x.fillRect(0,R(i+Math.floor(t*10))*720,1280,R(i*2)*4)}
+ const g=p<.15||(p>.5&&p<.53)?(R(t*99)-.5)*30:0;
+ x.globalCompositeOperation='lighter';
+ txt('あなたの脳は',640+g,300,90,'#f03');txt('あなたの脳は',640-g,300,90,'#0ff');
+ x.globalCompositeOperation='source-over';
+ txt('あなたの脳は',640,300,90,'#fff');
+ typeTxt('あなたを騙している。',(p-.3)*2,640,420,70,'#fff');},'BOOT');
+
+// 2 big kinetic word
+add(4,(p,t)=>{x.fillStyle='#f2f2f2';x.fillRect(0,0,1280,720);
+ const s=1+ease(p)*0.3;x.save();x.translate(640,360);x.scale(s,s);
+ txt('認知',0,-40,260,'#111');x.restore();
+ x.fillStyle='#e01';x.fillRect(0,520,1280*ease(p*1.5),14);
+ typeTxt('COGNITIVE BIAS — 認知バイアス',p*2,640,600,34,'#111');},'01');
+
+// 3 terminal code
+add(6,(p,t)=>{x.fillStyle='#050a05';x.fillRect(0,0,1280,720);
+ const L=['> load brain.module','> scanning beliefs...','  confirmation_bias = TRUE','  if (info.agrees(me)) accept();','  else ignore();','> 確証バイアス：','  自分の信念を支持する情報だけを','  無意識に集めてしまう傾向。'];
+ L.forEach((l,i)=>{const pp=(p*L.length*1.3-i);if(pp>0){x.font='600 34px monospace';x.fillStyle=i>4?'#8f8':'#3c3';x.textAlign='left';x.fillText(l.slice(0,Math.floor(l.length*cl(pp))),120,150+i*62)}});},'TERMINAL');
+
+// 4 data points / filter visualization
+add(6,(p,t)=>{x.fillStyle='#0a0a14';x.fillRect(0,0,1280,720);
+ for(let i=0;i<180;i++){const ag=R(i)>.7;const px=100+R(i*5)*1080,py=140+R(i*9)*440;
+  const k=ease(p*1.5-0.4);const tx=ag?640+(px-640)*0.15:px+(px<640?-1:1)*k*400;
+  x.fillStyle=ag?'#ffd400':'rgba(120,140,255,'+(1-k*0.8)+')';x.beginPath();x.arc(ag?px+(tx-px)*k:tx,py,ag?6:4,0,7);x.fill()}
+ txt('見たいものだけを、見る。',640,640,48,'#fff');
+ txt('● 同意する情報',300,90,22,'#ffd400','center','700');txt('● 反する情報',980,90,22,'#88f','center','700');},'FILTER');
+
+// 5 swiss poster
+add(5,(p,t)=>{x.fillStyle='#e01b24';x.fillRect(0,0,1280,720);
+ x.fillStyle='#111';x.fillRect(0,0,420*ease(p*2),720);
+ txt('02',210,200,180,'#e01b24');
+ txt('ダニング',860,240,110,'#fff');txt('＝クルーガー',860*1+(1-ease(p*2))*500,370,90,'#111');
+ typeTxt('能力が低い人ほど、自分を過大評価する。',(p-.3)*2,860,520,30,'#fff');},'02');
+
+// 6 graph
+add(6,(p,t)=>{x.fillStyle='#000';x.fillRect(0,0,1280,720);
+ x.strokeStyle='#444';x.lineWidth=2;x.beginPath();x.moveTo(160,580);x.lineTo(1120,580);x.moveTo(160,580);x.lineTo(160,140);x.stroke();
+ x.strokeStyle='#0ff';x.lineWidth=5;x.shadowColor='#0ff';x.shadowBlur=20;x.beginPath();
+ const N=Math.floor(200*ease(p*1.3));for(let i=0;i<=N;i++){const u=i/200;
+ const y=Math.exp(-Math.pow((u-.15)/.08,2))*0.85+ (u>0.3?Math.pow((u-.3)/.7,1.3)*0.7:0)*(1-Math.exp(-Math.pow((u-.15)/.08,2)))+0.05;
+ const X=160+u*960,Y=580-y*420;i?x.lineTo(X,Y):x.moveTo(X,Y)}x.stroke();x.shadowBlur=0;
+ if(p>.4)txt('「馬鹿の山」',300,150,30,'#fff');if(p>.6)txt('絶望の谷',480,560,26,'#f55');if(p>.8)txt('啓蒙の坂',980,320,26,'#0f8');
+ txt('自信',110,140,20,'#888');txt('経験 →',1100,620,20,'#888');},'GRAPH');
+
+// 7 3D tunnel of words
+add(5,(p,t)=>{x.fillStyle='#000';x.fillRect(0,0,1280,720);
+ const W=['損失','回避','LOSS','2.0x','痛み','LOSS','損失','AVERSION'];
+ for(let i=40;i>=0;i--){const z=((i*0.5-t*4)%20+20)%20+0.5;const sc=300/z;const a=i*1.3;
+  x.globalAlpha=cl(1-z/20);txt(W[i%W.length],640+Math.cos(a)*sc*2,360+Math.sin(a)*sc*1.2,sc*0.4,i%3?'#fff':'#f30')}
+ x.globalAlpha=1;x.fillStyle='rgba(0,0,0,.6)';x.fillRect(240,290,800,140);
+ txt('損失回避',640,340,64,'#fff');txt('失う痛みは、得る喜びの約2倍。',640,400,28,'#ccc','center','700');},'03');
+
+// 8 scale balance
+add(5,(p,t)=>{x.fillStyle='#f4efe6';x.fillRect(0,0,1280,720);
+ const ang=ease(p*1.5)*0.25;x.save();x.translate(640,300);x.fillStyle='#111';x.fillRect(-6,0,12,300);x.rotate(ang);
+ x.fillRect(-380,-4,760,8);
+ txt('-¥10,000',-330,60,46,'#d00');txt('+¥10,000',330,60,46,'#0a6');x.restore();
+ txt('同じ金額でも、重さが違う。',640,640,44,'#111');},'SCALE');
+
+// 9 split color flash
+add(5,(p,t)=>{const k=ease(p*1.5);x.fillStyle='#111';x.fillRect(0,0,1280,720);
+ x.fillStyle='#ffd400';x.fillRect(0,0,640*k,720);
+ txt('04',320,180,60,'#111');txt('アンカリング',320,340,64,'#111');typeTxt('最初の数字が判断を縛る。',(p-.3)*2,320,440,28,'#111');
+ txt('¥98,000',960,280,80,'rgba(255,255,255,.4)');x.strokeStyle='#f33';x.lineWidth=8;x.beginPath();x.moveTo(800,280);x.lineTo(800+320*ease(p*2-.4),280);x.stroke();
+ txt('¥29,800',960,420,110*(0.8+ease(p*2-.8)*0.2),'#ffd400');},'04');
+
+// 10 outro particles to text
+add(2,()=>{},'');add(0,()=>{});
+S.pop();S.pop();acc-=2;
+add(DUR-acc,(p,t)=>{x.fillStyle='#000';x.fillRect(0,0,1280,720);
+ for(let i=0;i<220;i++){const a=R(i)*6.28,r=(1-ease(p*1.6))*700+R(i*3)*30;
+  x.fillStyle='rgba(255,255,255,'+R(i*7)+')';x.fillRect(640+Math.cos(a+t*.3)*r,360+Math.sin(a+t*.3)*r*.6,2,2)}
+ x.globalAlpha=cl(p*2-.4);txt('気づくことが、',640,310,64,'#fff');txt('唯一の対抗策だ。',640,400,64,'#0ff');
+ x.globalAlpha=cl(p*3-2);txt('PSYCH.CORE',640,560,24,'#888','center','700');x.globalAlpha=1;},'END');
+
+function frame(){const T=((performance.now()-t0)/1000)%DUR;
+ let sc=S[S.length-1];for(const s of S)if(T>=s[0]&&T<s[0]+s[1]){sc=s;break}
+ const p=(T-sc[0])/sc[1];x.save();sc[2](p,T);x.restore();
+ // transition wipe
+ const e=sc[0]+sc[1]-T;if(e<0.15){x.fillStyle='#fff';x.globalAlpha=1-e/0.15;x.fillRect(0,0,1280,720);x.globalAlpha=1}
+ if(T-sc[0]<0.12){for(let i=0;i<8;i++){const y=R(i+T*50)*720;x.drawImage(cv,0,y,1280,30,(R(i*3+T)-.5)*80,y,1280,30)}}
+ grain(T);bars();if(sc[3])hud(T,sc[3]);
+ x.fillStyle='#0ff';x.fillRect(0,716,1280*T/DUR,4);
+ requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

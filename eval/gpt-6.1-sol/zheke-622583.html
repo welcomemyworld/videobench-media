@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>STILL / ALIVE — A kinetic study</title>
+<style>
+*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;background:#000;overflow:hidden}body{display:flex;align-items:center;justify-content:center}#stage{width:min(100vw,177.777778vh);aspect-ratio:16/9;position:relative;overflow:hidden}canvas{display:block;width:100%;height:100%}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="screen" width="1280" height="720"></canvas></div>
+<script>
+"use strict";
+window.DUR=24;
+const canvas=document.getElementById("screen"),ctx=canvas.getContext("2d");
+const W=1280,H=720,TAU=Math.PI*2;
+const buffer=document.createElement("canvas");buffer.width=W;buffer.height=H;
+const bctx=buffer.getContext("2d");
+const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const ease=x=>1-Math.pow(1-clamp(x),4);
+const smooth=x=>{x=clamp(x);return x*x*(3-2*x)};
+const mix=(a,b,t)=>a+(b-a)*t;
+const lerp3=(a,b,t)=>a.map((v,i)=>mix(v,b[i],t));
+const rgb=c=>`rgb(${c.map(v=>Math.round(clamp(v,0,255))).join(",")})`;
+const scenes=[
+ {bg:"#090c10",ink:"#f0f0e7",dim:"#858d98",accent:"#d7f58a",lines:["A POINT.","A PULSE.","A WORLD."],note:["Every possibility begins","with the smallest gesture."],name:"FORM",label:"INITIAL CONDITION",dark:[20,30,44],mid:[115,143,167],light:[238,249,244]},
+ {bg:"#eeeee5",ink:"#111718",dim:"#6f756e",accent:"#ec5229",lines:["BREAK","THE","PATTERN."],note:["Order is only the beginning.","The unexpected is where it gets interesting."],name:"DISRUPT",label:"CONTROLLED CHAOS",dark:[76,20,32],mid:[237,76,35],light:[255,235,177]},
+ {bg:"#080e1c",ink:"#eaf3f4",dim:"#7d99ae",accent:"#78e5e7",lines:["FIND","YOUR","FLOW."],note:["Less resistance. More rhythm.","Let the feeling lead the form."],name:"FLOW",label:"CONTINUOUS CURRENT",dark:[17,27,71],mid:[43,178,208],light:[210,250,255]},
+ {bg:"#0b100c",ink:"#f0f2e6",dim:"#8a9686",accent:"#d8fa76",lines:["MAKE","IT","MOVE."],note:["Not just something to look at.","Something to feel."],name:"BECOME",label:"BEYOND THE STILL",dark:[32,48,20],mid:[164,197,62],light:[247,255,196]}
+];
+let seed=49173;
+function rand(){seed=(seed*1664525+1013904223)>>>0;return seed/4294967296}
+const stars=Array.from({length:74},()=>({a:rand()*TAU,r:200+rand()*102,s:rand()*1.8+.5,v:rand()*.25+.04,z:rand()}));
+const noise=document.createElement("canvas");noise.width=320;noise.height=180;
+const nc=noise.getContext("2d"),nd=nc.createImageData(320,180);
+for(let i=0;i<nd.data.length;i+=4){let n=rand()*255;nd.data[i]=nd.data[i+1]=nd.data[i+2]=n;nd.data[i+3]=19}
+nc.putImageData(nd,0,0);
+function text(c,s,x,y,size,color,weight=400,align="left"){
+ c.fillStyle=color;c.font=`${weight} ${size}px Arial,Helvetica,sans-serif`;c.textAlign=align;c.fillText(s,x,y);
+}
+function tracked(c,s,x,y,size,color,spacing=2,weight=500){
+ c.font=`${weight} ${size}px Arial,Helvetica,sans-serif`;c.fillStyle=color;c.textAlign="left";
+ for(const ch of s){c.fillText(ch,x,y);x+=c.measureText(ch).width+spacing}
+}
+function line(c,x,y,x2,y2,color,alpha=1,width=1){
+ c.globalAlpha=alpha;c.strokeStyle=color;c.lineWidth=width;c.beginPath();c.moveTo(x,y);c.lineTo(x2,y2);c.stroke();c.globalAlpha=1;
+}
+function rotate(v,a,b,d){
+ let x=v[0],y=v[1],z=v[2],cy=Math.cos(a),sy=Math.sin(a),cx=Math.cos(b),sx=Math.sin(b),cz=Math.cos(d),sz=Math.sin(d);
+ let X=x*cy+z*sy,Z=-x*sy+z*cy,Y=y*cx-Z*sx;Z=y*sx+Z*cx;
+ return [X*cz-Y*sz,X*sz+Y*cz,Z];
+}
+function norm(v){let l=Math.hypot(...v)||1;return v.map(n=>n/l)}
+function cross(a,b){return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]]}
+function project(v,scale=1){let f=850/(850-v[2]);return [930+v[0]*f*scale,345+v[1]*f*scale,v[2]]}
+function centerline(u,id,t){
+ if(id===0){let r=160+7*Math.sin(3*u+t*.6);return [r*Math.cos(u),r*Math.sin(u),12*Math.sin(3*u+t*.4)]}
+ let p=id===2?3:2,q=id===2?2:3,R=id===1?124:id===2?129:131,r=id===3?44:49;
+ r+=id===2?8*Math.sin(t*.5):0;
+ return [(R+r*Math.cos(q*u))*Math.cos(p*u),(R+r*Math.cos(q*u))*Math.sin(p*u),r*Math.sin(q*u)];
+}
+function sculpture(c,id,t,p,s){
+ const N=id===2?192:160,M=id===2?16:22;
+ let growth=ease((p-.12)/1.35),scale=(.14+.86*growth)*(1+Math.sin(t*.9)*.018);
+ const ay=t*.23+.4,ax=.56+Math.sin(t*.31)*.29,az=Math.sin(t*.22)*.22-.22;
+ let tube=[43,24,15,33][id];
+ const verts=[],faces=[];
+ for(let i=0;i<=N;i++){
+  let u=i/N*TAU,cc=centerline(u,id,t),ca=centerline(u-.001,id,t),cb=centerline(u+.001,id,t);
+  let tangent=norm(cb.map((v,k)=>v-ca[k])),nn=norm(cross(tangent,[0,0,1])),bb=norm(cross(tangent,nn));
+  for(let j=0;j<=M;j++){
+   let v=j/M*TAU,normal=nn.map((n,k)=>n*Math.cos(v)+bb[k]*Math.sin(v));
+   let rad=tube*(id===2?1+.2*Math.sin(u*9+t):1+.025*Math.sin(u*6+t));
+   let pos=rotate(cc.map((n,k)=>n+normal[k]*rad),ay,ax,az),nr=rotate(normal,ay,ax,az);
+   verts.push({p:project(pos,scale),n:nr,u});
+  }
+ }
+ for(let i=0;i<N;i++)for(let j=0;j<M;j++){
+  let a=verts[i*(M+1)+j],b=verts[(i+1)*(M+1)+j],d=verts[i*(M+1)+j+1],e=verts[(i+1)*(M+1)+j+1];
+  let n=norm(a.n.map((v,k)=>(v+b.n[k]+d.n[k]+e.n[k])*.25));
+  let z=(a.p[2]+b.p[2]+d.p[2]+e.p[2])*.25;
+  if(n[2]<-.18)continue;
+  faces.push({v:[a.p,b.p,e.p,d.p],n,z,u:a.u});
+ }
+ faces.sort((a,b)=>a.z-b.z);
+ c.lineJoin="round";c.lineWidth=.65;
+ for(const f of faces){
+  let n=f.n,diff=Math.max(0,-n[0]*.44-n[1]*.63+n[2]*.64);
+  let spec=Math.pow(Math.max(0,-n[0]*.22-n[1]*.38+n[2]*.90),30);
+  let reflection=Math.exp(-Math.pow((n[1]+.15)/.12,2))*.63;
+  let col=lerp3(s.dark,s.mid,clamp(.16+diff*.8));
+  col=lerp3(col,s.light,clamp(reflection+spec*.92));
+  if(id===2){
+   let pink=Math.pow(.5+.5*Math.sin(f.u*2+t*.4),7)*.62;
+   col=lerp3(col,[187,99,252],pink*(1-spec*.7));
+  }
+  const v=f.v;
+  c.fillStyle=c.strokeStyle=rgb(col);c.beginPath();c.moveTo(v[0][0],v[0][1]);
+  for(let k=1;k<4;k++)c.lineTo(v[k][0],v[k][1]);
+  c.closePath();c.fill();c.stroke();
+ }
+}
+function background(c,id,t,s){
+ c.fillStyle=s.bg;c.fillRect(0,0,W,H);
+ let g=c.createRadialGradient(930,345,12,930,345,420);
+ g.addColorStop(0,id===1?"rgba(219,128,89,.15)":id===2?"rgba(56,97,147,.19)":"rgba(107,141,99,.10)");
+ g.addColorStop(1,"rgba(0,0,0,0)");c.fillStyle=g;c.fillRect(550,77,730,545);
+ c.strokeStyle=s.dim;c.lineWidth=.6;c.globalAlpha=id===1?.15:.11;
+ c.beginPath();
+ for(let x=650;x<1240;x+=40){c.moveTo(x,97);c.lineTo(x,606)}
+ for(let y=105;y<620;y+=40){c.moveTo(647,y);c.lineTo(1230,y)}
+ c.stroke();c.globalAlpha=1;
+ for(const [x,y] of [[40,96],[1240,96],[40,611],[1240,611]]){
+  line(c,x-4,y,x+4,y,s.dim,.6);line(c,x,y-4,x,y+4,s.dim,.6);
+ }
+ c.globalAlpha=.14;c.drawImage(noise,0,0,W,H);c.globalAlpha=1;
+}
+function orbit(c,id,t,p,s){
+ let appear=ease(p/1.5);
+ c.save();c.globalAlpha=appear;
+ for(let k=0;k<3;k++){
+  c.save();c.translate(930,345);c.rotate(-.34+k*.7+Math.sin(t*.2)*.12);
+  c.strokeStyle=s.accent;c.lineWidth=k===0?.8:.5;c.globalAlpha=appear*(k===0?.28:.12);
+  c.beginPath();c.ellipse(0,0,272+k*11,174-k*21,0,0,TAU);c.stroke();
+  let a=t*(.19+k*.07)+k*2;
+  let x=Math.cos(a)*(272+k*11),y=Math.sin(a)*(174-k*21);
+  c.fillStyle=s.accent;c.globalAlpha=appear*.9;c.beginPath();c.arc(x,y,2.4,0,TAU);c.fill();
+  c.restore();
+ }
+ if(id===2){
+  for(let k=0;k<13;k++){
+   c.beginPath();
+   for(let i=0;i<=110;i++){
+    let u=i/110*TAU,r=243+k*2+9*Math.sin(u*5+t+k*.2);
+    let x=930+Math.cos(u)*r,y=345+Math.sin(u)*r*.75+Math.sin(u*3+t*.8+k*.16)*24;
+    i?c.lineTo(x,y):c.moveTo(x,y);
+   }
+   c.strokeStyle=k%3===0?"#a489ee":s.accent;c.lineWidth=.7;c.globalAlpha=appear*.1;c.stroke();
+  }
+ }
+ c.globalAlpha=appear;
+ for(let i=0;i<stars.length;i++){
+  let a=stars[i].a+t*stars[i].v*(i%2?-1:1),r=stars[i].r;
+  let x=930+Math.cos(a)*r,y=345+Math.sin(a)*r*.8;
+  c.globalAlpha=appear*(.18+.55*(.5+.5*Math.sin(t+i)));
+  c.fillStyle=s.accent;
+  if(i%8===0){c.fillRect(x-2,y-.5,4,1);c.fillRect(x-.5,y-2,1,4)}
+  else{c.beginPath();c.arc(x,y,stars[i].s*.6,0,TAU);c.fill()}
+ }
+ c.restore();
+}
+function typography(c,id,t,p,s){
+ const x=66,base=237,gap=106;
+ for(let i=0;i<3;i++){
+  let a=ease((p-.22-i*.13)/.85),str=s.lines[i];
+  let size=108;c.font=`900 ${size}px Arial,Helvetica,sans-serif`;
+  let wid=c.measureText(str).width;if(wid>535)size*=535/wid;
+  c.save();c.beginPath();c.rect(x-3,base+i*gap-105,551,112);c.clip();
+  c.translate((1-a)*-24,(1-a)*112);c.globalAlpha=a;
+  c.font=`900 ${size}px Arial,Helvetica,sans-serif`;c.textAlign="left";
+  if(i===1){c.strokeStyle=s.ink;c.lineWidth=1.5;c.strokeText(str,x,base+i*gap)}
+  else{c.fillStyle=s.ink;c.fillText(str,x,base+i*gap)}
+  c.restore();
+ }
+ let a=ease((p-1)/.8);
+ c.globalAlpha=a;
+ line(c,68,480,68+82*a,480,s.accent,1,3);
+ c.globalAlpha=a;
+ text(c,s.note[0],68,517,17,s.ink);
+ text(c,s.note[1],68,542,17,s.dim);
+ tracked(c,"A STUDY IN PERPETUAL MOTION",68,584,10,s.dim,1.6);
+ c.globalAlpha=1;
+ let growth=ease((p-.4)/1.4);
+ c.globalAlpha=growth;
+ tracked(c,`0${id+1} / ${s.label}`,930-132,599,10,s.dim,1.7);
+ c.globalAlpha=1;
+ // Delicate measurement callouts, kept outside the moving object.
+ line(c,1174,145,1210,145,s.dim,.5);
+ line(c,1210,145,1210,178,s.dim,.5);
+ text(c,"Y",1214,143,9,s.dim);
+ line(c,663,545,663,576,s.dim,.5);
+ line(c,663,576,696,576,s.dim,.5);
+ text(c,"X",649,580,9,s.dim);
+}
+function furniture(c,id,t,p,s){
+ c.fillStyle=s.accent;
+ c.save();c.translate(70,45);c.rotate(t*.36);
+ for(let i=0;i<8;i++){c.save();c.rotate(i*Math.PI/4);c.fillRect(-1,-10,2,7);c.restore()}
+ c.restore();
+ tracked(c,"STILL / ALIVE",92,51,15,s.ink,2.1,700);
+ tracked(c,"INDEPENDENT MOTION EXPERIMENT",650,50,10,s.dim,1.7);
+ text(c,`0${id+1}`,1213,55,29,s.ink,700,"right");
+ line(c,40,77,1240,77,s.dim,.34);
+ line(c,40,627,1240,627,s.dim,.34);
+ for(let j=0;j<4;j++){
+  let x=68+j*250,active=id===j;
+  text(c,`0${j+1}`,x,666,10,active?s.accent:s.dim,700);
+  tracked(c,scenes[j].name,x+27,666,11,active?s.ink:s.dim,1.7,600);
+  line(c,x,683,x+208,683,s.dim,.22,2);
+  if(j<id)line(c,x,683,x+208,683,s.accent,.45,2);
+  if(active)line(c,x,683,x+208*clamp(p/6),683,s.accent,1,2);
+ }
+ const clock=(t%24).toFixed(2).padStart(5,"0");
+ text(c,clock+" / 24.00",1211,666,11,s.dim,400,"right");
+ // An animated four-bar signal, rather than a decorative static icon.
+ for(let k=0;k<4;k++){
+  let h=4+11*(.5+.5*Math.sin(t*3.5+k*1.2));
+  c.fillStyle=s.accent;c.fillRect(1168+k*9,695-h,3,h);
+ }
+}
+function scene(c,id,t,p){
+ const s=scenes[id];
+ background(c,id,t,s);
+ orbit(c,id,t,p,s);
+ // Soft ground reflection anchors the sculpture in a little negative space.
+ let shadow=c.createRadialGradient(930,564,0,930,564,170);
+ shadow.addColorStop(0,id===1?"rgba(41,31,24,.17)":"rgba(0,0,0,.45)");
+ shadow.addColorStop(1,"rgba(0,0,0,0)");
+ c.save();c.translate(0,427);c.scale(1,.24);c.fillStyle=shadow;c.fillRect(710,355,440,450);c.restore();
+ sculpture(c,id,t,p,s);
+ typography(c,id,t,p,s);
+ furniture(c,id,t,p,s);
+}
+const raw=Number(new URLSearchParams(location.search).get("t"));
+const offset=Number.isFinite(raw)?((raw%24)+24)%24:0;
+let epoch;
+function frame(now){
+ if(epoch===undefined)epoch=now;
+ const t=((now-epoch)/1000+offset)%window.DUR;
+ const id=Math.floor(t/6),p=t-id*6;
+ if(id>0&&p<.75){
+  scene(ctx,id-1,t,6+p);
+  scene(bctx,id,t,p);
+  let a=smooth(p/.75);
+  ctx.save();ctx.beginPath();
+  let edge=1340-1460*a;
+  ctx.moveTo(edge+130,-10);ctx.lineTo(1290,-10);ctx.lineTo(1290,730);ctx.lineTo(edge-130,730);ctx.closePath();ctx.clip();
+  ctx.drawImage(buffer,0,0);ctx.restore();
+  let intensity=Math.sin(a*Math.PI);
+  line(ctx,edge+130,0,edge-130,720,scenes[id].accent,intensity*.9,2);
+ }else scene(ctx,id,t,p);
+ // Quiet black bookends make the film a seamless, intentional loop.
+ let fade=t<.5?1-ease(t/.5):t>23.35?smooth((t-23.35)/.65):0;
+ if(fade>0){ctx.globalAlpha=fade;ctx.fillStyle="#000";ctx.fillRect(0,0,W,H);ctx.globalAlpha=1}
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

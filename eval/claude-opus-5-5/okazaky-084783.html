@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Engraved — Programmatic Music Video</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#s{position:absolute;left:50%;top:50%;transform-origin:0 0}</style></head>
+<body><canvas id="s" width="1280" height="720"></canvas>
+<script>
+window.DUR=50;
+const C=document.getElementById('s'),X=C.getContext('2d');
+function fit(){const k=Math.min(innerWidth/1280,innerHeight/720);C.style.transform=`scale(${k}) translate(-50%,-50%)`;}
+addEventListener('resize',fit);fit();
+const BK='#0a0806',BONE='#e8dcc4',OR='#ff6a1a';
+const q=new URLSearchParams(location.search);const T0=parseFloat(q.get('t')||0)||0;const st=performance.now();
+const FX=437,FW=406,FH=720; // vertical 9:16 frame
+const SC=[
+["Ink falls on the bone-white sky","INK","Hatched globe, ink drips","Slow dolly-in"],
+["Every line I carve, a heartbeat","CARVE","Engraved terrain pulsing","Low flyover"],
+["Orange embers in the grain","EMBER","Ember rings rising","Tilt up"],
+["Turning slowly, I remain","TURN","Torus wireframe","Orbit 360°"],
+["Towers drawn in silent rows","TOWERS","Pillar grid city","Crane down"],
+["Spiral down where the river goes","SPIRAL","Double helix","Corkscrew"],
+["Hold the cube of all we know","HOLD","Nested cube lattice","Handheld drift"],
+["Tunnel through the afterglow","TUNNEL","Ring tunnel","Push forward"],
+["Burst the plate, let the light through","BURST","Starburst of lines","Shake + zoom"],
+["Engraved forever, me and you","FOREVER","Globe + orbit rings","Pull back wide"]];
+const STEPS=["Suno song + lyrics metadata","Demucs stems split","mlx_whisper alignment","Storyboard per line","4× Opus scene agents","16-frame contact sheet","Headless Chrome 1080×1920@60","Normalize −14 LUFS"];
+let cam={ax:0,ay:0,d:6,f:330,cx:0,cy:0};
+function P(x,y,z){let c=Math.cos(cam.ay),s=Math.sin(cam.ay);let x1=x*c-z*s,z1=x*s+z*c;c=Math.cos(cam.ax);s=Math.sin(cam.ax);let y1=y*c-z1*s,z2=y*s+z1*c;let zz=z2+cam.d;if(zz<0.1)return null;return[cam.cx+x1*cam.f/zz,cam.cy+y1*cam.f/zz,zz];}
+function line(pts,col,w,a){X.strokeStyle=col;X.lineWidth=w;let dn=false,az=0,n=0;X.beginPath();for(const p of pts){const r=P(p[0],p[1],p[2]);if(!r){dn=false;continue}az+=r[2];n++;if(!dn){X.moveTo(r[0],r[1]);dn=true}else X.lineTo(r[0],r[1]);}
+if(!n)return;X.globalAlpha=Math.max(0.08,Math.min(1,a*(2.2-az/n/cam.d)));X.stroke();X.globalAlpha=1;}
+function circ(fn,N=48){const a=[];for(let i=0;i<=N;i++)a.push(fn(i/N*Math.PI*2));return a;}
+function globe(r,t,pl){for(let i=1;i<14;i++){const la=-Math.PI/2+i*Math.PI/14,y=Math.sin(la)*r,rr=Math.cos(la)*r;line(circ(a=>[Math.cos(a)*rr,y,Math.sin(a)*rr]),BONE,1,.9);}
+for(let i=0;i<12;i++){const o=i/12*Math.PI*2+t*.2;line(circ(a=>[Math.cos(a)*Math.cos(o)*r,Math.sin(a)*r,Math.cos(a)*Math.sin(o)*r]),i%4?BONE:OR,i%4?.7:1.4+pl,.8);}}
+const scenes=[
+(t,pl)=>{cam.d=7-t*.4;cam.ay=t*.3;cam.ax=.3;globe(1.6,t,pl);for(let i=0;i<9;i++){const x=Math.sin(i*7)*1.2,z=Math.cos(i*3)*1.2,y0=-1.8+((t*.6+i*.37)%1)*4;line([[x,y0,z],[x,y0+.5,z]],OR,2,1);}},
+(t,pl)=>{cam.d=5;cam.ax=.45;cam.ay=.2;for(let j=0;j<26;j++){const z=-3+j*.25-(t*.5%.25);const pts=[];for(let i=0;i<=40;i++){const x=-3+i*.15;pts.push([x,.9-Math.sin(x*1.3+z*.9+t)*.35*(1+pl)-Math.cos(z*1.7)*.2,z]);}line(pts,j%6?BONE:OR,j%6?1:1.6,1);}},
+(t,pl)=>{cam.d=6;cam.ax=-.2+t*.12;cam.ay=t*.15;for(let i=0;i<14;i++){const y=1.8-((i*.33+t*.5)%4.6),r=.4+Math.abs(Math.sin(i))*1.2+pl*.2;line(circ(a=>[Math.cos(a)*r,y,Math.sin(a)*r]),i%3?BONE:OR,i%3?.8:2,1);}for(let k=0;k<40;k++){const a=k*2.4,y=1.8-((k*.11+t*.7)%3.8),r=.8+(k%5)*.2;line([[Math.cos(a)*r,y,Math.sin(a)*r],[Math.cos(a)*r,y-.08,Math.sin(a)*r]],OR,2,1);}},
+(t,pl)=>{cam.d=6;cam.ay=t*1.25;cam.ax=.6;const R=1.4,r=.5;for(let i=0;i<36;i++){const u=i/36*Math.PI*2;line(circ(v=>[(R+r*Math.cos(v))*Math.cos(u),r*Math.sin(v),(R+r*Math.cos(v))*Math.sin(u)],20),i%9?BONE:OR,i%9?.8:1.8+pl,1);}for(let j=0;j<10;j++){const v=j/10*Math.PI*2;line(circ(u=>[(R+r*Math.cos(v))*Math.cos(u),r*Math.sin(v),(R+r*Math.cos(v))*Math.sin(u)],60),BONE,.6,.8);}},
+(t,pl)=>{cam.d=7;cam.ax=.9-t*.12;cam.ay=.5+t*.05;for(let i=-3;i<=3;i++)for(let j=-3;j<=3;j++){const h=.4+Math.abs(Math.sin(i*3.1+j*1.7))*2.2,x=i*.6,z=j*.6,w=.18,b=1.4,o=(i+j)%5==0;for(let k=0;k<=6;k++){const y=b-h*k/6;line([[x-w,y,z-w],[x+w,y,z-w],[x+w,y,z+w],[x-w,y,z+w],[x-w,y,z-w]],o?OR:BONE,o?1.2+pl:.6,1);}line([[x-w,b,z-w],[x-w,b-h,z-w]],BONE,.6,1);line([[x+w,b,z+w],[x+w,b-h,z+w]],BONE,.6,1);}},
+(t,pl)=>{cam.d=6;cam.ax=.3;cam.ay=t*.8;for(let s=0;s<2;s++){const pts=[];for(let i=0;i<=200;i++){const u=i/200,a=u*Math.PI*8+s*Math.PI;pts.push([Math.cos(a)*.9,-2.4+u*4.8+(-t*.3%1),Math.sin(a)*.9]);}line(pts,s?OR:BONE,s?1.8+pl:1.4,1);}for(let i=0;i<40;i++){const u=i/40,a=u*Math.PI*8,y=-2.4+u*4.8+(-t*.3%1);line([[Math.cos(a)*.9,y,Math.sin(a)*.9],[Math.cos(a+Math.PI)*.9,y,Math.sin(a+Math.PI)*.9]],BONE,.6,1);}},
+(t,pl)=>{cam.d=6;cam.ax=.4+Math.sin(t*1.3)*.1;cam.ay=t*.4+Math.sin(t*2)*.05;for(let n=0;n<4;n++){const s=.4+n*.38+(n==3?pl*.15:0),c=n==3?OR:BONE,v=[[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]].map(p=>p.map(k=>k*s));[[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]].forEach(e=>line([v[e[0]],v[e[1]]],c,n==3?1.6:.9,1));for(let k=1;k<6;k++){const y=-s+2*s*k/6;line([[-s,y,-s],[s,y,-s]],BONE,.4,.7);}}},
+(t,pl)=>{cam.d=.5;cam.ax=0;cam.ay=Math.sin(t*.5)*.1;for(let i=0;i<22;i++){const z=i*.6-(t*1.5%.6);const r=1+.15*Math.sin(i+t);line(circ(a=>[Math.cos(a)*r,Math.sin(a)*r*1.3,z],40),(i+Math.floor(t*2.5))%7?BONE:OR,1,1);}for(let k=0;k<16;k++){const a=k/16*Math.PI*2;line([[Math.cos(a),Math.sin(a)*1.3,0],[Math.cos(a),Math.sin(a)*1.3,13]],BONE,.5,.6);}},
+(t,pl)=>{cam.d=5-t*.4;cam.ax=Math.sin(t*3)*.05;cam.ay=t*.2;for(let i=0;i<120;i++){const a=i*2.399,b=Math.acos(1-2*(i+.5)/120),L=.5+(i%7)*.25+pl*.8,ex=Math.sin(b)*Math.cos(a),ey=Math.cos(b),ez=Math.sin(b)*Math.sin(a);line([[ex*.3,ey*.3,ez*.3],[ex*L,ey*L,ez*L]],i%5?BONE:OR,i%5?.8:1.6,1);}},
+(t,pl)=>{cam.d=5+t*.8;cam.ay=t*.25;cam.ax=.35;globe(1.2,t,pl);for(let k=0;k<3;k++){const r=1.8+k*.5,tl=.3+k*.4;line(circ(a=>[Math.cos(a)*r,Math.sin(a)*r*Math.sin(tl),Math.sin(a)*r*Math.cos(tl)],80),k==1?OR:BONE,k==1?1.8:.8,1);}}];
+function drawScene(i,lt,pl,x,y,w,h){X.save();X.beginPath();X.rect(x,y,w,h);X.clip();X.fillStyle=BK;X.fillRect(x,y,w,h);
+X.strokeStyle=BONE;X.globalAlpha=.06;X.lineWidth=1;X.beginPath();for(let k=-h;k<w;k+=6){X.moveTo(x+k,y+h);X.lineTo(x+k+h,y);}X.stroke();X.globalAlpha=1;
+cam.cx=x+w/2;cam.cy=y+h*.44;cam.f=w*.85;scenes[i](lt,pl);X.restore();}
+function frame(){let T=((performance.now()-st)/1000+T0)%DUR;const si=Math.min(9,Math.floor(T/5)),lt=T-si*5;const beat=T/.5,pl=Math.exp(-(beat%1)*6);
+X.fillStyle='#000';X.fillRect(0,0,1280,720);
+drawScene(si,lt,pl,FX,0,FW,FH);
+X.save();X.beginPath();X.rect(FX,0,FW,FH);X.clip();
+// vignette
+const g=X.createRadialGradient(640,330,120,640,360,460);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,0,0,.85)');X.fillStyle=g;X.fillRect(FX,0,FW,FH);
+// main word
+const s=SC[si],wa=Math.min(1,lt*3,(5-lt)*3);X.globalAlpha=wa;X.textAlign='center';X.font='900 '+(64+pl*4)+'px Georgia,serif';X.fillStyle=OR;X.fillText(s[1],640,560);
+X.strokeStyle=BONE;X.lineWidth=1;X.beginPath();X.moveTo(500,580);X.lineTo(780,580);X.stroke();
+X.font='italic 19px Georgia,serif';X.fillStyle=BONE;const ws=s[0].split(' '),nshow=Math.ceil(ws.length*Math.min(1,lt/2.5));let l1=ws.slice(0,Math.ceil(ws.length/2)),l2=ws.slice(l1.length);
+const sh=(arr,off)=>arr.filter((_,k)=>k+off<nshow).join(' ');X.fillText(sh(l1,0),640,612);X.fillText(sh(l2,l1.length),640,638);
+X.globalAlpha=1;X.font='11px monospace';X.fillStyle=BONE;X.fillText('SCENE '+String(si+1).padStart(2,'0')+' / 10',640,28);
+X.fillStyle=OR;X.fillRect(FX,FH-4,FW*T/DUR,4);X.restore();
+X.strokeStyle=BONE;X.lineWidth=1;X.strokeRect(FX+.5,.5,FW-1,FH-1);
+// left panel: pipeline
+X.textAlign='left';X.fillStyle=BONE;X.font='bold 18px Georgia,serif';X.fillText('ENGRAVED',40,60);X.font='12px monospace';X.globalAlpha=.6;X.fillText('programmatic music video · 9:16',40,80);X.globalAlpha=1;
+const act=Math.min(7,Math.floor(T/DUR*8));
+STEPS.forEach((n,k)=>{const y=130+k*52;X.fillStyle=k==act?OR:BONE;X.globalAlpha=k<=act?1:.35;X.font='bold 13px monospace';X.fillText(String(k+1).padStart(2,'0'),40,y);X.font='13px monospace';X.fillText(n,72,y);
+if(k==act){X.fillRect(72,y+8,(T/DUR*8%1)*300,2);}else if(k<act){X.fillRect(72,y+8,300,1);}X.globalAlpha=1;});
+// stems
+const stems=['vocals','drums','bass','other'];stems.forEach((n,k)=>{const y=580+k*30;X.fillStyle=BONE;X.font='11px monospace';X.fillText(n,40,y+4);
+for(let b=0;b<40;b++){const v=Math.abs(Math.sin(b*.7+T*(3+k)+k)*Math.sin(T*2+b*.3))*(k==1?pl+.2:1)*.8;X.fillStyle=(b==20)?OR:BONE;X.globalAlpha=.3+v*.7;X.fillRect(100+b*7,y-v*10,4,v*20+1);}X.globalAlpha=1;});
+// right panel: storyboard card
+const rx=880;X.fillStyle=BONE;X.font='bold 13px monospace';X.fillText('STORYBOARD · LINE '+(si+1),rx,60);X.strokeStyle=BONE;X.strokeRect(rx,72,360,150);
+[['What to show',s[2]],['Camera',s[3]],['Main word',s[1]]].forEach((r,k)=>{X.globalAlpha=.55;X.font='11px monospace';X.fillStyle=BONE;X.fillText(r[0].toUpperCase(),rx+14,100+k*44);X.globalAlpha=1;X.font='16px Georgia,serif';X.fillStyle=k==2?OR:BONE;X.fillText(r[1],rx+14,120+k*44);});
+// contact sheet 4x4
+X.fillStyle=BONE;X.font='bold 13px monospace';X.fillText('CONTACT SHEET · 16 FRAMES',rx,262);
+const sv=Object.assign({},cam);for(let k=0;k<16;k++){const ft=(k+.5)/16*DUR,fi=Math.floor(ft/5),tw=84,th=84,x=rx+(k%4)*(tw+8),y=276+Math.floor(k/4)*(th+8);
+const shown=k<=Math.floor(T/DUR*16);if(shown)drawScene(fi,ft-fi*5,0,x,y,tw,th);X.strokeStyle=Math.floor(T/DUR*16)==k?OR:BONE;X.globalAlpha=shown?1:.25;X.strokeRect(x+.5,y+.5,tw-1,th-1);X.globalAlpha=1;}Object.assign(cam,sv);
+// LUFS meter
+const ly=660;X.fillStyle=BONE;X.font='11px monospace';X.fillText('LOUDNESS',rx,ly);X.strokeRect(rx+80,ly-10,240,12);const lu=-14+Math.sin(T*1.7)*1.2*(1-T/DUR)+pl*.6;X.fillStyle=OR;X.fillRect(rx+80,ly-10,240*(lu+30)/30,12);
+X.fillStyle=BONE;X.fillText(lu.toFixed(1)+' LUFS',rx+80,ly+22);X.fillText('target −14',rx+240,ly+22);
+requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

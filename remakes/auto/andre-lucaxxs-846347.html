@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<title>Flora — Calendário Menstrual</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=32;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)||0;
+const t0=performance.now()-off*1000;
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const eo=v=>1-Math.pow(1-cl(v),3);
+const eio=v=>{v=cl(v);return v<.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2};
+function rr(X,Y,W,H,R){x.beginPath();x.moveTo(X+R,Y);x.arcTo(X+W,Y,X+W,Y+H,R);x.arcTo(X+W,Y+H,X,Y+H,R);x.arcTo(X,Y+H,X,Y,R);x.arcTo(X,Y,X+W,Y,R);x.closePath();}
+function win(t,a,b,f=.6){return cl(Math.min((t-a)/f,(b-t)/f));}
+const F='"Helvetica Neue",Helvetica,Arial,sans-serif';
+function txt(s,X,Y,sz,col,w='600',al='left'){x.font=w+' '+sz+'px '+F;x.fillStyle=col;x.textAlign=al;x.textBaseline='middle';x.fillText(s,X,Y);}
+const P='#ff7aa8',L='#c9a7ff',CR='#fff3f6';
+// particles
+const parts=[];for(let i=0;i<40;i++)parts.push({x:Math.random()*1280,y:Math.random()*720,r:2+Math.random()*5,s:.2+Math.random()*.6,p:Math.random()*6});
+function flower(X,Y,R,b,rot){
+  for(let k=0;k<2;k++){const n=k?6:6,rr2=R*(k?0.62:1);
+  for(let i=0;i<n;i++){x.save();x.translate(X,Y);x.rotate(rot+i*Math.PI*2/n+(k?Math.PI/6:0));
+    const s=eo(b-k*.15);x.scale(s,s);
+    const g=x.createLinearGradient(0,0,0,-rr2);g.addColorStop(0,k?'#ffd1e0':'#ff5c94');g.addColorStop(1,k?'#fff':'#ffb3cf');
+    x.fillStyle=g;x.globalAlpha*=.92;x.beginPath();x.ellipse(0,-rr2*.5,rr2*.28,rr2*.52,0,0,7);x.fill();x.restore();}}
+  x.fillStyle='#ffe28a';x.beginPath();x.arc(X,Y,R*.16*eo(b),0,7);x.fill();
+}
+function phone(X,Y,a,sc,draw){
+  const W=300,H=610;x.save();x.globalAlpha=a;x.translate(X,Y);x.scale(sc,sc);x.translate(-W/2,-H/2);
+  x.shadowColor='rgba(0,0,0,.5)';x.shadowBlur=60;x.shadowOffsetY=30;rr(0,0,W,H,46);x.fillStyle='#120812';x.fill();x.shadowColor='transparent';
+  rr(10,10,W-20,H-20,38);x.fillStyle=CR;x.fill();x.save();x.clip();x.translate(10,10);draw(W-20,H-20);x.restore();
+  rr(W/2-45,20,90,24,12);x.fillStyle='#120812';x.fill();x.restore();
+}
+function header(w,title){const g=x.createLinearGradient(0,0,w,0);g.addColorStop(0,'#ffe1ec');g.addColorStop(1,'#efe4ff');x.fillStyle=g;x.fillRect(0,0,w,110);
+  txt(title,22,80,22,'#3a1438','700');}
+const scr={
+ cycle(w,h,p){header(w,'Hoje');const cx=w/2,cy=270,R=105;
+  x.lineWidth=18;x.strokeStyle='#f2dbe4';x.beginPath();x.arc(cx,cy,R,0,7);x.stroke();
+  const seg=(a,b,col)=>{x.strokeStyle=col;x.lineCap='round';x.beginPath();x.arc(cx,cy,R,-Math.PI/2+a*Math.PI*2,-Math.PI/2+Math.min(b,a+(b-a))*Math.PI*2);x.stroke();};
+  const pr=eo(p*1.4);seg(0,5/28*pr,P);if(pr>.4)seg(10/28,10/28+6/28*eo((pr-.4)/.6),L);
+  const d=Math.round(1+13*eo(p*1.4)),an=-Math.PI/2+(d/28)*Math.PI*2;
+  x.fillStyle='#fff';x.beginPath();x.arc(cx+Math.cos(an)*R,cy+Math.sin(an)*R,13,0,7);x.fill();x.fillStyle='#7a3cff';x.beginPath();x.arc(cx+Math.cos(an)*R,cy+Math.sin(an)*R,7,0,7);x.fill();
+  txt('Dia '+d,cx,cy-10,38,'#3a1438','800','center');txt('do ciclo',cx,cy+24,15,'#9a6a8a','500','center');
+  rr(20,420,w-40,70,18);x.fillStyle='#f3eaff';x.fill();txt('Janela fértil',38,445,16,'#5a2ca8','700');txt('Alta probabilidade de gravidez',38,469,12,'#8a6ab8','500');
+  rr(20,505,w-40,70,18);x.fillStyle='#ffe8ef';x.fill();txt('Próxima menstruação',38,530,16,'#b0305e','700');txt('daqui a 14 dias',38,554,12,'#c56a8a','500');},
+ cal(w,h,p){header(w,'Março');const ds='STQQSSD';for(let i=0;i<7;i++)txt(ds[i],28+i*37,140,12,'#a08','600','center');
+  for(let d=1;d<=31;d++){const i=d+1,cx=28+(i%7)*37,cy=180+Math.floor(i/7)*48,a=eo(p*3-d*.05);if(a<=0)continue;
+   x.globalAlpha=a;let f=null,tc='#3a1438';if(d<=5||d>=29){f=P;tc='#fff'}else if(d>=11&&d<=16){f='#e6d6ff';tc='#5a2ca8'}
+   if(f){x.fillStyle=f;x.beginPath();x.arc(cx,cy,15,0,7);x.fill();}
+   if(d==14){x.strokeStyle='#7a3cff';x.lineWidth=2.5;x.beginPath();x.arc(cx,cy,19,0,7);x.stroke();}
+   txt(''+d,cx,cy,14,tc,'600','center');x.globalAlpha=1;}
+  const lg=[[P,'Menstruação'],['#c9a7ff','Fértil'],['#7a3cff','Ovulação']];lg.forEach((l,i)=>{x.fillStyle=l[0];x.beginPath();x.arc(30,500+i*28,7,0,7);x.fill();txt(l[1],46,500+i*28,13,'#5a3050','500');});},
+ sym(w,h,p){header(w,'Como se sente?');const ch=['Cólicas','Feliz','Cansaço','Dor de cabeça','Calma','Acne','Inchaço','Energia','Ansiedade','Desejo'];
+  let X=18,Y=140;ch.forEach((s,i)=>{x.font='600 14px '+F;const tw=x.measureText(s).width+30;if(X+tw>w-14){X=18;Y+=50}
+   const on=[0,1,4,7].includes(i)&&p*4>1+i*.25;const a=eo(p*3-i*.1);x.globalAlpha=a;rr(X,Y,tw,36,18);x.fillStyle=on?P:'#fff';x.fill();x.strokeStyle=on?P:'#f0c8d8';x.lineWidth=1.5;x.stroke();
+   txt(s,X+15,Y+18,14,on?'#fff':'#7a4060','600');x.globalAlpha=1;X+=tw+8;});
+  txt('Fluxo',22,390,15,'#3a1438','700');for(let i=0;i<4;i++){const on=i<2&&p>.5;x.fillStyle=on?P:'#f6dce6';x.beginPath();x.ellipse(45+i*62,440,16,20,0,0,7);x.fill();}
+  rr(20,500,w-40,60,30);x.fillStyle='#3a1438';x.fill();txt('Guardar registo',w/2,530,16,'#fff','700','center');},
+ ins(w,h,p){header(w,'Estatísticas');txt('Duração do ciclo',22,145,15,'#3a1438','700');const v=[29,27,28,30,28,28];
+  v.forEach((n,i)=>{const bh=(n-20)*16*eo(p*2-i*.1);const g=x.createLinearGradient(0,330-bh,0,330);g.addColorStop(0,P);g.addColorStop(1,L);x.fillStyle=g;rr(28+i*40,330-bh,26,bh,8);x.fill();txt(''+n,41+i*40,345,11,'#9a6a8a','600','center');});
+  txt('Média: 28 dias',22,385,22,'#7a3cff','800');
+  rr(20,430,w-40,120,20);x.fillStyle='#2a1030';x.fill();const lx=56,ly=480;x.strokeStyle='#ffb3cf';x.lineWidth=4;x.beginPath();x.arc(lx,ly-8,11,Math.PI,0);x.stroke();rr(lx-16,ly-6,32,26,6);x.fillStyle='#ffb3cf';x.fill();
+  txt('100% privado',88,470,16,'#fff','700');txt('Os dados ficam',88,494,12,'#e8c8dc','500');txt('no seu dispositivo',88,512,12,'#e8c8dc','500');}
+};
+const scenes=[
+ [5,11,'Conheça o','seu ciclo.','Acompanhe cada fase com clareza.','cycle'],
+ [11,17,'Previsões','precisas.','Menstruação, fertilidade e ovulação.','cal'],
+ [17,23,'Registe como','se sente.','Sintomas, humor e fluxo em segundos.','sym'],
+ [23,28,'Os seus dados.','Só seus.','Estatísticas inteligentes e privacidade total.','ins']];
+function frame(){
+ const t=((performance.now()-t0)/1000)%DUR;
+ const g=x.createLinearGradient(0,0,1280,720);g.addColorStop(0,'#1c0820');g.addColorStop(.6,'#4a1640');g.addColorStop(1,'#7a2550');x.fillStyle=g;x.fillRect(0,0,1280,720);
+ const rg=x.createRadialGradient(900+Math.sin(t*.3)*80,360,0,900,360,600);rg.addColorStop(0,'rgba(255,122,168,.28)');rg.addColorStop(1,'rgba(255,122,168,0)');x.fillStyle=rg;x.fillRect(0,0,1280,720);
+ parts.forEach(p=>{const y=(p.y-t*p.s*40+720)%720;x.fillStyle='rgba(255,200,220,'+(.15+.15*Math.sin(t+p.p))+')';x.beginPath();x.ellipse(p.x+Math.sin(t*.5+p.p)*20,y,p.r,p.r*1.6,t*.3+p.p,0,7);x.fill();});
+ // intro
+ if(t<5.4){const a=win(t,-1,5.2,.6),b=eo(t/1.8);x.globalAlpha=a;flower(640,280,110,b,t*.15);
+  const ta=eo((t-1.3)/.8);x.globalAlpha=a*ta;txt('Flora',640,450+20*(1-ta),84,'#fff','800','center');
+  const sa=eo((t-2)/.8);x.globalAlpha=a*sa;txt('CALENDÁRIO MENSTRUAL',640,520,20,'#ffb3cf','600','center');x.globalAlpha=1;}
+ scenes.forEach((s,i)=>{if(t<s[0]-.1||t>s[1]+.1)return;const a=win(t,s[0],s[1],.6),p=(t-s[0])/(s[1]-s[0]);
+  const ti=eo((t-s[0])/.9);x.globalAlpha=a*ti;
+  txt(s[2],110,290-20*(1-ti),60,'#fff','800');x.globalAlpha=a*eo((t-s[0]-.2)/.9);txt(s[3],110,360,60,'#ff8fb6','800');
+  x.globalAlpha=a*eo((t-s[0]-.5)/.9);txt(s[4],112,430,22,'#f0d0e0','400');
+  x.fillStyle='#ff8fb6';x.fillRect(112,210,60*eo((t-s[0]-.3)/.8),4);
+  txt('0'+(i+1),112,180,16,'#ffb3cf','700');x.globalAlpha=1;
+  const sc=.95+.05*eo((t-s[0])/1.2);phone(900,360+40*(1-eo((t-s[0])/1)),a,sc,(w,h)=>scr[s[5]](w,h,p));});
+ // CTA
+ if(t>27.6){const a=win(t,27.8,DUR+5,.7),q2=t-27.8;x.globalAlpha=a;flower(640,210,70,eo(q2/1.2),t*.2);
+  const ta=eo((q2-.4)/.8);x.globalAlpha=a*ta;txt('Flora',640,345,72,'#fff','800','center');
+  x.globalAlpha=a*eo((q2-.8)/.8);txt('O seu ciclo, em harmonia.',640,410,26,'#ffb3cf','500','center');
+  const ba=eo((q2-1.3)/.8);x.globalAlpha=a*ba;const by=470+20*(1-ba);rr(510,by,260,72,18);x.fillStyle='#000';x.fill();x.strokeStyle='#aaa';x.lineWidth=1.5;x.stroke();
+  x.fillStyle='#fff';x.beginPath();x.arc(560,by+40,15,0,7);x.fill();x.beginPath();x.ellipse(566,by+19,5,9,.6,0,7);x.fill();x.fillStyle='#000';x.beginPath();x.arc(575,by+36,7,0,7);x.fill();
+  txt('Descarregar na',595,by+24,13,'#ddd','500');txt('App Store',595,by+48,26,'#fff','700');x.globalAlpha=1;}
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

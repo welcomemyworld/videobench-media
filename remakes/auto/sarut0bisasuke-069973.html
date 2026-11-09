@@ -1,0 +1,68 @@
+<html><head><meta charset="utf-8"><style>body{margin:0;background:#000;overflow:hidden}canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+window.DUR=30;const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px'}fit();onresize=fit;
+const q=new URLSearchParams(location.search),t0=performance.now()-(parseFloat(q.get('t'))||0)*1000;
+const cl=v=>Math.max(0,Math.min(1,v)),ease=v=>{v=cl(v);return v*v*(3-2*v)};
+const GX=640,GY=560,GW=230,GH=230;// glass: bottom y GY, top GY-GH, rocks glass
+const steps=[
+{s:3,e:8,n:'Ice',m:'Fill with ice cubes',col:'#cfe8ff'},
+{s:8,e:13,n:'Vodka',m:'2 oz (60 ml)',col:'rgba(235,240,245,0.55)',h:0.3},
+{s:13,e:18,n:'Coffee Liqueur',m:'1 oz (30 ml)',col:'#3a1d0e',h:0.15},
+{s:18,e:24,n:'Heavy Cream',m:'1 oz (30 ml) — float on top',col:'#f3e7d3',h:0.15},
+{s:24,e:27,n:'Stir',m:'Gently stir & enjoy',col:'#c89a6a'}];
+function txt(s,X,Y,sz,col,a,al){x.globalAlpha=a;x.fillStyle=col;x.font=sz+'px Georgia,serif';x.textAlign=al||'center';x.fillText(s,X,Y);x.globalAlpha=1}
+function glassPath(){x.beginPath();x.moveTo(GX-GW/2,GY-GH);x.lineTo(GX-GW/2+12,GY);x.lineTo(GX+GW/2-12,GY);x.lineTo(GX+GW/2,GY-GH)}
+function frame(){let t=((performance.now()-t0)/1000)%DUR;
+let g=x.createRadialGradient(640,360,50,640,360,800);g.addColorStop(0,'#2a1c14');g.addColorStop(1,'#0b0705');x.fillStyle=g;x.fillRect(0,0,1280,720);
+// counter
+x.fillStyle='#1a110c';x.fillRect(0,GY+10,1280,160);x.fillStyle='#3a2618';x.fillRect(0,GY+8,1280,4);
+// intro / outro titles
+let ia=ease(t/0.8)*(1-ease((t-2.4)/0.6));txt('WHITE RUSSIAN',640,170,72,'#f1dfc0',ia);txt('A classic cocktail in 4 steps',640,220,26,'#c8a77e',ia);
+let oa=ease((t-27)/0.8)*(1-ease((t-29.4)/0.5));txt('White Russian',640,120,64,'#f1dfc0',oa);txt('2 oz Vodka  ·  1 oz Coffee Liqueur  ·  1 oz Cream',640,170,26,'#c8a77e',oa);
+// liquid levels
+const fv=ease((t-9)/3)*0.3,fk=ease((t-14)/3)*0.15,fc=ease((t-19.2)/3)*0.15,mix=ease((t-24.5)/2.2);
+x.save();glassPath();x.closePath();x.clip();
+let y=GY,iH=GH-10;const lay=[[fv,'#e2e6ea',0.35],[fk,'#3a1d0e',1],[fc,'#f3e7d3',1]];
+// draw layers: coffee sinks to bottom (densest), then vodka mixes with it, cream on top
+let tot=fv+fk+fc;
+if(tot>0){let mixedCol=`rgb(${(58+(150-58)*mix)|0},${(29+(100-29)*mix)|0},${(14+(60-14)*mix)|0})`;
+let bottomH=(fk+fv)*iH;
+// bottom: coffee+vodka tinted
+let kd=fk>0?'#3a1d0e':'rgba(226,230,234,0.35)';
+x.fillStyle=fk>0?(mix>0?mixedCol:'#4a2612'):kd;
+if(fk>0&&mix==0){x.fillStyle='rgba(226,230,234,0.35)';x.fillRect(0,y-bottomH,1280,bottomH);x.fillStyle='#3a1d0e';x.fillRect(0,y-fk*iH,1280,fk*iH);}
+else x.fillRect(0,y-bottomH,1280,bottomH);
+y-=bottomH;let ch=fc*iH;
+// cream with swirl into coffee when mixing
+x.fillStyle='#f3e7d3';x.fillRect(0,y-ch*(1-mix),1280,ch*(1-mix));
+if(mix>0){x.globalAlpha=mix;x.fillStyle='#b9895c';x.fillRect(0,GY-tot*iH,1280,tot*iH);x.globalAlpha=1;}
+// cream drift tendrils
+if(t>19&&t<27){for(let i=0;i<6;i++){let a=t*1.3+i;x.strokeStyle='rgba(243,231,211,'+(0.4*(1-mix))+')';x.lineWidth=6;x.beginPath();let sx=GX-80+i*32;x.moveTo(sx,y);x.bezierCurveTo(sx+20*Math.sin(a),y+30,sx-20*Math.cos(a),y+60,sx+10*Math.sin(a*2),y+20+40*ease((t-19)/3));x.stroke()}}
+}
+// ice cubes
+const cubes=[[-55,0],[40,-5],[-10,-60],[60,-75],[-60,-100],[10,-130]];
+cubes.forEach((cb,i)=>{let st=3.3+i*0.6,p=ease((t-st)/0.7);if(p<=0)return;let bob=tot>0?Math.sin(t*2+i)*2:0;
+let cy=GY-35+cb[1]-(1-p)*500+bob,cx=GX+cb[0]+(mix>0?Math.sin(t*3+i)*8*mix*(t<27?1:0):0);
+x.save();x.translate(cx,cy);x.rotate(0.2*Math.sin(i*3)+mix*Math.sin(t*2+i)*0.3);x.fillStyle='rgba(220,240,255,0.35)';x.strokeStyle='rgba(255,255,255,0.7)';x.lineWidth=2;x.beginPath();x.roundRect(-30,-30,60,60,10);x.fill();x.stroke();x.fillStyle='rgba(255,255,255,0.4)';x.fillRect(-20,-22,16,6);x.restore()});
+x.restore();
+// glass outline
+glassPath();x.strokeStyle='rgba(255,255,255,0.75)';x.lineWidth=4;x.stroke();x.fillStyle='rgba(255,255,255,0.12)';x.fillRect(GX-GW/2+12,GY,GW-24,14);
+x.fillStyle='rgba(255,255,255,0.08)';x.beginPath();x.moveTo(GX-GW/2+16,GY-GH+10);x.lineTo(GX-GW/2+30,GY-10);x.lineTo(GX-GW/2+44,GY-10);x.lineTo(GX-GW/2+32,GY-GH+10);x.fill();
+// pour streams & bottles
+[[1,9,12],[2,14,17],[3,19.2,22.2]].forEach(([k,a,b])=>{let s=steps[k];let p=ease((t-a+0.8)/0.8)*(1-ease((t-b)/0.8));if(p<=0)return;
+let bx=GX+150,by=GY-GH-120;x.save();x.translate(bx,by-80*(1-p));x.rotate(-1.9*p);x.fillStyle=k==3?'#e8dccb':k==2?'#2b1508':'#9fb7c8';x.globalAlpha=p;x.beginPath();x.roundRect(-30,-120,60,140,10);x.fill();x.fillRect(-10,-160,20,45);x.fillStyle='#f1dfc0';x.fillRect(-26,-80,52,40);x.fillStyle='#222';x.font='bold 13px sans-serif';x.textAlign='center';x.fillText(s.n.split(' ')[0].toUpperCase(),0,-55);x.restore();
+if(t>a&&t<b){x.strokeStyle=k==1?'rgba(230,236,240,0.7)':s.col;x.lineWidth=7;x.beginPath();x.moveTo(GX+30,by-10);x.quadraticCurveTo(GX+20,by+60,GX+15,GY-tot*(GH-10));x.stroke()}});
+// spoon stir
+if(t>24&&t<27.5){let a=ease((t-24)/.4)*(1-ease((t-27)/.4));x.globalAlpha=a;let sx=GX+60*Math.sin(t*6);x.strokeStyle='#d8d8d8';x.lineWidth=6;x.beginPath();x.moveTo(sx,GY-60);x.lineTo(sx+40,GY-GH-90);x.stroke();x.globalAlpha=1}
+// step cards
+steps.forEach((s,i)=>{let a=ease((t-s.s)/0.5)*(1-ease((t-s.e+0.4)/0.4));if(a<=0)return;let sl=(1-a)*-40;
+x.globalAlpha=a;x.fillStyle='rgba(0,0,0,0.45)';x.beginPath();x.roundRect(70+sl,230,360,190,16);x.fill();x.fillStyle=s.col;x.fillRect(70+sl,230,8,190);x.globalAlpha=1;
+txt('STEP '+(i+1),100+sl,275,22,'#c8a77e',a,'left');txt(s.n,100+sl,330,44,'#f6e8d0',a,'left');txt(s.m,100+sl,380,24,'#e6d2b0',a,'left')});
+// ingredient tracker right
+let ta=ease((t-3)/1)*(1-ease((t-27)/0.6));if(ta>0){txt('INGREDIENTS',1050,250,20,'#c8a77e',ta);
+steps.slice(0,4).forEach((s,i)=>{let done=t>s.e-1;x.globalAlpha=ta;x.fillStyle=done?'#c89a6a':'rgba(255,255,255,0.2)';x.beginPath();x.arc(950,290+i*42,9,0,7);x.fill();x.globalAlpha=1;
+txt(s.n+(i?'  '+s.m.split(' (')[0].split(' —')[0]:''),970,297+i*42,20,done?'#f6e8d0':'#8a7a68',ta,'left')})}
+// progress bar
+x.fillStyle='rgba(255,255,255,0.1)';x.fillRect(0,714,1280,6);x.fillStyle='#c89a6a';x.fillRect(0,714,1280*t/DUR,6);
+requestAnimationFrame(frame)}frame();
+</script></body></html>

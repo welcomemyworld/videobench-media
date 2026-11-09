@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>mdfor.dev — Ideas take shape</title>
+<style>
+*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#000}body{display:grid;place-items:center}#stage{position:relative;width:min(100vw,177.777778vh);aspect-ratio:16/9;background:#090a0d}canvas{display:block;width:100%;height:100%}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="film" width="1280" height="720" aria-label="A thirty-second animated introduction to mdfor.dev, with an original electronic soundtrack"></canvas></div>
+<script>
+/* Original vector art and illustrative Markdown components.
+   The requested domain is the typographic identity; no third-party
+   screenshots or unprovided brand assets are represented as authentic. */
+window.DUR=30;
+const canvas=document.getElementById('film'),c=canvas.getContext('2d');
+const W=1280,H=720,PI=Math.PI,TAU=PI*2;
+const P={ink:'#111318',paper:'#f1f0e8',lime:'#d8fc63',mint:'#a9e9d0',blue:'#8b9dff',orange:'#ff805b',gray:'#92958f'};
+const offset=((Number(new URLSearchParams(location.search).get('t'))||0)%30+30)%30;
+let epoch=null,time=0,frame=0;
+const clamp=(x,a=0,b=1)=>Math.min(b,Math.max(a,x));
+const ease=x=>1-Math.pow(1-clamp(x),3);
+const smooth=x=>{x=clamp(x);return x*x*(3-2*x)};
+const out=x=>{x=clamp(x);return x===1?1:1-Math.exp(-7*x)*Math.cos(10*x)};
+const mix=(a,b,t)=>a+(b-a)*t;
+const fract=x=>x-Math.floor(x);
+const hash=x=>fract(Math.sin(x*127.1+31.7)*43758.5453);
+const beat=t=>Math.exp(-fract(t*2)*9);
+function bg(color){c.fillStyle=color;c.fillRect(0,0,W,H)}
+function group(x,y,s=1,r=0,a=1,fn){c.save();c.translate(x,y);c.rotate(r);c.scale(s,s);c.globalAlpha*=clamp(a);fn();c.restore()}
+function rr(x,y,w,h,r=12,fill=P.paper,stroke=null){c.beginPath();c.roundRect(x,y,w,h,r);if(fill){c.fillStyle=fill;c.fill()}if(stroke){c.strokeStyle=stroke;c.lineWidth=1;c.stroke()}}
+function txt(str,x,y,size=24,color=P.ink,weight=500,align='left',font='Arial'){
+ c.fillStyle=color;c.font=`${weight} ${size}px ${font}`;c.textAlign=align;c.textBaseline='alphabetic';c.fillText(str,x,y);
+}
+function tracked(str,x,y,size,color,spacing=3){
+ c.font=`600 ${size}px Arial`;c.fillStyle=color;c.textAlign='left';
+ for(const ch of str){c.fillText(ch,x,y);x+=c.measureText(ch).width+spacing}
+}
+function line(x1,y1,x2,y2,color,width=1){c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.strokeStyle=color;c.lineWidth=width;c.stroke()}
+function dot(x,y,r,color){c.beginPath();c.arc(x,y,r,0,TAU);c.fillStyle=color;c.fill()}
+function arrow(x,y,s,color){line(x,y,x+s,y-s,color,3);line(x+s,y-s,x+s,y-s*.35,color,3);line(x+s,y-s,x+s*.35,y-s,color,3)}
+function pill(str,x,y,w,fill=P.ink,color=P.paper){rr(x,y,w,34,17,fill);txt(str,x+w/2,y+23,12,color,700,'center')}
+function cross(x,y,size,color){line(x-size,y,x+size,y,color);line(x,y-size,x,y+size,color)}
+function shadow(){c.shadowColor='#11131826';c.shadowBlur=35;c.shadowOffsetY=16}
+function wordmark(x,y,size,color){txt('mdfor.dev',x,y,size,color,800)}
+function grid(color,space=80,alpha=.09,shift=0){
+ c.save();c.globalAlpha=alpha;
+ for(let x=-space+shift%space;x<W+space;x+=space)line(x,0,x,H,color);
+ for(let y=0;y<H;y+=space)line(0,y,W,y,color);
+ c.restore();
+}
+function chrome(t,dark=false,chapter=''){
+ const ink=dark?P.paper:P.ink;
+ wordmark(42,42,20,ink);
+ if(chapter)tracked(chapter,104,674,10,ink,2);
+ for(let i=0;i<60;i++){const x=42+i*20.25;line(x,697,x,697-(i%8===0?9:4),i<t*2?ink:(dark?'#34363c':'#cbcfc2'),1)}
+ txt(String(Math.floor(t)).padStart(2,'0')+' / 30',1237,674,11,ink,500,'right','monospace');
+}
+const grain=document.createElement('canvas');grain.width=256;grain.height=144;
+const gc=grain.getContext('2d'),gd=gc.createImageData(256,144);
+for(let i=0;i<gd.data.length;i+=4){let v=hash(i)*255;gd.data[i]=gd.data[i+1]=gd.data[i+2]=v;gd.data[i+3]=13}gc.putImageData(gd,0,0);
+function texture(){c.save();c.globalAlpha=.23;c.drawImage(grain,0,0,W,H);c.restore()}
+function cursor(x,y,scale=1){
+ group(x,y,scale,0,1,()=>{c.beginPath();c.moveTo(0,0);c.lineTo(0,25);c.lineTo(6,19);c.lineTo(12,31);c.lineTo(17,28);c.lineTo(11,17);c.lineTo(21,17);c.closePath();c.fillStyle=P.ink;c.fill();c.strokeStyle=P.paper;c.lineWidth=2;c.stroke()});
+}
+function codeLines(x,y,progress,size=18){
+ const rows=[
+ ['# ','Build something great.'],
+ ['', ''],
+ ['## ','An idea starts here'],
+ ['', 'Give your thoughts a little structure.'],
+ ['', ''],
+ ['- ','Make it clear'],
+ ['- ','Make it yours'],
+ ['', ''],
+ ['**','Hello, possibility.','**']
+ ];
+ let budget=Math.floor(progress*160);
+ rows.forEach((a,i)=>{
+  let prefix=a[0],rest=a.slice(1).join(''),n=clamp(budget,0,prefix.length+rest.length);
+  const pre=prefix.slice(0,n),body=rest.slice(0,Math.max(0,n-prefix.length));
+  txt(pre,x,y+i*31,size,P.blue,500,'left','monospace');
+  c.font=`500 ${size}px monospace`;
+  txt(body,x+c.measureText(pre).width,y+i*31,size,P.paper,500,'left','monospace');
+  if(budget>=0&&budget<prefix.length+rest.length&&fract(time*2)>.3){
+   const total=pre+body;c.font=`500 ${size}px monospace`;rr(x+c.measureText(total).width+3,y+i*31-size+2,2,size,0,P.lime);
+  }
+  budget-=prefix.length+rest.length+1;
+ });
+}
+function editor(w,h,p){
+ rr(0,0,w,h,18,P.ink);
+ rr(0,0,w,46,18,'#24262d');rr(0,26,w,20,0,'#24262d');
+ [P.orange,P.lime,P.blue].forEach((v,i)=>dot(22+i*16,23,4,v));
+ txt('idea.md',w/2,28,12,'#c3c4ca',500,'center','monospace');
+ txt('M↓',w-24,29,16,P.lime,700,'right');
+ for(let i=0;i<9;i++)txt(String(i+1),22,91+i*31,12,'#626671',400,'left','monospace');
+ codeLines(51,92,p,15);
+ line(18,h-35,w-18,h-35,'#363940');
+ dot(26,h-17,3,P.lime);txt('MARKDOWN',39,h-13,9,'#a8acb7',600);
+ txt('UTF-8',w-22,h-13,9,'#a8acb7',500,'right','monospace');
+}
+function preview(w,h,p){
+ rr(0,0,w,h,18,'#fffef8');
+ txt('THE PREVIEW',27,32,10,P.gray,700);
+ arrow(w-43,29,12,P.ink);
+ line(26,48,w-26,48,'#dedfd5');
+ group(28,85,1,0,ease(p*3),()=>{
+  pill('A FRESH START',0,0,119,P.lime,P.ink);
+  txt('Build something',0,83,35,P.ink,800);
+  txt('great.',0,124,35,P.ink,800);
+  rr(w-153,53,84,84,20,P.blue);
+  group(w-111,95,1,p*.6,1,()=>{line(-22,0,22,0,P.paper,5);line(0,-22,0,22,P.paper,5);line(-15,-15,15,15,P.paper,4);line(-15,15,15,-15,P.paper,4)});
+ });
+ group(28,249,1,0,ease((p-.3)*3),()=>{
+  txt('An idea starts here',0,0,21,P.ink,700);
+  txt('Give your thoughts a little structure.',0,30,14,'#74766e');
+  ['Make it clear','Make it yours'].forEach((s,i)=>{rr(0,52+i*35,17,17,5,P.mint);line(4,61+i*35,7,64+i*35,P.ink,1.5);line(7,64+i*35,13,57+i*35,P.ink,1.5);txt(s,29,66+i*35,15,P.ink)});
+  if(h>430)txt('Hello, possibility.',0,164,18,P.ink,700);
+ });
+}
+function sticker(kind,w=160,h=130){
+ rr(-w/2,-h/2,w,h,18,kind%3===0?P.blue:kind%3===1?P.lime:P.paper);
+ if(kind===0){txt('#',0,28,84,P.ink,700,'center')}
+ else if(kind===1){txt('Aa',0,22,58,P.ink,800,'center')}
+ else if(kind===2){txt('</>',0,19,45,P.ink,700,'center','monospace')}
+ else if(kind===3){for(let i=0;i<3;i++){dot(-w/2+30,-24+i*25,4,P.ink);rr(-w/2+45,-28+i*25,w-74,7,3,P.ink)}}
+ else if(kind===4){txt('M↓',0,24,62,P.ink,800,'center')}
+ else {rr(-w/2+20,-h/2+20,w-40,h-40,10,P.ink);line(-w/2+35,h/2-35,-6,-10,P.paper,4);line(-6,-10,12,8,P.paper,4);line(12,8,w/2-28,-22,P.paper,4);dot(w/2-37,-h/2+37,7,P.lime)}
+}
+function intro(t){
+ bg(P.ink);
+ grid(P.paper,80,.05,t*18);
+ const pulse=beat(t);
+ for(let i=0;i<9;i++){
+  let r=90+i*72+fract(t*.22)*72;
+  c.beginPath();c.arc(640,360,r,-.4+t*.13,2.6+t*.13);c.strokeStyle=i%2? '#30342e':'#242a24';c.lineWidth=1;c.stroke();
+ }
+ if(t<1.1){
+  const z=out(t/.7);
+  group(640,376,z*(1+pulse*.035),-.06*(1-z),1,()=>{
+   txt('IDEAS',0,78,190,P.paper,900,'center');
+   rr(-262,-133,118,32,16,P.lime);txt('BEGIN HERE',-203,-111,11,P.ink,700,'center');
+  });
+  group(980,447,out((t-.25)/.6),t*.3,1,()=>sticker(0,126,126));
+ }else if(t<3.1){
+  const u=t-1.1,enter=out(u/.65),exit=smooth((t-2.8)/.3);
+  group(640,355,1+exit*.2,-.02,1-exit,()=>{
+   txt('TAKE',-340,0,190,P.paper,900);
+   group(0,0,enter,0,1,()=>{rr(219,-143,143,143,72,P.lime);arrow(262,-39,53,P.ink)});
+   group(0,155+80*(1-enter),1,0,enter,()=>txt('SHAPE.',-344,0,190,P.lime,900));
+  });
+  const a=ease(u/.6);line(301,169,301+680*a,169,P.paper,2);
+  tracked('A NEW SPACE FOR YOUR IDEAS',445,593,12,P.paper,3);
+ }else{
+  const u=t-3.1;
+  group(640,376,out(u/.5),0,1,()=>wordmark(-390,0,143,P.paper));
+  rr(899,411,157,35,18,P.lime);txt('LET’S MAKE IT.',977,434,11,P.ink,700,'center');
+ }
+ chrome(t,true,'00 / IDEAS TAKE SHAPE');
+ if(t>3.72){const u=smooth((t-3.72)/.28);c.fillStyle=P.paper;c.beginPath();c.moveTo(1280*(1-u),0);c.lineTo(1280,0);c.lineTo(1280,720);c.lineTo(1280*(1-u)-230,720);c.closePath();c.fill()}
+}
+function source(t){
+ let u=t-4;bg(P.paper);grid(P.ink,80,.045,u*9);
+ const enter=ease(u/.7);
+ group(52,110,1,0,enter,()=>{tracked('FROM A SIMPLE START',0,0,11,P.ink,3);txt('A little syntax. A lot of possibility.',0,52,38,P.ink,800)});
+ let p=clamp((u-.7)/3.7);
+ const a=out((u-.18)/1),b=out((u-.45)/1);
+ group(mix(-430,325,a),mix(455,420,a),.98,-.035+.012*Math.sin(u*1.6),1,()=>{
+  c.save();shadow();rr(-255,-203,510,406,18,P.ink);c.restore();group(-255,-203,1,0,1,()=>editor(510,406,p));
+ });
+ group(mix(1720,935,b),mix(370,405,b),1,.027+.009*Math.sin(u*1.5),1,()=>{
+  c.save();shadow();rr(-245,-225,490,450,18,'#fffef8');c.restore();group(-245,-225,1,0,1,()=>preview(490,450,p));
+ });
+ if(u>1.6){
+  group(640,415,out((u-1.6)/.5)*(.94+beat(t)*.06),0,1,()=>{
+   rr(-29,-29,58,58,29,P.lime);arrow(-12,12,24,P.ink);
+  });
+ }
+ const cx=mix(495,995,smooth((u-2.5)/2));
+ if(u>2.5&&u<5.4){cursor(cx,517+Math.sin(u*2)*12);pill('YOUR IDEA',cx+20,540,98,P.ink,P.paper)}
+ chrome(t,false,'01 / WORDS → POSSIBILITIES');
+ if(u>5.55){let k=smooth((u-5.55)/.45);group(640,360,k*24,0,1,()=>dot(0,0,40,P.ink))}
+}
+function orbit(t){
+ const u=t-10;bg(P.ink);
+ const inx=ease(u/.75);
+ grid(P.lime,110,.055,u*25);
+ tracked('SMALL PIECES. BIG POTENTIAL.',52,116,12,P.lime,2);
+ group(54,275,1,0,inx,()=>{
+  txt('NOT',0,0,130,P.paper,900);
+  txt('JUST',0,129,130,P.paper,900);
+  txt('TEXT.',0,258,130,P.lime,900);
+ });
+ const cx=892,cy=360,rot=u*.52;
+ for(let j=0;j<3;j++){
+  c.save();c.translate(cx,cy);c.rotate(-.37+j*.14);c.scale(1,.65);
+  c.beginPath();c.ellipse(0,0,260+j*29,260+j*29,0,0,TAU);c.strokeStyle='#333b2d';c.lineWidth=1;c.stroke();c.restore();
+ }
+ const items=[];
+ for(let i=0;i<9;i++){
+  const a=i*TAU/9+rot,z=Math.sin(a);
+  items.push({i,a,z,x:cx+Math.cos(a)*280*inx,y:cy+Math.sin(a)*190*inx});
+ }
+ items.sort((a,b)=>a.z-b.z).forEach(o=>{
+  let s=(.65+.22*(o.z+1))*inx;
+  const collapse=smooth((u-5.35)/.65);
+  group(mix(o.x,640,collapse),mix(o.y,360,collapse),s*(1-collapse*.85),Math.cos(o.a)*.16+u*.04,1-collapse,()=>{
+   c.save();shadow();sticker(o.i%6,150,127);c.restore();
+  });
+ });
+ group(cx,cy,.8+beat(t)*.035,-.08,inx,()=>{
+  rr(-112,-76,224,152,22,P.lime);
+  txt('M↓',0,27,91,P.ink,800,'center');
+  txt('PLAIN TEXT. OPEN POSSIBILITIES.',0,58,8,P.ink,700,'center');
+ });
+ tracked('STRUCTURE / EXPRESSION / YOU',650,623,11,P.paper,2);
+ chrome(t,true,'02 / THINK IN COMPONENTS');
+ if(u>5.5){let k=smooth((u-5.5)/.5);c.fillStyle=P.lime;c.fillRect(0,H*(1-k),W,H*k)}
+}
+function miniDoc(kind,w,h,phase){
+ rr(-w/2,-h/2,w,h,13,P.paper);
+ pill(['THE IDEA','THE DETAILS','THE BIG PICTURE'][kind%3],-w/2+22,-h/2+20,kind%3===2?145:105,P.ink,P.paper);
+ if(kind%3===0){
+  txt('# Hello.',-w/2+22,-h/2+95,33,P.ink,800);
+  for(let i=0;i<3;i++)rr(-w/2+22,-h/2+121+i*19,(w-44)*(.9-i*.12),6,3,'#c6c9bd');
+  rr(-w/2+22,h/2-63,w-44,39,10,P.blue);txt('Something worth saying.',0,h/2-38,12,P.ink,700,'center');
+ }else if(kind%3===1){
+  for(let i=0;i<4;i++){rr(-w/2+22,-h/2+72+i*34,20,20,6,P.mint);txt(['A clear thought','A new direction','A little personality','Your next chapter'][i],-w/2+53,-h/2+87+i*34,14,P.ink,600)}
+ }else{
+  rr(-w/2+22,-h/2+68,w-44,h-91,10,P.blue);
+  group(0,21,1,phase,1,()=>{for(let i=0;i<8;i++){const a=i*TAU/8;line(Math.cos(a)*20,Math.sin(a)*20,Math.cos(a)*59,Math.sin(a)*59,P.paper,9)}dot(0,0,13,P.lime)});
+ }
+}
+function verbs(t){
+ const u=t-16,part=Math.min(2,Math.floor(u/2)),v=u-part*2;
+ bg(P.lime);
+ const word=['WRITE.','THINK.','CREATE.'][part];
+ tracked('YOUR MIND, WITHOUT THE LIMITS',52,113,11,P.ink,2.5);
+ const anim=out(v/.48),exit=smooth((v-1.75)/.25);
+ c.save();c.beginPath();c.rect(35,142,1210,221);c.clip();
+ group(640,326+240*(1-anim)-240*exit,1-.03*exit,0,1,()=>{
+  txt(word,0,0,part===2?205:236,P.ink,900,'center');
+ });c.restore();
+ for(let i=0;i<4;i++){
+  let x=176+i*315-(u%2)*23;
+  const entry=out((u-i*.09)/.8);
+  group(x,493+240*(1-entry),1,-.035+Math.sin(u*2+i)*.025,entry,()=>{
+   c.save();shadow();miniDoc((i+part)%3,278,230,u*.45);c.restore();
+  });
+ }
+ line(53,366,1227,366,P.ink,1);
+ txt(['One line can be the beginning.','Give the good ideas room.','Make something unmistakably yours.'][part],54,391,16,P.ink,500);
+ group(1180,390,1,Math.sin(u)*.15,1,()=>arrow(0,0,20,P.ink));
+ chrome(t,false,'03 / MAKE IT YOURS');
+ if(u>5.65){let p=smooth((u-5.65)/.35);c.fillStyle=P.paper;c.fillRect(W*(1-p),0,W*p,H)}
+}
+function tunnel(t){
+ const u=t-22;bg(P.paper);
+ grid(P.ink,80,.05,u*32);
+ const cards=[];
+ for(let i=0;i<20;i++){
+  let depth=fract(i/20+u*.13),a=i*2.399+u*.17;
+  let s=.15+Math.pow(depth,2)*1.8;
+  cards.push({i,depth,s,x:640+Math.cos(a)*(110+depth*780),y:360+Math.sin(a)*(65+depth*450)});
+ }
+ cards.sort((a,b)=>a.depth-b.depth).forEach(o=>{
+  group(o.x,o.y,o.s,o.i*.11+u*.1,.18+o.depth*.7,()=>miniDoc(o.i%3,240,200,u));
+ });
+ const enter=out(u/.65);
+ group(640,366,enter,0,1,()=>{
+  c.save();c.shadowColor=P.paper;c.shadowBlur=45;
+  txt('Beautifully',0,-20,112,P.ink,900,'center');
+  txt('yours.',0,98,145,P.ink,900,'center');c.restore();
+  pill('ONE IDEA. ENDLESS POSSIBILITY.',-152,138,304,P.ink,P.paper);
+ });
+ chrome(t,false,'04 / YOUR NEXT CHAPTER');
+ if(u>3.4){
+  const v=smooth((u-3.4)/.6);
+  for(let i=0;i<10;i++){let p=smooth(clamp(v*1.6-i*.06));c.fillStyle=P.ink;c.fillRect(i*128,0,129,H*p)}
+ }
+}
+function finale(t){
+ const u=t-26;bg(P.ink);
+ const e=out(u/.7),fade=1-smooth((u-3.65)/.35);
+ c.save();c.globalAlpha=fade;
+ const fadeParticles=1-smooth((u-1.2)/1.2);
+ for(let i=0;i<48;i++){
+  const a=i*2.399,r=100+u*220*(.5+hash(i));
+  group(640+Math.cos(a)*r,342+Math.sin(a)*r*.68,1,u*(hash(i)-.5)*2,fadeParticles,()=>{
+   if(i%3===0)cross(0,0,8,[P.lime,P.blue,P.orange][i%3]);
+   else rr(-4,-4,8+(i%4)*3,8,2,i%2?P.lime:P.blue);
+  });
+ }
+ group(640,230,e,0,1,()=>{
+  rr(-38,-38,76,76,21,P.lime);txt('M↓',0,15,40,P.ink,800,'center');
+ });
+ group(640,397+80*(1-e),.98+beat(t)*.006,0,e,()=>wordmark(-479,0,174,P.paper));
+ tracked('FOR THE WAY YOU THINK.',438,455,16,P.lime,3);
+ group(640,535,out((u-.6)/.6),0,1,()=>{
+  rr(-157,-26,314,53,27,P.paper);
+  txt('Start with an idea.',-18,8,19,P.ink,700,'center');arrow(113,7,15,P.ink);
+ });
+ txt('https://mdfor.dev',640,609,16,'#b2b6ad',500,'center','monospace');
+ chrome(t,true,'05 / THIS IS JUST THE BEGINNING');
+ c.restore();
+}
+/* A completely self-contained original 120 BPM electronic score.
+   Audio output follows the same looping playhead as the animation. */
+let ac=null,musicBuffer=null,sourceNode=null,audioStarted=false,unlockRequested=false;
+function createMusic(){
+ const sr=22050,n=sr*30,buf=ac.createBuffer(2,n,sr),L=buf.getChannelData(0),R=buf.getChannelData(1);
+ const chords=[[130.8128,155.5635,195.9977],[103.8262,130.8128,155.5635],[155.5635,195.9977,233.0819],[116.5409,146.8324,174.6141]];
+ let seed=1729,lp=0;
+ for(let i=0;i<n;i++){
+  const t=i/sr,b=Math.floor(t*2),p=t-b*.5,step=Math.floor(t*4),ap=t-step*.25;
+  seed=(Math.imul(seed,1664525)+1013904223)|0;const noise=seed/2147483648;
+  const chord=chords[Math.floor(t/4)%4],full=t>=4&&t<26;
+  const kick=(full||b%4===0)?Math.sin(TAU*(46*p+8*(1-Math.exp(-p*28))))*Math.exp(-p*18)*.6:0;
+  const sn=b%4===2&&t>=4?(noise*.75+Math.sin(TAU*185*p)*.25)*Math.exp(-p*24)*.21:0;
+  const hp=t% .25;
+  lp=lp*.65+noise*.35;
+  const hat=(noise-lp)*Math.exp(-hp*100)*(full?.105:.025)*(step%2?.8:.4);
+  const bassfreq=chord[0]/2*(b%8===7?2:1);
+  const bass=(Math.sin(TAU*bassfreq*t)+.2*Math.sin(TAU*bassfreq*2*t))*Math.exp(-p*7)*(full?.19:.06);
+  let pad=0;
+  for(let j=0;j<3;j++)pad+=(Math.sin(TAU*chord[j]*t)+.3*Math.sin(TAU*(chord[j]*1.002)*t))*.019;
+  const af=chord[[0,1,2,1,0,2,1,2][step%8]]*(step%8>3?4:2);
+  const arp=(Math.sin(TAU*af*t)+.2*Math.sin(TAU*af*2*t))*Math.exp(-ap*13)*(t>2?.09:.02);
+  const glitter=Math.sin(TAU*chord[2]*8*t)*Math.exp(-(t%2)*5)*.025;
+  const env=smooth(t/.3)*(1-smooth((t-29.5)/.5));
+  const common=(kick+sn+hat+bass+pad)*env;
+  L[i]=Math.tanh((common+arp*(.65+.35*Math.sin(step))*env+glitter*env)*1.22)*.74;
+  R[i]=Math.tanh((common+arp*(.65-.35*Math.sin(step))*env-glitter*env)*1.22)*.74;
+ }
+ // Short stereo delay, printed into the score rather than fetched as an asset.
+ const d=Math.floor(sr*.375);
+ for(let i=d;i<n;i++){L[i]+=.17*R[i-d];R[i]+=.15*L[i-d]}
+ musicBuffer=buf;
+}
+function requestSound(){
+ if(unlockRequested&&ac&&ac.state==='running')return;
+ unlockRequested=true;
+ try{
+  if(!ac){ac=new (window.AudioContext||window.webkitAudioContext)();createMusic()}
+  ac.resume().catch(()=>{});
+ }catch(e){}
+}
+function syncSound(t){
+ if(ac&&ac.state==='running'&&musicBuffer&&!audioStarted){
+  sourceNode=ac.createBufferSource();sourceNode.buffer=musicBuffer;sourceNode.loop=true;
+  const gain=ac.createGain();gain.gain.value=.8;sourceNode.connect(gain);gain.connect(ac.destination);
+  sourceNode.start(0,t);audioStarted=true;
+ }
+}
+document.addEventListener('pointerdown',requestSound);
+document.addEventListener('keydown',requestSound);
+function draw(now){
+ if(epoch===null){epoch=now;requestSound()}
+ time=((now-epoch)/1000+offset)%window.DUR;
+ syncSound(time);
+ c.setTransform(1,0,0,1,0,0);c.globalAlpha=1;c.shadowBlur=0;c.shadowOffsetY=0;
+ if(time<4)intro(time);
+ else if(time<10)source(time);
+ else if(time<16)orbit(time);
+ else if(time<22)verbs(time);
+ else if(time<26)tunnel(time);
+ else finale(time);
+ texture();
+ if(!audioStarted){
+  const dark=time<4||(time>=10&&time<16)||time>=26;
+  c.save();c.globalAlpha=.65;
+  txt('CLICK FOR SOUND',1237,41,9,dark?P.paper:P.ink,600,'right');
+  for(let j=0;j<4;j++)line(1109+j*4,31,1109+j*4,39-(j%2)*4,dark?P.lime:P.ink,2);
+  c.restore();
+ }else{
+  const dark=time<4||(time>=10&&time<16)||time>=26;
+  for(let j=0;j<9;j++){
+   const hh=3+Math.abs(Math.sin(time*7+j*1.7))*10*(.5+beat(time)*.5);
+   line(1205+j*4,38,1205+j*4,38-hh,dark?P.lime:P.ink,2);
+  }
+ }
+ frame++;requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

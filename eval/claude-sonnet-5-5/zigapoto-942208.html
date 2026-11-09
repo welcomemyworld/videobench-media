@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000;height:100%;overflow:hidden}#w{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}canvas{width:1280px;height:720px;display:block}</style></head><body><div id="w"><canvas id="c" width="1280" height="720"></canvas></div><script>
+const W=1280,H=720,c=document.getElementById('c'),g=c.getContext('2d'),w=document.getElementById('w');
+window.DUR=32;
+function fit(){const s=Math.min(innerWidth/W,innerHeight/H);w.style.transform=`scale(${s}) translate(-50%,-50%)`;w.style.left='50%';w.style.top='50%';}
+fit();addEventListener('resize',fit);
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t'))||0,st=performance.now();
+const BPM=120,B=60/BPM;
+// audio (starts on first user gesture if allowed; silent otherwise)
+let ac,started=false;
+function music(){if(started)return;try{ac=new(window.AudioContext||window.webkitAudioContext)();started=true;
+const m=ac.createGain();m.gain.value=.25;m.connect(ac.destination);
+const t0=ac.currentTime-off%DUR;const n=Math.floor(DUR/B*2);
+for(let i=Math.floor(off/(B/2));i<n;i++){const t=t0+i*B/2;if(t<ac.currentTime)continue;
+if(i%2==0){const o=ac.createOscillator(),e=ac.createGain();o.frequency.setValueAtTime(140,t);o.frequency.exponentialRampToValueAtTime(40,t+.15);e.gain.setValueAtTime(1,t);e.gain.exponentialRampToValueAtTime(.001,t+.2);o.connect(e).connect(m);o.start(t);o.stop(t+.22);}
+else{const o=ac.createOscillator(),e=ac.createGain();o.type='square';o.frequency.value=8000;e.gain.setValueAtTime(.05,t);e.gain.exponentialRampToValueAtTime(.001,t+.05);o.connect(e).connect(m);o.start(t);o.stop(t+.06);}
+const notes=[0,3,7,10,12,10,7,3];const o=ac.createOscillator(),e=ac.createGain();o.type='sawtooth';o.frequency.value=55*Math.pow(2,(notes[i%8]+(Math.floor(i/16)%2?5:0))/12);e.gain.setValueAtTime(.18,t);e.gain.exponentialRampToValueAtTime(.001,t+B/2);o.connect(e).connect(m);o.start(t);o.stop(t+B/2);}
+}catch(e){}}
+addEventListener('pointerdown',music);addEventListener('keydown',music);music();
+const ease=x=>x<0?0:x>1?1:1-Math.pow(1-x,4),cl=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+function rnd(s){s=Math.sin(s*127.1)*43758.5;return s-Math.floor(s)}
+const COL=['#7c5cff','#22d3ee','#ff4d8d','#b6ff3c'];
+function txt(s,x,y,sz,col,a=1,al='center',wt=800){g.globalAlpha=cl(a);g.fillStyle=col;g.font=`${wt} ${sz}px Helvetica,Arial,sans-serif`;g.textAlign=al;g.textBaseline='middle';g.fillText(s,x,y);g.globalAlpha=1}
+// scenes: [start,end]
+const S=[[0,4],[4,10],[10,17],[17,24],[24,32]];
+function bg(t){g.fillStyle='#07070d';g.fillRect(0,0,W,H);
+g.strokeStyle='rgba(255,255,255,.04)';g.lineWidth=1;const o=(t*20)%40;
+for(let x=-o;x<W;x+=40){g.beginPath();g.moveTo(x,0);g.lineTo(x,H);g.stroke()}
+for(let y=0;y<H;y+=40){g.beginPath();g.moveTo(0,y);g.lineTo(W,y);g.stroke()}
+const gr=g.createRadialGradient(640+Math.sin(t)*200,360,0,640,360,700);gr.addColorStop(0,'rgba(124,92,255,.22)');gr.addColorStop(1,'transparent');g.fillStyle=gr;g.fillRect(0,0,W,H);}
+function node(x,y,r,col,p){g.save();g.translate(x,y);g.shadowColor=col;g.shadowBlur=25;g.fillStyle=col;g.beginPath();g.arc(0,0,r*p,0,7);g.fill();g.restore()}
+function s0(t){// hook: kinetic words
+const words=['DATA','IS','LOUD.','INSIGHT','IS','RARE.'];
+const beat=t/B;const i=Math.min(5,Math.floor(beat));const f=beat-Math.floor(beat);
+const wd=words[i];const sc=1+.35*(1-ease(f*3));
+g.save();g.translate(640,360);g.scale(sc,sc);txt(wd,0,0,150,i>2?'#22d3ee':'#fff');g.restore();
+for(let k=0;k<=5;k++){g.fillStyle=k<=i?COL[k%4]:'#222';g.fillRect(440+k*70,600,50,6)}}
+function s1(t){// dashboard dies -> agents
+txt('Dashboards wait.',640,110,64,'#fff',ease(t*2));
+txt('Agents act.',640,185,64,'#22d3ee',ease((t-1.5)*2));
+// bar chart
+for(let i=0;i<14;i++){const h=(40+rnd(i)*180)*ease(t*1.5-i*.05);const x=200+i*60;
+const kill=cl((t-3.5)/1.5);g.fillStyle=`rgba(124,92,255,${.9-kill*.7})`;g.fillRect(x,640-h*(1-kill*.5),40,h*(1-kill*.5));}
+if(t>3.5){for(let i=0;i<5;i++){const a=t*2+i*1.26,r=120+i*6;const p=ease(t-3.5);node(640+Math.cos(a)*r*p,440+Math.sin(a)*r*.5*p,10,COL[i%4],p)}}
+}
+function s2(t){// agent pipeline
+txt('Ask. Investigate. Explain.',640,80,52,'#fff',ease(t*2));
+const lab=['Question','Query','Anomaly','Root cause','Action'];
+for(let i=0;i<5;i++){const x=140+i*250,y=360+Math.sin(i*2)*60,p=ease(t*1.3-i*.3);
+if(i>0){const px=140+(i-1)*250,py=360+Math.sin((i-1)*2)*60;g.strokeStyle=COL[i%4];g.lineWidth=3;g.beginPath();g.moveTo(px,py);g.lineTo(px+(x-px)*p,py+(y-py)*p);g.stroke();
+const d=(t*.6+i*.2)%1;node(px+(x-px)*d,py+(y-py)*d,5,'#fff',p)}
+node(x,y,34,COL[i%4],p);txt(lab[i],x,y+65,22,'#fff',p,'center',700);txt(i+1,x,y,26,'#07070d',p)}
+const typed='"Why did churn spike in EMEA?"'.slice(0,Math.floor(t*14));
+g.fillStyle='rgba(255,255,255,.08)';g.fillRect(340,590,600,56);txt(typed,360,618,24,'#b6ff3c',1,'left',500)}
+function s3(t){// live metrics
+txt('Answers in seconds.',640,80,56,'#fff',ease(t*2));
+const m=[['Queries/day',12.4,'M'],['Faster insights',38,'x'],['Hours saved',9200,'']];
+m.forEach((a,i)=>{const p=ease(t*1.5-i*.4),x=230+i*410;
+g.fillStyle='rgba(255,255,255,.06)';g.fillRect(x-170,200,340,190);g.fillStyle=COL[i];g.fillRect(x-170,200,340*p,5);
+const v=a[1]*p;txt((a[1]>100?Math.round(v).toLocaleString():v.toFixed(1))+a[2],x,285,66,'#fff',p);txt(a[0],x,355,24,'#aab',p,'center',500)});
+g.beginPath();g.strokeStyle='#22d3ee';g.lineWidth=4;
+for(let x=0;x<=1000;x+=8){const p=cl(t/4);if(x/1000>p)break;const y=620-x*.12-Math.sin(x*.03+t)*25-rnd(x)*8;x?g.lineTo(140+x,y):g.moveTo(140+x,y)}g.stroke()}
+function s4(t){// outro
+const p=ease(t*1.5);g.save();g.translate(640,300);g.scale(.8+.2*p,.8+.2*p);
+for(let i=0;i<3;i++)node((i-1)*90,-110,22,COL[i],p);
+txt('AGENTIC ANALYTICS',0,0,84,'#fff',p);g.restore();
+txt('Stop reading dashboards. Start getting answers.',640,420,32,'#22d3ee',ease(t-.8));
+g.fillStyle='#7c5cff';const bw=300*ease(t-1.5);g.fillRect(640-bw/2,500,bw,64);txt('Book a demo',640,532,28,'#fff',ease(t-1.8),'center',800)}
+const F=[s0,s1,s2,s3,s4];
+function frame(){const t=((performance.now()-st)/1000+off)%DUR;
+bg(t);let k=S.findIndex(s=>t>=s[0]&&t<s[1]);const lt=t-S[k][0];
+g.save();const flash=Math.max(0,1-(t%B)*6)*.04;F[k](lt);g.restore();
+g.fillStyle=`rgba(255,255,255,${flash})`;g.fillRect(0,0,W,H);
+const tr=S[k][1]-t;if(lt<.25){g.fillStyle=`rgba(7,7,13,${1-lt/.25})`;g.fillRect(0,0,W,H)}
+g.fillStyle='#7c5cff';g.fillRect(0,H-4,W*t/DUR,4);
+requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

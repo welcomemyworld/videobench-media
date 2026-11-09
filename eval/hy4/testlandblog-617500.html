@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Wie funktioniert eine Dampfmaschine?</title>
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
+  #wrap { position: absolute; top: 50%; left: 50%; width: 1280px; height: 720px; transform-origin: center; }
+  canvas { width: 100%; height: 100%; display: block; background: #05080f; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+window.DUR = 32;
+const qs = new URLSearchParams(location.search);
+const t0 = parseFloat(qs.get('t')) || 0;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+
+function resize() {
+  const s = Math.min(innerWidth / 1280, innerHeight / 720);
+  document.getElementById('wrap').style.transform = `translate(-50%, -50%) scale(${s})`;
+}
+addEventListener('resize', resize); resize();
+
+const PI = Math.PI;
+const ss = (a, b, x) => { let u = Math.max(0, Math.min(1, (x - a) / (b - a))); return u * u * (3 - 2 * u); };
+const fade = (a, b, c, d, t) => ss(a, b, t) * (1 - ss(c, d, t));
+const lerp = (a, b, u) => a + (b - a) * u;
+const rnd = i => { let v = Math.sin(i * 12.9898) * 43758.5453; return v - Math.floor(v); };
+
+const C = {
+  bg: '#05080f', grid: 'rgba(88,196,221,0.055)',
+  white: '#f1f5f9', blue: '#58c4dd', gold: '#fcb738',
+  red: '#e64545', grey: '#64748b', metal: '#94a3b8',
+  dark: '#1e293b', darker: '#334155'
+};
+
+function txt(s, x, y, size, col, align = 'center', italic = false) {
+  ctx.font = `${italic ? 'italic ' : ''}${size}px Georgia, 'Times New Roman', serif`;
+  ctx.fillStyle = col; ctx.textAlign = align; ctx.textBaseline = 'middle';
+  ctx.fillText(s, x, y);
+}
+function line(x1, y1, x2, y2, col, w = 2) {
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+  ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
+}
+function arrow(x1, y1, x2, y2, col, w = 2) {
+  line(x1, y1, x2, y2, col, w);
+  let a = Math.atan2(y2 - y1, x2 - x1);
+  ctx.beginPath(); ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - 12 * Math.cos(a - 0.4), y2 - 12 * Math.sin(a - 0.4));
+  ctx.lineTo(x2 - 12 * Math.cos(a + 0.4), y2 - 12 * Math.sin(a + 0.4));
+  ctx.fillStyle = col; ctx.fill();
+}
+function circle(x, y, r, col, fill = true, w = 2) {
+  ctx.beginPath(); ctx.arc(x, y, r, 0, PI * 2);
+  if (fill) { ctx.fillStyle = col; ctx.fill(); }
+  else { ctx.strokeStyle = col; ctx.lineWidth = w; ctx.stroke(); }
+}
+function path(u, pts) {
+  let n = pts.length - 1, i = Math.min(n - 1, Math.floor(u * n)), f = u * n - i;
+  return [lerp(pts[i][0], pts[i + 1][0], f), lerp(pts[i][1], pts[i + 1][1], f)];
+}
+
+function drawIntro(t) {
+  let a = fade(0, 1.2, 3.2, 4.2, t);
+  if (a <= 0) return;
+  ctx.globalAlpha = a;
+  ctx.shadowBlur = 20; ctx.shadowColor = C.blue;
+  txt("Wie funktioniert eine", 640, 300 - 8 * ss(0, 1.2, t), 36, C.white, 'center', true);
+  ctx.shadowColor = C.gold;
+  txt("Dampfmaschine?", 640, 372 - 12 * ss(0.2, 1.4, t), 64, C.gold, 'center', true);
+  ctx.shadowBlur = 0;
+  txt("Eine Zerlegung in Wärme, Druck und Regelung", 640, 445, 22, C.metal, 'center', true);
+  let r = 110 + ss(0, 3.2, t) * 420;
+  circle(640, 350, r, `rgba(88,196,221,${0.18 * (1 - ss(0, 3.2, t))})`, false, 2);
+  ctx.globalAlpha = 1;
+}
+
+function drawThermo(t) {
+  let a = fade(3.6, 4.6, 8.8, 9.8, t);
+  if (a <= 0) return;
+  ctx.globalAlpha = a;
+  txt("1. Thermodynamik", 80, 70, 32, C.blue, 'left', true);
+  txt("Wärme → Volumen", 80, 112, 20, C.metal, 'left', true);
+
+  let bx = 360, by = 290, bw = 240, bh = 230;
+  ctx.strokeStyle = C.metal; ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(bx, by); ctx.lineTo(bx, by + bh); ctx.lineTo(bx + bw, by + bh); ctx.lineTo(bx + bw, by);
+  ctx.stroke();
+
+  let wy = by + bh - 60 + Math.sin(t * 3) * 3;
+  ctx.fillStyle = 'rgba(88,196,221,0.32)';
+  ctx.beginPath(); ctx.moveTo(bx + 3, wy);
+  for (let x = bx + 3; x <= bx + bw - 3; x += 10) ctx.lineTo(x, wy + Math.sin(x * 0.05 + t * 4) * 4);
+  ctx.lineTo(bx + bw - 3, by + bh - 3); ctx.lineTo(bx + 3, by + bh - 3); ctx.fill();
+
+  for (let i = 0; i < 7; i++) {
+    let fx = bx + 25 + i * 32, fh = 24 + 22 * Math.abs(Math.sin(t * 6 + i * 1.3));
+    ctx.beginPath(); ctx.moveTo(fx - 12, by + bh + 15);
+    ctx.quadraticCurveTo(fx - 5, by + bh + 15 - fh, fx, by + bh + 15 - fh - 12);
+    ctx.quadraticCurveTo(fx + 5, by + bh + 15 - fh, fx + 12, by + bh + 15);
+    ctx.fillStyle = i % 2 ? 'rgba(230,69,69,0.8)' : 'rgba(252,183,56,0.8)';
+    ctx.fill();
+  }
+
+  let lift = ss(5.0, 8.6, t) * 95;
+  let pistonY = by + 55 - lift;
+  ctx.fillStyle = C.dark; ctx.fillRect(bx + 5, pistonY, bw - 10, 16);
+  ctx.strokeStyle = C.metal; ctx.lineWidth = 2; ctx.strokeRect(bx + 5, pistonY, bw - 10, 16);
+  line(bx + bw / 2, pistonY, bx + bw / 2, pistonY - 65, C.metal, 6);
+  arrow(bx + bw / 2 + 46, pistonY - 8, bx + bw / 2 + 46, pistonY - 52, C.gold, 3);
+
+  ctx.shadowBlur = 8;
+  for (let i = 0; i < 75; i++) {
+    let u = (t * 0.35 + i / 75) % 1;
+    let rx = rnd(i) * bw;
+    let p = path(u, [
+      [bx + 20 + rx * 0.8, by + bh - 22],
+      [bx + 20 + rx * 0.8, by + bh - 85],
+      [bx + bw / 2 + (rx - bw / 2) * 1.5, by + 125],
+      [bx + bw / 2 + (rx - bw / 2) * 2.2, pistonY + 24]
+    ]);
+    let px = p[0] + Math.sin(u * 15 + i) * 6, py = p[1] + Math.cos(u * 12 + i) * 4;
+    let col = u < 0.42 ? C.blue : C.gold;
+    ctx.fillStyle = col; ctx.shadowColor = col;
+    circle(px, py, 2 + u * 2.5, col);
+  }
+  ctx.shadowBlur = 0;
+
+  ctx.globalAlpha = a * ss(5.5, 6.5, t);
+  txt("p · V = n · R · T", 900, 380, 46, C.white, 'center', true);
+  txt("T ↑   ⇒   V ↑", 900, 452, 38, C.gold, 'center', true);
+  arrow(770, 300, 770, 342, C.red, 3);
+  txt("Wärme", 770, 280, 20, C.red, 'center', true);
+  ctx.globalAlpha = 1;
+}
+
+function drawEngine(t) {
+  let a = fade(8.8, 9.8, 20.8, 21.8, t);
+  if (a <= 0) return;
+  ctx.globalAlpha = a;
+  txt("2. Die Schiebersteuerung", 80, 70, 32, C.blue, 'left', true);
+  txt("Ein 90°-Phasenversatz erzeugt die Umkehr", 80, 112, 20, C.metal, 'left', true);
+
+  let th = t * 2.4;
+  let Cx = 1020, Cy = 380, R = 110, L = 300;
+  let Kx = Cx + R * Math.cos(th), Ky = Cy + R * Math.sin(th);
+  let xc = Kx - Math.sqrt(L * L - (Ky - Cy) * (Ky - Cy));
+  let xp = xc - 180;
+
+  ctx.strokeStyle = C.metal; ctx.lineWidth = 4;
+  ctx.strokeRect(405, 335, 270, 90);
+  ctx.fillStyle = 'rgba(30,41,59,0.55)'; ctx.fillRect(407, 337, 266, 86);
+
+  ctx.fillStyle = C.metal; ctx.fillRect(xp - 9, 339, 18, 82);
+  line(xp, 380, xc, 380, C.white, 6);
+  ctx.fillStyle = C.dark; ctx.fillRect(xc - 12, 365, 24, 30);
+
+  line(xc, 380, Kx, Ky, C.blue, 9);
+  circle(Cx, Cy, R + 12, C.dark, true);
+  circle(Cx, Cy, R + 12, C.metal, false, 4);
+  for (let i = 0; i < 6; i++) {
+    let an = th + i * PI / 3;
+    line(Cx, Cy, Cx + (R + 8) * Math.cos(an), Cy + (R + 8) * Math.sin(an), C.metal, 3);
+  }
+  line(Cx, Cy, Kx, Ky, C.gold, 10);
+  circle(Kx, Ky, 8, C.white);
+  circle(Cx, Cy, 12, C.gold);
+
+  let vc = 500 - 28 * Math.sin(th);
+  let sgn = vc > 500 ? -1 : 1;
+  let Ps = 500 + sgn * 42, Pe = 500 - sgn * 42;
+
+  ctx.strokeStyle = C.metal; ctx.lineWidth = 3;
+  ctx.strokeRect(425, 250, 150, 46);
+
+  line(500, 165, 500, 250, C.gold, 12); line(500, 165, 500, 250, C.dark, 6);
+  ctx.beginPath(); ctx.moveTo(500, 296); ctx.lineTo(675, 296); ctx.lineTo(675, 185);
+  ctx.strokeStyle = C.grey; ctx.lineWidth = 12; ctx.stroke();
+  ctx.strokeStyle = C.dark; ctx.lineWidth = 6; ctx.stroke();
+
+  line(458, 296, 458, 318, C.metal, 8); line(458, 318, 415, 318, C.metal, 8); line(415, 318, 415, 335, C.metal, 8);
+  line(542, 296, 542, 318, C.metal, 8); line(542, 318, 665, 318, C.metal, 8); line(665, 318, 665, 335, C.metal, 8);
+
+  ctx.beginPath();
+  ctx.moveTo(vc - 38, 254); ctx.lineTo(vc + 38, 254);
+  ctx.lineTo(vc + 38, 292); ctx.lineTo(vc + 28, 292);
+  ctx.lineTo(vc + 28, 272); ctx.lineTo(vc - 28, 272);
+  ctx.lineTo(vc - 28, 292); ctx.lineTo(vc - 38, 292);
+  ctx.closePath();
+  ctx.fillStyle = C.darker; ctx.fill();
+  ctx.strokeStyle = C.white; ctx.lineWidth = 2; ctx.stroke();
+
+  let Ex = Cx + 28 * Math.cos(th + PI / 2), Ey = Cy + 28 * Math.sin(th + PI / 2);
+  line(Ex, Ey, vc + 38, 273, C.red, 4);
+  circle(Ex, Ey, 6, C.red);
+
+  ctx.globalAlpha = a * ss(12, 13.5, t);
+  txt("Kurbel:  cos(ωt)", 1020, 545, 22, C.gold, 'center', true);
+  txt("Schieber: −sin(ωt)", 1020, 580, 22, C.red, 'center', true);
+  txt("= 90° Voraus", 1020, 615, 20, C.white, 'center', true);
+
+  ctx.shadowBlur = 10;
+  for (let i = 0; i < 95; i++) {
+    let u = (t * 0.8 + i / 95) % 1;
+    let w1 = Math.sin(u * 18 + i) * 5, w2 = Math.cos(u * 15 + i) * 5;
+    let r1 = rnd(i), r2 = rnd(i + 50);
+
+    let pL = path(u, [
+      [500, 155], [500, 265], [Ps, 280], [Ps, 330],
+      [lerp(Ps, xp + sgn * 40, 0.7) + (r1 - 0.5) * 90, 380 + (r2 - 0.5) * 55]
+    ]);
+    let fL = Math.min(1, u * 10) * (u < 0.85 ? 1 : (1 - u) / 0.15);
+    ctx.globalAlpha = a * fL;
+    ctx.fillStyle = C.gold; ctx.shadowColor = C.gold;
+    circle(pL[0] + w1, pL[1] + w2, 2.5, C.gold);
+
+    let pE = path(u, [
+      [lerp(Pe, xp - sgn * 40, 0.4) + (r1 - 0.5) * 110, 380 + (r2 - 0.5) * 55],
+      [Pe, 330], [Pe, 280], [500, 288], [580, 288], [675, 288], [675, 175]
+    ]);
+    let fE = Math.min(1, u * 10) * (u < 0.8 ? 0.65 : 0.65 * (1 - u) / 0.2);
+    ctx.globalAlpha = a * fE;
+    ctx.fillStyle = C.grey; ctx.shadowColor = C.grey;
+    circle(pE[0] + w1, pE[1] + w2, 2.5, C.grey);
+  }
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 1;
+}
+
+function drawGovernor(t) {
+  let a = fade(20.8, 21.8, 26.8, 27.8, t);
+  if (a <= 0) return;
+  ctx.globalAlpha = a;
+  txt("3. Der Fliehkraftregler", 80, 70, 32, C.blue, 'left', true);
+  txt("Rückkopplung stabilisiert die Drehzahl", 80, 112, 20, C.metal, 'left', true);
+
+  let omega = ss(21.5, 24, t) - 0.35 * ss(24.5, 26.5, t);
+  let phi = 20 * PI / 180 + omega * 30 * PI / 180;
+  let spin = t * 5 + ss(21.5, 24, t) * 3;
+
+  let Cx = 250, Cy = 460, R = 70;
+  circle(Cx, Cy, R, C.dark, true); circle(Cx, Cy, R, C.metal, false, 4);
+  for (let i = 0; i < 5; i++) {
+    let an = spin + i * PI * 2 / 5;
+    line(Cx, Cy, Cx + R * Math.cos(an), Cy + R * Math.sin(an), C.metal, 2);
+  }
+
+  let Px = 250, Py = 230, pr = 22;
+  line(Cx - R, Cy, Px - pr, Py, C.grey, 3);
+  line(Cx + R, Cy, Px + pr, Py, C.grey, 3);
+  circle(Px, Py, pr, C.dark, true); circle(Px, Py, pr, C.gold, false, 3);
+  line(Px, Py, Px, Py + 145, C.metal, 5);
+
+  let armL = 85;
+  for (let s = -1; s <= 1; s += 2) {
+    let dx = s * armL * Math.sin(phi) * Math.cos(spin + (s > 0 ? 0 : PI));
+    let dy = armL * Math.cos(phi);
+    let bx = Px + dx, by = Py + 20 + dy;
+    line(Px, Py + 20, bx, by, C.white, 4);
+    let depth = 0.8 + 0.2 * Math.sin(spin + (s > 0 ? 0 : PI));
+    ctx.shadowBlur = 10; ctx.shadowColor = C.red;
+    circle(bx, by, 13 * depth, C.red);
+    ctx.shadowBlur = 0;
+    let sy = Py + 20 + 2 * dy - 25;
+    line(bx, by, Px + s * 8, sy, C.metal, 2);
+  }
+  let sy = Py + 20 + 2 * armL * Math.cos(phi) - 25;
+  ctx.fillStyle = C.gold; ctx.fillRect(Px - 14, sy, 28, 14);
+
+  let Vx = 470, Vy = 260;
+  let lx = Vx - 30, ly = sy - (sy - Vy) * 0.3;
+  line(Px + 14, sy, lx, ly, C.gold, 4);
+  line(lx, ly, Vx, Vy, C.gold, 4);
+  circle(lx, ly, 5, C.white);
+
+  line(Vx, 150, Vx, 400, C.metal, 24);
+  line(Vx, 150, Vx, 400, C.dark, 18);
+  let va = (1 - omega) * PI / 2 * 0.8;
+  ctx.save(); ctx.translate(Vx, Vy); ctx.rotate(va);
+  ctx.fillStyle = C.gold; ctx.fillRect(-16, -3, 32, 6);
+  ctx.restore();
+  circle(Vx, Vy, 5, C.white);
+
+  ctx.shadowBlur = 8; ctx.shadowColor = C.gold;
+  for (let i = 0; i < 45; i++) {
+    let u = (t * 0.7 + i / 45) % 1;
+    let py = lerp(400, 150, u);
+    let px = Vx + Math.sin(u * 10 + i) * 6;
+    let throttle = 1 - omega * Math.exp(-Math.pow((py - Vy) / 28, 2));
+    ctx.globalAlpha = a * 0.85 * throttle;
+    circle(px, py, 2.5, C.gold);
+  }
+  ctx.shadowBlur = 0; ctx.globalAlpha = a;
+
+  let Dx = 890, Dy = 360, Dr = 150;
+  ctx.setLineDash([6, 7]); circle(Dx, Dy, Dr, 'rgba(88,196,221,0.3)', false, 2); ctx.setLineDash([]);
+  let nodes = ["Drehzahl ω", "Fliehkraft", "Ventil ↘", "Dampf ↘"];
+  for (let i = 0; i < 4; i++) {
+    let an = -PI / 2 + i * PI / 2;
+    let nx = Dx + Dr * Math.cos(an), ny = Dy + Dr * Math.sin(an);
+    circle(nx, ny, 46, C.dark, true); circle(nx, ny, 46, C.blue, false, 2);
+    txt(nodes[i], nx, ny, 16, C.white, 'center', true);
+    let ta = an + PI / 4;
+    let tx = Dx + Dr * Math.cos(ta), ty = Dy + Dr * Math.sin(ta);
+    let tang = ta + PI / 2;
+    arrow(tx - 14 * Math.cos(tang), ty - 14 * Math.sin(tang),
+          tx + 14 * Math.cos(tang), ty + 14 * Math.sin(tang), C.blue, 2);
+  }
+  let pa = (t * 0.8) % (PI * 2);
+  circle(Dx + Dr * Math.cos(pa), Dy + Dr * Math.sin(pa), 5, C.gold);
+  txt("Negative Rückkopplung", Dx, Dy, 24, C.gold, 'center', true);
+  txt("James Watt, 1788", Dx, 585, 20, C.metal, 'center', true);
+  ctx.globalAlpha = 1;
+}
+
+function drawOutro(t) {
+  let a = fade(26.8, 27.8, 31.2, 32.0, t);
+  if (a <= 0) return;
+  ctx.globalAlpha = a;
+  let y = 340;
+  let s1 = ss(27.5, 28.5, t), s2 = ss(28.5, 29.5, t), s3 = ss(29.5, 30.5, t);
+
+  ctx.shadowBlur = 15;
+  ctx.globalAlpha = a * s1; ctx.shadowColor = C.red;
+  txt("Wärme", 280, y, 48, C.red, 'center', true);
+
+  ctx.globalAlpha = a * s2; ctx.shadowColor = C.gold;
+  arrow(390, y, 500, y, C.gold, 4);
+  txt("Druck", 640, y, 48, C.gold, 'center', true);
+
+  ctx.globalAlpha = a * s3; ctx.shadowColor = C.blue;
+  arrow(750, y, 860, y, C.blue, 4);
+  txt("Bewegung", 1010, y, 48, C.blue, 'center', true);
+  ctx.shadowBlur = 0;
+
+  ctx.globalAlpha = a * ss(30.2, 31.0, t);
+  txt("Energie verschwindet nicht – sie ändert nur ihre Form.", 640, 450, 26, C.white, 'center', true);
+  txt("↻", 640, 515, 34, C.metal, 'center');
+  ctx.globalAlpha = 1;
+}
+
+let start = performance.now();
+function frame(now) {
+  let t = (t0 + (now - start) / 1000) % DUR;
+  if (t < 0) t += DUR;
+
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, 1280, 720);
+
+  ctx.strokeStyle = C.grid; ctx.lineWidth = 1; ctx.beginPath();
+  let off = (t * 8) % 40;
+  for (let x = -40 + off; x < 1320; x += 40) { ctx.moveTo(x, 0); ctx.lineTo(x, 720); }
+  for (let y = -40 + off; y < 760; y += 40) { ctx.moveTo(0, y); ctx.lineTo(1280, y); }
+  ctx.stroke();
+
+  drawIntro(t);
+  drawThermo(t);
+  drawEngine(t);
+  drawGovernor(t);
+  drawOutro(t);
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

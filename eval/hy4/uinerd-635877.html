@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Prost! - Der letzte Tag der Wiesn</title>
+<style>
+  body {
+    margin: 0;
+    background: #000;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  canvas {
+    width: 1280px;
+    height: 720px;
+    max-width: 100vw;
+    max-height: 100vh;
+    object-fit: contain;
+    background: #060b19;
+    box-shadow: 0 0 50px rgba(0,0,0,0.9);
+  }
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+/* 
+ * NOTE ON AUDIO & FFMPEG:
+ * The prompt requests downloading public-domain sounds and mixing with ffmpeg.
+ * Under the strict "single HTML, no external resources, no fetch" constraint,
+ * this is physically impossible. Instead, the exact sound design (brass fanfare, 
+ * glass clink, crowd cheer, generator power-down, ambient murmur) is procedurally 
+ * synthesized via Web Audio API and mixed live in-browser using a Master Gain + 
+ * DynamicsCompressor bus, perfectly synced to performance.now(). This acts as 
+ * the in-code equivalent of the requested ffmpeg mix.
+ */
+
+const DUR = 15;
+window.DUR = DUR;
+
+const params = new URLSearchParams(location.search);
+const tOffset = parseFloat(params.get('t')) || 0;
+const epoch = performance.now() - tOffset * 1000;
+
+let lastT = tOffset;
+let lastNow = performance.now();
+let events = {};
+let particles = [];
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+// Safety polyfill for older renderers
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x,y,w,h,r) {
+    r = Math.min(r, w/2, h/2);
+    this.moveTo(x+r,y); this.arcTo(x+w,y,x+w,y+h,r); this.arcTo(x+w,y+h,x,y+h,r);
+    this.arcTo(x,y+h,x,y,r); this.arcTo(x,y,x+w,y,r); return this;
+  };
+}
+
+// --- WEB AUDIO MIX BUS ---
+let audioCtx, masterGain, ambientGain;
+function initAudio() {
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    audioCtx = new AC();
+    
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = 0.85;
+    
+    // The "ffmpeg mix glue"
+    let comp = audioCtx.createDynamicsCompressor();
+    comp.threshold.value = -16;
+    comp.ratio.value = 4;
+    comp.attack.value = 0.005;
+    comp.release.value = 0.2;
+    
+    masterGain.connect(comp);
+    comp.connect(audioCtx.destination);
+    
+    // Continuous ambient tent murmur
+    let bufSize = audioCtx.sampleRate * 2;
+    let buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+    let d = buf.getChannelData(0);
+    for(let i=0; i<bufSize; i++) d[i] = Math.random()*2-1;
+    let noise = audioCtx.createBufferSource();
+    noise.buffer = buf; noise.loop = true;
+    let lp = audioCtx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 350;
+    ambientGain = audioCtx.createGain();
+    ambientGain.gain.value = 0.05;
+    noise.connect(lp); lp.connect(ambientGain); ambientGain.connect(masterGain);
+    noise.start();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+// Allow manual unlock if opened by a human, without driving time from it
+window.addEventListener('pointerdown', initAudio, {once:true});
+window.addEventListener('keydown', initAudio, {once:true});
+
+function playChord() {
+  if(!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const freqs = [233.08, 293.66, 349.23, 466.16]; // Bb Major Fanfare
+  freqs.forEach((f) => {
+    let osc = audioCtx.createOscillator();
+    let gain = audioCtx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.value = f;
+    let filter = audioCtx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(300, now);
+    filter.frequency.linearRampToValueAtTime(2200, now + 0.4);
+    filter.frequency.linearRampToValueAtTime(800, now + 2.5);
+    
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.08, now + 0.15);
+    gain.gain.setValueAtTime(0.08, now + 2.0);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 3.5);
+    
+    osc.connect(filter); filter.connect(gain); gain.connect(masterGain);
+    osc.start(now); osc.stop(now + 3.5);
+  });
+}
+
+function playClink() {
+  if(!audioCtx) return;
+  const now = audioCtx.currentTime;
+  [1800, 2650, 3900].forEach((f, i) => {
+    let osc = audioCtx.createOscillator();
+    let gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = f;
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.15 / (i+1), now + 0.005);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+    osc.connect(gain); gain.connect(masterGain);
+    osc.start(now); osc.stop(now + 0.6);
+  });
+  let bufSize = audioCtx.sampleRate * 0.4;
+  let buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+  let d = buf.getChannelData(0);
+  for(let i=0; i<bufSize; i++) d[i] = (Math.random()*2-1) * (1 - i/bufSize);
+  let noise = audioCtx.createBufferSource(); noise.buffer = buf;
+  let hp = audioCtx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=4000;
+  let nGain = audioCtx.createGain(); nGain.gain.value = 0.15;
+  noise.connect(hp); hp.connect(nGain); nGain.connect(masterGain);
+  noise.start(now);
+}
+
+function playCheer() {
+  if(!audioCtx) return;
+  const now = audioCtx.currentTime;
+  let bufSize = audioCtx.sampleRate * 3;
+  let buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+  let d = buf.getChannelData(0);
+  for(let i=0; i<bufSize; i++) d[i] = Math.random()*2-1;
+  let noise = audioCtx.createBufferSource(); noise.buffer = buf;
+  let bp = audioCtx.createBiquadFilter();
+  bp.type = 'bandpass'; bp.frequency.value = 1200; bp.Q.value = 0.6;
+  let gain = audioCtx.createGain();
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(0.2, now + 0.2);
+  gain.gain.setValueAtTime(0.2, now + 1.2);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 3.0);
+  noise.connect(bp); bp.connect(gain); gain.connect(masterGain);
+  noise.start(now);
+}
+
+function playPowerDown() {
+  if(!audioCtx) return;
+  const now = audioCtx.currentTime;
+  // Heavy relay click
+  let clickBuf = audioCtx.createBuffer(1, 2048, audioCtx.sampleRate);
+  let cData = clickBuf.getChannelData(0);
+  for(let i=0; i<2048; i++) cData[i] = (Math.random()*2-1) * Math.exp(-i/200);
+  let click = audioCtx.createBufferSource(); click.buffer = clickBuf;
+  let cFilter = audioCtx.createBiquadFilter();
+  cFilter.type = 'lowpass'; cFilter.frequency.value = 800;
+  let cGain = audioCtx.createGain(); cGain.gain.value = 0.6;
+  click.connect(cFilter); cFilter.connect(cGain); cGain.connect(masterGain);
+  click.start(now);
+  
+  // Generator hum winding down
+  let osc = audioCtx.createOscillator();
+  let gain = audioCtx.createGain();
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(100, now);
+  osc.frequency.exponentialRampToValueAtTime(15, now + 1.8);
+  gain.gain.setValueAtTime(0.15, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 1.8);
+  osc.connect(gain); gain.connect(masterGain);
+  osc.start(now); osc.stop(now + 1.8);
+}
+
+function checkAudio(t) {
+  if (t < lastT) lastT = -1; // Loop detected
+  
+  events = {
+    band:  lastT < 3.4  && t >= 3.4,
+    clink: lastT < 5.5  && t >= 5.5,
+    cheer: lastT < 5.5  && t >= 5.5,
+    power: lastT < 12.0 && t >= 12.0
+  };
+  
+  if (events.band || events.clink || events.power) initAudio();
+  if (events.band)  playChord();
+  if (events.clink) playClink();
+  if (events.cheer) playCheer();
+  if (events.power) playPowerDown();
+  
+  if (audioCtx && ambientGain) {
+    let target = t > 12 ? Math.max(0, 0.05 - (t-12)*0.05) : 0.05;
+    ambientGain.gain.setTargetAtTime(target, audioCtx.currentTime, 0.1);
+  }
+  lastT = t;
+}
+
+// --- VISUALS ---
+function drawBackground(ctx, t) {
+  let g = ctx.createLinearGradient(0, 0, 0, 720);
+  g.addColorStop(0, '#060b19');
+  g.addColorStop(1, '#1a2c4c');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 1280, 720);
+
+  // Moon
+  ctx.save();
+  ctx.shadowBlur = 40; ctx.shadowColor = '#fdf6d8';
+  ctx.fillStyle = '#fdf6d8';
+  ctx.beginPath(); ctx.arc(1080, 160, 45, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+
+  // Riesenrad (Ferris Wheel) Silhouette
+  ctx.save();
+  ctx.translate(220, 420);
+  ctx.strokeStyle = '#04070f'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(0, 0, 200, 0, Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(0, 0, 180, 0, Math.PI*2); ctx.stroke();
+  for(let i=0; i<12; i++) {
+    let a = i * Math.PI/6 + t * 0.04;
+    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(a)*200, Math.sin(a)*200); ctx.stroke();
+    ctx.fillStyle = '#04070f';
+    ctx.fillRect(Math.cos(a)*200 - 8, Math.sin(a)*200 - 5, 16, 12);
+  }
+  ctx.fillStyle = '#04070f';
+  ctx.beginPath(); ctx.moveTo(-40, 200); ctx.lineTo(0, 0); ctx.lineTo(40, 200); ctx.fill();
+  ctx.restore();
+
+  // Tents
+  ctx.fillStyle = '#0a1224';
+  ctx.beginPath(); ctx.moveTo(400, 720); ctx.lineTo(600, 450); ctx.lineTo(800, 720); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(700, 720); ctx.lineTo(950, 400); ctx.lineTo(1200, 720); ctx.fill();
+  ctx.strokeStyle = '#0e1830'; ctx.lineWidth = 12;
+  ctx.beginPath(); ctx.moveTo(600, 450); ctx.lineTo(500, 720); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(600, 450); ctx.lineTo(700, 720); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(950, 400); ctx.lineTo(850, 720); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(950, 400); ctx.lineTo(1050, 720); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(950, 400); ctx.lineTo(1150, 720); ctx.stroke();
+  
+  // Warm windows (fade out at blackout)
+  let winAlpha = t < 12 ? 0.3 + Math.sin(t*3)*0.05 : Math.max(0, 0.3 - (t-12)*1.5);
+  if (winAlpha > 0) {
+    ctx.fillStyle = `rgba(255, 200, 100, ${winAlpha})`;
+    for(let i=0; i<8; i++) {
+      ctx.fillRect(780 + i*40, 620, 20, 30);
+      ctx.fillRect(480 + i*25, 640, 15, 25);
+    }
+  }
+
+  // String Lights
+  const strings = [
+    {x1: -50, y1: 80,  cx: 640, cy: 250, x2: 1330, y2: 80},
+    {x1: -50, y1: 20,  cx: 640, cy: 180, x2: 1330, y2: 20},
+    {x1: -50, y1: 150, cx: 500, cy: 320, x2: 1000, y2: 100}
+  ];
+  
+  strings.forEach((s, si) => {
+    ctx.beginPath();
+    ctx.moveTo(s.x1, s.y1);
+    ctx.quadraticCurveTo(s.cx, s.cy, s.x2, s.y2);
+    ctx.strokeStyle = '#111'; ctx.lineWidth = 2; ctx.stroke();
+    
+    for(let i=0; i<=30; i++) {
+      let p = i/30;
+      let bx = (1-p)*(1-p)*s.x1 + 2*(1-p)*p*s.cx + p*p*s.x2;
+      let by = (1-p)*(1-p)*s.y1 + 2*(1-p)*p*s.cy + p*p*s.y2;
+      
+      let offTime = 12.0 + (si*30 + i) * 0.008; // Sequential blackout
+      let isOff = t > offTime;
+      
+      if (!isOff) {
+        let flicker = 0.8 + 0.2 * Math.sin(t*10 + i);
+        ctx.save();
+        ctx.shadowBlur = 15; ctx.shadowColor = '#ffaa33';
+        ctx.fillStyle = `rgba(255, 220, 120, ${flicker})`;
+        ctx.beginPath(); ctx.arc(bx, by, 4, 0, Math.PI*2); ctx.fill();
+        ctx.restore();
+      } else {
+        ctx.fillStyle = '#1a1a1a';
+        ctx.beginPath(); ctx.arc(bx, by, 4, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.fillStyle = '#111'; ctx.fillRect(bx-1, by-6, 2, 4);
+    }
+  });
+  
+  // Ground
+  ctx.fillStyle = '#050810';
+  ctx.fillRect(0, 680, 1280, 40);
+}
+
+function drawCharacter(ctx, t) {
+  // Ground shadow
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.beginPath(); ctx.ellipse(640, 682, 70, 12, 0, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(640, 680);
+  ctx.rotate(Math.sin(t * 1.5) * 0.015); // gentle sway
+  
+  // Arm raise interpolation (rest 0.1 -> raised -2.6)
+  let armA = 0.1;
+  if (t > 3 && t <= 5) {
+    let p = (t-3)/2;
+    armA = 0.1 - 2.7 * (p*p*(3-2*p));
+  } else if (t > 5 && t <= 6) {
+    armA = -2.6 + Math.sin((t-5)*20)*0.06; // toast bounce
+  } else if (t > 6 && t <= 8.5) {
+    let p = (t-6)/2.5;
+    armA = -2.6 + 2.7 * (p*p*(3-2*p));
+  }
+
+  // Legs & Checkered Socks
+  ctx.fillStyle = '#4a3424';
+  ctx.fillRect(-35, -100, 30, 100); ctx.fillRect(5, -100, 30, 100);
+  ctx.fillStyle = '#e0e0e0';
+  ctx.fillRect(-35, -40, 30, 40); ctx.fillRect(5, -40, 30, 40);
+  ctx.strokeStyle = '#a0a0a0'; ctx.lineWidth = 2;
+  for(let i=0; i<4; i++) {
+    ctx.beginPath(); ctx.moveTo(-35, -40+i*10); ctx.lineTo(-5, -40+i*10); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-35+i*7.5, -40); ctx.lineTo(-35+i*7.5, 0); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(5, -40+i*10); ctx.lineTo(35, -40+i*10); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(5+i*7.5, -40); ctx.lineTo(5+i*7.5, 0); ctx.stroke();
+  }
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.ellipse(-20, 0, 22, 10, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(20, 0, 22, 10, 0, 0, Math.PI*2); ctx.fill();
+
+  // Torso & Suspenders
+  ctx.fillStyle = '#f4f4f4';
+  ctx.beginPath();
+  ctx.moveTo(-45, -220); ctx.lineTo(45, -220); ctx.lineTo(40, -90); ctx.lineTo(-40, -90); ctx.fill();
+  ctx.fillStyle = '#3b2818';
+  ctx.save(); ctx.translate(-20, -220); ctx.rotate(0.1); ctx.fillRect(-6, 0, 12, 130); ctx.restore();
+  ctx.save(); ctx.translate(20, -220); ctx.rotate(-0.1); ctx.fillRect(-6, 0, 12, 130); ctx.restore();
+  ctx.fillStyle = '#4a3424'; ctx.fillRect(-25, -150, 50, 60);
+  ctx.strokeStyle = '#d4af37'; ctx.lineWidth = 2; ctx.strokeRect(-25, -150, 50, 60);
+
+  // Left Arm
+  ctx.save();
+  ctx.translate(-40, -210);
+  ctx.rotate(-0.1 + Math.sin(t*1.5)*0.05);
+  ctx.fillStyle = '#f4f4f4';
+  ctx.beginPath(); ctx.roundRect(-15, 0, 22, 90, 10); ctx.fill();
+  ctx.fillStyle = '#f1c27d';
+  ctx.beginPath(); ctx.arc(-4, 90, 12, 0, Math.PI*2); ctx.fill();
+  ctx.restore();
+
+  // Head & Face
+  ctx.fillStyle = '#f1c27d';
+  ctx.beginPath(); ctx.arc(0, -260, 42, 0, Math.PI*2); ctx.fill();
+  let blink = (t % 4 > 3.8) ? 0.1 : 1;
+  ctx.fillStyle = '#222';
+  ctx.beginPath(); ctx.ellipse(-14, -270, 3, 4*blink, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(14, -270, 3, 4*blink, 0, 0, Math.PI*2); ctx.fill();
+  
+  if (t > 9) { // Nostalgic eyebrows
+    ctx.strokeStyle = '#5c3a21'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(-20, -280); ctx.lineTo(-8, -277); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(20, -280); ctx.lineTo(8, -277); ctx.stroke();
+  }
+  ctx.fillStyle = '#5c3a21'; // Mustache
+  ctx.beginPath();
+  ctx.moveTo(-25, -248); ctx.quadraticCurveTo(-10, -238, 0, -250);
+  ctx.quadraticCurveTo(10, -238, 25, -248); ctx.quadraticCurveTo(15, -240, 0, -243);
+  ctx.quadraticCurveTo(-15, -240, -25, -248); ctx.fill();
+  ctx.strokeStyle = '#8b4513'; ctx.lineWidth = 2; // Mouth
+  ctx.beginPath();
+  if (t < 9) ctx.arc(0, -240, 8, 0.1, Math.PI - 0.1);
+  else { ctx.moveTo(-6, -238); ctx.lineTo(6, -238); }
+  ctx.stroke();
+
+  // Tyrolean Hat
+  ctx.fillStyle = '#2d4a22';
+  ctx.beginPath(); ctx.ellipse(0, -295, 55, 10, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(-32, -295); ctx.lineTo(-22, -335);
+  ctx.quadraticCurveTo(0, -345, 22, -335); ctx.lineTo(32, -295); ctx.fill();
+  ctx.fillStyle = '#8b0000'; ctx.fillRect(-30, -303, 60, 6);
+  ctx.save();
+  ctx.translate(20, -330); ctx.rotate(0.3 + Math.sin(t*2)*0.1);
+  ctx.fillStyle = '#e0e0e0';
+  ctx.beginPath(); ctx.moveTo(0,0); ctx.quadraticCurveTo(10, -30, 0, -50);
+  ctx.quadraticCurveTo(-5, -30, 0, 0); ctx.fill();
+  ctx.restore();
+
+  // Right Arm + Stein
+  ctx.save();
+  ctx.translate(40, -210);
+  ctx.rotate(armA);
+  ctx.fillStyle = '#f4f4f4';
+  ctx.beginPath(); ctx.roundRect(-10, -10, 20, 70, 10); ctx.fill();
+  ctx.fillStyle = '#f1c27d';
+  ctx.beginPath(); ctx.arc(0, 60, 13, 0, Math.PI*2); ctx.fill();
+  
+  ctx.translate(0, 60);
+  ctx.rotate(-armA + 0.15); // Counter-rotate to keep beer upright + jaunty tilt
+  
+  ctx.strokeStyle = '#9eacb8'; ctx.lineWidth = 8; // Handle
+  ctx.beginPath(); ctx.arc(28, -25, 16, -Math.PI/2, Math.PI/2); ctx.stroke();
+  
+  let mugG = ctx.createLinearGradient(-25, 0, 25, 0);
+  mugG.addColorStop(0, '#78909c'); mugG.addColorStop(0.3, '#cfd8dc'); mugG.addColorStop(1, '#607d8b');
+  ctx.fillStyle = mugG;
+  ctx.beginPath(); ctx.roundRect(-25, -60, 50, 65, 5); ctx.fill();
+  ctx.fillStyle = 'rgba(255, 179, 0, 0.85)';
+  ctx.beginPath(); ctx.roundRect(-21, -56, 42, 57, 3); ctx.fill();
+  ctx.fillStyle = '#fff'; // Foam
+  ctx.beginPath();
+  ctx.arc(-21, -56, 8, 0, Math.PI*2); ctx.arc(-10, -60, 10, 0, Math.PI*2);
+  ctx.arc(2, -57, 9, 0, Math.PI*2); ctx.arc(14, -61, 10, 0, Math.PI*2);
+  ctx.arc(21, -56, 8, 0, Math.PI*2); ctx.fill();
+  ctx.fillRect(-21, -56, 42, 8);
+  ctx.restore();
+
+  // Warm rim light from the fairy lights (fades at blackout)
+  let rim = t > 11.5 ? Math.max(0, (12-t)*2) : 1;
+  if (rim > 0) {
+    ctx.fillStyle = `rgba(255, 180, 80, ${0.06 * rim})`;
+    ctx.beginPath(); ctx.arc(0, -200, 180, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function updateParticles(ctx, t, dt) {
+  if (events.clink) {
+    for(let i=0; i<45; i++) {
+      particles.push({
+        x: 711 + (Math.random()-0.5)*30, // Approx global foam pos at apex
+        y: 359 + (Math.random()-0.5)*20,
+        vx: (Math.random()-0.5)*500,
+        vy: -Math.random()*450 - 150,
+        life: 1.0 + Math.random()*0.5,
+        r: Math.random()*7 + 3
+      });
+    }
+  }
+  ctx.fillStyle = '#fff';
+  for(let i=particles.length-1; i>=0; i--) {
+    let p = particles[i];
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    p.vy += 800 * dt; p.life -= dt * 0.8;
+    if (p.life <= 0) { particles.splice(i,1); continue; }
+    ctx.globalAlpha = Math.min(1, p.life);
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawOverlays(ctx, t) {
+  // Cinematic Vignette
+  let vg = ctx.createRadialGradient(640, 360, 300, 640, 360, 800);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.65)');
+  ctx.fillStyle = vg; ctx.fillRect(0,0,1280,720);
+
+  // Power surge flash
+  if (t >= 12.0 && t < 12.08) {
+    ctx.fillStyle = `rgba(255, 240, 200, ${(12.08 - t) * 4})`;
+    ctx.fillRect(0, 0, 1280, 720);
+  }
+
+  // "PROST!"
+  if (t >= 5.3 && t < 8.5) {
+    let pt = t - 5.3;
+    let scale = pt < 0.3 ? 0.5 + 0.5*(pt/0.3) + Math.sin((pt/0.3)*Math.PI)*0.3 : 1;
+    let alpha = pt > 2.0 ? 1 - (pt-2.0)/1.2 : 1;
+    
+    ctx.save();
+    ctx.translate(640, 260); ctx.scale(scale, scale);
+    ctx.globalAlpha = Math.max(0, alpha);
+    ctx.font = '900 130px system-ui, "Arial Black", sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.shadowBlur = 30; ctx.shadowColor = '#ffaa00';
+    ctx.lineWidth = 8; ctx.strokeStyle = '#5c2a00';
+    ctx.strokeText("PROST!", 0, 0);
+    let tg = ctx.createLinearGradient(0, -60, 0, 60);
+    tg.addColorStop(0, '#fff2a8'); tg.addColorStop(1, '#ffb300');
+    ctx.fillStyle = tg; ctx.fillText("PROST!", 0, 0);
+    ctx.restore();
+  }
+  
+  // "Bis nächstes Jahr!"
+  if (t >= 12.8) {
+    let alpha = Math.min(1, (t - 12.8) / 1.0);
+    if (t > 14.5) alpha = Math.max(0, 1 - (t - 14.5) / 0.5);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.font = 'italic 52px Georgia, "Times New Roman", serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#dce4f0';
+    ctx.shadowBlur = 12; ctx.shadowColor = '#88aaff';
+    ctx.fillText("Bis nächstes Jahr!", 640, 220);
+    ctx.restore();
+  }
+  
+  // Global Fade In / Out
+  if (t < 1.0) {
+    ctx.fillStyle = `rgba(0,0,0,${1 - t})`; ctx.fillRect(0,0,1280,720);
+  }
+  if (t > 14.7) {
+    ctx.fillStyle = `rgba(0,0,0,${(t - 14.7) / 0.3})`; ctx.fillRect(0,0,1280,720);
+  }
+}
+
+function loop(now) {
+  requestAnimationFrame(loop);
+  
+  let dt = (now - lastNow) / 1000;
+  if (dt > 0.1) dt = 0.1; // clamp tab-switch jumps
+  lastNow = now;
+  
+  // Drive time strictly from performance.now()
+  let t = ((now - epoch) / 1000) % DUR;
+  
+  checkAudio(t);
+  
+  ctx.clearRect(0, 0, 1280, 720);
+  drawBackground(ctx, t);
+  drawCharacter(ctx, t);
+  updateParticles(ctx, t, dt);
+  drawOverlays(ctx, t);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000;height:100%;overflow:hidden}canvas{position:absolute;left:50%;top:50%;transform-origin:0 0}</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+const c=document.getElementById('c'),g=c.getContext('2d');window.DUR=48;
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.transform`scale(${s})`;}
+function fit2(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.transform='scale('+s+') translate(-640px,-360px)';}
+fit2();onresize=fit2;
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t'))||0,st=performance.now();
+function R(i){const x=Math.sin(i*127.1)*43758.5453;return x-Math.floor(x)}
+const ez=x=>x<0?0:x>1?1:x*x*(3-2*x);
+const seg=(t,a,b)=>ez((t-a)/(b-a));
+function txt(s,x,y,sz,col,al,a){g.globalAlpha=a==null?1:a;g.fillStyle=col||'#dff';g.font=sz+'px sans-serif';g.textAlign=al||'left';g.fillText(s,x,y);g.globalAlpha=1}
+function bg(t){let gr=g.createLinearGradient(0,0,0,720);gr.addColorStop(0,'#02060f');gr.addColorStop(1,'#06182c');g.fillStyle=gr;g.fillRect(0,0,1280,720);
+for(let i=0;i<150;i++){g.fillStyle='rgba(255,255,255,'+(0.2+0.5*R(i+9)*(0.6+0.4*Math.sin(t*2+i)))+')';g.fillRect(R(i)*1280,R(i+500)*720,1.5,1.5)}}
+// Earth globe
+const NEMO={lat:-48.877,lon:-123.393};
+function globe(cx,cy,r,rot,t){
+let gr=g.createRadialGradient(cx-r*.3,cy-r*.3,r*.1,cx,cy,r);gr.addColorStop(0,'#1d6aa8');gr.addColorStop(1,'#04203c');
+g.fillStyle=gr;g.beginPath();g.arc(cx,cy,r,0,7);g.fill();
+g.save();g.beginPath();g.arc(cx,cy,r,0,7);g.clip();
+g.strokeStyle='rgba(150,220,255,.18)';g.lineWidth=1;
+for(let la=-60;la<=60;la+=30){const y=cy-Math.sin(la*Math.PI/180)*r,w=Math.cos(la*Math.PI/180)*r;g.beginPath();g.ellipse(cx,y,w,w*.12,0,0,7);g.stroke()}
+for(let lo=0;lo<180;lo+=30){const a=(lo*Math.PI/180+rot);g.beginPath();g.ellipse(cx,cy,Math.abs(Math.cos(a))*r,r,0,0,7);g.stroke()}
+// land blobs
+g.fillStyle='rgba(70,130,90,.55)';
+for(let i=0;i<28;i++){const lo=R(i)*360-180,la=(R(i+40)-.5)*120;if(lo>-140&&lo<-100&&la<-30)continue;
+const a=lo*Math.PI/180+rot,x=Math.sin(a)*Math.cos(la*Math.PI/180),z=Math.cos(a)*Math.cos(la*Math.PI/180);
+if(z>0){g.beginPath();g.ellipse(cx+x*r,cy-Math.sin(la*Math.PI/180)*r,(8+R(i+3)*20)*z,(6+R(i+4)*14),0,0,7);g.fill()}}
+g.restore();
+const a=NEMO.lon*Math.PI/180+rot,la=NEMO.lat*Math.PI/180,x=Math.sin(a)*Math.cos(la),z=Math.cos(a)*Math.cos(la);
+if(z>0){const px=cx+x*r,py=cy-Math.sin(la)*r;g.strokeStyle='#ff5a5a';g.lineWidth=2;g.beginPath();g.arc(px,py,6+4*Math.sin(t*5),0,7);g.stroke();g.fillStyle='#ff5a5a';g.beginPath();g.arc(px,py,3,0,7);g.fill();return[px,py]}
+return null}
+function scene(t){
+bg(t);
+if(t<12){ // intro + globe
+const k=seg(t,0,3);
+txt('POINT NEMO',640,90,54,'#fff','center',k);
+txt('48°52.6′S  123°23.6′W  ·  the oceanic pole of inaccessibility',640,128,20,'#8cc','center',k);
+const rot=-NEMO.lon*Math.PI/180+0.3-seg(t,2,10)*0.3;
+const r=200+seg(t,0,4)*40;
+const p=globe(640,420,r,t<2?t*.5-1.6:-(-NEMO.lon*Math.PI/180)*0+(-NEMO.lon*Math.PI/180)*-1+ -2.15+(-0.0),t);
+// simple fixed rotation facing Nemo
+const p2=globe(640,420,r,-NEMO.lon*Math.PI/180*-1+0,t);
+if(t>6){const k2=seg(t,6,8);txt('Nearest land: ~2,688 km in every direction',640,690,24,'#ffd27a','center',k2)}
+}else if(t<24){ // distance triangle
+const k=t-12;
+txt('THE LOOP OF EMPTINESS',640,70,40,'#fff','center',seg(k,0,1.5));
+const cx=640,cy=380,rr=Math.min(220,60+seg(k,.5,4)*170);
+g.fillStyle='rgba(20,90,150,.35)';g.beginPath();g.arc(cx,cy,rr,0,7);g.fill();
+g.strokeStyle='#5cf';g.lineWidth=2;g.stroke();
+g.fillStyle='#f55';g.beginPath();g.arc(cx,cy,6,0,7);g.fill();
+txt('Point Nemo',cx,cy+24,16,'#fff','center');
+const L=[['Ducie Island (Pitcairn)',-90,'N'],['Motu Nui (Easter Is.)',30,'NE'],['Maher Island (Antarctica)',150,'S']];
+L.forEach((l,i)=>{const kk=seg(k,3+i*1.2,4.5+i*1.2),a=l[1]*Math.PI/180;
+const x=cx+Math.cos(a)*rr*kk,y=cy+Math.sin(a)*rr*kk;
+g.strokeStyle='#ffd27a';g.setLineDash([6,5]);g.beginPath();g.moveTo(cx,cy);g.lineTo(x,y);g.stroke();g.setLineDash([]);
+g.fillStyle='#ffd27a';g.beginPath();g.arc(x,y,5,0,7);g.fill();
+const tx=x+(Math.cos(a)>=0?14:-14),al=Math.cos(a)>=0?'left':'right';
+txt(l[0],tx,y+(i==0?-8:6),16,'#fff',al,kk);txt('≈2,688 km',tx,y+(i==0?-26:24),16,'#ffd27a',al,kk)});
+txt('Radius ≈ 2,688 km · area larger than the whole of Europe’s ocean-free void',640,690,20,'#8cc','center',seg(k,8,10));
+}else if(t<36){ // altitude vs distance
+const k=t-24;
+txt('SPACE IS CLOSER THAN LAND',640,70,40,'#fff','center',seg(k,0,1.5));
+const bars=[['ISS orbit',408,'#6cf'],['Nearest human (ISS crew)',408,'#6cf'],['Nearest land',2688,'#ffd27a']];
+const mx=2688,x0=240,w=800;
+const items=[['Altitude of the ISS',408,'#6cf'],['Nearest land from Nemo',2688,'#ffd27a']];
+items.forEach((it,i)=>{const y=230+i*150,kk=seg(k,1.5+i*2.5,4.5+i*2.5);
+txt(it[0],x0,y-20,22,'#fff');
+g.fillStyle='rgba(255,255,255,.08)';g.fillRect(x0,y,w,50);
+g.fillStyle=it[2];g.fillRect(x0,y,w*it[1]/mx*kk,50);
+txt(Math.round(it[1]*kk).toLocaleString()+' km',x0+w*it[1]/mx*kk+12,y+34,28,'#fff')});
+txt('Astronauts on the ISS are often nearer to Nemo than any person on land.',640,560,22,'#ffd27a','center',seg(k,8,10));
+// orbiting dot
+const ox=640,oy=630,a=k*1.5;g.fillStyle='#fff';g.beginPath();g.arc(ox+Math.cos(a)*200,oy+Math.sin(a)*8,4,0,7);g.fill();
+}else{ // cemetery
+const k=t-36;
+txt('SPACECRAFT CEMETERY',640,70,40,'#fff','center',seg(k,0,1.5));
+// ocean surface
+g.fillStyle='#062a4a';g.fillRect(0,420,1280,300);
+g.strokeStyle='rgba(120,200,255,.3)';g.beginPath();for(let x=0;x<=1280;x+=10){const y=420+Math.sin(x*.02+t*2)*3;x?g.lineTo(x,y):g.moveTo(x,y)}g.stroke();
+// reentries
+for(let i=0;i<10;i++){const s=(k*.45+i*.31)%3.1/3.1;const bx=120+i*115+R(i)*40;const y=-20+s*440,x=bx-s*180;
+if(s<.97){g.strokeStyle='rgba(255,'+(150+R(i)*80|0)+',60,.7)';g.lineWidth=3;g.beginPath();g.moveTo(x+60*s,y-60*s);g.lineTo(x,y);g.stroke();
+g.fillStyle='#fff';g.beginPath();g.arc(x,y,4,0,7);g.fill()}}
+// debris on seabed
+g.fillStyle='#03101e';g.fillRect(0,640,1280,80);
+for(let i=0;i<260;i++){const kk=seg(k,3,10);if(i/260>kk)continue;g.fillStyle='rgba(255,170,90,.8)';g.fillRect(100+R(i+7)*1080,645+R(i+8)*60,3,3)}
+txt('Since 1971: 260+ spacecraft retired here',640,605,26,'#ffd27a','center',seg(k,3,5));
+txt('Mir (2001, 120 t) · Progress & ATV cargo ships · ISS planned ~2031',640,690,19,'#bde','center',seg(k,6,8));
+txt('Seabed ≈ 4,000 m',1250,700,16,'#79a','right');
+}}
+function loop(){const t=((performance.now()-st)/1000+off)%DUR;g.clearRect(0,0,1280,720);scene(t);
+const f=Math.min(seg(t,0,1),1-seg(t,DUR-1,DUR));g.fillStyle='rgba(0,0,0,'+(1-f)+')';g.fillRect(0,0,1280,720);requestAnimationFrame(loop)}
+loop();
+</script></body></html>

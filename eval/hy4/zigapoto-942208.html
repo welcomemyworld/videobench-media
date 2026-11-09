@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>NEXUS // Agentic Analytics</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #stage {
+    width: 1280px; height: 720px;
+    position: relative;
+    transform-origin: center center;
+    background: #050508;
+    box-shadow: 0 0 80px rgba(0, 240, 255, 0.05);
+  }
+  canvas { display: block; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c"></canvas></div>
+<script>
+const c = document.getElementById('c');
+const ctx = c.getContext('2d', { alpha: false });
+const W = 1280, H = 720;
+c.width = W; c.height = H;
+ctx.imageSmoothingEnabled = true;
+
+window.DUR = 15;
+const params = new URLSearchParams(location.search);
+let startT = parseFloat(params.get('t')) || 0;
+let baseTime = null;
+
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  document.getElementById('stage').style.transform = `scale(${s})`;
+}
+window.addEventListener('resize', resize);
+resize();
+
+const FONT = 'system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif';
+const MONO = '"Courier New", Courier, monospace';
+const CYAN = '0,240,255';
+const RED = '255,0,60';
+
+function rnd(n) { return Math.abs(Math.sin(n * 12.9898) * 43758.5453) % 1; }
+
+function text(str, x, y, size, color, align='center', weight=900, font=FONT, alpha=1) {
+  if(alpha <= 0) return;
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  ctx.font = `${weight} ${size}px ${font}`;
+  ctx.textAlign = align;
+  ctx.textBaseline = 'middle';
+  ctx.fillText(str, x, y);
+  ctx.globalAlpha = 1;
+}
+
+function notchedRect(x, y, w, h, n) {
+  ctx.beginPath();
+  ctx.moveTo(x+n, y); ctx.lineTo(x+w, y); ctx.lineTo(x+w, y+h-n);
+  ctx.lineTo(x+w-n, y+h); ctx.lineTo(x, y+h); ctx.lineTo(x, y+n);
+  ctx.closePath();
+}
+
+function drawGrid(t, pulse) {
+  ctx.strokeStyle = `rgba(${CYAN}, ${0.03 + pulse*0.03})`;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  let offset = (t * 20) % 40;
+  for(let x = -40; x <= W + 40; x += 40) { ctx.moveTo(x - offset, 0); ctx.lineTo(x - offset, H); }
+  for(let y = -40; y <= H + 40; y += 40) { ctx.moveTo(0, y - offset); ctx.lineTo(W, y - offset); }
+  ctx.stroke();
+}
+
+function drawVisualizer(t, pulse) {
+  let bars = 64;
+  let bw = W / bars;
+  let alpha = t > 12 ? Math.max(0, 1 - (t-12)*3) : 0.45;
+  if (alpha <= 0) return;
+  
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  for(let i=0; i<bars; i++) {
+    let dist = Math.abs(i - bars/2) / (bars/2);
+    let base = (1 - dist) * 40; 
+    let noise = rnd(Math.floor(t*24) + i) * 35;
+    let h = base + noise + pulse * (1-dist) * 90;
+    
+    ctx.fillStyle = `rgba(${CYAN}, ${alpha * 0.6})`;
+    ctx.fillRect(i*bw + 2, H - h, bw - 4, h);
+    ctx.fillStyle = `rgba(${RED}, ${alpha})`;
+    ctx.fillRect(i*bw + 2, H - h - 4, bw - 4, 2);
+  }
+  ctx.restore();
+}
+
+function drawOverlay(t) {
+  ctx.fillStyle = 'rgba(255,255,255,0.015)';
+  for(let y=0; y<H; y+=4) ctx.fillRect(0, y, W, 1);
+  
+  let seed = Math.floor(t*15);
+  if (rnd(seed) > 0.85 && t < 12) {
+    let gy = rnd(seed) * H;
+    let gh = 10 + rnd(seed+1)*50;
+    ctx.fillStyle = `rgba(${CYAN},0.12)`;
+    ctx.fillRect(0, gy, W, gh);
+    ctx.fillStyle = `rgba(${RED},0.12)`;
+    ctx.fillRect(rnd(seed+2)*100 - 50, gy, W, gh);
+  }
+}
+
+// --- SCENES ---
+
+function scene1(t, beat, pulse) {
+  let snap = Math.max(0, (t - 2.5) / 0.5); 
+  snap = 1 - Math.pow(1 - snap, 3);
+  
+  ctx.fillStyle = `rgb(${CYAN})`;
+  for(let i=0; i<300; i++) {
+    let cx = rnd(i) * W, cy = rnd(i+100) * H;
+    let px = cx + Math.sin(t * 5 + i) * 60 * (1 - snap);
+    let py = cy + Math.cos(t * 4 + i*1.1) * 60 * (1 - snap);
+    let gx = Math.round(cx / 40) * 40, gy = Math.round(cy / 40) * 40;
+    let fx = px + (gx - px) * snap, fy = py + (gy - py) * snap;
+    
+    ctx.globalAlpha = 0.2 + rnd(i+200)*0.6;
+    ctx.fillRect(fx - 2, fy - 2, 4, 4);
+  }
+  ctx.globalAlpha = 1;
+  
+  let words = ["DATA", "IS", "CHAOS"];
+  let wTimes = [0.5, 1.0, 1.5];
+  for(let i=0; i<3; i++) {
+    let dt = t - wTimes[i];
+    if(dt > 0 && dt < 0.45) {
+      let p = dt / 0.45;
+      let scale = 1 + (1-p)*1.5;
+      let alpha = Math.min(1, p*8) * (1-p);
+      ctx.save();
+      ctx.translate(W/2, H/2);
+      ctx.scale(scale, scale);
+      text(words[i], 8, 8, 150, `rgba(${RED},${alpha})`, 'center', 900);
+      text(words[i], -8, -8, 150, `rgba(${CYAN},${alpha})`, 'center', 900);
+      text(words[i], 0, 0, 150, `rgba(255,255,255,${alpha})`, 'center', 900);
+      ctx.restore();
+    }
+  }
+}
+
+function scene2(t, beat, pulse) {
+  let st = t - 3;
+  ctx.fillStyle = 'rgba(255,255,255,0.15)';
+  for(let x=0; x<=W; x+=80) for(let y=0; y<=H; y+=80) ctx.fillRect(x-1, y-1, 2, 2);
+  
+  let num = 12, nodes = [];
+  for(let i=0; i<num; i++) {
+    let p = Math.min(1, Math.max(0, (st - i*0.12) / 1.0));
+    let ease = 1 - Math.pow(1-p, 3);
+    let sx = rnd(i)*W, sy = rnd(i+50)*H;
+    let tx = W/2 + Math.cos(i * Math.PI*2/num) * 320;
+    let ty = H/2 + Math.sin(i * Math.PI*2/num) * 220;
+    let nx = sx + (tx - sx)*ease, ny = sy + (ty - sy)*ease;
+    nodes.push({x:nx, y:ny, p:ease});
+    
+    ctx.strokeStyle = `rgba(${CYAN}, ${0.4 * (1-ease)})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(nx, ny); ctx.stroke();
+    
+    ctx.save();
+    ctx.translate(nx, ny); ctx.rotate(t * 4 + i);
+    ctx.fillStyle = `rgb(${RED})`;
+    ctx.beginPath(); ctx.moveTo(0, -9); ctx.lineTo(8, 7); ctx.lineTo(-8, 7); ctx.fill();
+    ctx.restore();
+  }
+  
+  ctx.strokeStyle = `rgba(${CYAN}, ${0.25 + pulse*0.4})`;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for(let i=1; i<nodes.length; i++) {
+    if(nodes[i].p > 0.8 && nodes[0].p > 0.8) {
+      ctx.moveTo(nodes[0].x, nodes[0].y); ctx.lineTo(nodes[i].x, nodes[i].y);
+    }
+    let next = (i + 1) % nodes.length;
+    if (next !== 0 && nodes[i].p > 0.8 && nodes[next].p > 0.8) {
+      ctx.moveTo(nodes[i].x, nodes[i].y); ctx.lineTo(nodes[next].x, nodes[next].y);
+    }
+  }
+  ctx.stroke();
+  
+  let words = ["DEPLOY", "AGENTS"];
+  let wTimes = [3.5, 4.5];
+  for(let i=0; i<2; i++) {
+    let dt = t - wTimes[i];
+    if(dt > 0 && dt < 1) {
+      let p = dt, x = W/2 + (i===0 ? -220 : 220), y = H/2 + (i===0 ? -120 : 120);
+      let scale = 1 + (1-p)*0.6;
+      ctx.save();
+      ctx.translate(x, y); ctx.scale(scale, scale);
+      text(words[i], 0, 0, 85, '#ffffff', 'center', 900, FONT, Math.min(1, p*6));
+      ctx.restore();
+    }
+  }
+}
+
+function scene3(t, beat, pulse) {
+  let st = t - 6;
+  let uiP = Math.min(1, st * 3);
+  let easeUi = 1 - Math.pow(1 - uiP, 3);
+  
+  ctx.save();
+  ctx.translate(W/2, H/2);
+  ctx.scale(easeUi, easeUi);
+  
+  ctx.fillStyle = 'rgba(10, 15, 30, 0.75)';
+  ctx.strokeStyle = `rgba(${CYAN}, ${0.4 + pulse*0.4})`;
+  ctx.lineWidth = 2;
+  notchedRect(-420, -260, 840, 520, 40);
+  ctx.fill(); ctx.stroke();
+  
+  ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(-380, -200); ctx.lineTo(-380, -180); ctx.lineTo(-200, -180);
+  ctx.moveTo(380, 200); ctx.lineTo(380, 180); ctx.lineTo(200, 180);
+  for(let y=-150; y<=150; y+=75) { ctx.moveTo(-350, y); ctx.lineTo(350, y); }
+  ctx.stroke();
+  
+  text("SYS.ANALYTICS_V1", -370, -220, 14, `rgb(${CYAN})`, 'left', 600, MONO, 0.8);
+  text("LIVE FEED", 370, 220, 14, `rgb(${RED})`, 'right', 600, MONO, 0.8);
+  
+  for(let i=0; i<7; i++) {
+    let barSt = st - i*0.25;
+    if(barSt > 0) {
+      let p = Math.min(1, barSt * 6);
+      let eh = 1 - Math.pow(1-p, 3);
+      let h = (60 + rnd(i)*180) * eh;
+      ctx.fillStyle = i%2===0 ? `rgb(${CYAN})` : `rgb(${RED})`;
+      ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 15;
+      ctx.fillRect(-330 + i*95, 210 - h, 65, h);
+      ctx.shadowBlur = 0;
+    }
+  }
+  
+  if(st > 1) {
+    let cp = Math.min(1, (st - 1) / 1.5);
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 4;
+    ctx.shadowColor = '#fff'; ctx.shadowBlur = 12;
+    ctx.beginPath();
+    for(let i=0; i<=100*cp; i++) {
+      let px = -350 + (i/100)*700;
+      let py = 150 - (Math.sin(i/10)*50 + i*1.2 + rnd(i)*20);
+      if(i===0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke(); ctx.shadowBlur = 0;
+  }
+  ctx.restore();
+  
+  if (t > 7.5) {
+    let dt = t - 7.5;
+    let p = Math.min(1, dt * 5);
+    let shake = Math.sin(dt*60)*25*(1-p);
+    let x = W/2 + shake, yOff = (1-p)*60;
+    
+    ctx.fillStyle = `rgba(5,5,8,${p*0.75})`;
+    ctx.fillRect(0, H/2 - 130, W, 260);
+    
+    text("AGENTIC", x + 12*(1-p), H/2 - 50 - yOff, 115, `rgba(${RED},${p*0.8})`, 'center', 900);
+    text("AGENTIC", x - 12*(1-p), H/2 - 50 - yOff, 115, `rgba(${CYAN},${p*0.8})`, 'center', 900);
+    text("AGENTIC", x, H/2 - 50 - yOff, 115, '#ffffff', 'center', 900, FONT, p);
+    text("ANALYTICS", x, H/2 + 65 + yOff, 115, '#ffffff', 'center', 900, FONT, p);
+  }
+}
+
+function scene4(t, beat, pulse) {
+  let st = t - 9;
+  ctx.save();
+  ctx.translate(W/2, H/2);
+  for(let i=0; i<70; i++) {
+    let a = rnd(i)*Math.PI*2;
+    let speed = 250 + rnd(i+10)*700;
+    let r = ((st * speed) + rnd(i+20)*1000) % 900;
+    let r2 = r + 60 + pulse*120;
+    let x1 = Math.cos(a)*r, y1 = Math.sin(a)*r;
+    let x2 = Math.cos(a)*r2, y2 = Math.sin(a)*r2;
+    ctx.strokeStyle = `rgba(${rnd(i)>0.5?CYAN:RED}, ${Math.min(1, r/250)})`;
+    ctx.lineWidth = 2 + r/200;
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  }
+  ctx.restore();
+  
+  let words = ["AUTONOMOUS", "PREDICTIVE", "REAL-TIME", "ACTIONABLE", "UNSTOPPABLE", "INTELLIGENCE"];
+  let wIdx = Math.floor(st / 0.5);
+  if (wIdx >= 0 && wIdx < words.length) {
+    let bt = st % 0.5, p = bt / 0.5;
+    let scale = 1 + (1-p)*0.4;
+    let alpha = Math.min(1, p*15) * (1 - Math.pow(p, 5));
+    ctx.save();
+    ctx.translate(W/2 + (rnd(wIdx)-0.5)*160, H/2 + (rnd(wIdx+5)-0.5)*120);
+    ctx.scale(scale, scale);
+    ctx.rotate((rnd(wIdx+2)-0.5)*0.15);
+    text(words[wIdx], 10, 10, 105, `rgba(${RED},${alpha*0.8})`, 'center', 900);
+    text(words[wIdx], -10, -10, 105, `rgba(${CYAN},${alpha*0.8})`, 'center', 900);
+    text(words[wIdx], 0, 0, 105, `rgba(255,255,255,${alpha})`, 'center', 900);
+    ctx.restore();
+  }
+  
+  if (t > 11.5) {
+    let p = (t - 11.5) / 0.5;
+    ctx.fillStyle = `rgba(0,0,0,${p})`;
+    ctx.fillRect(0,0,W,H);
+  }
+}
+
+function scene5(t, beat, pulse) {
+  let st = t - 12;
+  let drawP = Math.min(1, st / 1.0);
+  let ease = 1 - Math.pow(1-drawP, 3);
+  
+  ctx.save();
+  ctx.translate(W/2, H/2 - 50);
+  ctx.scale(1 + pulse*0.02, 1 + pulse*0.02);
+  
+  ctx.strokeStyle = `rgb(${CYAN})`;
+  ctx.lineWidth = 8; ctx.lineJoin = 'round';
+  ctx.shadowColor = `rgb(${CYAN})`; ctx.shadowBlur = 20;
+  ctx.beginPath();
+  for(let i=0; i<=6; i++) {
+    let a = (i/6)*Math.PI*2 - Math.PI/2, r = 90;
+    let px = Math.cos(a)*r, py = Math.sin(a)*r;
+    if (ease * 6 >= i) {
+      if(i===0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    } else if (ease * 6 > i-1) {
+      let partial = (ease * 6) - (i-1);
+      let pa = ((i-1)/6)*Math.PI*2 - Math.PI/2;
+      let sx = Math.cos(pa)*r, sy = Math.sin(pa)*r;
+      if(i===1) ctx.moveTo(sx, sy);
+      ctx.lineTo(sx + (px-sx)*partial, sy + (py-sy)*partial);
+    }
+  }
+  ctx.stroke(); ctx.shadowBlur = 0;
+  
+  if (st > 0.5) {
+    let cp = Math.min(1, (st-0.5)*2);
+    ctx.fillStyle = `rgb(${RED})`;
+    ctx.shadowColor = `rgb(${RED})`; ctx.shadowBlur = 15;
+    ctx.rotate(t);
+    ctx.beginPath();
+    ctx.moveTo(0, -32*cp); ctx.lineTo(32*cp, 0); ctx.lineTo(0, 32*cp); ctx.lineTo(-32*cp, 0);
+    ctx.fill(); ctx.shadowBlur = 0;
+  }
+  ctx.restore();
+  
+  if (st > 1.0) {
+    let tp = Math.min(1, (st-1.0)*3);
+    let easeT = 1 - Math.pow(1-tp, 3);
+    let str = "NEXUS // AGENTIC ANALYTICS";
+    ctx.font = `900 46px ${FONT}`;
+    let tw = ctx.measureText(str).width;
+    let spacing = 25 * (1-easeT);
+    
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = `rgba(255,255,255,${easeT})`;
+    let cx = W/2 - (tw + (str.length-1)*spacing)/2;
+    for(let i=0; i<str.length; i++) {
+      ctx.fillText(str[i], cx, H/2 + 110);
+      cx += ctx.measureText(str[i]).width + spacing;
+    }
+    
+    ctx.fillStyle = `rgba(${CYAN}, ${easeT})`;
+    ctx.fillRect(W/2 - 190*easeT, H/2 + 155, 380*easeT, 2);
+  }
+  
+  if (st > 2.0) {
+    let blink = Math.floor(st*4)%2===0 ? 1 : 0.2;
+    text("> INITIATE SEQUENCE_", W/2, H/2 + 195, 20, `rgba(${CYAN}, ${blink})`, 'center', 600, MONO);
+  }
+}
+
+function draw(now) {
+  if (baseTime === null) baseTime = now;
+  let t = ((now - baseTime) / 1000 + startT) % window.DUR;
+  let beatT = t % 0.5;
+  let beat = Math.floor(t / 0.5);
+  let pulse = Math.pow(1 - (beatT / 0.5), 4);
+  
+  ctx.fillStyle = '#050508';
+  ctx.fillRect(0, 0, W, H);
+  
+  ctx.save();
+  if (t > 0.5 && t < 12) {
+    let zoom = 1 + pulse * 0.012;
+    let dx = (rnd(beat)-0.5) * pulse * 6;
+    let dy = (rnd(beat+1)-0.5) * pulse * 6;
+    ctx.translate(W/2 + dx, H/2 + dy);
+    ctx.scale(zoom, zoom);
+    ctx.translate(-W/2, -H/2);
+  }
+  drawGrid(t, pulse);
+  if (t < 3) scene1(t, beat, pulse);
+  else if (t < 6) scene2(t, beat, pulse);
+  else if (t < 9) scene3(t, beat, pulse);
+  else if (t < 12) scene4(t, beat, pulse);
+  else scene5(t, beat, pulse);
+  ctx.restore();
+  
+  // Beat-aligned cut flashes
+  let cuts = [3, 6, 9, 12];
+  let cutColors = ['255,255,255', CYAN, RED, '255,255,255'];
+  for(let i=0; i<cuts.length; i++) {
+    let dt = t - cuts[i];
+    if (dt > -0.1 && dt < 0.1) {
+      ctx.fillStyle = `rgba(${cutColors[i]},${1 - Math.abs(dt)/0.1})`;
+      ctx.fillRect(0,0,W,H);
+    }
+  }
+  
+  drawVisualizer(t, pulse);
+  drawOverlay(t);
+  
+  let grad = ctx.createRadialGradient(W/2, H/2, 300, W/2, H/2, 900);
+  grad.addColorStop(0, 'rgba(0,0,0,0)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.85)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

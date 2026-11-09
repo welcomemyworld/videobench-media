@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Claude Pop — Paper Singularity</title>
+<style>
+*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;background:#000;overflow:hidden}body{display:flex;align-items:center;justify-content:center}canvas{display:block;width:min(100vw,177.77778vh);height:min(100vh,56.25vw)}
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720" aria-label="Claude Pop: an original animated paper-cut visual concept about accelerating AI progress. The source audio and lyrics were not provided."></canvas>
+<script>
+"use strict";
+window.DUR=40;
+const canvas=document.getElementById("stage"),c=canvas.getContext("2d");
+const W=1280,H=720,PI=Math.PI,TAU=PI*2;
+const P={paper:"#eee8d9",white:"#fff9e9",ink:"#252d31",coral:"#e97050",red:"#d54b36",lime:"#dbe778",blue:"#4875b5",pale:"#abc6d2",gray:"#b7b8a6"};
+const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const mix=(a,b,t)=>a+(b-a)*t;
+const ease=t=>1-Math.pow(1-clamp(t),3);
+const smooth=t=>{t=clamp(t);return t*t*(3-2*t)};
+let seed=9231;
+function rand(){seed=(seed*1664525+1013904223)>>>0;return seed/4294967296}
+function save(){c.save()}function restore(){c.restore()}
+function line(x,y,X,Y,col=P.ink,w=2){c.beginPath();c.moveTo(x,y);c.lineTo(X,Y);c.strokeStyle=col;c.lineWidth=w;c.stroke()}
+function poly(points,col,stroke=null,w=2){c.beginPath();points.forEach((p,i)=>i?c.lineTo(...p):c.moveTo(...p));c.closePath();c.fillStyle=col;c.fill();if(stroke){c.strokeStyle=stroke;c.lineWidth=w;c.stroke()}}
+function ellipse(x,y,rx,ry,col,angle=0){c.beginPath();c.ellipse(x,y,rx,ry,angle,0,TAU);c.fillStyle=col;c.fill()}
+function rect(x,y,w,h,col){c.fillStyle=col;c.fillRect(x,y,w,h)}
+function text(s,x,y,size=24,col=P.ink,weight=700,font="Arial",align="left"){
+c.fillStyle=col;c.font=`${weight} ${size}px ${font}`;c.textAlign=align;c.textBaseline="alphabetic";c.fillText(s,x,y)}
+function tracked(s,x,y,size,col,spacing=3){
+c.font=`600 ${size}px Arial`;c.fillStyle=col;c.textAlign="left";for(const k of s){c.fillText(k,x,y);x+=c.measureText(k).width+spacing}}
+function star(x,y,r,col,n=12,phase=0,inner=.53){
+let a=[];for(let i=0;i<n*2;i++){let q=phase+i*PI/n,d=i%2?r*inner:r;a.push([x+Math.cos(q)*d,y+Math.sin(q)*d])}poly(a,col)}
+function paper(x,y,w,h,col,angle=0,shadow=8){
+save();c.translate(x,y);c.rotate(angle);rect(-w/2+shadow,-h/2+shadow,w,h,"rgba(37,45,49,.14)");
+poly([[-w/2,-h/2],[w/2-3,-h/2+1],[w/2,h/2-2],[-w/2+2,h/2]],col);restore()}
+function arrow(x,y,X,Y,col=P.ink,w=3){
+line(x,y,X,Y,col,w);let a=Math.atan2(Y-y,X-x);poly([[X,Y],[X-15*Math.cos(a-.45),Y-15*Math.sin(a-.45)],[X-15*Math.cos(a+.45),Y-15*Math.sin(a+.45)]],col)}
+function hatch(x,y,w,h,col,step=9){save();c.beginPath();c.rect(x,y,w,h);c.clip();for(let i=-h;i<w+h;i+=step)line(x+i,y+h,x+i+h,y,col,1);restore()}
+const grain=document.createElement("canvas");grain.width=320;grain.height=180;
+const gc=grain.getContext("2d"),gd=gc.createImageData(320,180);
+for(let i=0;i<gd.data.length;i+=4){let v=rand()>.5?30:250;gd.data[i]=gd.data[i+1]=gd.data[i+2]=v;gd.data[i+3]=Math.floor(rand()*29)}
+gc.putImageData(gd,0,0);
+const dust=Array.from({length:170},()=>({x:rand()*W,y:rand()*H,r:rand()*1.4+.2}));
+function texture(){
+save();c.globalAlpha=.52;c.drawImage(grain,0,0,W,H);c.globalAlpha=.12;
+for(const p of dust)ellipse(p.x,p.y,p.r,p.r,P.ink);
+restore()}
+function grid(col,step=44,alpha=.1){save();c.globalAlpha=alpha;for(let x=0;x<W;x+=step)line(x,0,x,H,col,1);for(let y=0;y<H;y+=step)line(0,y,W,y,col,1);restore()}
+function frame(t,index,bg=P.ink){
+line(36,40,66,40,bg,1);line(36,40,36,70,bg,1);
+line(1244,40,1214,40,bg,1);line(1244,40,1244,70,bg,1);
+tracked("CLAUDE POP",54,32,12,bg,2);
+text("PAPER SINGULARITY",1225,32,11,bg,500,"Arial","right");
+text(String(index+1).padStart(2,"0")+" / 06",54,686,12,bg,600,"monospace");
+line(190,682,1090,682,bg,1);
+rect(190,679,900*t/window.DUR,6,bg);
+text("VISUAL CONCEPT",1226,686,11,bg,500,"Arial","right");
+}
+function limb(x,y,X,Y,width,col){
+let a=Math.atan2(Y-y,X-x),nx=Math.sin(a)*width/2,ny=-Math.cos(a)*width/2;
+poly([[x+nx,y+ny],[X+nx,Y+ny],[X-nx,Y-ny],[x-nx,y-ny]],col);
+ellipse(x,y,width/2,width/2,col);ellipse(X,Y,width/2,width/2,col)}
+function character(x,y,scale,t,mode=0,variant=0){
+save();c.translate(x,y);c.scale(scale,scale);
+let b=t*TAU*2,bounce=Math.sin(b),side=Math.sin(b/2);
+let pose=mode===2?0:bounce;
+c.translate(side*(mode===2?1:8),mode===2?0:-Math.abs(pose)*9);
+let coat=variant===1?P.blue:variant===2?P.lime:P.white;
+let petal=variant===1?P.lime:variant===2?P.pale:P.coral;
+ellipse(0,3,69,12,"rgba(37,45,49,.17)");
+if(mode===2){
+limb(-19,-99,-40,-62,18,P.ink);limb(-40,-62,-37,-8,13,P.ink);
+limb(20,-98,46,-62,18,P.ink);limb(46,-62,55,-8,13,P.ink);
+poly([[-46,-14],[-28,-14],[-21,0],[-51,0]],P.ink);
+poly([[43,-14],[60,-14],[75,0],[40,0]],P.ink);
+}else{
+let lk=-19+side*18,rk=20-side*16;
+limb(-20,-112,lk,-57,17,P.ink);limb(lk,-57,lk-10*pose,-8,12,P.ink);
+limb(20,-112,rk,-57,17,P.ink);limb(rk,-57,rk+14*pose,-8-Math.max(0,pose)*13,12,P.ink);
+poly([[lk-10*pose-9,-17],[lk-10*pose+9,-17],[lk-10*pose+15,0],[lk-10*pose-18,0]],P.ink);
+poly([[rk+14*pose-8,-17-Math.max(0,pose)*13],[rk+14*pose+8,-17-Math.max(0,pose)*13],[rk+14*pose+24,-Math.max(0,pose)*13],[rk+14*pose-8,-Math.max(0,pose)*13]],P.ink);
+}
+save();c.translate(0,-139);c.rotate(side*.045);
+poly([[-27,-30],[29,-30],[47,27],[-45,27]],P.ink);
+for(let i=0;i<7;i++)line(-34+i*11,5,-39+i*12,24,P.gray,1);
+poly([[-40,-89],[-17,-101],[19,-101],[42,-87],[35,-30],[-31,-30]],coat,P.ink,1.7);
+poly([[-20,-98],[-3,-58],[-7,-34],[-31,-40]],coat===P.white?P.paper:coat);
+line(-20,-98,-3,-58,P.ink,2);line(-3,-58,19,-98,P.ink,2);
+poly([[-10,-87],[10,-87],[14,-42],[-13,-42]],P.coral);
+line(-31,-44,35,-44,P.ink,2);
+ellipse(21,-51,3,3,P.ink);
+let lEl=[-61,-60],rEl=[61,-64],lHand=[-69,-21],rHand=[81,-104];
+if(mode===1){lEl=[-63,-101];rEl=[68,-97];lHand=[-89,-147+pose*16];rHand=[99,-148-pose*16]}
+if(mode===2){lEl=[-41,-42];rEl=[40,-45];lHand=[-21,-144];rHand=[24,-145]}
+if(mode===0){lEl=[-66,-73+pose*16];rEl=[65,-77-pose*17];lHand=[-94,-106+pose*30];rHand=[91,-119-pose*28]}
+limb(-33,-83,lEl[0],lEl[1],25,coat);limb(lEl[0],lEl[1],lHand[0],lHand[1],20,coat);
+limb(33,-83,rEl[0],rEl[1],25,coat);limb(rEl[0],rEl[1],rHand[0],rHand[1],20,coat);
+ellipse(lHand[0],lHand[1],9,12,P.paper,-.3);ellipse(rHand[0],rHand[1],9,12,P.paper,.3);
+rect(-9,-112,18,20,P.paper);
+save();c.translate(side*4,-139);c.rotate(mode===2?-.12:side*.075);
+for(let i=0;i<13;i++){
+let a=i*TAU/13-.1;
+poly([[Math.cos(a-.13)*33,Math.sin(a-.13)*33],
+[Math.cos(a-.2)*59,Math.sin(a-.2)*59],
+[Math.cos(a+.04)*70,Math.sin(a+.04)*70],
+[Math.cos(a+.2)*54,Math.sin(a+.2)*54],
+[Math.cos(a+.13)*33,Math.sin(a+.13)*33]],petal,P.ink,1.2);
+}
+ellipse(0,0,41,45,P.ink);
+poly([[-27,-28],[-8,-39],[19,-35],[32,-16],[30,15],[15,33],[-9,36],[-29,20],[-32,-7]],P.paper);
+poly([[-31,-9],[-29,-30],[-8,-43],[22,-36],[33,-16],[10,-25],[-5,-10],[-9,-24]],P.ink);
+let blink=Math.sin(t*1.7)> .986;
+if(blink||mode===2){line(-21,1,-9,3,P.ink,2);line(8,3,20,1,P.ink,2)}
+else{ellipse(-15,1,3.3,4.6,P.ink);ellipse(14,1,3.3,4.6,P.ink);
+line(-19,-3,-24,-6,P.ink,1.5);line(17,-3,22,-6,P.ink,1.5)}
+line(-1,5,-3,12,P.coral,1.5);
+if(mode===2)line(-5,23,5,23,P.ink,1.5);
+else{c.beginPath();c.moveTo(-7,20);c.quadraticCurveTo(1,26,10,18);c.strokeStyle=P.ink;c.lineWidth=1.8;c.stroke()}
+ellipse(-22,13,6,3,"rgba(233,112,80,.3)");ellipse(22,13,6,3,"rgba(233,112,80,.3)");
+restore();restore();restore();
+}
+function label(s,x,y,col=P.ink){tracked(s,x,y,12,col,2)}
+function big(s,x,y,size,col=P.ink){text(s,x,y,size,col,900,"Arial Black, Arial")}
+function ribbon(s,y,t,col=P.ink,bg=P.lime){
+rect(0,y,W,38,bg);save();c.beginPath();c.rect(0,y,W,38);c.clip();
+for(let i=-1;i<5;i++)tracked(s,i*435-(t*70%435),y+25,14,col,2);
+restore()}
+function opening(u,t){
+rect(0,0,W,H,P.coral);
+save();c.translate(965,351);c.rotate(-.1+Math.sin(t)*.03);
+star(0,0,318,P.ink,16,t*.045,.82);
+star(0,0,284,P.paper,16,t*.045+.025,.79);
+restore();
+let e=ease(u/.7),dx=(1-e)*-90;
+save();c.translate(dx,0);
+label("AN ORIGINAL PAPER-CUT VISUAL TREATMENT",64,105);
+big("THE FUTURE",58,222,94);
+big("WON’T",58,329,119);
+big("HOLD STILL.",58,431,92);
+paper(281,490,421,50,P.lime,-.018);
+tracked("PROGRESS HAS A NEW TEMPO.",89,496,17,P.ink,1.4);
+restore();
+character(960,616,1.57,t,1);
+for(let i=0;i<7;i++){let a=i*TAU/7+t*.3;star(958+Math.cos(a)*290,351+Math.sin(a)*275,9,P.paper,4,t,.35)}
+line(64,558,592,558,P.ink,1);
+text("CLAUDE",62,630,65,P.ink,900,"Arial Black, Arial");
+text("POP",338,630,65,P.paper,900,"Arial Black, Arial");
+text("01 — THE HOOK",583,621,12,P.ink,500,"monospace","right");
+}
+function acceleration(u,t){
+rect(0,0,W,H,P.paper);grid(P.ink,48,.065);
+label("02 / EVERY DAY, A LITTLE LESS IMPOSSIBLE",64,102);
+big("A YEAR.",60,191,77);
+big("A MONTH.",60,278,77);
+big("A MINUTE.",60,365,77,P.red);
+text("The distance between breakthroughs",64,414,23,P.ink,500);
+text("keeps getting smaller.",64,447,23,P.ink,500);
+const pts=[];for(let i=0;i<70;i++){let x=560+i*8.3,y=556-450*Math.pow(i/69,3.5);pts.push([x,y])}
+poly([[560,575],...pts,[1133,575]],P.lime);
+c.beginPath();pts.forEach((p,i)=>i?c.lineTo(...p):c.moveTo(...p));c.strokeStyle=P.ink;c.lineWidth=4;c.stroke();
+for(let i=0;i<9;i++){
+let q=(i/9+u*.085)%1,x=560+q*573,y=556-450*Math.pow(q,3.5);
+ellipse(x,y,8,8,P.red);ellipse(x,y,3,3,P.paper);
+}
+arrow(1125,151,1148,79,P.ink,4);
+label("RATE OF PROGRESS",798,617);
+character(972,601,1.12,t,0);
+paper(263,545,394,88,P.blue,-.04);
+text("THE TIMELINE",85,540,22,P.white,800);
+text("IS COMPRESSING.",85,569,26,P.white,800);
+for(let i=0;i<17;i++){
+let x=614+i*30;line(x,594,x,602,P.ink,1);
+}
+}
+function math(u,t){
+rect(0,0,W,H,P.blue);
+for(let k=0;k<8;k++){
+let pts=[[0,720],[0,365+k*37]];
+for(let x=0;x<=W;x+=12)pts.push([x,365+k*37+Math.sin(x*.008+t*(.7+k*.04)+k)*19+Math.cos(x*.014-t)*10]);
+pts.push([W,H]);poly(pts,k%2?P.pale:P.paper);
+}
+label("03 / EVEN THE HARD PROBLEMS FEEL THE TIDE",64,102,P.white);
+big("WHAT IF",60,200,83,P.white);
+big("THE WALL",60,291,83,P.white);
+big("IS A DOOR?",60,382,83,P.lime);
+const cards=[["∂u / ∂t","+(u · ∇)u = −∇p + νΔu"],["P ≟ NP","STILL A QUESTION"],["∫  ∑  ∞","PROOF / SEARCH / REPEAT"]];
+for(let i=0;i<3;i++){
+let x=830+i*122,y=190+i*127+Math.sin(t*1.4+i)*13;
+save();c.translate(x,y);c.rotate((i-1)*.085+Math.sin(t+i)*.025);
+paper(0,0,266,125,P.white,0,7);
+text(cards[i][0],-109,-2,35,P.ink,500,"Georgia");
+text(cards[i][1],-109,32,12,P.ink,500,"monospace");
+line(-109,45,108,45,P.coral,2);restore();
+}
+character(672,636,1.01,t,1);
+paper(270,574,414,77,P.ink,.025);
+text("NOT SOLVED. NOT STATIC.",80,572,23,P.white,800);
+text("The frontier is moving.",80,596,17,P.lime,500);
+}
+const feeds=["NEW MODEL","AGENTS, AGAIN","BENCHMARK JUMP","IS IT OVER?","WE ARE SO BACK","ONE MORE PAPER","THE DISCOURSE","WAIT. WHAT?"];
+function overwhelm(u,t){
+rect(0,0,W,H,P.lime);grid(P.ink,40,.05);
+label("04 / MEANWHILE, ON THE TIMELINE",64,102);
+big("TOO MUCH",60,206,90);
+big("FUTURE.",60,305,106);
+text("One very human nervous system.",65,352,23,P.ink,500);
+text("Eight billion refresh buttons.",65,385,23,P.ink,500);
+for(let i=0;i<8;i++){
+let x=784+(i%2)*242,y=115+Math.floor(i/2)*122+Math.sin(t*1.5+i)*6;
+let col=i===4?P.coral:i%3===0?P.blue:P.white;
+save();c.translate(x,y);c.rotate((i%2?1:-1)*.035);
+paper(0,0,220,98,col,0,5);
+ellipse(-89,-26,7,7,i%3===0?P.white:P.ink);
+text("FOR YOU · NOW",-73,-22,10,i%3===0?P.white:P.ink,600,"monospace");
+text(feeds[i],-94,9,17,i%3===0?P.white:P.ink,800);
+line(-92,26,91,26,i%3===0?P.pale:P.gray,1);
+text("↗  "+Math.floor(12+u*19+i*23)+"K",-91,40,11,i%3===0?P.white:P.ink,500,"monospace");
+restore();
+}
+save();c.translate(344,624);
+limb(-67,-13,-54,-152,7,P.ink);limb(62,-13,43,-149,7,P.ink);
+line(-54,-150,43,-150,P.ink,5);
+poly([[-72,-102],[65,-102],[54,-88],[-63,-88]],P.blue);
+line(-57,-88,58,-13,P.ink,5);line(53,-88,-65,-13,P.ink,5);
+restore();
+character(343,617,1.09,t,2);
+paper(535,487,181,65,P.white,-.08);
+text("let me process",459,484,15,P.ink,500,"Georgia");
+text("that.",459,506,18,P.ink,500,"Georgia");
+}
+function sunburst(x,y,t){
+for(let i=0;i<28;i++){let a=i*TAU/28+t*.03,b=a+.065;
+poly([[x,y],[x+Math.cos(a)*1600,y+Math.sin(a)*1600],[x+Math.cos(b)*1600,y+Math.sin(b)*1600]],i%2?P.coral:P.red)}
+}
+function dance(u,t){
+rect(0,0,W,H,P.coral);sunburst(640,312,t);
+rect(0,454,W,266,P.paper);
+for(let i=-6;i<15;i++)line(640,420,640+i*190,720,P.ink,1);
+for(let i=0;i<5;i++){let q=((i/5+u*.12)%1);line(0,454+Math.pow(q,2)*266,W,454+Math.pow(q,2)*266,P.ink,1)}
+label("05 / THE ACCELERATION CHORUS",64,102,P.white);
+save();c.globalAlpha=.95;
+text("FASTER",640,231,168,P.white,900,"Arial Black, Arial","center");
+restore();
+paper(640,286,480,53,P.ink,-.012);
+tracked("BUT WHAT ARE WE BECOMING?",432,292,17,P.lime,2);
+character(362,608,1.12,t+.12,1,1);
+character(917,608,1.12,t+.24,1,2);
+character(640,643,1.36,t,0,0);
+let beats=Math.floor(t*2);
+for(let i=0;i<7;i++){
+let x=96+i*180,y=375+Math.sin(t*3+i)*11;
+star(x,y,11+(i===beats%7?7:0),P.lime,4,t*.6,.28)}
+ribbon("MORE POSSIBILITY  /  MORE RESPONSIBILITY  /  ",625,t,P.paper,P.ink);
+}
+function orbit(u,t){
+rect(0,0,W,H,P.ink);
+const cx=844,cy=349;
+let expand=smooth((u-1.2)/4);
+save();c.translate(cx,cy);
+for(let i=0;i<18;i++){
+let r=46+i*14+Math.sin(t*.7+i)*4;
+c.beginPath();c.ellipse(0,0,r*(1+expand*.65),r*.68,-.4+t*.05,0,TAU);
+c.strokeStyle=i%3===0?P.coral:i%3===1?P.lime:P.pale;c.lineWidth=1.6;c.stroke();
+}
+for(let i=0;i<46;i++){
+let a=i*2.39996+t*(.12+i*.001),r=80+((i*43)%240);
+star(Math.cos(a)*r*(1+expand*.6),Math.sin(a)*r*.75,3+(i%4),i%2?P.paper:P.coral,4,a,.4);
+}
+star(0,0,118+Math.sin(t*TAU)*4,P.coral,13,t*.11,.72);
+star(0,0,68,P.lime,13,-t*.16,.85);ellipse(0,0,30,30,P.paper);
+restore();
+label("06 / ON THE EDGE OF SOMETHING",64,102,P.lime);
+big("NOT THE",60,217,82,P.paper);
+big("END.",60,324,119,P.paper);
+big("AN OPENING.",60,421,69,P.coral);
+text("The future is a verb.",65,476,26,P.lime,500,"Georgia");
+character(1048,618,.94,t,1);
+let finish=smooth((u-5.15)/1.1);
+if(finish>0){
+save();c.globalAlpha=finish;rect(0,0,W,H,P.paper);
+star(968,347,236,P.coral,13,t*.065,.76);
+star(968,347,181,P.lime,13,-t*.05,.83);
+character(970,601,1.35,t,1);
+label("A PAPER-CUT POP EXPERIMENT",64,120);
+big("CLAUDE",57,291,132);
+big("POP",57,424,158,P.red);
+text("Stay curious. Keep dancing.",66,493,29,P.ink,500,"Georgia");
+line(66,545,668,545,P.ink,1);
+text("ORIGINAL INTERTITLES · NOT A LYRIC TRANSCRIPTION",66,575,12,P.ink,600,"monospace");
+text("SOURCE AUDIO / LYRICS NOT PROVIDED",66,598,12,P.ink,500,"monospace");
+restore();
+}
+}
+const scenes=[
+{start:0,end:6,fn:opening},
+{start:6,end:12,fn:acceleration},
+{start:12,end:18,fn:math},
+{start:18,end:24,fn:overwhelm},
+{start:24,end:32,fn:dance},
+{start:32,end:40,fn:orbit}
+];
+let offset=Number(new URLSearchParams(location.search).get("t")||0);
+if(!Number.isFinite(offset))offset=0;
+let start;
+function render(now){
+if(start===undefined)start=now;
+let t=((now-start)/1000+offset)%window.DUR;if(t<0)t+=window.DUR;
+let index=scenes.findIndex(s=>t>=s.start&&t<s.end);if(index<0)index=0;
+let s=scenes[index],u=t-s.start;
+c.setTransform(1,0,0,1,0,0);c.globalAlpha=1;
+s.fn(u,t);texture();
+let dark=index===2||(index===5&&u<5.7);
+frame(t,index,dark?P.paper:P.ink);
+let remaining=s.end-t;
+if(remaining<.22&&index!==5){
+let q=1-remaining/.22;
+save();c.translate(W/2,H/2);c.rotate(-.15);
+rect(-W/2,-H/2,W*q,H,P.paper);restore();
+}
+if(index===5&&u>7.65){c.globalAlpha=smooth((u-7.65)/.35);rect(0,0,W,H,P.coral);c.globalAlpha=1}
+requestAnimationFrame(render);
+}
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

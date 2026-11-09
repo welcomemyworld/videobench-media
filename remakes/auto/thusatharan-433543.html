@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+window.DUR=30;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),t0=parseFloat(q.get('t')||0),st=performance.now();
+function R(i){const s=Math.sin(i*127.1+311.7)*43758.5;return s-Math.floor(s);}
+const lerp=(a,b,k)=>a+(b-a)*k;
+function mix(a,b,k){return `rgb(${a.map((v,i)=>Math.round(lerp(v,b[i],k))).join(',')})`;}
+// windows: precomputed
+const wins=[];
+for(let f=0;f<3;f++)for(let i=0;i<9;i++){if(i==4&&f==0)continue;wins.push({x:430+i*48,y:300+f*62,d:R(f*9+i)});}
+for(let f=0;f<2;f++)for(let i=0;i<2;i++){wins.push({x:300+i*44,y:340+f*62,d:R(50+f*2+i)});wins.push({x:900+i*44,y:340+f*62,d:R(60+f*2+i)});}
+const drops=[];for(let i=0;i<260;i++)drops.push({p:R(i+500),a:R(i+900)*Math.PI*2,v:0.6+R(i+700)*0.4});
+const stars=[];for(let i=0;i<150;i++)stars.push([R(i)*1280,R(i+3000)*300,R(i+4000)]);
+const bushes=[];for(let i=0;i<34;i++)bushes.push({x:i<17?20+i*22:1260-(i-17)*22,y:600+R(i+90)*40,r:18+R(i+80)*14,h:R(i+70)});
+const flowers=[];for(let i=0;i<120;i++)flowers.push({x:R(i+1200)*1280,y:640+R(i+1300)*80,c:R(i+1400)});
+function frame(){
+let T=((performance.now()-st)/1000+t0)%DUR;
+// night factor: 0 day until 9, transition to 1 at 14, stay till 22, back by 27
+let n=T<9?0:T<14?(T-9)/5:T<22?1:T<27?1-(T-22)/5:0;
+n=n*n*(3-2*n);
+// sky
+let g=x.createLinearGradient(0,0,0,480);
+g.addColorStop(0,mix([255,150,80],[8,12,40],n));g.addColorStop(0.6,mix([255,190,110],[25,30,70],n));g.addColorStop(1,mix([255,215,150],[50,40,80],n));
+x.fillStyle=g;x.fillRect(0,0,1280,720);
+for(const s of stars){x.globalAlpha=n*(0.4+0.6*Math.abs(Math.sin(T*2+s[2]*20)));x.fillStyle='#fff';x.fillRect(s[0],s[1],1.6,1.6);}x.globalAlpha=1;
+// sun/moon
+let sy=lerp(330,560,n),sx=1000;
+let sg=x.createRadialGradient(sx,sy,0,sx,sy,220);sg.addColorStop(0,`rgba(255,230,160,${1-n})`);sg.addColorStop(1,'rgba(255,180,90,0)');
+x.fillStyle=sg;x.fillRect(0,0,1280,720);
+x.fillStyle=`rgba(255,240,200,${1-n})`;x.beginPath();x.arc(sx,sy,40,0,7);x.fill();
+x.fillStyle=`rgba(235,235,255,${n})`;x.beginPath();x.arc(220,lerp(300,110,n),26,0,7);x.fill();
+x.fillStyle=mix([255,150,80],[8,12,40],n);x.beginPath();x.arc(232,lerp(300,110,n)-6,24,0,7);x.globalAlpha=n;x.fill();x.globalAlpha=1;
+// hills
+for(let l=0;l<2;l++){x.fillStyle=mix(l?[150,110,70]:[190,130,90],l?[18,20,35]:[30,28,50],n);x.beginPath();x.moveTo(0,480);
+for(let i=0;i<=64;i++)x.lineTo(i*20,440+l*20-Math.sin(i*0.3+l*2)*20-Math.sin(i*0.11+l)*25);x.lineTo(1280,480);x.lineTo(1280,720);x.lineTo(0,720);x.fill();}
+// lawn
+let lg=x.createLinearGradient(0,470,0,720);lg.addColorStop(0,mix([140,150,60],[15,30,25],n));lg.addColorStop(1,mix([70,100,40],[8,18,15],n));
+x.fillStyle=lg;x.fillRect(0,470,1280,250);
+// manor
+const wall=mix([235,195,150],[45,45,70],n),wall2=mix([205,160,120],[35,35,58],n),roof=mix([110,70,60],[25,22,40],n),trim=mix([250,235,210],[70,70,95],n);
+x.fillStyle=wall2;x.fillRect(270,320,120,170);x.fillRect(890,320,120,170);
+x.fillStyle=roof;x.beginPath();x.moveTo(260,322);x.lineTo(330,270);x.lineTo(400,322);x.fill();x.beginPath();x.moveTo(880,322);x.lineTo(950,270);x.lineTo(1020,322);x.fill();
+x.fillStyle=wall;x.fillRect(400,270,480,220);
+x.fillStyle=roof;x.beginPath();x.moveTo(385,272);x.lineTo(430,200);x.lineTo(850,200);x.lineTo(895,272);x.fill();
+x.fillStyle=trim;x.fillRect(395,268,490,6);x.fillRect(395,486,490,6);
+// pediment & columns
+x.fillStyle=trim;x.beginPath();x.moveTo(570,270);x.lineTo(640,225);x.lineTo(710,270);x.fill();
+for(let i=0;i<4;i++)x.fillRect(580+i*38,275,10,210);
+// chimneys
+x.fillStyle=wall2;x.fillRect(480,170,26,40);x.fillRect(780,170,26,40);
+// smoke at night
+for(let i=0;i<8;i++){let k=((T*0.3+i/8)%1);x.fillStyle=`rgba(200,200,220,${(1-k)*0.25*n})`;x.beginPath();x.arc(793+Math.sin(k*6+T)*10,165-k*90,6+k*14,0,7);x.fill();}
+// door
+let lit=k=>Math.max(0,Math.min(1,(n-0.1-k*0.6)*5));
+x.fillStyle=mix([90,55,40],[255,190,90],lit(0.5));x.fillRect(625,410,30,76);
+// windows
+for(const w of wins){let L=lit(w.d);
+x.fillStyle=mix([120,150,170],[255,200,100],L);
+x.save();x.shadowColor=`rgba(255,190,90,${L})`;x.shadowBlur=25*L;x.fillRect(w.x,w.y,22,38);x.restore();
+// golden reflection by day
+x.fillStyle=`rgba(255,220,150,${(1-n)*0.4})`;x.fillRect(w.x,w.y,22,14);
+x.fillStyle=trim;x.fillRect(w.x+10,w.y,2,38);x.fillRect(w.x,w.y+18,22,2);x.fillRect(w.x-3,w.y+38,28,3);}
+// window light glow on lawn
+x.globalCompositeOperation='lighter';
+let wg=x.createRadialGradient(640,500,10,640,500,400);wg.addColorStop(0,`rgba(255,160,60,${0.25*n})`);wg.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=wg;x.fillRect(0,300,1280,420);
+x.globalCompositeOperation='source-over';
+// path
+x.fillStyle=mix([220,190,150],[50,48,65],n);x.beginPath();x.moveTo(615,490);x.lineTo(665,490);x.lineTo(780,720);x.lineTo(500,720);x.fill();
+// fountain
+const fx=640,fy=600;
+x.fillStyle=mix([200,185,165],[60,60,80],n);x.beginPath();x.ellipse(fx,fy,130,28,0,0,7);x.fill();
+x.fillStyle=mix([90,140,170],[25,40,80],n);x.beginPath();x.ellipse(fx,fy-4,118,22,0,0,7);x.fill();
+for(let i=0;i<3;i++){let r=((T*0.5+i/3)%1);x.strokeStyle=`rgba(255,255,255,${0.4*(1-r)})`;x.beginPath();x.ellipse(fx,fy-4,20+r*95,4+r*17,0,0,7);x.stroke();}
+x.fillStyle=mix([200,185,165],[60,60,80],n);x.fillRect(fx-8,fy-60,16,56);x.beginPath();x.ellipse(fx,fy-60,40,9,0,0,7);x.fill();
+for(const d of drops){let p=(d.p+T*0.7*d.v)%1;let vx=Math.cos(d.a)*90*d.v,vz=Math.sin(d.a)*18*d.v;
+let px=fx+vx*p,py=fy-75-180*p*d.v+260*p*p+vz*p;
+x.fillStyle=n>0.5?`rgba(255,${200+40*(1-n)},140,0.8)`:'rgba(230,245,255,0.85)';x.fillRect(px,py,2,3);}
+let cp=0;for(let i=0;i<40;i++){let p=i/40;x.fillStyle='rgba(230,245,255,0.6)';x.fillRect(fx-1+Math.sin(T*8+i)*1.5,fy-70-p*70,2,3);}
+// lamp posts
+for(const lx of [480,800]){x.fillStyle='#222';x.fillRect(lx-2,520,4,100);
+let lg2=x.createRadialGradient(lx,515,0,lx,515,70);lg2.addColorStop(0,`rgba(255,210,120,${n})`);lg2.addColorStop(1,'rgba(255,180,80,0)');x.fillStyle=lg2;x.fillRect(lx-70,445,140,140);
+x.fillStyle=mix([80,80,80],[255,230,160],n);x.fillRect(lx-6,508,12,14);}
+// trees swaying
+for(const [tx,ty,s] of [[120,520,1.2],[1160,520,1.3],[200,560,0.9],[1080,560,0.95]]){
+let sw=Math.sin(T*1.3+tx)*0.05;
+x.save();x.translate(tx,ty);x.fillStyle=mix([80,55,40],[20,18,28],n);x.fillRect(-7*s,-10,14*s,90);x.rotate(sw);
+for(let i=0;i<7;i++){x.fillStyle=mix(i%2?[90,110,40]:[120,130,50],[15,30,30],n);x.beginPath();x.arc(Math.sin(i*2.3)*40*s,-40*s-i*14*s+Math.sin(T*2+i)*3,(50-i*4)*s,0,7);x.fill();}
+x.fillStyle=`rgba(255,200,110,${0.35*(1-n)})`;x.beginPath();x.arc(30*s,-90*s,30*s,0,7);x.fill();x.restore();}
+// bushes
+for(const b of bushes){let o=Math.sin(T*1.8+b.x*0.05)*3;x.fillStyle=mix([70+b.h*40,105,40],[12,28,25],n);x.beginPath();x.ellipse(b.x+o,b.y,b.r,b.r*0.8,0,0,7);x.fill();}
+// flowers + grass blades
+for(const f of flowers){let o=Math.sin(T*2.2+f.x*0.04)*4;x.strokeStyle=mix([70,110,40],[15,30,25],n);x.beginPath();x.moveTo(f.x,f.y);x.quadraticCurveTo(f.x,f.y-8,f.x+o,f.y-14);x.stroke();
+x.fillStyle=mix(f.c<0.33?[230,80,90]:f.c<0.66?[250,210,80]:[240,240,250],[40,40,70],n*0.8);x.beginPath();x.arc(f.x+o,f.y-14,3,0,7);x.fill();}
+// fireflies at night
+for(let i=0;i<30;i++){let a=T*0.5+i;x.fillStyle=`rgba(255,240,140,${n*(0.5+0.5*Math.sin(T*4+i))})`;x.beginPath();x.arc(R(i+77)*1280+Math.sin(a)*30,520+R(i+66)*170+Math.cos(a*1.3)*15,2,0,7);x.fill();}
+// golden haze
+x.fillStyle=`rgba(255,170,80,${0.12*(1-n)})`;x.fillRect(0,0,1280,720);
+// vignette
+let v=x.createRadialGradient(640,360,300,640,360,800);v.addColorStop(0,'rgba(0,0,0,0)');v.addColorStop(1,'rgba(0,0,0,0.55)');x.fillStyle=v;x.fillRect(0,0,1280,720);
+// text
+let ta=T<5?Math.min(1,T)*Math.min(1,5-T):0;
+x.textAlign='center';x.fillStyle=`rgba(255,240,215,${ta})`;x.font='300 46px Georgia,serif';x.fillText('The Golden-Hour Manor',640,90);
+x.font='italic 20px Georgia,serif';x.fillText('procedural — no models, just code',640,124);
+let la=(T>12&&T<18)?Math.min(1,T-12)*Math.min(1,18-T):0;
+x.fillStyle=`rgba(255,220,160,${la})`;x.font='italic 26px Georgia,serif';x.fillText('…and every window comes alive',640,90);
+x.font='14px Georgia,serif';x.fillStyle='rgba(255,240,220,0.6)';x.textAlign='right';x.fillText(n<0.5?'☀ DAY':'☾ NIGHT',1250,700);
+requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

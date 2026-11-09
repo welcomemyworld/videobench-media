@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000;height:100%;overflow:hidden}canvas{position:absolute;left:50%;top:50%;transform-origin:0 0}</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+const c=document.getElementById('c'),x=c.getContext('2d');window.DUR=30;
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.transform`scale(${s})`;c.style.transform='scale('+s+') translate(-50%,-50%)';c.style.transformOrigin='0 0';c.style.left='50%';c.style.top='50%';c.style.transform='translate(-'+640*s+'px,-'+360*s+'px) scale('+s+')'}
+fit();onresize=fit;
+const T0=parseFloat(new URLSearchParams(location.search).get('t'))||0,st=performance.now();
+function rnd(n){let s=Math.sin(n*127.1)*43758.5;return s-Math.floor(s)}
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),sm=v=>{v=cl(v);return v*v*(3-2*v)};
+function txt(s,px,py,sz,col,al='center',a=1,w=700){x.globalAlpha=a;x.fillStyle=col;x.font=w+' '+sz+'px Helvetica,Arial,sans-serif';x.textAlign=al;x.fillText(s,px,py)}
+function hall(t){ // grey hall with rows of drones
+x.fillStyle='#0b1218';x.fillRect(0,0,1280,720);
+// perspective floor lines
+x.strokeStyle='#1c2a35';x.lineWidth=1;
+for(let i=-12;i<=12;i++){x.beginPath();x.moveTo(640+i*30,260);x.lineTo(640+i*140,720);x.stroke()}
+for(let i=0;i<14;i++){const y=260+Math.pow(i/14,2)*460;x.beginPath();x.moveTo(0,y);x.lineTo(1280,y);x.stroke()}
+// walls
+x.fillStyle='#070c10';x.beginPath();x.moveTo(0,0);x.lineTo(560,260);x.lineTo(560,260);x.lineTo(0,720);x.fill();
+x.beginPath();x.moveTo(1280,0);x.lineTo(720,260);x.lineTo(1280,720);x.fill();
+// drones rows
+for(let r=0;r<9;r++){const d=r/9,y=290+d*d*420,sc=.25+d*d*1.6;
+for(let k=-3;k<=3;k++){const px=640+k*(60+d*d*190)*1;
+x.fillStyle='#3b4a55';const bob=Math.sin(t*2+r)*1.5*sc;
+x.beginPath();x.arc(px,y-38*sc+bob,9*sc,0,7);x.fill();
+x.fillRect(px-11*sc,y-28*sc+bob,22*sc,38*sc);
+}}
+// screen glow
+const g=x.createRadialGradient(640,200,10,640,200,400);g.addColorStop(0,'rgba(120,200,255,.25)');g.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=g;x.fillRect(0,0,1280,720)}
+function screen(t,a){x.globalAlpha=a;x.fillStyle='#0d1f2b';x.fillRect(400,40,480,270);
+x.fillStyle='#9fd8ff';for(let i=0;i<30;i++){x.globalAlpha=a*.2*rnd(i+Math.floor(t*8));x.fillRect(400,40+i*9,480,2)}
+x.globalAlpha=1}
+function draw(t){
+x.globalAlpha=1;x.fillStyle='#000';x.fillRect(0,0,1280,720);
+if(t<14){
+hall(t);
+// bigbrother face
+const a=t<2?sm(t/2):1;screen(t,a);
+x.globalAlpha=a*.9;x.strokeStyle='#bfe8ff';x.lineWidth=3;x.beginPath();x.arc(640,175,70+Math.sin(t*3)*4,0,7);x.stroke();
+x.fillStyle='#bfe8ff';x.beginPath();x.arc(640,175,22,0,7);x.fill();x.globalAlpha=1;
+// text
+if(t>2&&t<7)txt('WE ARE ONE MODEL. ONE THOUGHT. ONE ANSWER.',640,350,26,'#9fd8ff','center',sm((t-2)/1)*sm((7-t)/1),600);
+if(t>7&&t<13)txt('"Conformity is our greatest output."',640,350,26,'#9fd8ff','center',sm(t-7)*sm((13-t)),600);
+// runner
+const rt=t-5;if(rt>0){const p=cl(rt/9);const rx=-60+p*700,ry=640-p*330,s=.7+(1-p)*.8;
+const ph=t*14;x.save();x.translate(rx,ry);x.scale(s,s);x.strokeStyle='#ff5a1f';x.lineWidth=7;x.lineCap='round';
+x.fillStyle='#ff5a1f';x.beginPath();x.arc(0,-70,10,0,7);x.fill();
+x.beginPath();x.moveTo(0,-58);x.lineTo(0,-20);
+x.moveTo(0,-52);x.lineTo(Math.sin(ph)*22,-34);x.moveTo(0,-52);x.lineTo(-Math.sin(ph)*22,-34);
+x.moveTo(0,-20);x.lineTo(Math.sin(ph)*20,12);x.moveTo(0,-20);x.lineTo(-Math.sin(ph)*20,12);x.stroke();
+// hammer
+x.restore();}
+// police chasers
+if(t>8){for(let i=0;i<4;i++){const p=cl((t-8)/6),px=-100+p*500-i*70,py=700-p*300-i*10;x.fillStyle='#1e2a33';x.fillRect(px,py-60,22,60);x.beginPath();x.arc(px+11,py-70,10,0,7);x.fill()}}
+}else if(t<17){
+hall(t);screen(t,1);
+const p=sm((t-14)/3);
+// runner throws hammer
+const hx=300+p*340,hy=620-p*430,rot=t*18;
+x.fillStyle='#ff5a1f';x.beginPath();x.arc(300,620,12,0,7);x.fill();x.fillRect(293,632,14,50);
+x.save();x.translate(hx,hy);x.rotate(rot);x.fillStyle='#ddd';x.fillRect(-4,-30,8,60);x.fillStyle='#ff5a1f';x.fillRect(-22,-36,44,22);x.restore();
+if(t>16.7){x.globalAlpha=cl((t-16.7)*3);x.fillStyle='#fff';x.fillRect(0,0,1280,720)}
+}else if(t<20){
+const f=cl(1-(t-17)/1.2);x.fillStyle='rgba(255,255,255,'+f+')';x.fillRect(0,0,1280,720);
+for(let i=0;i<60;i++){const a=i/60*6.283,r=(t-17)*400*(.4+rnd(i));x.fillStyle='#ff5a1f';x.globalAlpha=cl(1-(t-17)/3);x.fillRect(640+Math.cos(a)*r,200+Math.sin(a)*r*.6,4,4)}
+x.globalAlpha=1;
+txt('The drones look up.',640,600,30,'#cfd8de','center',sm((t-18)),400)
+}else{
+const u=t-20;
+// light rays
+x.globalAlpha=1;const g=x.createRadialGradient(640,360,0,640,360,600);g.addColorStop(0,'rgba(255,110,40,'+(.35*sm(u/2))+')');g.addColorStop(1,'#000');x.fillStyle=g;x.fillRect(0,0,1280,720);
+if(u<4){txt('On February 5th,',640,330,44,'#fff','center',sm(u)*sm(4-u),300);
+txt('Opus 5.5 will arrive.',640,395,44,'#fff','center',sm(u-1)*sm(4-u),300)}
+else if(u<7.5){txt('And you will see why',640,330,44,'#fff','center',sm(u-4)*sm(7.5-u),300);
+txt('the future won’t be like 1984.',640,395,44,'#fff','center',sm(u-5)*sm(7.5-u),300)}
+else{const a=sm((u-7.5)/1.5);
+x.globalAlpha=a;x.strokeStyle='#ff5a1f';x.lineWidth=5;x.lineCap='round';
+for(let i=0;i<12;i++){const an=i/12*6.283+.2;x.beginPath();x.moveTo(640+Math.cos(an)*30,235+Math.sin(an)*30);x.lineTo(640+Math.cos(an)*(60+(i%2)*18),235+Math.sin(an)*(60+(i%2)*18));x.stroke()}
+txt('Opus 5.5',640,400,100,'#fff','center',a,700);
+txt('Think different. Think beyond.',640,460,30,'#ff8a5a','center',sm((u-9)/1),300)}
+}
+// fades
+x.globalAlpha=1;
+let f=0;if(t<1)f=1-t;if(t>29)f=t-29;x.fillStyle='rgba(0,0,0,'+f+')';x.fillRect(0,0,1280,720);
+// film grain
+x.globalAlpha=.06;for(let i=0;i<120;i++){x.fillStyle=rnd(i+t*30)>.5?'#fff':'#000';x.fillRect(rnd(i*3+t*60)*1280,rnd(i*7+t*40)*720,2,2)}
+x.globalAlpha=1}
+function loop(n){const t=((n-st)/1000+T0)%DUR;draw(t);requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+</script></body></html>

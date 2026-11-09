@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Long Way Out: A Photon's Journey</title>
+<!--
+WHAT I DECIDED (summary for the requester)
+- Format: one self-contained Canvas 2D animation, 60 s, 1280x720 logical stage (scale the window or the capture to get 1920x1080). Time comes only from performance.now(). Use ?t=SECONDS to seek.
+- Not possible in this single offline HTML file: TTS voiceover, music and sound design. Those need external tools. Instead, the script below is burned in as timed captions. The onomatopoeia (POP, BONK, BLOOP, WHOOSH, DING) are timed so audio could be synced to them later. The same timings are listed in the CUES array.
+- Character: "Phoebe", a round, blushing photon. She starts blue-white (gamma ray) and shifts to warm yellow during the random walk. This is accurate: her energy degrades through absorption and re-emission.
+- Science: core about 15 million °C, about 13 times denser than lead. Random walk with a mean free path of a fraction of a millimetre. Escape time about 100,000 years; published estimates range from about 10,000 to 170,000 years. Photosphere about 5,500 °C. Sun to Earth is about 150 million km at about 300,000 km/s, which takes about 8 min 20 s.
+- The random walk is a real seeded simulation: 1,600 unit steps in uniformly random directions. The display contrasts total path length with net displacement, which grows roughly as the square root of the number of steps.
+- Palette: core reds, solar golds, deep-space indigo, meadow greens. Typography: system serif for the storybook voice, sans-serif for data.
+-->
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=60;
+const W=1280,H=720,c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/W,innerHeight/H);c.style.width=W*s+'px';c.style.height=H*s+'px';}
+addEventListener('resize',fit);fit();
+const off=parseFloat(new URLSearchParams(location.search).get('t'))||0;
+const SERIF='Georgia,"Times New Roman",serif',SANS='"Helvetica Neue",Arial,sans-serif';
+function rng(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;}}
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),lerp=(a,b,t)=>a+(b-a)*t;
+const eio=t=>(t=cl(t),t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2),eout=t=>1-Math.pow(1-cl(t),3);
+const back=t=>{t=cl(t);const s=1.9;return 1+(s+1)*Math.pow(t-1,3)+s*Math.pow(t-1,2);};
+// ---------- captions (script) ----------
+const CAP=[
+[0.3,4,"Deep in the Sun's core, at about 15 million °C, a photon is born."],
+[4,8,"Meet Phoebe. She's in a hurry. The Sun has other plans."],
+[8,14,"Every fraction of a millimetre, she bonks into a particle and flies off in a random direction."],
+[14,20,"This is a real random walk: tons of travelling, very little progress."],
+[20,26,"Meanwhile, about 100,000 years pass on Earth. Estimates range from 10,000 to 170,000."],
+[26,30,"Near the surface, the Sun boils. Hot plasma carries her up like an elevator."],
+[30,34,"The photosphere, about 5,500 °C. Nothing left to bonk. She's free!"],
+[34,40,"Now she flies dead straight, at 300,000 kilometres per second."],
+[40,48,"150 million kilometres to Earth, in about 8 minutes and 20 seconds."],
+[48,54,"100,000 years to get out of the Sun. Eight minutes to get here."],
+[54,60,"So next time sunlight warms your face, thank Phoebe. She took the long way."]];
+// sound cue sheet for later audio sync
+const CUES=[[1.5,'POP'],[8.6,'BONK'],[9.7,'BOINK'],[10.8,'OOF'],[11.9,'PING'],[13,'BONK'],[14.1,'BOING'],[27,'BLOOP'],[29,'BLOOP'],[31.6,'FREE'],[35,'WHOOSH'],[40.7,'WHOOSH'],[45.5,'WHOOSH'],[55,'DING']];
+// ---------- helpers ----------
+function rr(X,Y,w,h,r){x.beginPath();x.moveTo(X+r,Y);x.arcTo(X+w,Y,X+w,Y+h,r);x.arcTo(X+w,Y+h,X,Y+h,r);x.arcTo(X,Y+h,X,Y,r);x.arcTo(X,Y,X+w,Y,r);x.closePath();}
+function wrap(t,mw){const w=t.split(' '),L=[];let l='';for(const s of w){const tt=l?l+' '+s:s;if(x.measureText(tt).width>mw&&l){L.push(l);l=s}else l=tt}L.push(l);return L;}
+function txt(t,X,Y,size,col,font=SERIF,al='center',wt='bold',stroke){x.font=wt+' '+size+'px '+font;x.textAlign=al;x.textBaseline='middle';if(stroke){x.lineWidth=size*.18;x.strokeStyle=stroke;x.lineJoin='round';x.strokeText(t,X,Y)}x.fillStyle=col;x.fillText(t,X,Y);}
+function pop(t,X,Y,age,col,size=46,life=.9){if(age<0||age>life)return;const s=back(age/.25),a=1-cl((age-life+.25)/.25);x.save();x.globalAlpha=a;x.translate(X,Y-age*30);x.rotate(-.12+Math.sin(age*9)*.04);x.scale(s,s);txt(t,0,0,size,col,SANS,'center','900','#2a0b20');x.restore();}
+function chip(t,X,Y,a,col='#ffe9a8',al='left'){if(a<=0)return;x.save();x.globalAlpha=cl(a);x.font='600 20px '+SANS;const w=x.measureText(t).width+32;const X0=al==='left'?X:al==='right'?X-w:X-w/2;rr(X0,Y-20,w,40,20);x.fillStyle='rgba(20,8,30,.72)';x.fill();x.strokeStyle=col;x.lineWidth=2;x.stroke();x.fillStyle=col;x.textAlign='left';x.textBaseline='middle';x.fillText(t,X0+16,Y+1);x.restore();}
+function face(X,Y,r,mood,lt,eye='#2a0b20'){
+ const bl=(lt%3.3)<.13;x.fillStyle=eye;x.strokeStyle=eye;x.lineCap='round';
+ for(const s of[-1,1]){const ex=X+s*r*.34,ey=Y-r*.1;
+  if(mood==='dizzy'){x.lineWidth=r*.09;x.beginPath();for(let k=0;k<14;k++){const a=k*.9+lt*8*s,q=k/14*r*.17;k?x.lineTo(ex+Math.cos(a)*q,ey+Math.sin(a)*q):x.moveTo(ex,ey)}x.stroke();}
+  else if(bl||mood==='joy'){x.lineWidth=r*.09;x.beginPath();x.arc(ex,ey+r*.04,r*.12,Math.PI*1.1,Math.PI*1.9);x.stroke();}
+  else{x.beginPath();x.ellipse(ex,ey,r*.1,r*(mood==='wow'?.17:.14),0,0,7);x.fill();x.fillStyle='#fff';x.beginPath();x.arc(ex+r*.035,ey-r*.05,r*.04,0,7);x.fill();x.fillStyle=eye;}
+ }
+ x.fillStyle='rgba(255,90,120,.45)';for(const s of[-1,1]){x.beginPath();x.ellipse(X+s*r*.55,Y+r*.15,r*.13,r*.08,0,0,7);x.fill();}
+ x.lineWidth=r*.08;x.beginPath();
+ if(mood==='wow'){x.fillStyle=eye;x.ellipse(X,Y+r*.3,r*.1,r*.14,0,0,7);x.fill();}
+ else if(mood==='dizzy'){x.moveTo(X-r*.2,Y+r*.3);for(let k=1;k<=4;k++)x.lineTo(X-r*.2+k*r*.1,Y+r*.3+(k%2?-1:1)*r*.05);x.stroke();}
+ else{x.arc(X,Y+r*.12,r*.22,.15*Math.PI,.85*Math.PI);x.stroke();}
+}
+function photon(X,Y,r,col,mood,lt){
+ const g=x.createRadialGradient(X,Y,r*.4,X,Y,r*3.2);g.addColorStop(0,col);g.addColorStop(1,'rgba(255,255,255,0)');
+ x.save();x.globalAlpha=.55;x.fillStyle=g;x.beginPath();x.arc(X,Y,r*3.2,0,7);x.fill();x.restore();
+ x.save();x.translate(X,Y);x.rotate(lt*.8);x.strokeStyle=col;x.lineWidth=r*.12;x.lineCap='round';
+ for(let i=0;i<8;i++){const a=i*Math.PI/4,l=r*(1.25+.12*Math.sin(lt*6+i));x.beginPath();x.moveTo(Math.cos(a)*r*1.12,Math.sin(a)*r*1.12);x.lineTo(Math.cos(a)*l,Math.sin(a)*l);x.stroke();}
+ x.restore();
+ const b=x.createRadialGradient(X-r*.3,Y-r*.35,r*.1,X,Y,r);b.addColorStop(0,'#fff');b.addColorStop(1,col);
+ x.fillStyle=b;x.beginPath();x.arc(X,Y,r,0,7);x.fill();
+ face(X,Y,r,mood,lt);
+}
+function mix(a,b,t){return 'rgb('+[0,1,2].map(i=>Math.round(lerp(a[i],b[i],cl(t)))).join(',')+')';}
+const GAM=[200,220,255],GOLD=[255,214,74];
+// ---------- precomputed data ----------
+const R=rng(7),plasma=[...Array(90)].map(()=>[R()*W,R()*H,2+R()*5,R()*6.28,.3+R()]);
+const stars=[...Array(220)].map(()=>[R()*W*3,R()*H,R()*1.6+.3,R()*.8+.2]);
+// real random walk: unit steps, uniformly random direction, reflected inside the box
+const WB={x0:50,y0:90,x1:770,y1:600},STEP=13,NS=1600,path=[[410,350]];
+{const r=rng(2024);let px=410,py=350;for(let i=0;i<NS;i++){const a=r()*Math.PI*2;px+=Math.cos(a)*STEP;py+=Math.sin(a)*STEP;if(px<WB.x0+10)px=2*(WB.x0+10)-px;if(px>WB.x1-10)px=2*(WB.x1-10)-px;if(py<WB.y0+10)py=2*(WB.y0+10)-py;if(py>WB.y1-10)py=2*(WB.y1-10)-py;path.push([px,py]);}}
+const wdots=[...Array(260)].map(()=>[lerp(WB.x0,WB.x1,R()),lerp(WB.y0,WB.y1,R()),R()*6.28]);
+const EVT=[[0,'100,000 yrs ago','Our species spreads beyond Africa'],[30000,'70,000 yrs ago','Ice-age Earth: mammoths roam'],[60000,'40,000 yrs ago','Earliest known cave paintings'],[88000,'12,000 yrs ago','Farming begins'],[95500,'4,500 yrs ago','Great Pyramid of Giza'],[100000,'Today','You, reading captions']];
+// ---------- scenes ----------
+function coreBG(lt,c1,c2){const g=x.createRadialGradient(640,360,50,640,360,800);g.addColorStop(0,c1);g.addColorStop(1,c2);x.fillStyle=g;x.fillRect(0,0,W,H);
+ for(const p of plasma){const X=(p[0]+Math.sin(lt*p[4]+p[3])*30)%W,Y=(p[1]+Math.cos(lt*p[4]*.8+p[3])*25)%H;x.fillStyle='rgba(255,200,120,.18)';x.beginPath();x.arc(X,Y,p[2]*2.2,0,7);x.fill();x.fillStyle='rgba(255,240,200,.5)';x.beginPath();x.arc(X,Y,p[2]*.6,0,7);x.fill();}}
+function s1(lt){coreBG(lt,'#ff8a3a','#4a0613');
+ const a=eout((lt-.2)/1);txt('The Long Way Out',640,lerp(90,110,a),62,'rgba(255,240,210,'+a+')',SERIF,'center','bold','rgba(60,5,20,'+a*.8+')');
+ txt("a photon's journey from the Sun's core to your face",640,165,24,'rgba(255,220,180,'+eout((lt-.7)/1)+')',SERIF,'center','italic');
+ if(lt>1.5){const s=back((lt-1.5)/.5);photon(640,380+Math.sin(lt*2)*8,56*s,mix(GAM,GAM,0),lt<4?'wow':'happy',lt);}
+ pop('POP!',740,300,lt-1.5,'#fff3b0',52);
+ chip('Sun’s core: ~15,000,000 °C',70,560,(lt-3)/.5,'#ffd27a');
+ chip('~13× denser than lead',70,612,(lt-3.6)/.5,'#ffd27a');
+ if(lt>5){const a=eout((lt-5)/.5);x.save();x.globalAlpha=a;chip('PHOEBE · gamma-ray photon',1210,560,1,'#cfe0ff','right');x.strokeStyle='#cfe0ff';x.lineWidth=2;x.setLineDash([4,6]);x.beginPath();x.moveTo(1050,540);x.quadraticCurveTo(900,470,720,420);x.stroke();x.restore();}
+}
+function s2(lt){x.fillStyle='#2b0510';x.fillRect(0,0,W,H);
+ x.save();rr(WB.x0,WB.y0,WB.x1-WB.x0,WB.y1-WB.y0,22);x.fillStyle='#5a0f1c';x.fill();x.clip();
+ const g=x.createRadialGradient(410,350,20,410,350,500);g.addColorStop(0,'rgba(255,140,60,.35)');g.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=g;x.fillRect(0,0,W,H);
+ for(const d of wdots){x.fillStyle='rgba(255,170,120,.35)';x.beginPath();x.arc(d[0]+Math.sin(lt*2+d[2])*3,d[1]+Math.cos(lt*2.3+d[2])*3,3,0,7);x.fill();}
+ const p=cl(lt/17.5),fn=NS*Math.pow(p,1.7),n=Math.floor(fn),fr=fn-n;
+ x.lineWidth=2;x.lineJoin='round';
+ for(let i=1;i<=n;i++){const k=i/NS;x.strokeStyle=mix(GAM,GOLD,k).replace('rgb','rgba').replace(')',','+(.35+.5*(i/Math.max(n,1)))+')');x.beginPath();x.moveTo(path[i-1][0],path[i-1][1]);x.lineTo(path[i][0],path[i][1]);x.stroke();}
+ const a0=path[n],a1=path[Math.min(n+1,NS)],PX=lerp(a0[0],a1[0],fr),PY=lerp(a0[1],a1[1],fr);
+ x.setLineDash([8,8]);x.strokeStyle='#9ff0ff';x.lineWidth=2.5;x.beginPath();x.moveTo(path[0][0],path[0][1]);x.lineTo(PX,PY);x.stroke();x.setLineDash([]);
+ x.fillStyle='#9ff0ff';x.beginPath();x.arc(path[0][0],path[0][1],6,0,7);x.fill();
+ x.fillStyle='rgba(255,255,255,'+(.6*(1-(fn%1)))+')';x.beginPath();x.arc(PX,PY,26,0,7);x.fill();
+ photon(PX,PY,20,mix(GAM,GOLD,p),lt>10?'dizzy':'happy',lt);
+ const W2=['BONK!','BOINK!','OOF!','PING!','BONK!','BOING!'];
+ for(let i=0;i<6;i++){const ti=.6+i*1.1,pn=Math.floor(NS*Math.pow(cl(ti/17.5),1.7));pop(W2[i],path[pn][0]+30,path[pn][1]-36,lt-ti,'#fff3b0',34);}
+ x.restore();
+ const dist=Math.hypot(PX-path[0][0],PY-path[0][1])/STEP;
+ txt('Steps taken: '+n,WB.x0+16,WB.y0+26,20,'#ffe9a8',SANS,'left','700');
+ txt('Net progress: '+dist.toFixed(1)+' steps  (≈ √N = '+Math.sqrt(n).toFixed(1)+')',WB.x0+16,WB.y0+54,20,'#9ff0ff',SANS,'left','700');
+ txt('Each hop ≈ a fraction of a millimetre · real count: trillions of trillions',WB.x0+(WB.x1-WB.x0)/2,WB.y1+24,15,'rgba(255,220,190,.8)',SANS,'center','600');
+ txt('Radiative zone · colour shift: gamma → visible light',WB.x0+(WB.x1-WB.x0)/2,58,20,'#ffd27a',SERIF,'center','italic');
+ // Earth timeline panel
+ const yrs=100000*p;rr(800,90,440,510,22);x.fillStyle='#14233a';x.fill();
+ txt('Meanwhile, on Earth…',1020,124,28,'#e8f3ff',SERIF);
+ txt(Math.round(yrs).toLocaleString('en-US')+' years',1020,170,40,'#ffd84a',SANS,'center','900');
+ txt('in-Sun estimate: ~10,000 – 170,000 yrs',1020,204,16,'rgba(200,220,255,.75)',SANS,'center','600');
+ const ty0=240,ty1=570;x.strokeStyle='rgba(200,220,255,.3)';x.lineWidth=3;x.beginPath();x.moveTo(840,ty0);x.lineTo(840,ty1);x.stroke();
+ x.strokeStyle='#ffd84a';x.beginPath();x.moveTo(840,ty0);x.lineTo(840,lerp(ty0,ty1,p));x.stroke();
+ EVT.forEach((e,i)=>{const yy=lerp(ty0,ty1,i/5),on=yrs>=e[0]-1,a=on?eout((yrs-e[0])/4000+.3):.25;x.save();x.globalAlpha=a;
+  x.fillStyle=on?'#ffd84a':'#5a6a85';x.beginPath();x.arc(840,yy,on?8:5,0,7);x.fill();
+  txt(e[1],862,yy-11,15,'#9fc4ff',SANS,'left','700');txt(e[2],862,yy+10,18,'#f2f6ff',SANS,'left','600');x.restore();});
+}
+function s3(lt){const g=x.createLinearGradient(0,0,0,H);g.addColorStop(0,'#ffe27a');g.addColorStop(.25,'#ffab3a');g.addColorStop(1,'#a32a12');x.fillStyle=g;x.fillRect(0,0,W,H);
+ const surf=lt<5.6?150:150;
+ for(let i=0;i<9;i++){for(let j=0;j<3;j++){const X=70+i*145+Math.sin(lt+i)*14,Y=H+120-((lt*70+i*97+j*290)%(H+150));x.fillStyle='rgba(255,230,140,'+(.2+.15*Math.sin(i+j))+')';x.beginPath();x.arc(X,Y,60+20*Math.sin(i*3+j),0,7);x.fill();}}
+ // granulation surface
+ x.fillStyle='#fff0a8';x.beginPath();x.moveTo(0,0);for(let X=0;X<=W;X+=20)x.lineTo(X,surf+Math.sin(X*.03+lt*2)*10+Math.sin(X*.011-lt)*8);x.lineTo(W,0);x.closePath();x.fill();
+ x.fillStyle='#120a2a';x.fillRect(0,0,W,surf-40);
+ const gl=x.createLinearGradient(0,surf-60,0,surf);gl.addColorStop(0,'rgba(18,10,42,1)');gl.addColorStop(1,'rgba(255,240,170,0)');x.fillStyle=gl;x.fillRect(0,surf-60,W,60);
+ // elevator plume
+ const ry=lt<5.4?lerp(640,surf+60,eio(lt/5.4)):surf+60,bx=640+Math.sin(lt*1.5)*20;
+ x.fillStyle='rgba(255,250,200,.55)';x.beginPath();x.ellipse(bx,ry+40,95,70,0,0,7);x.fill();
+ if(lt<5.4)face(bx,ry+60,60,'happy',lt+1,'#7a3a10');
+ let py=ry,mood='joy';if(lt>5.4){py=lerp(ry,-80,eio((lt-5.6)/2));mood='wow';}
+ if(lt>5.4){for(let k=0;k<6;k++){x.strokeStyle='rgba(255,255,220,'+(.5-k*.07)+')';x.lineWidth=4;x.beginPath();x.moveTo(bx-30+k*12,py+40+k*8);x.lineTo(bx-30+k*12,py+120+k*16);x.stroke();}}
+ photon(bx,py,26,mix(GAM,GOLD,1),mood,lt);
+ pop('BLOOP',bx-160,ry,lt-1,'#fff',38);pop('BLOOP',bx+150,ry-20,lt-3,'#fff',38);
+ pop('FREE!',640,260,lt-5.6,'#fff7c0',80,1.6);
+ chip('Convection zone: the Sun boils',60,660,(lt-.5)/.5,'#fff0b8');
+ chip('Photosphere: ~5,500 °C',1220,surf+40,(lt-4.2)/.5,'#fff0b8','right');
+}
+function planet(X,Y,r,c1,c2,mood,lt,lbl){const g=x.createRadialGradient(X-r*.3,Y-r*.3,r*.2,X,Y,r);g.addColorStop(0,c1);g.addColorStop(1,c2);x.fillStyle=g;x.beginPath();x.arc(X,Y,r,0,7);x.fill();face(X,Y,r,mood,lt);txt(lbl,X,Y+r+24,18,'#cfd9ff',SANS,'center','700');}
+function s4(lt){x.fillStyle='#0a0820';x.fillRect(0,0,W,H);
+ const d=lt/14*148,k=40,cam=d*k;
+ for(const s of stars){const X=((s[0]-cam*s[3]*.05)%(W*3)+W*3)%(W*3);if(X<W){x.fillStyle='rgba(255,255,255,'+(s[3])+')';x.fillRect(X,s[1],s[2],s[2]);}}
+ const sx=640-cam-260;if(sx>-700){const g=x.createRadialGradient(sx,360,100,sx,360,520);g.addColorStop(0,'#fff3a0');g.addColorStop(.5,'#ffa53a');g.addColorStop(1,'rgba(255,120,40,0)');x.fillStyle=g;x.beginPath();x.arc(sx,360,520,0,7);x.fill();x.fillStyle='#ffd34a';x.beginPath();x.arc(sx,360,260,0,7);x.fill();face(sx+60,330,150,lt>1.2?'joy':'happy',lt,'#8a3a10');}
+ planet(640+(58-d)*k,250,26,'#d8c8b8','#7a6a5e','wow',lt,'Mercury');
+ planet(640+(108-d)*k,500,40,'#ffe6b0','#c8903a','wow',lt,'Venus');
+ for(let i=0;i<14;i++){const y=200+((i*53)%330),len=80+(i*37)%120,X=((-lt*1600-i*137)%W+W)%W;x.strokeStyle='rgba(255,230,140,.35)';x.lineWidth=2;x.beginPath();x.moveTo(X,y);x.lineTo(X+len,y);x.stroke();}
+ x.strokeStyle='rgba(255,220,100,.6)';x.lineWidth=6;x.beginPath();x.moveTo(380,360);x.lineTo(610,360);x.stroke();
+ photon(640,360,24,'rgb(255,214,74)','joy',lt);
+ pop('WHOOSH!',720,300,lt-1,'#fff3b0',44);pop('WHOOSH!',720,300,lt-6.7,'#fff3b0',44);pop('ZOOM!',720,300,lt-11.5,'#fff3b0',44);
+ const sec=d/150*500;rr(880,40,360,120,20);x.fillStyle='rgba(15,20,50,.8)';x.fill();x.strokeStyle='#ffd84a';x.lineWidth=2;x.stroke();
+ txt(Math.floor(sec/60)+':'+String(Math.floor(sec%60)).padStart(2,'0'),940,90,44,'#ffd84a',SANS,'left','900');
+ txt('min : sec',940,130,14,'#cfd9ff',SANS,'left','600');
+ txt(d.toFixed(1)+'M km',1220,90,26,'#fff',SANS,'right','800');txt('of ~150M km',1220,128,15,'#cfd9ff',SANS,'right','600');
+ chip('c ≈ 300,000 km/s · no more bonking',40,60,(lt-.6)/.5,'#ffe9a8');
+ rr(40,640,1200,10,5);x.fillStyle='rgba(255,255,255,.15)';x.fill();rr(40,640,1200*cl(d/150),10,5);x.fillStyle='#ffd84a';x.fill();
+ txt('☉',30,620,22,'#ffd84a',SANS,'left');txt('Earth',1240,620,16,'#9fd4ff',SANS,'right','700');
+}
+function s5(lt){
+ if(lt<5.2){x.fillStyle='#0a0820';x.fillRect(0,0,W,H);for(const s of stars){if(s[0]<W){x.fillStyle='rgba(255,255,255,'+s[3]+')';x.fillRect(s[0],s[1],s[2],s[2]);}}
+  const r=60+Math.pow(lt/5.2,3)*1400,X=lerp(1000,640,eio(lt/5)),Y=360;
+  const g=x.createRadialGradient(X-r*.3,Y-r*.3,r*.1,X,Y,r);g.addColorStop(0,'#7fd0ff');g.addColorStop(1,'#1a4fa0');x.fillStyle=g;x.beginPath();x.arc(X,Y,r,0,7);x.fill();
+  x.save();x.beginPath();x.arc(X,Y,r,0,7);x.clip();x.fillStyle='#4fae5a';for(let i=0;i<5;i++){x.beginPath();x.ellipse(X+Math.cos(i*1.7+lt*.2)*r*.5,Y+Math.sin(i*2.3)*r*.45,r*.28,r*.16,i,0,7);x.fill();}x.restore();
+  if(r<300)face(X,Y,r*.8,'happy',lt);
+  photon(lerp(200,620,eio(lt/4.5)),lerp(360,340,lt/5),22,'rgb(255,214,74)','joy',lt);
+  chip('Arrival: 8 min 20 s after leaving the surface',40,60,(lt-.4)/.5,'#ffe9a8');
+  return;}
+ const l=lt-5.2,g=x.createLinearGradient(0,0,0,H);g.addColorStop(0,'#7cc8ff');g.addColorStop(1,'#fff1c8');x.fillStyle=g;x.fillRect(0,0,W,H);
+ x.fillStyle='#ffd84a';x.beginPath();x.arc(1120,110,60,0,7);x.fill();face(1120,110,60,l>3.5?'joy':'happy',lt,'#8a3a10');
+ x.fillStyle='#7cc46a';x.beginPath();x.ellipse(640,820,900,300,0,0,7);x.fill();x.fillStyle='#5aa850';x.beginPath();x.ellipse(200,800,500,220,0,0,7);x.fill();
+ x.strokeStyle='#3e8a3e';x.lineWidth=8;x.beginPath();x.moveTo(640,720);x.quadraticCurveTo(620,600,650,520);x.stroke();
+ const sw=Math.sin(lt*2)*.05+(l>1.8&&l<2.6?Math.sin((l-1.8)*20)*.15*(2.6-l):0);
+ x.save();x.translate(650,525);x.rotate(-.5+sw);x.fillStyle='#4cb04a';x.beginPath();x.ellipse(70,0,80,30,0,0,7);x.fill();x.strokeStyle='#2f7a30';x.lineWidth=3;x.beginPath();x.moveTo(0,0);x.lineTo(140,0);x.stroke();x.restore();
+ x.fillStyle='#ff8fb0';for(let i=0;i<6;i++){x.beginPath();x.ellipse(650+Math.cos(i)*0,520,0,0,0,0,7);}
+ const lp=eio(l/1.8),PX=lerp(560,700,lp),PY=lerp(-40,460,lp)-Math.sin(lp*3.14)*40;
+ if(l>1.8){const a=1-cl((l-1.8)/1.5);x.fillStyle='rgba(255,240,150,'+a*.6+')';x.beginPath();x.arc(PX,PY+10,40+(l-1.8)*120,0,7);x.fill();}
+ photon(PX,PY,l>1.8?18:20,'rgb(255,214,74)',l>1.8?'joy':'wow',lt);
+ pop('DING!',PX+70,PY-60,l-1.8,'#fff',52,1.2);
+ if(l>3.2){const a=eout((l-3.2)/.8);x.save();x.globalAlpha=a;rr(240,140,800,170,26);x.fillStyle='rgba(255,250,235,.88)';x.fill();
+  txt('The Long Way Out',640,195,52,'#5a1a30',SERIF);txt('~100,000 years in the Sun  ·  8 min 20 s to you',640,262,24,'#7a3a40',SANS,'center','700');x.restore();}
+}
+function captions(t){const c=CAP.find(k=>t>=k[0]&&t<k[1]);if(!c)return;const a=cl(Math.min((t-c[0])/.2,(c[1]-t)/.2));
+ x.save();x.globalAlpha=a;x.font='600 26px '+SANS;const L=wrap(c[2],1000),h=L.length*34+20,w=Math.max(...L.map(s=>x.measureText(s).width))+44;
+ rr(640-w/2,H-36-h,w,h,14);x.fillStyle='rgba(8,4,18,.78)';x.fill();
+ L.forEach((s,i)=>txt(s,640,H-36-h+27+i*34,26,'#fff',SANS,'center','600'));x.restore();}
+const B=[0,8,26,34,48,60];
+function draw(t){x.setTransform(1,0,0,1,0,0);x.clearRect(0,0,W,H);
+ if(t<8)s1(t);else if(t<26)s2(t-8);else if(t<34)s3(t-26);else if(t<48)s4(t-34);else s5(t-48);
+ let dm=9;for(const b of B)dm=Math.min(dm,Math.abs(t-b));const fa=cl(1-dm/.35);if(fa>0){x.fillStyle='rgba(0,0,0,'+fa+')';x.fillRect(0,0,W,H);}
+ captions(t);}
+let t0=null;
+function frame(now){if(t0===null)t0=now;const t=(((now-t0)/1000+off)%DUR+DUR)%DUR;draw(t);requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

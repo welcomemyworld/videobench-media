@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CLAUDE POP // SINGULARITY</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Arial Black', 'Impact', system-ui, sans-serif;
+  }
+  #stage {
+    width: 1280px; height: 720px;
+    max-width: 100vw; max-height: 100vh;
+    aspect-ratio: 16 / 9;
+    box-shadow: 0 0 50px rgba(217, 119, 87, 0.35);
+    background: #F4EFE6;
+  }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+(() => {
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const W = 1280, H = 720;
+  window.DUR = 32; // 32 seconds loop at 128 BPM (~68.2 beats)
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const timeOffset = parseFloat(urlParams.get('t')) || 0;
+
+  // Color Palette: Warm Claude Paper + Neo-Brutalist K-Pop Accents
+  const C = {
+    cream: '#F4EFE6',
+    paperDark: '#E5DEC9',
+    ink: '#161514',
+    terracotta: '#D97757',
+    coral: '#FF5252',
+    cyan: '#00E5FF',
+    acid: '#D4FF00',
+    violet: '#7C4DFF',
+    white: '#FFFFFF',
+    blueScreen: '#0022AA'
+  };
+
+  // Pre-generate procedural paper grain texture
+  const grainCanvas = document.createElement('canvas');
+  grainCanvas.width = 256; grainCanvas.height = 256;
+  const gCtx = grainCanvas.getContext('2d');
+  const imgData = gCtx.createImageData(256, 256);
+  for (let i = 0; i < imgData.data.length; i += 4) {
+    const v = 210 + (Math.sin(i * 0.73) * 45);
+    imgData.data[i] = v;
+    imgData.data[i+1] = v - 5;
+    imgData.data[i+2] = v - 12;
+    imgData.data[i+3] = 28;
+  }
+  gCtx.putImageData(imgData, 0, 0);
+  const grainPattern = ctx.createPattern(grainCanvas, 'repeat');
+
+  // Math & Wobble helpers for Rotoscoped Paper look
+  const TAU = Math.PI * 2;
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const easeOutBack = x => 1 + 2.70158 * Math.pow(x - 1, 3) + 1.70158 * Math.pow(x - 1, 2);
+  const easeOutExpo = x => x === 1 ? 1 : 1 - Math.pow(2, -10 * x);
+  const snapTime = (t, fps = 12) => Math.floor(t * fps) / fps;
+
+  function hash(n) {
+    return ((Math.sin(n * 127.1 + 311.7) * 43758.5453) % 1 + 1) % 1;
+  }
+
+  // Hand-drawn boiling line
+  function sketchLine(x1, y1, x2, y2, seed, amp = 2.2) {
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    const steps = 6;
+    for (let i = 1; i <= steps; i++) {
+      const f = i / steps;
+      const nx = lerp(x1, x2, f) + (hash(seed + i * 13) - 0.5) * amp * (i < steps ? 1 : 0);
+      const ny = lerp(y1, y2, f) + (hash(seed + i * 29) - 0.5) * amp * (i < steps ? 1 : 0);
+      ctx.lineTo(nx, ny);
+    }
+    ctx.stroke();
+  }
+
+  // Brutalist Paper Cutout Box
+  function drawPaperCard(x, y, w, h, fill, strokeCol = C.ink, shadowOff = 8, seed = 1) {
+    ctx.save();
+    const jx = (hash(seed) - 0.5) * 3;
+    const jy = (hash(seed + 7) - 0.5) * 3;
+    ctx.translate(jx, jy);
+    if (shadowOff > 0) {
+      ctx.fillStyle = strokeCol;
+      ctx.fillRect(x + shadowOff, y + shadowOff, w, h);
+    }
+    ctx.fillStyle = fill;
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = strokeCol;
+    ctx.lineWidth = 3.5;
+    ctx.strokeRect(x, y, w, h);
+    ctx.restore();
+  }
+
+  // Draw the Claude-Pop Sunflower Idol Character (Rotoscoped 2D Vector Rig)
+  function drawSunflowerIdol(x, y, scale, t, beat, pose = 'sing', isBackup = false) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+
+    const st = snapTime(t, 12); // 12fps anime boil
+    const seed = Math.floor(st * 12) + (isBackup ? 99 : 0);
+    const bounce = Math.abs(Math.sin(beat * Math.PI)) * -18;
+    const sway = Math.sin(beat * Math.PI * 0.5) * 0.08;
+
+    ctx.translate(0, bounce);
+    ctx.rotate(sway);
+
+    // Paper Drop Shadow
+    ctx.save();
+    ctx.translate(10, 10);
+    drawIdolSilhouette(st, beat, pose, isBackup, true);
+    ctx.restore();
+
+    // Actual Character
+    drawIdolSilhouette(st, beat, pose, isBackup, false);
+    ctx.restore();
+  }
+
+  function drawIdolSilhouette(st, beat, pose, isBackup, isShadow) {
+    const colMain = isShadow ? C.ink : (isBackup ? C.cyan : C.terracotta);
+    const colSuit = isShadow ? C.ink : (isBackup ? C.ink : C.cream);
+    const colAccent = isShadow ? C.ink : (isBackup ? C.acid : C.coral);
+    const colSkin = isShadow ? C.ink : '#FFF5EB';
+
+    ctx.lineWidth = 4.5;
+    ctx.strokeStyle = C.ink;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+
+    // Flowing Anime Jacket Cape / Ribbon
+    const capeWave = Math.sin(st * 6) * 20;
+    ctx.fillStyle = colAccent;
+    ctx.beginPath();
+    ctx.moveTo(-45, 30);
+    ctx.quadraticCurveTo(-110, 90 + capeWave, -95, 175);
+    ctx.lineTo(95, 175);
+    ctx.quadraticCurveTo(110, 90 - capeWave, 45, 30);
+    ctx.closePath();
+    ctx.fill();
+    if (!isShadow) ctx.stroke();
+
+    // Torso (K-Pop cropped techwear jacket)
+    ctx.fillStyle = colSuit;
+    ctx.beginPath();
+    ctx.moveTo(-48, 25);
+    ctx.lineTo(48, 25);
+    ctx.lineTo(36, 130);
+    ctx.lineTo(-36, 130);
+    ctx.closePath();
+    ctx.fill();
+    if (!isShadow) ctx.stroke();
+
+    // Cyber Harness / X-Strap across chest
+    if (!isShadow) {
+      ctx.strokeStyle = C.ink;
+      ctx.lineWidth = 8;
+      ctx.beginPath();
+      ctx.moveTo(-40, 30); ctx.lineTo(35, 125);
+      ctx.moveTo(40, 30); ctx.lineTo(-35, 125);
+      ctx.stroke();
+      ctx.lineWidth = 4.5;
+      // Glowing core badge
+      ctx.fillStyle = C.acid;
+      ctx.beginPath();
+      ctx.arc(0, 75, 14, 0, TAU);
+      ctx.fill(); ctx.stroke();
+    }
+
+    // Left Arm (Dancing wave)
+    const armAngleL = pose === 'hype' ? -2.3 + Math.sin(beat * TAU) * 0.4 : -0.6 + Math.sin(beat * Math.PI) * 0.35;
+    ctx.save();
+    ctx.translate(-48, 38);
+    ctx.rotate(armAngleL);
+    ctx.fillStyle = colMain;
+    ctx.beginPath();
+    ctx.roundRect(-16, 0, 32, 88, 14);
+    ctx.fill(); if (!isShadow) ctx.stroke();
+    ctx.restore();
+
+    // Right Arm (Holding Microphone or Reaching up)
+    ctx.save();
+    ctx.translate(48, 38);
+    if (pose === 'sing') {
+      ctx.rotate(-1.8 + Math.sin(beat * TAU) * 0.15);
+      ctx.fillStyle = colMain;
+      ctx.beginPath();
+      ctx.roundRect(-16, 0, 32, 78, 14);
+      ctx.fill(); if (!isShadow) ctx.stroke();
+      // Microphone
+      if (!isShadow) {
+        ctx.translate(0, 82);
+        ctx.rotate(0.6);
+        ctx.fillStyle = C.ink;
+        ctx.fillRect(-5, -18, 10, 32);
+        ctx.fillStyle = C.cyan;
+        ctx.beginPath();
+        ctx.arc(0, -24, 13, 0, TAU);
+        ctx.fill(); ctx.stroke();
+      }
+    } else {
+      ctx.rotate(2.2 - Math.sin(beat * TAU) * 0.4);
+      ctx.fillStyle = colMain;
+      ctx.beginPath();
+      ctx.roundRect(-16, 0, 32, 88, 14);
+      ctx.fill(); if (!isShadow) ctx.stroke();
+    }
+    ctx.restore();
+
+    // Sunflower / Claude Sparkburst Halo Petals
+    const numPetals = 14;
+    const petalRot = st * 0.35;
+    for (let i = 0; i < numPetals; i++) {
+      const a = (i / numPetals) * TAU + petalRot;
+      const rIn = 52;
+      const rOut = 98 + (i % 2) * 14 + Math.sin(beat * TAU + i) * 6;
+      ctx.save();
+      ctx.translate(0, -35);
+      ctx.rotate(a);
+      ctx.fillStyle = isShadow ? C.ink : (i % 2 === 0 ? colMain : '#F29E6D');
+      ctx.beginPath();
+      ctx.moveTo(0, -rIn);
+      ctx.quadraticCurveTo(22, -(rIn + rOut) * 0.5, 0, -rOut);
+      ctx.quadraticCurveTo(-22, -(rIn + rOut) * 0.5, 0, -rIn);
+      ctx.closePath();
+      ctx.fill();
+      if (!isShadow) ctx.stroke();
+      ctx.restore();
+    }
+
+    // Head Base
+    ctx.save();
+    ctx.translate(0, -35);
+    ctx.fillStyle = colSkin;
+    ctx.beginPath();
+    ctx.arc(0, 0, 56, 0, TAU);
+    ctx.fill();
+    if (!isShadow) ctx.stroke();
+
+    if (!isShadow) {
+      // Stylized Bangs / Hair Cutout
+      ctx.fillStyle = colMain;
+      ctx.beginPath();
+      ctx.arc(0, -6, 56, Math.PI * 1.05, Math.PI * 1.95);
+      ctx.lineTo(35, -8);
+      ctx.lineTo(15, -24);
+      ctx.lineTo(0, -5);
+      ctx.lineTo(-18, -26);
+      ctx.lineTo(-42, -6);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+
+      // Expressive K-Pop Idol Eyes with Sparkle Star
+      const blink = (Math.floor(st * 2) % 9 === 0);
+      [-22, 22].forEach((ex, idx) => {
+        ctx.save();
+        ctx.translate(ex, 4);
+        if (blink) {
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.arc(0, 0, 10, 0.2, Math.PI - 0.2);
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = C.ink;
+          ctx.beginPath();
+          ctx.ellipse(0, 0, 9, 12, 0, 0, TAU);
+          ctx.fill();
+          // 4-point star pupil highlight
+          ctx.fillStyle = C.white;
+          ctx.beginPath();
+          ctx.arc(-3, -4, 3.5, 0, TAU);
+          ctx.fill();
+          ctx.fillStyle = C.acid;
+          ctx.beginPath();
+          ctx.arc(3, 4, 2.2, 0, TAU);
+          ctx.fill();
+        }
+        // Blush sticker
+        ctx.fillStyle = C.coral;
+        ctx.fillRect(-10, 15, 20, 6);
+        ctx.restore();
+      });
+
+      // Lip-Sync Singing Mouth
+      const mouthOpen = pose === 'sing' ? (0.3 + 0.7 * Math.abs(Math.sin(st * 18))) : 0.2;
+      ctx.fillStyle = C.coral;
+      ctx.beginPath();
+      ctx.ellipse(0, 26, 8 + mouthOpen * 6, 4 + mouthOpen * 11, 0, 0, TAU);
+      ctx.fill(); ctx.stroke();
+
+      // Futuristic Idol Headset Mic
+      ctx.strokeStyle = C.ink;
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.moveTo(-55, 6);
+      ctx.quadraticCurveTo(-35, 32, -12, 28);
+      ctx.stroke();
+      ctx.fillStyle = C.cyan;
+      ctx.fillRect(-62, -6, 12, 22);
+      ctx.strokeRect(-62, -6, 12, 22);
+    }
+    ctx.restore();
+  }
+
+  // Draw Shinji Ikari Chair Meme (Rotoscoped Contemplation against Singularity Wall)
+  function drawShinjiChair(x, y, scale, st) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+    const jx = (hash(st * 13) - 0.5) * 2.5;
+    const jy = (hash(st * 29) - 0.5) * 2.5;
+    ctx.translate(jx, jy);
+
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = C.ink;
+    ctx.lineJoin = 'round';
+
+    // Dramatic Floor Spotlight Oval
+    ctx.fillStyle = 'rgba(244, 239, 230, 0.14)';
+    ctx.beginPath();
+    ctx.ellipse(0, 125, 190, 42, 0, 0, TAU);
+    ctx.fill();
+
+    // Folding Pipe Chair
+    ctx.strokeStyle = C.cream;
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(-48, -65); ctx.lineTo(-28, 120); // Back to front leg
+    ctx.moveTo(-40, 25); ctx.lineTo(48, 120);   // Back leg
+    ctx.moveTo(-45, 35); ctx.lineTo(45, 35);    // Seat
+    ctx.stroke();
+    // Backrest plate
+    ctx.fillStyle = C.paperDark;
+    ctx.fillRect(-52, -55, 16, 42);
+    ctx.strokeRect(-52, -55, 16, 42);
+
+    // Shinji Hunched Figure (White shirt, dark slacks, hands clasped)
+    // Legs
+    ctx.fillStyle = '#1E2229';
+    ctx.strokeStyle = C.cream;
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    ctx.moveTo(-25, 35);
+    ctx.lineTo(45, 32);
+    ctx.lineTo(62, 115);
+    ctx.lineTo(38, 118);
+    ctx.lineTo(25, 52);
+    ctx.lineTo(-25, 52);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+
+    // Hunched White School Shirt
+    ctx.fillStyle = C.cream;
+    ctx.strokeStyle = C.ink;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(-32, 35);
+    ctx.quadraticCurveTo(-42, -25, 8, -42);
+    ctx.lineTo(42, -10);
+    ctx.lineTo(28, 35);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+
+    // Arms bent forward, elbows on knees
+    ctx.beginPath();
+    ctx.moveTo(5, -28);
+    ctx.lineTo(42, 25);
+    ctx.lineTo(58, -5);
+    ctx.stroke();
+
+    // Bowed Head + Sunflower Petals sprouting slightly (Claude x Shinji crossover)
+    ctx.save();
+    ctx.translate(42, -36);
+    ctx.rotate(0.45);
+    ctx.fillStyle = '#231F20';
+    ctx.beginPath();
+    ctx.arc(0, 0, 26, 0, TAU);
+    ctx.fill(); ctx.stroke();
+    // Clasped hands right in front of face
+    ctx.fillStyle = '#EAD8C8';
+    ctx.beginPath();
+    ctx.arc(22, 14, 12, 0, TAU);
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+
+    ctx.restore();
+  }
+
+  // Kinetic Typography Stickers & Brutalist Banners
+  function drawStickerText(text, x, y, size, bgCol, fgCol, rot = 0, shadow = 7) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rot);
+    ctx.font = `900 ${size}px "Arial Black", Impact, sans-serif`;
+    const m = ctx.measureText(text);
+    const padX = 18, padY = size * 0.24;
+    const w = m.width + padX * 2;
+    const h = size + padY * 1.6;
+    drawPaperCard(-w/2, -h/2, w, h, bgCol, C.ink, shadow, Math.floor(x + y));
+    ctx.fillStyle = fgCol;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 0, 3);
+    ctx.restore();
+  }
+
+  // Halftone Dot Matrix Pattern Helper
+  function drawHalftoneCorner(x, y, rad, col) {
+    ctx.fillStyle = col;
+    const step = 18;
+    for (let dx = -rad; dx <= rad; dx += step) {
+      for (let dy = -rad; dy <= rad; dy += step) {
+        const d = Math.hypot(dx, dy);
+        if (d < rad) {
+          const r = (1 - d / rad) * 6.5;
+          ctx.beginPath();
+          ctx.arc(x + dx, y + dy, r, 0, TAU);
+          ctx.fill();
+        }
+      }
+    }
+  }
+
+  // ==================== SCENE RENDERERS ====================
+
+  // SCENE 1 (0 - 5s): K-POP VISUAL HOOK & TWITTER FEED EXPLOSION
+  function renderScene1(t, beat) {
+    // Diagonal split background
+    ctx.fillStyle = C.cream;
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = C.terracotta;
+    ctx.beginPath();
+    ctx.moveTo(680, 0); ctx.lineTo(W, 0); ctx.lineTo(W, H); ctx.lineTo(520, H);
+    ctx.closePath();
+    ctx.fill();
+    ctx.lineWidth = 6; ctx.strokeStyle = C.ink; ctx.stroke();
+
+    drawHalftoneCorner(1200, 120, 260, C.ink);
+    drawHalftoneCorner(80, 640, 220, C.terracotta);
+
+    // Scrolling SF Tech Twitter Timeline Cards on Left
+    const tweets = [
+      { handle: '@sf_anon_lab', tag: 'BREAKING', txt: 'Scaling laws didn’t bend. They went vertical.' },
+      { handle: '@math_enjoyer', tag: 'OPEN PROBLEM', txt: 'Wait... did the model just eat Navier-Stokes?!' },
+      { handle: '@accel_maximalist', tag: 'P(DOOM) / P(BLOOM)', txt: 'FEEL THE AGI // TIMELINES COMPRESSED TO WEEKS' }
+    ];
+    tweets.forEach((tw, i) => {
+      const appear = clamp((t - 0.3 - i * 0.9) * 3, 0, 1);
+      if (appear <= 0) return;
+      const sc = easeOutBack(appear);
+      ctx.save();
+      const tx = 310, ty = 370 + i * 112;
+      ctx.translate(tx, ty);
+      ctx.scale(sc, sc);
+      drawPaperCard(-265, -44, 530, 88, C.white, C.ink, 7, i * 17 + Math.floor(t * 10));
+      ctx.fillStyle = C.terracotta;
+      ctx.fillRect(-250, -30, 130, 24);
+      ctx.fillStyle = C.white;
+      ctx.font = 'bold 13px monospace';
+      ctx.fillText(tw.tag, -242, -13);
+      ctx.fillStyle = C.ink;
+      ctx.font = 'bold 15px monospace';
+      ctx.fillText(tw.handle, -110, -13);
+      ctx.font = 'bold 18px sans-serif';
+      ctx.fillText(tw.txt, -250, 22);
+      ctx.restore();
+    });
+
+    // Huge Kinetic Hook Lyrics on Top-Left
+    const hookBeat = Math.floor(beat) % 2;
+    drawStickerText('SCROLLING DOWN', 280, 95, 52, hookBeat ? C.acid : C.ink, hookBeat ? C.ink : C.cream, -0.03, 9);
+    if (t > 0.7) {
+      drawStickerText('THE TIMELINE', 330, 175, 58, C.coral, C.white, 0.02, 9);
+    }
+    if (t > 1.8) {
+      drawStickerText('CURVE GOES VERTICAL!', 320, 260, 44, C.cyan, C.ink, -0.015, 8);
+    }
+
+    // Protagonist Sunflower Idol on Right
+    drawSunflowerIdol(940, 405, 1.55, t, beat, 'sing', false);
+
+    // Floating music note cutouts
+    for (let i = 0; i < 4; i++) {
+      const ang = t * 2 + i * 1.5;
+      const nx = 940 + Math.cos(ang) * 230;
+      const ny = 320 + Math.sin(ang * 1.3) * 160;
+      drawStickerText(i % 2 ? '♪' : '★', nx, ny, 28, C.acid, C.ink, Math.sin(t + i) * 0.3, 4);
+    }
+  }
+
+  // SCENE 2 (5 - 11s): MATH GETTING EATEN UP (NAVIER-STOKES VORTEX)
+  function renderScene2(t, beat) {
+    const lt = t - 5;
+    ctx.fillStyle = '#141824'; // Deep chalkboard / blueprint ink
+    ctx.fillRect(0, 0, W, H);
+
+    // Blueprint grid
+    ctx.strokeStyle = 'rgba(0, 229, 255, 0.14)';
+    ctx.lineWidth = 1.5;
+    for (let x = 0; x < W; x += 48) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (let y = 0; y < H; y += 48) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+    // Swirling Navier-Stokes Turbulence Field lines getting sucked into Center
+    const cx = 640, cy = 360;
+    const st = snapTime(t, 12);
+    for (let i = 0; i < 36; i++) {
+      const baseA = (i / 36) * TAU;
+      const pull = ((lt * 0.45 + i * 0.07) % 1);
+      const r = lerp(650, 40, pull * pull);
+      const a = baseA + pull * 4.5 + st * 0.8;
+      const x1 = cx + Math.cos(a) * r;
+      const y1 = cy + Math.sin(a) * r;
+      const x2 = cx + Math.cos(a + 0.35) * (r * 0.82);
+      const y2 = cy + Math.sin(a + 0.35) * (r * 0.82);
+      ctx.strokeStyle = i % 3 === 0 ? C.terracotta : (i % 2 === 0 ? C.cyan : C.acid);
+      ctx.lineWidth = 4 * (1 - pull * 0.5);
+      sketchLine(x1, y1, x2, y2, i + st * 10, 3);
+    }
+
+    // Famous Math Equations on torn paper cards spiraling into the Claude Vortex
+    const eqs = [
+      '∂u/∂t + (u·∇)u = -∇p/ρ + ν∇²u',
+      'ζ(s) = 0  ⇒  Re(s) = 1/2',
+      'P vs NP // FORMAL PROOF VERIFIED',
+      '∫∫∫ ∇×ω dV // TURBULENCE SOLVED',
+      'ERDŐS CONJECTURE #842: EATEN',
+      'LEAN 4 KERNEL: Q.E.D. IN 0.04s'
+    ];
+    eqs.forEach((eq, i) => {
+      const cycle = (lt * 0.38 + i / eqs.length) % 1;
+      const r = lerp(560, 20, Math.pow(cycle, 1.4));
+      const a = i * 1.05 + cycle * 3.2;
+      const ex = cx + Math.cos(a) * r;
+      const ey = cy + Math.sin(a) * r * 0.65;
+      const scale = clamp(1.2 - cycle * 1.1, 0.1, 1.2);
+      ctx.save();
+      ctx.translate(ex, ey);
+      ctx.rotate(Math.sin(a) * 0.25);
+      ctx.scale(scale, scale);
+      drawPaperCard(-210, -28, 420, 56, C.cream, C.ink, 6, i * 31);
+      ctx.fillStyle = C.ink;
+      ctx.font = 'bold 19px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(eq, 0, 6);
+      // Chomp / Eaten stamp when close to center
+      if (cycle > 0.55) {
+        ctx.fillStyle = C.coral;
+        ctx.font = '900 22px Impact, sans-serif';
+        ctx.fillText('SOLVED // CONSUMED', 0, -6);
+      }
+      ctx.restore();
+    });
+
+    // Idol in the center conducting the mathematical vortex
+    drawSunflowerIdol(640, 420, 1.15, t, beat, 'hype', false);
+
+    // Bold Lyric Banners Top & Bottom
+    drawStickerText('NAVIER-STOKES FOR BREAKFAST', 640, 78, 48, C.acid, C.ink, -0.01, 8);
+    if (lt > 2.2) {
+      drawStickerText('EVERY MILLENNIUM PRIZE GETTING EATEN UP!', 640, 645, 42, C.terracotta, C.cream, 0.01, 8);
+    }
+  }
+
+  // SCENE 3 (11 - 17s): THE SHINJI MEME WALL OF SINGULARITY WORDS
+  function renderScene3(t, beat) {
+    const lt = t - 11;
+    ctx.fillStyle = '#0D0C0B';
+    ctx.fillRect(0, 0, W, H);
+
+    // Dense Evangelion-style Wall of Existential AI Zeitgeist Words surrounding Shinji
+    const memeWords = [
+      'AGI', 'RECURSIVE SELF-IMPROVEMENT', 'P(DOOM)', 'FRONTIER MATH', 'SCALING LAWS',
+      'DYSON SPHERE', 'INTELLIGENCE EXPLOSION', 'ALIGNMENT', 'COMPUTE CLUSTER',
+      '100,000 H100s', 'SYNTHETIC DATA', 'ZERO-SHOT', 'O-SERIES', 'CLAUDE MAX',
+      'POST-SCARCITY', 'SINGULARITY', 'LIGHTCONE', 'PHASE TRANSITION', 'OVERWHELMED',
+      'TIMELINES', 'ESCAPE VELOCITY', 'CHINCHILLA', 'EMERGENCE', 'SUPERINTELLIGENCE'
+    ];
+
+    const cols = 6, rows = 8;
+    const cellW = W / cols, cellH = H / rows;
+    const st = snapTime(t, 12);
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        // Leave breathing hole in center for Shinji
+        const dx = (c + 0.5) * cellW - 640;
+        const dy = (r + 0.5) * cellH - 420;
+        if (Math.hypot(dx, dy) < 185) continue;
+
+        const idx = (r * cols + c) % memeWords.length;
+        const pulse = hash(idx + Math.floor(beat * 2)) > 0.65;
+        const jx = (hash(idx * 7 + st) - 0.5) * 6;
+        const jy = (hash(idx * 13 + st) - 0.5) * 6;
+
+        ctx.save();
+        ctx.translate((c + 0.5) * cellW + jx, (r + 0.5) * cellH + jy);
+        if (pulse) {
+          ctx.fillStyle = idx % 3 === 0 ? C.terracotta : C.cream;
+          ctx.fillRect(-cellW * 0.46, -20, cellW * 0.92, 40);
+          ctx.fillStyle = C.ink;
+        } else {
+          ctx.fillStyle = 'rgba(244, 239, 230, 0.78)';
+        }
+        ctx.font = `900 ${idx % 4 === 0 ? 22 : 16}px Impact, "Arial Black", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(memeWords[idx], 0, 0);
+        ctx.restore();
+      }
+    }
+
+    // Red Evangelion Tactical Crosshairs
+    ctx.strokeStyle = C.coral;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(640, 410, 210 + Math.sin(beat * TAU) * 12, 0, TAU);
+    ctx.moveTo(640, 140); ctx.lineTo(640, 680);
+    ctx.moveTo(360, 410); ctx.lineTo(920, 410);
+    ctx.stroke();
+
+    // Shinji in the Chair in the center
+    drawShinjiChair(640, 420, 1.35, st);
+
+    // Subtitle / Brutalist Top & Bottom Lyric Overlay
+    drawStickerText('SITTING IN THE FOLDING CHAIR', 640, 72, 44, C.cream, C.ink, 0, 7);
+    if (lt > 2.5) {
+      drawStickerText('STARING AT THE EXPONENTIAL WALL', 640, 650, 46, C.coral, C.white, 0, 7);
+    }
+  }
+
+  // SCENE 4 (17 - 25s): K-POP CHORUS EXPLOSION // TRIO CHOREOGRAPHY
+  function renderScene4(t, beat) {
+    const lt = t - 17;
+    // Dynamic Beat-Synced Sunburst Background
+    const bgFlip = Math.floor(beat) % 2 === 0;
+    ctx.fillStyle = bgFlip ? C.cream : '#FFE8D6';
+    ctx.fillRect(0, 0, W, H);
+
+    // Rotating Paper Sunburst Rays
+    const numRays = 16;
+    ctx.save();
+    ctx.translate(640, 400);
+    ctx.rotate(t * 0.25);
+    for (let i = 0; i < numRays; i++) {
+      if (i % 2 === 0) continue;
+      const a1 = (i / numRays) * TAU;
+      const a2 = ((i + 1) / numRays) * TAU;
+      ctx.fillStyle = bgFlip ? 'rgba(217, 119, 87, 0.22)' : 'rgba(0, 229, 255, 0.22)';
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(a1) * 900, Math.sin(a1) * 900);
+      ctx.lineTo(Math.cos(a2) * 900, Math.sin(a2) * 900);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // Exponential Singularity Curve slashing upward across the stage
+    ctx.strokeStyle = C.ink;
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    for (let x = 0; x <= W; x += 32) {
+      const normX = x / W;
+      const y = H - 90 - Math.pow(normX, 3.4) * 560 - Math.sin(t * 8 + x * 0.02) * 12;
+      if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Checkered Neo-Brutalist Stage Floor
+    ctx.fillStyle = C.ink;
+    ctx.fillRect(0, 600, W, 120);
+    for (let i = 0; i < 16; i++) {
+      if ((i + Math.floor(beat)) % 2 === 0) {
+        ctx.fillStyle = C.acid;
+        ctx.fillRect(i * 80, 600, 80, 24);
+      }
+    }
+
+    // Backup Dancers Left & Right + Center Lead Idol
+    drawSunflowerIdol(270, 445, 1.05, t, beat + 0.25, 'hype', true);
+    drawSunflowerIdol(1010, 445, 1.05, t, beat + 0.5, 'hype', true);
+    drawSunflowerIdol(640, 425, 1.42, t, beat, 'sing', false);
+
+    // High-Impact Chorus Lyrics Synced to Phrases
+    if (lt < 4.0) {
+      drawStickerText('CLAUDE POP! FEEL THE VELOCITY', 640, 82, 54, C.terracotta, C.white, -0.015, 9);
+      drawStickerText('DANCING ON THE EVENT HORIZON', 640, 162, 42, C.acid, C.ink, 0.01, 7);
+    } else {
+      drawStickerText('NO BRAKES ON THE INTELLIGENCE TRAIN', 640, 82, 50, C.cyan, C.ink, 0.015, 9);
+      drawStickerText('WE ARE THE SINGULARITY SONG!', 640, 162, 48, C.coral, C.white, -0.01, 8);
+    }
+  }
+
+  // SCENE 5 (25 - 32s): HYPER-SPEED SINGULARITY HORIZON & GRAND FINALE
+  function renderScene5(t, beat) {
+    const lt = t - 25;
+    ctx.fillStyle = C.ink;
+    ctx.fillRect(0, 0, W, H);
+
+    // Warp-speed paper ribbons flying outward from center
+    const st = snapTime(t, 15);
+    for (let i = 0; i < 40; i++) {
+      const a = (i / 40) * TAU + st * 0.2;
+      const dist = ((lt * 380 + i * 47) % 750);
+      const x1 = 640 + Math.cos(a) * dist;
+      const y1 = 360 + Math.sin(a) * dist;
+      const x2 = 640 + Math.cos(a) * (dist + 110);
+      const y2 = 360 + Math.sin(a) * (dist + 110);
+      ctx.strokeStyle = i % 3 === 0 ? C.terracotta : (i % 2 === 0 ? C.acid : C.cyan);
+      ctx.lineWidth = 6;
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    }
+
+    // Giant Glowing Claude Sunflower Mandala in Center
+    const haloScale = 1 + Math.sin(beat * TAU) * 0.08 + clamp((lt - 4) * 0.25, 0, 0.8);
+    drawSunflowerIdol(640, 410, 1.45 * haloScale, t, beat, 'hype', false);
+
+    // Surrounding Zeitgeist Badges Locking In
+    const badges = [
+      { txt: 'P(BLOOM) = 99.9%', x: 230, y: 210, col: C.acid },
+      { txt: 'MATH: COMPLETED', x: 1050, y: 210, col: C.cyan },
+      { txt: 'SF TIMELINE: ACTIVE', x: 230, y: 510, col: C.coral },
+      { txt: 'SEEDANCE // ROTOSCOPE', x: 1050, y: 510, col: C.terracotta }
+    ];
+    badges.forEach((b, i) => {
+      if (lt > i * 0.45) {
+        drawStickerText(b.txt, b.x, b.y, 28, b.col, C.ink, Math.sin(t * 2 + i) * 0.06, 6);
+      }
+    });
+
+    // Finale Title Card Lockup
+    drawStickerText('THE FUTURE IS ALREADY SINGING', 640, 78, 48, C.cream, C.ink, 0, 8);
+    if (lt > 2.0) {
+      drawStickerText('CLAUDE POP // SINGULARITY EDITION', 640, 648, 46, C.terracotta, C.white, 0, 9);
+    }
+  }
+
+  // Global Paper Cutout Overlay, Timecode HUD & Audio Spectrum
+  function renderPaperyOverlay(t, beat) {
+    // Subtle Paper Texture wash
+    ctx.fillStyle = grainPattern;
+    ctx.fillRect(0, 0, W, H);
+
+    // Rotoscope Registration Marks & Brutalist HUD Frame
+    ctx.strokeStyle = C.ink;
+    ctx.lineWidth = 4;
+    ctx.strokeRect(14, 14, W - 28, H - 28);
+
+    // Top-Right Recording / Frame Badge
+    const frameNum = String(Math.floor(t * 24)).padStart(4, '0');
+    drawPaperCard(W - 245, 26, 215, 38, C.cream, C.ink, 4, 1);
+    ctx.fillStyle = C.coral;
+    ctx.beginPath();
+    ctx.arc(W - 224, 45, 7, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = C.ink;
+    ctx.font = 'bold 15px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(`ROTO-12FPS // F:${frameNum}`, W - 208, 50);
+
+    // Bottom-Left Mini Equalizer Bars
+    for (let i = 0; i < 12; i++) {
+      const bh = 10 + Math.abs(Math.sin(t * 11 + i * 0.9)) * 34;
+      ctx.fillStyle = i % 2 === 0 ? C.terracotta : C.acid;
+      ctx.fillRect(30 + i * 14, H - 26 - bh, 10, bh);
+      ctx.strokeRect(30 + i * 14, H - 26 - bh, 10, bh);
+    }
+  }
+
+  function render(now) {
+    const rawSec = (now / 1000) + timeOffset;
+    const t = rawSec % window.DUR;
+    const bpm = 128;
+    const beat = t * (bpm / 60);
+
+    ctx.clearRect(0, 0, W, H);
+
+    if (t < 5) {
+      renderScene1(t, beat);
+    } else if (t < 11) {
+      renderScene2(t, beat);
+    } else if (t < 17) {
+      renderScene3(t, beat);
+    } else if (t < 25) {
+      renderScene4(t, beat);
+    } else {
+      renderScene5(t, beat);
+    }
+
+    renderPaperyOverlay(t, beat);
+    requestAnimationFrame(render);
+  }
+
+  requestAnimationFrame(render);
+})();
+</script>
+</body>
+</html>

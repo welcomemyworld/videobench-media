@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>MotionSites AI — 1M</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#s{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+</style></head><body>
+<canvas id="s" width="1280" height="720"></canvas>
+<script>
+window.DUR=24;
+const c=document.getElementById('s'),x=c.getContext('2d');
+function fit(){const k=Math.min(innerWidth/1280,innerHeight/720);c.style.transform=`scale(${k}) translate(-50%,-50%)`;c.style.transformOrigin='0 0';c.style.left='50%';c.style.top='50%';c.style.transform=`translate(-50%,-50%) scale(${k})`;}
+addEventListener('resize',fit);fit();
+const off=parseFloat(new URLSearchParams(location.search).get('t'))||0;
+const t0=performance.now()-off*1000;
+const cl=v=>Math.max(0,Math.min(1,v)),ease=v=>{v=cl(v);return 1-Math.pow(1-v,3)};
+const P=[];for(let i=0;i<140;i++)P.push({x:Math.random()*1280,y:Math.random()*720,z:Math.random()*2+.3,p:Math.random()*6});
+function fade(t,a,b){return cl((t-a)/.6)*cl((b-t)/.6)}
+function txt(s,X,Y,sz,a,col,w){x.globalAlpha=a;x.fillStyle=col||'#fff';x.font=`${w||700} ${sz}px Helvetica,Arial,sans-serif`;x.textAlign='center';x.fillText(s,X,Y);x.globalAlpha=1}
+const months=['M1','M2','M3','M4','M5','M6','M7','M8'];
+const vals=[12,38,85,160,270,430,680,1000];
+function logo(cx,cy,s,a,t){x.save();x.globalAlpha=a;x.translate(cx,cy);x.rotate(t*.6);
+for(let i=0;i<3;i++){x.rotate(Math.PI*2/3);const g=x.createLinearGradient(0,0,s,0);g.addColorStop(0,'#7b5cff');g.addColorStop(1,'#00e0ff');x.fillStyle=g;x.beginPath();x.ellipse(s*.45,0,s*.5,s*.18,0,0,7);x.fill();}
+x.restore();}
+function frame(){
+let t=((performance.now()-t0)/1000)%DUR;
+const g=x.createRadialGradient(640,360,50,640,360,800);g.addColorStop(0,'#141033');g.addColorStop(1,'#020208');x.fillStyle=g;x.fillRect(0,0,1280,720);
+for(const p of P){const yy=(p.y-t*20*p.z+720*10)%720;x.globalAlpha=.3+.3*Math.sin(t*2+p.p);x.fillStyle=p.z>1.5?'#00e0ff':'#9a88ff';x.fillRect(p.x,yy,p.z,p.z);}x.globalAlpha=1;
+// scene1 0-5 logo intro
+let a=fade(t,0,5);if(a>0){const s=ease(t/1.5);logo(640,300,90*s,a,t);txt('MotionSites AI',640,470,72,a*ease((t-.8)/1),'#fff',800);txt('Websites that move. Built by AI.',640,520,26,a*ease((t-1.6)/1),'#a9b4ff',400);}
+// scene2 5-9 timeline
+a=fade(t,5,9.5);if(a>0){txt('8 months ago, we launched.',640,300,54,a*ease((t-5.2)/.8));
+txt('Today, we have a number to share.',640,370,32,a*ease((t-6.5)/.8),'#a9b4ff',400);
+x.globalAlpha=a;x.strokeStyle='#00e0ff';x.lineWidth=3;x.beginPath();x.moveTo(340,430);x.lineTo(340+600*ease((t-5.5)/3),430);x.stroke();x.globalAlpha=1;}
+// scene3 9.5-16 chart
+a=fade(t,9.5,16.5);if(a>0){const L=200,B=600,W=880,H=380,pr=ease((t-10)/4.5);
+txt('Monthly visitors',640,150,36,a);
+x.globalAlpha=a;for(let i=0;i<8;i++){const h=H*vals[i]/1000*cl(pr*8-i);const bx=L+i*110+20;const gg=x.createLinearGradient(0,B-h,0,B);gg.addColorStop(0,'#00e0ff');gg.addColorStop(1,'#7b5cff');x.fillStyle=gg;x.fillRect(bx,B-h,70,h);
+x.fillStyle='#8890c0';x.font='400 18px Arial';x.textAlign='center';x.fillText(months[i],bx+35,B+28);}
+x.globalAlpha=1;const n=Math.round(1000000*Math.pow(pr,2));txt(n.toLocaleString('en-US'),640,215,48,a,'#00e0ff',800);}
+// scene4 16.5-21 1M
+a=fade(t,16.5,21.5);if(a>0){const k=ease((t-16.6)/1);x.save();x.translate(640,320);x.scale(.6+.4*k,.6+.4*k);
+x.shadowColor='#00e0ff';x.shadowBlur=40;txt('1,000,000',0,0,140,a,'#fff',900);x.restore();
+txt('monthly visitors',640,400,40,a*ease((t-17.3)/.8),'#a9b4ff',400);
+txt('in just 8 months',640,460,34,a*ease((t-18)/.8),'#00e0ff',700);
+for(let i=0;i<60;i++){const an=i*2.4,r=(t-16.6)*260*(.5+(i%7)/7);x.globalAlpha=a*cl(1-(t-16.6)/3);x.fillStyle=i%2?'#00e0ff':'#7b5cff';x.fillRect(640+Math.cos(an)*r,320+Math.sin(an)*r,5,5);}x.globalAlpha=1;}
+// scene5 21.5-24 outro
+a=cl((t-21.5)/.6)*cl((DUR-t)/.4);if(a>0){logo(640,260,60,a,t);txt('Thank you for building with us.',640,410,44,a);txt('MotionSites AI',640,470,28,a,'#00e0ff',700);}
+requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

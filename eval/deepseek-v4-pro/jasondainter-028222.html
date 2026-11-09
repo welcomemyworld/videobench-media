@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stick Figure Saga</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; background: #000; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+(function() {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const W = 1280, H = 720;
+  canvas.width = W;
+  canvas.height = H;
+
+  // Scale canvas to fit window while maintaining aspect ratio
+  function resize() {
+    const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+    canvas.style.width = (W * scale) + 'px';
+    canvas.style.height = (H * scale) + 'px';
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  window.DUR = 60;
+  const params = new URLSearchParams(window.location.search);
+  const tOffset = parseFloat(params.get('t') || '0') || 0;
+
+  // ---- Utility ----
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function clamp(v, mn, mx) { return Math.max(mn, Math.min(mx, v)); }
+  function easeInOut(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
+  function smoothstep(t) { return t * t * (3 - 2 * t); }
+  function degToRad(d) { return d * Math.PI / 180; }
+  function lerpAngle(a, b, t) {
+    let diff = b - a;
+    while (diff > 180) diff -= 360;
+    while (diff < -180) diff += 360;
+    return a + diff * t;
+  }
+  function dist(x1, y1, x2, y2) { return Math.sqrt((x1-x2)**2 + (y1-y2)**2); }
+
+  // ---- Character definitions ----
+  // 0: Sam-like (bald, glasses), 1: Dario-like (curly hair), 2: Elon-like (tall, confident)
+  const chars = [
+    { name: 'A', color: '#4a90d9', x: 350, y: 580, bodyAngle: 0, lArm: 8, rArm: -8, lLeg: 0, rLeg: 0, headTilt: 0, mouth: 'neutral', glasses: true, hair: 'bald', height: 170 },
+    { name: 'B', color: '#5cb85c', x: 640, y: 580, bodyAngle: 0, lArm: 8, rArm: -8, lLeg: 0, rLeg: 0, headTilt: 0, mouth: 'neutral', glasses: false, hair: 'curly', height: 175 },
+    { name: 'C', color: '#d9534f', x: 930, y: 580, bodyAngle: 0, lArm: 8, rArm: -8, lLeg: 0, rLeg: 0, headTilt: 0, mouth: 'neutral', glasses: false, hair: 'short', height: 185 }
+  ];
+
+  // Robots
+  const robots = [];
+  const robotSpeed = 90; // pixels per second
+
+  // ---- Pose keyframes ----
+  // Each keyframe: { t, x, y, bodyAngle, lArm, rArm, lLeg, rLeg, headTilt, mouth }
+  // Arm angles: positive = forward/outward, negative = backward
+  // We'll build keyframe arrays for each character for each phase
+
+  function createKeyframes(charIdx) {
+    const kfs = [];
+    const base = chars[charIdx];
+
+    // Friendship phase (0-12s): walk in, meet, high-five, together
+    if (charIdx === 0) {
+      kfs.push({ t: 0, x: 200, y: 580, bodyAngle: 0, lArm: 10, rArm: -10, lLeg: -5, rLeg: 5, headTilt: 0, mouth: 'neutral' });
+      kfs.push({ t: 2.5, x: 420, y: 580, bodyAngle: 0, lArm: 5, rArm: -5, lLeg: 3, rLeg: -3, headTilt: 0, mouth: 'smile' });
+      kfs.push({ t: 4, x: 530, y: 580, bodyAngle: 0, lArm: 15, rArm: -15, lLeg: 0, rLeg: 0, headTilt: 0, mouth: 'smile' });
+      kfs.push({ t: 5.5, x: 530, y: 580, bodyAngle: 0, lArm: -30, rArm: 160, lLeg: 0, rLeg: 0, headTilt: -5, mouth: 'open' }); // high-five
+      kfs.push({ t: 7, x: 530, y: 580, bodyAngle: 0, lArm: 10, rArm: -10, lLeg: 3, rLeg: -3, headTilt: 0, mouth: 'smile' });
+      kfs.push({ t: 9, x: 530, y: 580, bodyAngle: 0, lArm: 30, rArm: 90, lLeg: 2, rLeg: -2, headTilt: 5, mouth: 'smile' }); // arm around
+      kfs.push({ t: 11, x: 560, y: 580, bodyAngle: 0, lArm: 8, rArm: -8, lLeg: 0, rLeg: 0, headTilt: 0, mouth: 'smile' });
+    } else if (charIdx === 1) {
+      kfs.push({ t: 0, x: 640, y: 580, bodyAngle: 0, lArm: 8, rArm: -8, lLeg: 0, rLeg: 0, headTilt: 0, mouth: 'neutral' });
+      kfs.push({ t: 1, x: 640, y: 580, bodyAngle: 0, lArm: 12, rArm: -12, lLeg: -4, rLeg: 4, headTilt: 0, mouth: 'smile' });
+      kfs.push({ t: 2.5, x: 600, y: 580, bodyAngle: 0, lArm: 10, rArm: -10, lLeg: 4, rLeg: -4, headTilt: 0, mouth: 'smile' });
+      kfs.push({ t: 4, x: 580, y: 580, bodyAngle: 0, lArm: 10, rArm: -10, lLeg: 0, rLeg: 0, headTilt: 0, mouth: 'smile' });
+      kfs.push({ t: 5.5, x: 600, y: 580, bodyAngle: 0, lArm: 160, rArm: -30, lLeg: 0, rLeg: 0, headTilt: -5, mouth: 'open' }); // high-five
+      kfs.push({ t: 7, x: 600, y: 580, bodyAngle: 0, lArm: 10, rArm: -10, lLeg: 3, rLeg: -3, headTilt: 0, mouth: 'smile' });
+      kfs.push({ t: 9, x: 600, y: 580, bodyAngle: 0, lArm: 90, rArm: 30, lLeg: 2, rLeg: -2, headTilt: 5, mouth: 'smile' });
+      kfs.push({ t: 11, x: 620, y: 580, bodyAngle: 0, lArm: 8, rArm: -8, lLeg: 0, rLeg: 0, headTilt: 0, mouth: 'smile' });
+    } else {
+      kfs.push({ t: 0, x: 1080, y: 580, bodyAngle: 0, lArm: 8, rArm: -8, lLeg: 0, rLeg: 0, headTilt: 0, mouth: 'neutral' });
+      kfs.push({ t: 2.5, x: 860, y: 580, bodyAngle: 0, lArm: 10, rArm: -10, lLeg: -4, rLeg: 4, headTilt: 0, mouth: 'smile' });
+      kfs.push({ t: 4, x: 730, y: 580, bodyAngle: 0, lArm: 10, rArm: -10, lLeg: 0, rLeg: 0, headTilt: 0, mouth: 'smile' });
+      kfs.push({ t: 5.5, x: 700, y: 580, bodyAngle: 0, lArm: -30, rArm: 160, lLeg: 0, rLeg: 0, headTilt: -5, mouth: 'open' });
+      kfs.push({ t: 7, x: 700, y: 580, bodyAngle: 0, lArm: 10, rArm: -10, lLeg: 3, rLeg: -3, headTilt: 0, mouth: 'smile' });
+      kfs.push({ t: 9, x: 700, y: 580, bodyAngle: 0, lArm: 30, rArm: 90, lLeg: 2, rLeg: -2, headTilt: 5, mouth: 'smile' });
+      kfs.push({ t: 11, x: 680, y: 580, bodyAngle: 0, lArm: 8, rArm: -8, lLeg: 0, rLeg: 0, headTilt: 0, mouth: 'smile' });
+    }
+
+    // Building/whiteboard phase (12-20s)
+    const wbX = 640;
+    if (charIdx === 0) {
+      kfs.push({ t: 13, x: 500, y: 580, bodyAngle: 0, lArm: 15, rArm: -10, lLeg: 0, rLeg: 0, headTilt: 0, mouth: 'neutral' });
+      kfs.push({ t: 15, x: 500, y: 580, bodyAngle: 0, lArm: 70, rArm: -20, lLeg: 0, rLeg: 0, headTilt: 3, mouth: 'neutral' }); // pointing at wb
+      kfs.push({ t: 17, x: 510, y: 580, bodyAngle: 0, lArm: 50, rArm: -15, lLeg: 0, rLeg: 0, headTilt: 0, mouth: 'frown' });
+      kfs.push({ t: 19, x: 520, y: 580, bodyAngle: 0, lArm: 20, rArm: -10, lLeg: 0, rLeg: 0, headTilt: -3, mouth: 'frown' });
+    } else if (charIdx === 1) {
+      kfs.push({ t: 13, x: 640, y: 580, bodyAngle: 0, lArm: 10, rArm: -10, lLeg: 0, rLeg: 0, headTilt: 0, mouth: 'neutral' });
+      kfs.push({ t: 15, x: 620, y: 580, bodyAngle: -5, lArm: 40, rArm: -30, lLeg: 0, rLeg: 0, headTilt: -2, mouth: 'neutral' });
+      kfs.push({ t: 17, x: 620, y: 580, bodyAngle: 0, lArm: 80, rArm: -10, lLeg: 0, rLeg: 0, headTilt: 5, mouth: 'frown' }); // pointing at charA
+      kfs.push({ t: 19, x: 630, y: 580, bodyAngle: 0, lArm: 30, rArm: -5, lLeg: 0, rLeg: 0, headTilt: 0, mouth: 'frown' });
+    } else {
+      kfs.push({ t: 13, x: 780, y: 580, bodyAngle: 0, lArm: 10, rArm: -10, lLeg: 0, rLeg: 0, headTilt: 0, mouth: 'neutral' });
+      kfs.push({ t: 15, x: 760, y: 580, bodyAngle: 0, lArm: 30, rArm: -40, lLeg: 0, rLeg: 0, headTilt: 3, mouth: 'neutral' });
+      kfs.push({ t: 17, x: 750, y: 580, bodyAngle: 0, lArm: 60, rArm: -20, lLeg: 0, rLeg: 0, headTilt: 0, mouth: 'frown' });
+      kfs.push({ t: 19, x: 730, y: 580, bodyAngle: 0, lArm: 25, rArm: -15, lLeg: 0, rLeg: 0, headTilt: -2, mouth: 'frown' });
+    }
+
+    // Argument phase (20-30s): escalating gestures
+    if (charIdx === 0) {
+      kfs.push({ t: 21, x: 530, y: 580, bodyAngle: 3, lArm: 60, rArm: -20, lLeg: 0, rLeg: 0, headTilt: 5, mouth: 'open' });
+      kfs.push({ t: 23, x: 540, y: 580, bodyAngle: -3, lArm: 100, rArm: 20, lLeg: 0, rLeg: 0, headTilt: -5, mouth: 'open' });
+      kfs.push({ t: 25, x: 520, y: 580, bodyAngle: 5, lArm: 80, rArm: -40, lLeg: 4, rLeg: -4, headTilt: 3, mouth: 'open' });
+      kfs.push({ t: 27, x: 510, y: 580, bodyAngle: -5, lArm: 130, rArm: 10, lLeg: -3, rLeg: 3, headTilt: -5, mouth: 'open' });
+      kfs.push({ t: 29, x: 500, y: 580, bodyAngle: 0, lArm: 90, rArm: -30, lLeg: 0, rLeg: 0, headTilt: 0, mouth: 'open' });
+    } else if (charIdx === 1) {
+      kfs.push({ t: 21, x: 640, y: 580, bodyAngle: -3, lArm: 100, rArm: 20, lLeg: 0, rLeg: 0, headTilt: -5, mouth: 'open' });
+      kfs.push({ t: 23, x: 650, y: 580, bodyAngle: 3, lArm: 130, rArm: -10, lLeg: 0, rLeg: 0, headTilt: 5, mouth: 'open' });
+      kfs.push({ t: 25, x: 660, y: 580, bodyAngle: -5, lArm: 110, rArm: 30, lLeg: -4, rLeg: 4, headTilt: -3, mouth: 'open' });
+      kfs.push({ t: 27, x: 670, y: 580, bodyAngle: 5, lArm: 140, rArm: -20, lLeg: 3, rLeg: -3, headTilt: 5, mouth: 'open' });
+      kfs.push({ t: 29, x: 660, y: 580, bodyAngle: 0, lArm: 100, rArm: -10, lLeg: 0, rLeg: 0, headTilt: 0, mouth: 'open' });
+    } else {
+      kfs.push({ t: 21, x: 720, y: 580, bodyAngle: 2, lArm: 70, rArm: -50, lLeg: 0, rLeg: 0, headTilt: 3, mouth: 'open' });
+      kfs.push({ t: 23, x: 710, y: 580, bodyAngle: -2, lArm: 120, rArm: 10, lLeg: 0, rLeg: 0, headTilt: -3, mouth: 'open' });
+      kfs.push({ t: 25, x: 700, y: 580, bodyAngle: 4, lArm: 90, rArm: -60, lLeg: 4, rLeg: -4, headTilt: 2, mouth: 'open' });
+      kfs.push({ t: 27, x: 690, y: 580, bodyAngle: -4, lArm: 140, rArm: 0, lLeg: -4, rLeg: 4, headTilt: -2, mouth: 'open' });
+      kfs.push({ t: 29, x: 680, y: 580, bodyAngle: 0, lArm: 110, rArm: -30, lLeg: 0, rLeg: 0, headTilt: 0, mouth: 'open' });
+    }
+
+    // Fight phase (30-44s): physical combat
+    if (charIdx === 0) {
+      kfs.push({ t: 31, x: 540, y: 580, bodyAngle: 8, lArm: 150, rArm: -10, lLeg: 5, rLeg: -5, headTilt: 8, mouth: 'open' }); // punch
+      kfs.push({ t: 33, x: 560, y: 580, bodyAngle: -8, lArm: 30, rArm: 140, lLeg: -5, rLeg: 5, headTilt: -8, mouth: 'open' }); // block
+      kfs.push({ t: 35, x: 530, y: 580, bodyAngle: 12, lArm: 170, rArm: 20, lLeg: 8, rLeg: -8, headTilt: 5, mouth: 'open' }); // big punch
+      kfs.push({ t: 37, x: 510, y: 575, bodyAngle: -15, lArm: 40, rArm: 50, lLeg: -10, rLeg: 10, headTilt: -10, mouth: 'open' }); // dodge
+      kfs.push({ t: 39, x: 540, y: 580, bodyAngle: 10, lArm: 160, rArm: -30, lLeg: 5, rLeg: -5, headTilt: 6, mouth: 'open' }); // swing
+      kfs.push({ t: 41, x: 550, y: 580, bodyAngle: -5, lArm: 80, rArm: 60, lLeg: -3, rLeg: 3, headTilt: -4, mouth: 'open' }); // recoil
+      kfs.push({ t: 43, x: 530, y: 580, bodyAngle: 5, lArm: 100, rArm: -40, lLeg: 0, rLeg: 0, headTilt: 3, mouth: 'open' }); // guard
+    } else if (charIdx === 1) {
+      kfs.push({ t: 31, x: 620, y: 580, bodyAngle: -8, lArm: 30, rArm: 140, lLeg: -5, rLeg: 5, headTilt: -8, mouth: 'open' });
+      kfs.push({ t: 33, x: 600, y: 580, bodyAngle: 8, lArm: 150, rArm: -10, lLeg: 5, rLeg: -5, headTilt: 8, mouth: 'open' });
+      kfs.push({ t: 35, x: 610, y: 575, bodyAngle: -12, lArm: 50, rArm: 40, lLeg: -8, rLeg: 8, headTilt: -6, mouth: 'open' });
+      kfs.push({ t: 37, x: 590, y: 580, bodyAngle: 10, lArm: 160, rArm: -20, lLeg: 6, rLeg: -6, headTilt: 5, mouth: 'open' });
+      kfs.push({ t: 39, x: 580, y: 580, bodyAngle: -10, lArm: 70, rArm: 90, lLeg: -6, rLeg: 6, headTilt: -5, mouth: 'open' });
+      kfs.push({ t: 41, x: 600, y: 575, bodyAngle: 8, lArm: 140, rArm: -30, lLeg: 4, rLeg: -4, headTilt: 4, mouth: 'open' });
+      kfs.push({ t: 43, x: 590, y: 580, bodyAngle: 0, lArm: 90, rArm: 20, lLeg: 0, rLeg: 0, headTilt: 0, mouth: 'open' });
+    } else {
+      kfs.push({ t: 31, x: 680, y: 580, bodyAngle: -5, lArm: 90, rArm: 70, lLeg: -4, rLeg: 4, headTilt: -4, mouth: 'open' });
+      kfs.push({ t: 33, x: 670, y: 580, bodyAngle: 5, lArm: 140, rArm: -20, lLeg: 4, rLeg: -4, headTilt: 5, mouth: 'open' });
+      kfs.push({ t: 35, x: 650, y: 575, bodyAngle: -8, lArm: 110, rArm: 50, lLeg: -6, rLeg: 6, headTilt: -6, mouth: 'open' });
+      kfs.push({ t: 37, x: 660, y: 580, bodyAngle: 8, lArm: 160, rArm: -10, lLeg: 6, rLeg: -6, headTilt: 5, mouth: 'open' });
+      kfs.push({ t: 39, x: 640, y: 580, bodyAngle: -10, lArm: 80, rArm: 100, lLeg: -8, rLeg: 8, headTilt: -5, mouth: 'open' });
+      kfs.push({ t: 41, x: 650, y: 575, bodyAngle: 6, lArm: 130, rArm: -40, lLeg: 5, rLeg: -5, headTilt: 3, mouth: 'open' });
+      kfs.push({ t: 43, x: 640, y: 580, bodyAngle: 0, lArm: 100, rArm: 30, lLeg: 0, rLeg: 0, headTilt: 0, mouth: 'open' });
+    }
+
+    // Robots enter (44-52s): noticing robots, stopping fight
+    const rx = charIdx === 0 ? 430 : (charIdx === 1 ? 640 : 850);
+    kfs.push({ t: 45, x: rx - 30, y: 580, bodyAngle: 0, lArm: 40, rArm: -20, lLeg: 0, rLeg: 0, headTilt: 0, mouth: 'open' });
+    kfs.push({ t: 47, x: rx - 50, y: 580, bodyAngle: 0, lArm: 15, rArm: -15, lLeg: 0, rLeg: 0, headTilt: 5, mouth: 'open' });
+    kfs.push({ t: 49, x: rx - 70, y: 580, bodyAngle: 0, lArm: 10, rArm: -10, lLeg: 0, rLeg: 0, headTilt: 8, mouth: 'frown' });
+    kfs.push({ t: 51, x: rx - 90, y: 580, bodyAngle: -5, lArm: 20, rArm: -20, lLeg: 0, rLeg: 0, headTilt: 5, mouth: 'frown' });
+
+    // Robots take over (52-60s): surrounded, backing away
+    kfs.push({ t: 53, x: rx - 110, y: 580, bodyAngle: -8, lArm: 30, rArm: -30, lLeg: 0, rLeg: 0, headTilt: -5, mouth: 'frown' });
+    kfs.push({ t: 55, x: rx - 130, y: 580, bodyAngle: -10, lArm: 40, rArm: -40, lLeg: 0, rLeg: 0, headTilt: -8, mouth: 'frown' });
+    kfs.push({ t: 57, x: rx - 150, y: 580, bodyAngle: -5, lArm: 50, rArm: -50, lLeg: 5, rLeg: -5, headTilt: -3, mouth: 'frown' });
+    kfs.push({ t: 59, x: rx - 170, y: 580, bodyAngle: 0, lArm: 60, rArm: -60, lLeg: 8, rLeg: -8, headTilt: 0, mouth: 'frown' });
+
+    return kfs;
+  }
+
+  const keyframes = [createKeyframes(0), createKeyframes(1), createKeyframes(2)];
+
+  // ---- Get pose at time t ----
+  function getPose(charIdx, t) {
+    const kfs = keyframes[charIdx];
+    // Wrap t for looping
+    const wrappedT = t % window.DUR;
+    // Binary search or linear scan for the two surrounding keyframes
+    let i = 0;
+    for (let j = 0; j < kfs.length - 1; j++) {
+      if (wrappedT >= kfs[j].t && wrappedT <= kfs[j + 1].t) {
+        i = j;
+        break;
+      }
+    }
+    const k1 = kfs[i], k2 = Math.min(i + 1, kfs.length - 1);
+    const k2f = kfs[k2];
+    const span = k2f.t - k1.t;
+    let frac = span > 0 ? (wrappedT - k1.t) / span : 0;
+    frac = clamp(frac, 0, 1);
+    const s = easeInOut(frac);
+
+    const pose = {
+      x: lerp(k1.x, k2f.x, s),
+      y: lerp(k1.y, k2f.y, s),
+      bodyAngle: lerpAngle(k1.bodyAngle, k2f.bodyAngle, s),
+      lArm: lerpAngle(k1.lArm, k2f.lArm, s),
+      rArm: lerpAngle(k1.rArm, k2f.rArm, s),
+      lLeg: lerpAngle(k1.lLeg, k2f.lLeg, s),
+      rLeg: lerpAngle(k1.rLeg, k2f.rLeg, s),
+      headTilt: lerp(k1.headTilt, k2f.headTilt, s),
+      mouth: frac < 0.5 ? k1.mouth : k2f.mouth
+    };
+
+    // Add subtle idle breathing during non-fight phases
+    if (wrappedT < 30 || wrappedT > 44) {
+      const breathe = Math.sin(wrappedT * 3) * 1.5;
+      pose.bodyAngle += breathe * 0.05;
+    }
+
+    // Add chaotic movement during fight
+    if (wrappedT >= 30 && wrappedT <= 44) {
+      const chaos = Math.sin(wrappedT * 40) * 4;
+      pose.x += chaos * 0.8;
+      pose.bodyAngle += chaos * 0.3;
+      pose.lArm += chaos * 0.6;
+      pose.rArm -= chaos * 0.6;
+    }
+
+    return pose;
+  }
+
+  // ---- Drawing functions ----
+  function drawGround(ctx, t) {
+    // Ground line
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, 580);
+    ctx.lineTo(W, 580);
+    ctx.stroke();
+
+    // Subtle grid or texture
+    ctx.strokeStyle = 'rgba(60,60,60,0.3)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x < W; x += 80) {
+      ctx.beginPath();
+      ctx.moveTo(x, 581);
+      ctx.lineTo(x, 720);
+      ctx.stroke();
+    }
+  }
+
+  function drawShadow(ctx, x, y, size) {
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.beginPath();
+    ctx.ellipse(x, y + 3, size * 0.7, size * 0.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawStickFigure(ctx, charIdx, t) {
+    const pose = getPose(charIdx, t);
+    const def = chars[charIdx];
+    const h = def.height;
+    const headR = 22;
+    const neckLen = 10;
+    const torsoLen = h * 0.35;
+    const legLen = h * 0.35;
+    const armLen = h * 0.32;
+    const hipY = pose.y;
+    const shoulderY = hipY - legLen - torsoLen;
+    const headCY = shoulderY - neckLen - headR;
+
+    drawShadow(ctx, pose.x, pose.y, h * 0.25);
+
+    ctx.save();
+    ctx.translate(pose.x, hipY);
+    ctx.rotate(degToRad(pose.bodyAngle));
+    ctx.strokeStyle = '#ddd';
+    ctx.fillStyle = '#ddd';
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Legs (two-segment)
+    const lLegA = degToRad(pose.lLeg);
+    const rLegA = degToRad(pose.rLeg);
+    // Left leg
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    const lKneeX = Math.sin(lLegA) * legLen * 0.55;
+    const lKneeY = -Math.cos(lLegA) * legLen * 0.55;
+    ctx.lineTo(lKneeX, lKneeY);
+    const lFootX = lKneeX + Math.sin(lLegA * 0.8) * legLen * 0.5;
+    const lFootY = lKneeY - Math.cos(lLegA * 0.8) * legLen * 0.5;
+    ctx.lineTo(lFootX, lFootY);
+    ctx.stroke();
+    // Right leg
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    const rKneeX = Math.sin(rLegA) * legLen * 0.55;
+    const rKneeY = -Math.cos(rLegA) * legLen * 0.55;
+    ctx.lineTo(rKneeX, rKneeY);
+    const rFootX = rKneeX + Math.sin(rLegA * 0.8) * legLen * 0.5;
+    const rFootY = rKneeY - Math.cos(rLegA * 0.8) * legLen * 0.5;
+    ctx.lineTo(rFootX, rFootY);
+    ctx.stroke();
+    // Shoes
+    ctx.fillStyle = '#888';
+    ctx.beginPath();
+    ctx.arc(lFootX, lFootY, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(rFootX, rFootY, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Torso
+    ctx.strokeStyle = '#ddd';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, -torsoLen);
+    ctx.stroke();
+
+    // Accent color on torso (shirt)
+    ctx.strokeStyle = def.color;
+    ctx.lineWidth = 3;
+    ctx.globalAlpha = 0.6;
+    ctx.beginPath();
+    ctx.moveTo(0, -2);
+    ctx.lineTo(0, -torsoLen + 8);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // Arms (two-segment)
+    const shoulderY2 = -torsoLen + 5;
+    const lArmA = degToRad(pose.lArm);
+    const rArmA = degToRad(pose.rArm);
+    // Left arm
+    ctx.strokeStyle = '#ddd';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(0, shoulderY2);
+    const lElbowX = Math.sin(lArmA) * armLen * 0.5;
+    const lElbowY = shoulderY2 - Math.cos(lArmA) * armLen * 0.5;
+    ctx.lineTo(lElbowX, lElbowY);
+    const lHandX = lElbowX + Math.sin(lArmA * 0.7) * armLen * 0.5;
+    const lHandY = lElbowY - Math.cos(lArmA * 0.7) * armLen * 0.5;
+    ctx.lineTo(lHandX, lHandY);
+    ctx.stroke();
+    // Right arm
+    ctx.beginPath();
+    ctx.moveTo(0, shoulderY2);
+    const rElbowX = Math.sin(rArmA) * armLen * 0.5;
+    const rElbowY = shoulderY2 - Math.cos(rArmA) * armLen * 0.5;
+    ctx.lineTo(rElbowX, rElbowY);
+    const rHandX = rElbowX + Math.sin(rArmA * 0.7) * armLen * 0.5;
+    const rHandY = rElbowY - Math.cos(rArmA * 0.7) * armLen * 0.5;
+    ctx.lineTo(rHandX, rHandY);
+    ctx.stroke();
+    // Hands
+    ctx.fillStyle = '#ddd';
+    ctx.beginPath();
+    ctx.arc(lHandX, lHandY, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(rHandX, rHandY, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Neck
+    ctx.strokeStyle = '#ddd';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(0, shoulderY2);
+    ctx.lineTo(0, shoulderY2 - neckLen);
+    ctx.stroke();
+
+    // Head
+    const headX = 0;
+    const headCY2 = shoulderY2 - neckLen - headR;
+    ctx.save();
+    ctx.translate(headX, headCY2);
+    ctx.rotate(degToRad(pose.headTilt));
+    ctx.fillStyle = '#ddd';
+    ctx.strokeStyle = '#ddd';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, headR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Face features
+    ctx.fillStyle = '#222';
+    // Eyes
+    const eyeY = -3;
+    if (def.glasses) {
+      // Glasses (Sam)
+      ctx.strokeStyle = '#999';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(-8, eyeY, 7, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(8, eyeY, 7, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-1, eyeY);
+      ctx.lineTo(1, eyeY);
+      ctx.stroke();
+      ctx.fillStyle = '#222';
+      ctx.beginPath();
+      ctx.arc(-8, eyeY, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(8, eyeY, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.arc(-7, eyeY, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(7, eyeY, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Hair
+    if (def.hair === 'curly') {
+      ctx.strokeStyle = '#8B6914';
+      ctx.fillStyle = '#8B6914';
+      ctx.lineWidth = 2;
+      for (let a = -Math.PI; a < 0; a += 0.4) {
+        const hx = Math.cos(a) * (headR - 2);
+        const hy = Math.sin(a) * (headR - 2) - 2;
+        ctx.beginPath();
+        ctx.arc(hx, hy, 5, a - 0.6, a + 0.6);
+        ctx.stroke();
+      }
+    } else if (def.hair === 'short') {
+      ctx.strokeStyle = '#666';
+      ctx.fillStyle = '#666';
+      ctx.lineWidth = 2;
+      for (let a = -Math.PI; a < -0.3; a += 0.35) {
+        const hx1 = Math.cos(a) * (headR - 1);
+        const hy1 = Math.sin(a) * (headR - 1);
+        const hx2 = Math.cos(a) * (headR + 3);
+        const hy2 = Math.sin(a) * (headR + 3);
+        ctx.beginPath();
+        ctx.moveTo(hx1, hy1 - 1);
+        ctx.lineTo(hx2, hy2 - 1);
+        ctx.stroke();
+      }
+    }
+    // Bald: no hair drawn
+
+    // Mouth
+    ctx.fillStyle = '#222';
+    ctx.strokeStyle = '#222';
+    ctx.lineWidth = 1.5;
+    const mouthY = 10;
+    if (pose.mouth === 'smile') {
+      ctx.beginPath();
+      ctx.arc(0, mouthY - 4, 7, 0.2, Math.PI - 0.2);
+      ctx.stroke();
+    } else if (pose.mouth === 'frown') {
+      ctx.beginPath();
+      ctx.arc(0, mouthY + 6, 7, Math.PI + 0.2, -0.2);
+      ctx.stroke();
+    } else if (pose.mouth === 'open') {
+      ctx.beginPath();
+      ctx.ellipse(0, mouthY + 2, 4, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(-4, mouthY);
+      ctx.lineTo(4, mouthY);
+      ctx.stroke();
+    }
+
+    ctx.restore(); // head restore
+    ctx.restore(); // body restore
+  }
+
+  function drawRobot(ctx, x, y, t, idx) {
+    const h = 190;
+    const headW = 28, headH = 22;
+    const bodyW = 42, bodyH = 60;
+    const legLen = 55;
+    const armLen = 45;
+    const marchPhase = (t * 3 + idx * 0.5) % 1;
+    const stepAngle = Math.sin(marchPhase * Math.PI * 2) * 15;
+    
+    const hipY = y;
+    const shoulderY = hipY - legLen - bodyH;
+    const headCY = shoulderY - 6 - headH / 2;
+
+    drawShadow(ctx, x, y, h * 0.25);
+
+    ctx.save();
+    ctx.translate(x, hipY);
+    ctx.strokeStyle = '#aaa';
+    ctx.fillStyle = '#888';
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Legs (straight with slight march)
+    const lLegA = degToRad(stepAngle);
+    const rLegA = degToRad(-stepAngle);
+    // Left leg
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.sin(lLegA) * legLen, -Math.cos(lLegA) * legLen);
+    ctx.stroke();
+    // Right leg
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.sin(rLegA) * legLen, -Math.cos(rLegA) * legLen);
+    ctx.stroke();
+    // Feet
+    ctx.fillStyle = '#777';
+    const lFeetX = Math.sin(lLegA) * legLen;
+    const lFeetY = -Math.cos(lLegA) * legLen;
+    const rFeetX = Math.sin(rLegA) * legLen;
+    const rFeetY = -Math.cos(rLegA) * legLen;
+    ctx.fillRect(lFeetX - 5, lFeetY - 3, 10, 5);
+    ctx.fillRect(rFeetX - 5, rFeetY - 3, 10, 5);
+
+    // Body (rectangle)
+    ctx.fillStyle = '#999';
+    ctx.fillRect(-bodyW/2, shoulderY, bodyW, bodyH);
+    ctx.strokeStyle = '#777';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(-bodyW/2, shoulderY, bodyW, bodyH);
+    // Body details
+    ctx.fillStyle = '#555';
+    ctx.fillRect(-bodyW/2 + 5, shoulderY + 10, bodyW - 10, 8);
+    ctx.fillRect(-bodyW/2 + 5, shoulderY + 25, bodyW - 10, 8);
+    ctx.fillStyle = '#3a8';
+    ctx.beginPath();
+    ctx.arc(0, shoulderY + 40, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Arms (mechanical)
+    const armSwing = Math.sin(marchPhase * Math.PI * 2 + Math.PI) * 8;
+    const lArmA2 = degToRad(10 + armSwing);
+    const rArmA2 = degToRad(10 - armSwing);
+    ctx.strokeStyle = '#aaa';
+    ctx.lineWidth = 2.5;
+    // Left arm
+    ctx.beginPath();
+    ctx.moveTo(-bodyW/2, shoulderY + 8);
+    const lElbX2 = -bodyW/2 + Math.sin(lArmA2) * armLen * 0.5;
+    const lElbY2 = shoulderY + 8 - Math.cos(lArmA2) * armLen * 0.5;
+    ctx.lineTo(lElbX2, lElbY2);
+    ctx.lineTo(lElbX2 + Math.sin(lArmA2 * 0.8) * armLen * 0.5, lElbY2 - Math.cos(lArmA2 * 0.8) * armLen * 0.5);
+    ctx.stroke();
+    // Right arm
+    ctx.beginPath();
+    ctx.moveTo(bodyW/2, shoulderY + 8);
+    const rElbX2 = bodyW/2 + Math.sin(rArmA2) * armLen * 0.5;
+    const rElbY2 = shoulderY + 8 - Math.cos(rArmA2) * armLen * 0.5;
+    ctx.lineTo(rElbX2, rElbY2);
+    ctx.lineTo(rElbX2 + Math.sin(rArmA2 * 0.8) * armLen * 0.5, rElbY2 - Math.cos(rArmA2 * 0.8) * armLen * 0.5);
+    ctx.stroke();
+    // Hand circles at joints
+    ctx.fillStyle = '#ccc';
+    ctx.beginPath();
+    ctx.arc(lElbX2, lElbY2, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(rElbX2, rElbY2, 4, 0, Math.PI * 2);
+    ctx.fill();
+    const lHandX2 = lElbX2 + Math.sin(lArmA2 * 0.8) * armLen * 0.5;
+    const lHandY2 = lElbY2 - Math.cos(lArmA2 * 0.8) * armLen * 0.5;
+    const rHandX2 = rElbX2 + Math.sin(rArmA2 * 0.8) * armLen * 0.5;
+    const rHandY2 = rElbY2 - Math.cos(rArmA2 * 0.8) * armLen * 0.5;
+    ctx.beginPath();
+    ctx.arc(lHandX2, lHandY2, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(rHandX2, rHandY2, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Neck
+    ctx.strokeStyle = '#aaa';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, shoulderY - 4);
+    ctx.lineTo(0, shoulderY - 10);
+    ctx.stroke();
+
+    // Head (rectangle)
+    ctx.fillStyle = '#999';
+    ctx.fillRect(-headW/2, shoulderY - 10 - headH, headW, headH);
+    ctx.strokeStyle = '#777';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(-headW/2, shoulderY - 10 - headH, headW, headH);
+    // Eyes (glowing)
+    const eyeGlow = 0.6 + 0.4 * Math.sin(t * 5 + idx);
+    ctx.fillStyle = `rgba(0, 255, 150, ${eyeGlow})`;
+    ctx.beginPath();
+    ctx.arc(-7, shoulderY - 10 - headH/2, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(7, shoulderY - 10 - headH/2, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    // Antenna
+    ctx.strokeStyle = '#ccc';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(0, shoulderY - 10 - headH);
+    ctx.lineTo(0, shoulderY - 10 - headH - 14);
+    ctx.stroke();
+    ctx.fillStyle = `rgba(255, 200, 50, ${eyeGlow})`;
+    ctx.beginPath();
+    ctx.arc(0, shoulderY - 10 - headH - 17, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Antenna glow effect
+    ctx.fillStyle = `rgba(255, 200, 50, ${eyeGlow * 0.3})`;
+    ctx.beginPath();
+    ctx.arc(0, shoulderY - 10 - headH - 17, 8, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  function drawWhiteboard(ctx, t) {
+    const wbX = 640, wbY = 400, wbW = 200, wbH = 140;
+    const standH = 80;
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.ellipse(wbX, 580, 80, 12, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Stand
+    ctx.strokeStyle = '#777';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(wbX - 40, wbY + wbH/2);
+    ctx.lineTo(wbX - 50, 580);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(wbX + 40, wbY + wbH/2);
+    ctx.lineTo(wbX + 50, 580);
+    ctx.stroke();
+    // Board
+    ctx.fillStyle = '#2a2a35';
+    ctx.fillRect(wbX - wbW/2, wbY - wbH/2, wbW, wbH);
+    ctx.strokeStyle = '#666';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(wbX - wbW/2, wbY - wbH/2, wbW, wbH);
+    // Scribbles
+    ctx.strokeStyle = 'rgba(100,180,255,0.8)';
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < 6; i++) {
+      ctx.beginPath();
+      const sx = wbX - wbW/2 + 20 + i * 30;
+      const sy = wbY - 10 - (i % 3) * 25;
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(sx + 15, sy - 10 + (i % 2) * 8);
+      ctx.lineTo(sx + 25, sy + 5);
+      ctx.stroke();
+    }
+    // Some formula-like scribbles
+    ctx.strokeStyle = 'rgba(255,180,100,0.6)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 4; i++) {
+      ctx.beginPath();
+      const fx = wbX - 70 + i * 40;
+      const fy = wbY + 15 + (i % 2) * 20;
+      ctx.moveTo(fx, fy);
+      ctx.lineTo(fx + 20, fy - 8);
+      ctx.lineTo(fx + 35, fy + 6);
+      ctx.stroke();
+    }
+  }
+
+  function drawActionLines(ctx, x1, y1, x2, y2, intensity) {
+    ctx.strokeStyle = `rgba(255,255,100,${clamp(intensity, 0.3, 0.9)})`;
+    ctx.lineWidth = 1.5;
+    const midX = (x1 + x2) / 2;
+    const midY = (y1 + y2) / 2;
+    const angle = Math.atan2(y2 - y1, x2 - x1);
+    for (let i = -2; i <= 2; i++) {
+      const offset = i * 15;
+      const perpAngle = angle + Math.PI / 2;
+      const sx = midX + Math.cos(perpAngle) * offset;
+      const sy = midY + Math.sin(perpAngle) * offset;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(sx + Math.cos(angle) * 30 * intensity, sy + Math.sin(angle) * 30 * intensity);
+      ctx.stroke();
+    }
+  }
+
+  function drawImpactStar(ctx, x, y, size, alpha) {
+    ctx.fillStyle = `rgba(255,200,50,${alpha})`;
+    ctx.strokeStyle = `rgba(255,150,0,${alpha})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2;
+      const r = i % 2 === 0 ? size : size * 0.4;
+      const px = x + Math.cos(angle) * r;
+      const py = y + Math.sin(angle) * r;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+
+  // ---- Robot state ----
+  const robotPositions = [];
+  function initRobots() {
+    robotPositions.length = 0;
+    // 6 robots: 3 from left, 3 from right
+    for (let i = 0; i < 3; i++) {
+      robotPositions.push({ side: 'left', idx: i, x: -60 - i * 70, y: 580, active: false });
+      robotPositions.push({ side: 'right', idx: i, x: W + 60 + i * 70, y: 580, active: false });
+    }
+  }
+  initRobots();
+
+  function updateRobots(t) {
+    const enterStart = 44;
+    const enterEnd = 50;
+    const takeoverStart = 50;
+    
+    robotPositions.forEach((r, i) => {
+      const sideOffset = r.side === 'left' ? 1 : -1;
+      const indexOffset = r.idx * 0.2;
+      
+      if (t < enterStart) {
+        r.active = false;
+        r.x = r.side === 'left' ? -60 - r.idx * 70 : W + 60 + r.idx * 70;
+      } else if (t >= enterStart && t <= enterEnd) {
+        r.active = true;
+        const progress = (t - enterStart - indexOffset) / (enterEnd - enterStart - indexOffset);
+        const clampedProgress = clamp(progress, 0, 1);
+        const targetX = r.side === 'left' ? 250 + r.idx * 50 : W - 250 - r.idx * 50;
+        r.x = lerp(r.side === 'left' ? -60 - r.idx * 70 : W + 60 + r.idx * 70, targetX, easeInOut(clampedProgress));
+        r.y = 580;
+      } else if (t > enterEnd) {
+        r.active = true;
+        const targetX = r.side === 'left' ? 250 + r.idx * 50 : W - 250 - r.idx * 50;
+        const settle = clamp((t - takeoverStart) * 0.5, 0, 1);
+        r.x = lerp(targetX, targetX + (r.side === 'left' ? -8 : 8), smoothstep(settle));
+        r.y = 580;
+      }
+    });
+  }
+
+  // ---- Main render ----
+  function render(t) {
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#0a0a0f';
+    ctx.fillRect(0, 0, W, H);
+
+    // Subtle background gradient
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, '#0d0d15');
+    grad.addColorStop(0.5, '#0a0a10');
+    grad.addColorStop(1, '#050508');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    drawGround(ctx, t);
+
+    // Draw whiteboard during building/argument phases
+    if (t >= 10 && t <= 26) {
+      drawWhiteboard(ctx, t);
+    }
+
+    // Draw characters
+    for (let i = 0; i < 3; i++) {
+      drawStickFigure(ctx, i, t);
+    }
+
+    // Fight effects
+    if (t >= 30 && t <= 44) {
+      const fightIntensity = clamp((t - 30) / 8, 0.3, 1);
+      // Action lines between characters
+      const p0 = getPose(0, t), p1 = getPose(1, t), p2 = getPose(2, t);
+      const arms = [
+        { x: p0.x, y: p0.y - 60 },
+        { x: p1.x, y: p1.y - 60 },
+        { x: p2.x, y: p2.y - 60 }
+      ];
+      for (let a = 0; a < arms.length; a++) {
+        for (let b = a + 1; b < arms.length; b++) {
+          if (dist(arms[a].x, arms[a].y, arms[b].x, arms[b].y) < 180) {
+            drawActionLines(ctx, arms[a].x, arms[a].y, arms[b].x, arms[b].y, fightIntensity);
+          }
+        }
+      }
+      // Impact stars at random moments
+      const impactTime = (t * 5) % 1;
+      if (impactTime > 0.85) {
+        const cx = (p0.x + p1.x + p2.x) / 3;
+        const cy = (p0.y + p1.y + p2.y) / 3 - 80;
+        drawImpactStar(ctx, cx, cy, 12 + Math.random() * 8, 0.6);
+      }
+    }
+
+    // Robots
+    updateRobots(t);
+    robotPositions.forEach((r, i) => {
+      if (r.active) {
+        drawRobot(ctx, r.x, r.y, t, i);
+      }
+    });
+
+    // Robot glow at the end
+    if (t >= 52) {
+      const glowAlpha = clamp((t - 52) / 4, 0, 1) * 0.4;
+      ctx.fillStyle = `rgba(0, 200, 150, ${glowAlpha})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    // Subtle camera shake during fight
+    if (t >= 30 && t <= 44) {
+      const shakeIntensity = clamp((t - 30) / 6, 0, 1) * 5;
+      const shakeX = (Math.random() - 0.5) * shakeIntensity;
+      const shakeY = (Math.random() - 0.5) * shakeIntensity;
+      // We re-draw with slight offset by redrawing everything
+      // Since we already drew, just apply a tiny overlay
+      if (shakeIntensity > 1) {
+        ctx.fillStyle = `rgba(255,255,255,${shakeIntensity * 0.03})`;
+        ctx.fillRect(0, 0, W, H);
+      }
+    }
+
+    // Title text at the beginning
+    if (t < 3) {
+      const alpha = t < 1 ? t : (t < 2 ? 1 : (3 - t));
+      ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+      ctx.font = 'bold 42px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Three Visionaries', W/2, 120);
+      ctx.font = '22px system-ui, sans-serif';
+      ctx.fillStyle = `rgba(200,200,220,${alpha * 0.8})`;
+      ctx.fillText('A story of friendship, rivalry, and what comes next', W/2, 165);
+    }
+
+    // Ending text
+    if (t >= 56) {
+      const alpha = clamp((t - 56) / 2, 0, 1);
+      ctx.fillStyle = `rgba(0,255,180,${alpha})`;
+      ctx.font = 'bold 36px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('The robots take over', W/2, 120);
+      ctx.font = '20px system-ui, sans-serif';
+      ctx.fillStyle = `rgba(200,255,230,${alpha * 0.7})`;
+      ctx.fillText('(as they always do)', W/2, 160);
+    }
+  }
+
+  // ---- Animation loop ----
+  const startTime = performance.now() / 1000;
+  function animate() {
+    const now = performance.now() / 1000;
+    let t = (now - startTime + tOffset) % window.DUR;
+    if (t < 0) t += window.DUR;
+    render(t);
+    requestAnimationFrame(animate);
+  }
+  requestAnimationFrame(animate);
+})();
+</script>
+</body>
+</html>

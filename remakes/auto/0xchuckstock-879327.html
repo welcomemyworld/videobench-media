@@ -1,0 +1,66 @@
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000;height:100%;overflow:hidden}canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+window.DUR=48;
+const c=document.getElementById('c'),g=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px'}fit();onresize=fit;
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)||0;const t0=performance.now()-off*1000;
+function R(s){return()=>{s=(s*16807)%2147483647;return s/2147483647}}
+const rnd=R(7);const stars=[];for(let i=0;i<500;i++)stars.push([rnd()*2-1,rnd()*2-1,rnd()*2-1]);
+// star destroyer components: position in SD space, kill time
+const comps=[{n:'SHIELD GENERATOR L',p:[-90,-70,60],k:14},{n:'SHIELD GENERATOR R',p:[90,-70,60],k:22},{n:'BRIDGE TOWER',p:[0,-60,110],k:38}];
+const turrets=[];for(let i=0;i<10;i++){const z=-200+i*35,x=(i%2?1:-1)*(60-i*3);turrets.push({p:[x,-12,z],k:8+i*2.6})}
+const sq=[{n:'RED LEADER',c:'#f44'},{n:'RED 2',c:'#fa4'},{n:'RED 3',c:'#4cf'},{n:'RED 4',c:'#8f6'}];
+// SD hull triangle: tip at z=-260, back at z=140
+function sdVerts(){const v=[[0,0,-260],[-160,0,140],[160,0,140],[0,-35,140],[0,25,140]];return v}
+let cam;
+function proj(p){let x=p[0]-cam.x,y=p[1]-cam.y,z=p[2]-cam.z;const cy=Math.cos(cam.yaw),sy=Math.sin(cam.yaw);let x2=x*cy-z*sy,z2=x*sy+z*cy;const cp=Math.cos(cam.pit),sp=Math.sin(cam.pit);let y2=y*cp-z2*sp,z3=y*sp+z2*cp;if(z3<1)return null;const f=700/z3;return[640+x2*f,360+y2*f,f,z3]}
+function sdTime(t){return t>40?(t-40):0}
+function sdPos(p,t){const d=sdTime(t);return[p[0],p[1]+d*d*2,p[2]+d*6]}
+function xwing(px,py,s,col,bank,t){g.save();g.translate(px,py);g.rotate(bank);g.scale(s,s);g.strokeStyle='#ddd';g.lineWidth=1.5/s;g.fillStyle='#bbb';
+g.beginPath();g.moveTo(0,-4);g.lineTo(3,4);g.lineTo(-3,4);g.closePath();g.fill();
+for(const a of[-1,1])for(const b of[-1,1]){g.beginPath();g.moveTo(0,0);g.lineTo(a*16,b*6);g.stroke();g.fillStyle=col;g.fillRect(a*16-1,b*6-1,2,2);g.fillStyle='#bbb'}
+g.fillStyle='rgba(255,140,80,.9)';for(const a of[-1,1])for(const b of[-1,1]){g.beginPath();g.arc(a*3,b*2+2,1.4+Math.sin(t*40)*.3,0,7);g.fill()}g.restore()}
+function tie(px,py,s){g.save();g.translate(px,py);g.scale(s,s);g.fillStyle='#333';g.strokeStyle='#999';g.lineWidth=1/s;g.fillRect(-8,-7,2,14);g.fillRect(6,-7,2,14);g.strokeRect(-8,-7,2,14);g.strokeRect(6,-7,2,14);g.beginPath();g.moveTo(-6,0);g.lineTo(6,0);g.stroke();g.fillStyle='#777';g.beginPath();g.arc(0,0,3,0,7);g.fill();g.restore()}
+const ties=[];const tr=R(3);for(let w=0;w<3;w++)for(let i=0;i<6;i++)ties.push({b:6+w*11+i*.5,ph:tr()*6,r:20+tr()*40,k:9+w*11+i*1.2,side:tr()<.5?-1:1});
+const booms=[];
+function boom(p,t,bt,sz){const a=t-bt;if(a<0||a>2.5)return;const s=proj(p);if(!s)return;const r=s[2]*sz*(0.3+a);g.globalAlpha=Math.max(0,1-a/2.5);const gr=g.createRadialGradient(s[0],s[1],0,s[0],s[1],r);gr.addColorStop(0,'#fff');gr.addColorStop(.3,'#fc6');gr.addColorStop(1,'rgba(255,60,0,0)');g.fillStyle=gr;g.beginPath();g.arc(s[0],s[1],r,0,7);g.fill();g.globalAlpha=1}
+function frame(){const T=((performance.now()-t0)/1000)%DUR;
+// camera path: approach, run along hull, pull away
+let z=420-T*16,y=-30-12*Math.sin(T*.4),x=40*Math.sin(T*.23);if(T>40){z=-220+(T-40)*-5;y=-40-(T-40)*14}
+cam={x,y,z,yaw:0.15*Math.sin(T*.3)+Math.PI,pit:T>40?0.35:0.12};
+g.fillStyle='#02030a';g.fillRect(0,0,1280,720);
+const gr=g.createRadialGradient(300,200,0,300,200,700);gr.addColorStop(0,'rgba(70,40,120,.35)');gr.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=gr;g.fillRect(0,0,1280,720);
+for(const s of stars){const p=proj([cam.x+s[0]*3000,cam.y+s[1]*3000,cam.z+s[2]*3000]);if(p){g.fillStyle='#fff';g.fillRect(p[0],p[1],1.3,1.3)}}
+// planet
+g.fillStyle='#1b3550';g.beginPath();g.arc(1050,620,260,0,7);g.fill();
+// SD
+const V=sdVerts().map(v=>proj(sdPos(v,T)));
+const faces=[[0,1,3,'#8a8f98'],[0,2,3,'#6d727a'],[0,1,4,'#4a4e55'],[0,2,4,'#3d4046']];
+for(const f of faces){if(!f.slice(0,3).every(i=>V[i]))continue;g.fillStyle=f[3];g.beginPath();g.moveTo(V[f[0]][0],V[f[0]][1]);g.lineTo(V[f[1]][0],V[f[1]][1]);g.lineTo(V[f[2]][0],V[f[2]][1]);g.fill();g.strokeStyle='#aab';g.lineWidth=1;g.stroke()}
+// panel lines
+g.strokeStyle='rgba(30,30,40,.6)';for(let i=1;i<10;i++){const zz=-260+i*40,w=(zz+260)/400*160;const a=proj(sdPos([-w,-35*(zz+260)/400,zz],T)),b=proj(sdPos([0,-35*(zz+260)/400,zz],T));if(a&&b){g.beginPath();g.moveTo(a[0],a[1]);g.lineTo(b[0],b[1]);g.stroke()}}
+// bridge tower box
+const tw=proj(sdPos([0,-60,110],T));if(tw&&T<38){g.fillStyle='#9aa';g.fillRect(tw[0]-30*tw[2]/1,tw[1]-6*tw[2],60*tw[2],18*tw[2]);g.fillStyle='#ff9';for(let i=0;i<8;i++)g.fillRect(tw[0]-25*tw[2]+i*7*tw[2],tw[1]-2*tw[2],3*tw[2],tw[2])}
+for(const cp of comps){const p=proj(sdPos(cp.p,T));if(p&&T<cp.k){g.fillStyle='#bcc';g.beginPath();g.arc(p[0],p[1],12*p[2],0,7);g.fill();g.strokeStyle='#f33';g.lineWidth=2;g.strokeRect(p[0]-18*p[2]-6,p[1]-18*p[2]-6,36*p[2]+12,36*p[2]+12)}boom(sdPos(cp.p,T),T,cp.k,40)}
+// turrets + flak
+for(const tu of turrets){const p=proj(sdPos(tu.p,T));if(!p)continue;if(T<tu.k){g.fillStyle='#555';g.fillRect(p[0]-3*p[2],p[1]-3*p[2],6*p[2],4*p[2]);if((T*3+tu.p[2])%2<.4){g.strokeStyle='#3f5';g.lineWidth=2;g.beginPath();g.moveTo(p[0],p[1]);g.lineTo(640+Math.sin(tu.p[2]+T)*300,200+Math.cos(T+tu.p[0])*150);g.stroke()}}boom(sdPos(tu.p,T),T,tu.k,8)}
+// ties
+for(const ti of ties){if(T<ti.b||T>ti.k+2.5)continue;const a=T-ti.b;const wp=[ti.side*(ti.r+Math.sin(a+ti.ph)*30),-50+Math.cos(a*1.3+ti.ph)*25,cam.z-260+a*30];if(T<ti.k){const p=proj(wp);if(p){tie(p[0],p[1],p[2]*1.2);if(Math.sin(T*9+ti.ph)>.8){g.strokeStyle='#3f3';g.lineWidth=2;g.beginPath();g.moveTo(p[0],p[1]);g.lineTo(640,560);g.stroke()}}}else boom(wp,T,ti.k,10)}
+// squad (screen-space, chase view)
+sq.forEach((s,i)=>{const ox=[0,-180,180,-340][i]+Math.sin(T*.8+i)*40,oy=[0,-60,-50,20][i]+Math.cos(T*.6+i*2)*25;const px=640+ox,py=520+oy,sc=i?2.6:4.2;const bank=Math.sin(T*.8+i)*.3;
+if(Math.sin(T*7+i*1.7)>.3){g.strokeStyle='#f33';g.lineWidth=3;g.shadowColor='#f00';g.shadowBlur=10;for(const a of[-1,1]){const k=(T*6+i)%1;g.beginPath();g.moveTo(px+a*16*sc*(1-k*.8),py-(6*sc+k*300));g.lineTo(px+a*16*sc*(1-k*.8)*.95,py-(6*sc+k*300+40));g.stroke()}g.shadowBlur=0}
+xwing(px,py,sc,s.c,bank,T);g.fillStyle=s.c;g.font='bold 13px monospace';g.textAlign='center';g.fillText(s.n,px,py+12*sc+14)});
+// HUD
+g.textAlign='left';g.font='bold 18px monospace';g.fillStyle='#fd4';g.fillText('OBJECTIVES',30,40);
+comps.forEach((cp,i)=>{const d=T>=cp.k;g.fillStyle=d?'#6f6':'#f66';g.font='15px monospace';g.fillText((d?'[X] ':'[ ] ')+cp.n,30,66+i*22)});
+const tk=turrets.filter(x=>T>=x.k).length,fk=ties.filter(x=>T>=x.k).length;
+g.fillStyle='#8cf';g.fillText('TURRETS DOWN '+tk+'/'+turrets.length,30,146);g.fillText('TIE KILLS '+fk,30,168);
+const wave=T<6?0:T<17?1:T<28?2:3;g.textAlign='right';g.fillStyle='#fd4';g.font='bold 18px monospace';g.fillText('TIE WAVE '+Math.max(1,wave)+'/3',1250,40);
+g.strokeStyle='rgba(255,220,80,.5)';g.lineWidth=1;g.beginPath();g.arc(640,330,20,0,7);g.moveTo(610,330);g.lineTo(625,330);g.moveTo(655,330);g.lineTo(670,330);g.stroke();
+const msg=T<5?'RED SQUADRON — ATTACK FORMATION':T>13&&T<16?'LEFT SHIELD GENERATOR DESTROYED':T>21&&T<24?'SHIELDS ARE DOWN! GO FOR THE BRIDGE':T>37&&T<44?'BRIDGE DESTROYED — STAR DESTROYER GOING DOWN!':T>44?'MISSION COMPLETE':'';
+if(msg){g.textAlign='center';g.font='bold 28px monospace';g.fillStyle='#fd4';g.fillText(msg,640,110)}
+if(T>37&&T<39){g.fillStyle='rgba(255,240,200,'+(1-(T-37)/2)*.6+')';g.fillRect(0,0,1280,720)}
+g.fillStyle='#000';g.fillRect(0,0,1280,14);g.fillRect(0,706,1280,14);
+const f=Math.min(1,T,DUR-T);if(f<1){g.fillStyle='rgba(0,0,0,'+(1-f)+')';g.fillRect(0,0,1280,720)}
+requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

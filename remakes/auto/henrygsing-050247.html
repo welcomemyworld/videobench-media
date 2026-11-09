@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>从讲稿到成片</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#0b1030}
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=45;
+const cv=document.getElementById('c'),x=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)||0;
+const t0=performance.now()-off*1000;
+const F='"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif';
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const E=v=>{v=cl(v);return v<.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2};
+const B=v=>{v=cl(v);const c=1.70158,d=c+1;return 1+d*Math.pow(v-1,3)+c*Math.pow(v-1,2)};
+const R=(a,b,c)=>cl((a-b)/(c-b));
+function rr(X,Y,w,h,r,f,s){x.beginPath();x.roundRect(X,Y,w,h,r);if(f){x.fillStyle=f;x.fill();}if(s){x.strokeStyle=s;x.lineWidth=3;x.stroke();}}
+function tx(s,X,Y,sz,c,al='center',w='bold'){x.font=w+' '+sz+'px '+F;x.fillStyle=c;x.textAlign=al;x.textBaseline='middle';x.fillText(s,X,Y);}
+const stars=[...Array(120)].map((_,i)=>({x:(i*397)%1280,y:(i*211+i*i*7)%720,r:(i%3)*.6+.5,p:i}));
+function bg(T,c1,c2){const g=x.createLinearGradient(0,0,0,720);g.addColorStop(0,c1);g.addColorStop(1,c2);x.fillStyle=g;x.fillRect(0,0,1280,720);
+for(const s of stars){x.globalAlpha=.3+.3*Math.sin(T*2+s.p);x.fillStyle='#fff';x.beginPath();x.arc(s.x,s.y,s.r,0,7);x.fill();}x.globalAlpha=1;
+x.fillStyle='rgba(255,255,255,.04)';x.beginPath();x.arc(1100,760,420,0,7);x.fill();x.beginPath();x.arc(120,-80,300,0,7);x.fill();}
+function robot(X,Y,s,T,mood){x.save();x.translate(X,Y+Math.sin(T*3)*6*s);x.scale(s,s);
+x.fillStyle='rgba(0,0,0,.25)';x.beginPath();x.ellipse(0,130-Math.sin(T*3)*6,70,12,0,0,7);x.fill();
+x.strokeStyle='#ffd166';x.lineWidth=5;x.beginPath();x.moveTo(0,-90);x.lineTo(0,-120);x.stroke();
+x.fillStyle='#ff5d8f';x.beginPath();x.arc(0,-124,10+Math.sin(T*6)*2,0,7);x.fill();
+rr(-80,-95,160,130,40,'#4cc9f0');rr(-80,-95,160,40,[40,40,0,0],'rgba(255,255,255,.18)');
+rr(-62,-75,124,88,26,'#14213d');
+const bl=(T%3.2)<.12?.15:1;x.fillStyle='#9bf6ff';
+for(const d of[-28,28]){x.beginPath();x.ellipse(d,-36,12,16*bl,0,0,7);x.fill();}
+x.strokeStyle='#9bf6ff';x.lineWidth=4;x.beginPath();if(mood)x.arc(0,-14,14,.2,Math.PI-.2);else{x.moveTo(-10,-6);x.lineTo(10,-6);}x.stroke();
+rr(-60,40,120,80,30,'#3a86ff');rr(-25,58,50,30,10,'#ffd166');
+x.fillStyle='#4cc9f0';x.beginPath();x.arc(-88,70+Math.sin(T*4)*5,18,0,7);x.arc(88,70-Math.sin(T*4)*5,18,0,7);x.fill();x.restore();}
+function doc(X,Y,w,h,title,col,rot,lines){x.save();x.translate(X,Y);x.rotate(rot);rr(-w/2+6,-h/2+8,w,h,16,'rgba(0,0,0,.25)');rr(-w/2,-h/2,w,h,16,'#fdfcf7');
+rr(-w/2,-h/2,w,46,[16,16,0,0],col);tx(title,0,-h/2+24,22,'#fff');
+x.fillStyle='#cfd4e0';for(let i=0;i<lines;i++)rr(-w/2+18,-h/2+66+i*22,(w-36)*(.55+.4*((i*37)%10)/10),9,4,'#cfd4e0');x.restore();}
+function caption(s,a,sub){x.globalAlpha=a;rr(340,620,600,64,32,'rgba(255,255,255,.1)');tx(s,640,652,28,'#fff');x.globalAlpha=1;}
+function label(n,s,a){x.globalAlpha=a;rr(40,36,56,56,18,'#ff5d8f');tx(n,68,64,28,'#fff');tx(s,112,64,30,'#fff','left');x.globalAlpha=1;}
+
+const S=[
+[0,7,(p,T)=>{bg(T,'#1b1f5e','#0b1030');const a=E(R(p,0,.15));
+tx('从讲稿到成片',640,110-30*(1-a),58,'rgba(255,255,255,'+a+')');
+tx('Kurzgesagt × 皮克斯开场 风格',640,170,24,'rgba(255,209,102,'+a+')','center','normal');
+const m=E(R(p,.45,.8));
+doc(300+ (560-300)*m,390-20*m,220,260,'讲稿','#3a86ff',-.08*(1-m),7);
+doc(980-(980-720)*m,390-20*m,220,260,'导演要求','#ff5d8f',.08*(1-m),5);
+if(m>0.95){}
+robot(640,420,1*B(R(p,.7,.95))+.001,T,1);
+label('1','输入：讲稿 + 导演要求',E(R(p,.1,.25)));
+caption('把材料交给 AI',E(R(p,.3,.4)));}],
+[7,14,(p,T)=>{bg(T,'#22195a','#0b1030');label('2','先出方案',1);
+robot(300,400,.95,T,p>.6);
+const a=B(R(p,.05,.3));x.save();x.translate(720,330);x.scale(a,a);
+rr(-220,-170,440,340,26,'#fdfcf7');tx('方案 v1',-190,-130,30,'#14213d','left');
+const it=['开场：宇宙尺度拉近','主角登场，抛出问题','三段论证，图解推进','结尾：回到人的尺度'];
+it.forEach((s,i)=>{const k=R(p,.2+i*.08,.3+i*.08);x.globalAlpha=k;x.fillStyle='#4cc9f0';x.beginPath();x.arc(-180,-70+i*55,9,0,7);x.fill();tx(s,-160,-70+i*55,24,'#333','left','normal');});
+x.globalAlpha=1;x.restore();
+const c=B(R(p,.62,.8));if(c>0){x.save();x.translate(900,520);x.rotate(-.2);x.scale(c*1.0,c);
+rr(-120,-45,240,90,20,null,'#06d6a0');x.lineWidth=6;rr(-120,-45,240,90,20,null,'#06d6a0');tx('✓ 我确认',0,0,36,'#06d6a0');x.restore();}
+caption('确认之后，再动手',E(R(p,.75,.85)));}],
+[14,23,(p,T)=>{bg(T,'#0f2a4a','#0b1030');label('3','先写 STORYBOARD.md',1);
+rr(110,120,1060,480,22,'#1e2747');rr(110,120,1060,44,[22,22,0,0],'#2d3a66');
+['#ff5f57','#febc2e','#28c840'].forEach((c,i)=>{x.fillStyle=c;x.beginPath();x.arc(140+i*24,142,7,0,7);x.fill();});
+tx('STORYBOARD.md',640,142,20,'#cbd5ff','center','normal');
+const cols=[[140,'时间'],[300,'画面'],[650,'文字'],[930,'转场']];
+tx('# 分镜表',140,195,28,'#ffd166','left');
+cols.forEach(([cx,s])=>tx(s,cx,245,24,'#4cc9f0','left'));
+x.fillStyle='#3a4670';x.fillRect(140,265,1000,2);
+const rows=[['00:00–00:06','星空缓慢推近地球','“一切始于一个问题”','光晕淡入'],
+['00:06–00:14','小机器人醒来眨眼','“你好，我是…”','圆形擦除'],
+['00:14–00:25','信息图层层展开','三个关键数字','缩放穿越'],
+['00:25–00:33','城市灯光亮起','“这改变了什么？”','横向推镜'],
+['00:33–00:40','回到星空，片名','片名 + 结语','渐黑']];
+rows.forEach((r,i)=>{const k=R(p,.1+i*.14,.24+i*.14);if(k<=0)return;
+r.forEach((s,j)=>{const n=Math.floor(s.length*cl(k*1.6-j*.15));tx(s.slice(0,n),cols[j][0],300+i*58,22,j?'#e8ecff':'#ffd166','left','normal');});
+x.fillStyle='rgba(255,255,255,.06)';x.fillRect(140,326+i*58,1000,1);});
+if(Math.floor(T*2)%2){x.fillStyle='#fff';x.fillRect(140,300+Math.min(4,Math.floor(p/.14))*58+30,10,3);}
+caption('每一场：时间 · 画面 · 文字 · 转场',E(R(p,.05,.15)));}],
+[23,32,(p,T)=>{bg(T,'#1a1440','#0b1030');label('4','用 Remotion 一场一场搭',1);
+rr(330,110,620,300,18,'#05070f');
+const sc=Math.min(4,Math.floor(p*5.5));const cs=['#3a86ff','#ff5d8f','#06d6a0','#ffd166','#9b5de5'];
+x.save();x.beginPath();x.roundRect(330,110,620,300,18);x.clip();
+const g=x.createRadialGradient(640,260,10,640,260,380);g.addColorStop(0,cs[sc]);g.addColorStop(1,'#05070f');x.fillStyle=g;x.fillRect(330,110,620,300);
+x.fillStyle='rgba(255,255,255,.85)';for(let i=0;i<6;i++){x.beginPath();x.arc(640+Math.cos(T+i)*(80+i*15),260+Math.sin(T*1.3+i)*50,6+i*2,0,7);x.fill();}
+tx('Scene '+(sc+1),640,260,40,'#fff');x.restore();
+rr(130,440,1020,150,18,'#1e2747');
+tx('<Sequence>',150,465,18,'#9bf6ff','left','normal');
+const tl=180;
+for(let i=0;i<5;i++){const k=B(R(p,.05+i*.16,.18+i*.16));if(k<=0)continue;
+const w=180;const X=tl+i*190;rr(X,490+(1-k)*-80,w,40,10,cs[i]);tx('场 '+(i+1),X+w/2,510+(1-k)*-80,20,'#fff');}
+rr(tl,545,950,22,8,'#2d3a66');rr(tl,545,950*cl(p*1.1),22,8,'#4cc9f0');
+const ph=tl+950*cl(p*1.1);x.fillStyle='#ff5d8f';x.fillRect(ph-2,480,4,95);
+robot(1110,240,.55,T,1);robot(170,240,.55,T+1,1);
+caption('逐场搭建 → 预览 → 调整',E(R(p,.05,.15)));}],
+[32,40,(p,T)=>{bg(T,'#0d3040','#0b1030');label('5','本地生成配音：微软 TTS',1);
+rr(170,170,520,320,22,'#1e2747');rr(170,170,520,40,[22,22,0,0],'#2d3a66');tx('localhost · TTS',430,190,18,'#cbd5ff','center','normal');
+tx('“一切始于一个问题……”',430,260,26,'#fff');
+const k=R(p,.15,.9);for(let i=0;i<48;i++){const X=200+i*10;const on=i/48<k;
+const h=on?(10+Math.abs(Math.sin(i*.7+T*8)*Math.sin(i*.23))*70):4;rr(X,380-h/2,6,h,3,on?'#06d6a0':'#3a4670');}
+tx('voice.mp3 ✓',430,460,20,R(p,.85,.9)?'#06d6a0':'rgba(0,0,0,0)','center','normal');
+robot(560,560,.0001+.0,T,1);
+const c=B(R(p,.45,.65));x.save();x.translate(960,330);x.scale(c,c);x.rotate(Math.sin(T*2)*.05);
+x.fillStyle='#ffd166';x.beginPath();x.arc(0,0,150,0,7);x.fill();x.fillStyle='#f4a261';x.beginPath();x.arc(0,0,125,0,7);x.fill();
+tx('免费',0,-25,64,'#fff');tx('¥ 0',0,45,48,'#14213d');x.restore();
+for(let i=0;i<3;i++){const a=(T*1.5+i/3)%1;x.strokeStyle='rgba(6,214,160,'+(1-a)+')';x.lineWidth=3;x.beginPath();x.arc(690,330,30+a*90,-.6,.6);x.stroke();}
+caption('不联网也能出声，零成本',E(R(p,.6,.7)));}],
+[40,45,(p,T)=>{bg(T,'#1b1f5e','#0b1030');
+const st=['讲稿+要求','方案','确认','分镜','Remotion','TTS','成片'];const cs=['#3a86ff','#4cc9f0','#06d6a0','#ffd166','#9b5de5','#ff5d8f','#fff'];
+st.forEach((s,i)=>{const k=B(R(p,i*.07,.15+i*.07));const X=130+i*170;
+if(i){x.strokeStyle='rgba(255,255,255,'+.4*k+')';x.lineWidth=4;x.beginPath();x.moveTo(X-115,300);x.lineTo(X-55,300);x.stroke();}
+x.save();x.translate(X,300);x.scale(k,k);x.fillStyle=cs[i];x.beginPath();x.arc(0,0,55,0,7);x.fill();tx(s,0,0,s.length>4?16:22,i==6?'#14213d':'#fff');x.restore();});
+const a=E(R(p,.55,.75));tx('先方案，再动手',640,470,48,'rgba(255,255,255,'+a+')');
+tx('一场一场，稳稳做完',640,535,28,'rgba(255,209,102,'+a+')','center','normal');
+x.fillStyle='rgba(0,0,0,'+E(R(p,.9,1))+')';x.fillRect(0,0,1280,720);}]
+];
+function frame(){const T=((performance.now()-t0)/1000)%DUR;
+let i=S.findIndex(s=>T>=s[0]&&T<s[1]);if(i<0)i=S.length-1;const s=S[i];
+s[2]((T-s[0])/(s[1]-s[0]),T);
+const lt=T-s[0];if(i>0&&lt<.7){const r=(1-E(lt/.7))*900;x.save();x.beginPath();x.rect(0,0,1280,720);x.arc(640,360,Math.max(0,900-r*1),0,7,true);x.fillStyle='#ffd166';x.globalAlpha=lt<.7?1-lt/.7:0;x.fill('evenodd');x.restore();}
+requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Notion AI — Launch</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=32;
+const C=document.getElementById('c'),X=C.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);C.style.width=1280*s+'px';C.style.height=720*s+'px'}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),T0=parseFloat(q.get('t')||0)||0,S=performance.now();
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),eo=t=>1-Math.pow(1-cl(t),3),eio=t=>{t=cl(t);return t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2};
+const back=t=>{t=cl(t);const c=1.7;return 1+(c+1)*Math.pow(t-1,3)+c*Math.pow(t-1,2)};
+const F='-apple-system,"Segoe UI",Helvetica,Arial,sans-serif';
+function rr(x,y,w,h,r){X.beginPath();X.roundRect(x,y,w,h,r)}
+function txt(s,x,y,sz,col,wt=700,al='center',a=1){X.globalAlpha=a;X.fillStyle=col;X.font=`${wt} ${sz}px ${F}`;X.textAlign=al;X.textBaseline='middle';X.fillText(s,x,y);X.globalAlpha=1}
+function logo(x,y,s,a=1){X.save();X.globalAlpha=a;X.translate(x,y);X.scale(s,s);
+ rr(-40,-40,80,80,14);X.fillStyle='#fff';X.fill();X.lineWidth=5;X.strokeStyle='#111';X.stroke();
+ X.fillStyle='#111';X.font=`800 58px Georgia,serif`;X.textAlign='center';X.textBaseline='middle';X.fillText('N',0,3);X.restore()}
+function bg(t,light){
+ const g=X.createLinearGradient(0,0,1280,720);
+ if(light){g.addColorStop(0,'#f7f6f3');g.addColorStop(1,'#ecebe7')}else{g.addColorStop(0,'#0b0b0f');g.addColorStop(1,'#16141c')}
+ X.fillStyle=g;X.fillRect(0,0,1280,720);
+ X.globalAlpha=light?.05:.08;X.strokeStyle=light?'#000':'#fff';X.lineWidth=1;
+ for(let i=0;i<=32;i++){X.beginPath();X.moveTo(i*40,0);X.lineTo(i*40,720);X.stroke()}
+ for(let i=0;i<=18;i++){X.beginPath();X.moveTo(0,i*40);X.lineTo(1280,i*40);X.stroke()}
+ X.globalAlpha=1;
+ const cols=['#7c5cff','#ff6b9a','#2ec5ff'];
+ cols.forEach((c,i)=>{const x=640+Math.cos(t*.4+i*2.1)*380,y=360+Math.sin(t*.5+i*1.7)*200;
+  const r=X.createRadialGradient(x,y,0,x,y,380);r.addColorStop(0,c+(light?'33':'55'));r.addColorStop(1,c+'00');X.fillStyle=r;X.fillRect(0,0,1280,720)});
+}
+function words(list,y,sz,lt,col,stag=.12){
+ X.font=`800 ${sz}px ${F}`;const sp=sz*.28;let w=list.reduce((a,s)=>a+X.measureText(s).width,0)+sp*(list.length-1);let x=640-w/2;
+ list.forEach((s,i)=>{const p=eo((lt-i*stag)/.5),ww=X.measureText(s).width;
+  X.save();X.beginPath();X.rect(x-10,y-sz,ww+20,sz*2);X.clip();
+  txt(s,x,y+(1-p)*sz*1.2,sz,typeof col=='function'?col(i):col,800,'left',p);X.restore();x+=ww+sp});
+}
+function grad(x0,x1){const g=X.createLinearGradient(x0,0,x1,0);g.addColorStop(0,'#7c5cff');g.addColorStop(.5,'#ff6b9a');g.addColorStop(1,'#ffb35c');return g}
+function win(x,y,w,h,a){X.save();X.globalAlpha=a;X.shadowColor='rgba(0,0,0,.35)';X.shadowBlur=60;X.shadowOffsetY=20;
+ rr(x,y,w,h,14);X.fillStyle='#fff';X.fill();X.shadowColor='transparent';
+ X.save();rr(x,y,w,h,14);X.clip();X.fillStyle='#f7f6f3';X.fillRect(x,y,220,h);X.fillStyle='#ececea';X.fillRect(x,y,w,34);X.restore();
+ ['#ff5f57','#febc2e','#28c840'].forEach((c,i)=>{X.beginPath();X.arc(x+20+i*18,y+17,6,0,7);X.fillStyle=c;X.fill()});
+ const items=['🏠 Home','📥 Inbox','📄 Product Launch','🗂 Roadmap','📚 Team Wiki','📅 Calendar','✨ Notion AI'];
+ items.forEach((s,i)=>{if(i==2){rr(x+10,y+62+i*32-13,200,26,6);X.fillStyle='#e8e7e3';X.fill()}txt(s,x+22,y+62+i*32,14,'#37352f',i==2?600:400,'left')});
+ X.restore()}
+function caption(s,sub,lt,y=70){const p=eo(lt/.6);txt(s,640,y+(1-p)*20,40,'#fff',800,'center',p);if(sub)txt(sub,640,y+44+(1-p)*20,19,'rgba(255,255,255,.65)',400,'center',eo((lt-.2)/.6))}
+const scenes=[
+[0,4.5,t=>{bg(t,0);const a=cl((4.5-t)/.4);X.globalAlpha=a;
+ words(['Your','work.'],300,96,t,'#fff');words(['Finally','in','one','place.'],420,96,t-.8,i=>i==3?grad(560,1000):'#fff');
+ X.globalAlpha=1}],
+[4.5,9,t=>{bg(t+4,0);const p=back(t/.8),a=cl((4.5-t)/.4);
+ X.save();X.globalAlpha=a;for(let i=0;i<3;i++){const r=eo((t-i*.15)/1.2);X.beginPath();X.arc(640,300,60+r*300,0,7);X.strokeStyle=`rgba(255,255,255,${.25*(1-r)})`;X.lineWidth=2;X.stroke()}
+ logo(640,290,p*1.4,a);txt('Notion',640,420,72,'#fff',800,'center',eo((t-.5)/.6)*a);
+ rr(640-150,480,300,40,20);X.fillStyle=`rgba(124,92,255,${.25*eo((t-1)/.6)*a})`;X.fill();
+ txt('✦ Introducing Notion AI',640,500,19,'#d6ccff',600,'center',eo((t-1)/.6)*a);X.restore()}],
+[9,15.5,t=>{bg(t,0);const a=cl((6.5-t)/.4),wy=150+(1-eo(t/.9))*400;caption('Write, plan & organize','Docs that think in blocks',t);
+ X.globalAlpha=a;win(190,wy,900,520,1);const L=[['🚀 Product Launch Plan',30,700],['Goal: ship v2 to 10k teams by Q3.',17,400],['☐ Finalize pricing page',17,400],['☑ Record launch video',17,400],['☐ Email beta customers',17,400]];
+ let yy=wy+90;L.forEach((l,i)=>{const st=.9+i*.6,n=Math.floor(cl((t-st)/.5)*l[0].length);if(t>st){txt(l[0].slice(0,n),440,yy,l[1],'#37352f',l[2],'left');
+  if(n<l[0].length&&(t*3|0)%2==0){X.fillStyle='#37352f';X.font=`${l[2]} ${l[1]}px ${F}`;X.fillRect(440+X.measureText(l[0].slice(0,n)).width+2,yy-l[1]*.6,2,l[1]*1.2)}}yy+=i==0?60:38});
+ const kp=eo((t-4)/.6);if(kp>0){const cols=['#fdecc8','#d3e5ef','#dbeddb'],nm=['Todo','Doing','Done'];
+  nm.forEach((n,i)=>{const bx=440+i*200,by=wy+330+(1-kp)*30;X.globalAlpha=kp*a;rr(bx,by,180,140,10);X.fillStyle='#fafaf9';X.fill();X.strokeStyle='#e5e4e0';X.stroke();
+   rr(bx+12,by+12,60,22,6);X.fillStyle=cols[i];X.fill();txt(n,bx+42,by+23,12,'#37352f',600);
+   for(let k=0;k<2;k++){rr(bx+12,by+46+k*44,156,36,6);X.fillStyle='#fff';X.fill();X.strokeStyle='#e5e4e0';X.stroke();rr(bx+22,by+60+k*44,80+((i+k)*37)%60,8,4);X.fillStyle='#d9d8d4';X.fill()}})}
+ X.globalAlpha=1}],
+[15.5,22,t=>{bg(t,0);const a=cl((6.5-t)/.4);caption('Ask AI anything','Summaries, drafts & answers — right in your docs',t);X.globalAlpha=a;
+ const p=back(t/.7),w=760,x=640-w/2,y=200;X.save();X.translate(640,y+170);X.scale(.9+.1*p,.9+.1*p);X.translate(-640,-(y+170));
+ X.shadowColor='rgba(124,92,255,.5)';X.shadowBlur=60;rr(x,y,w,340,18);X.fillStyle='#fff';X.fill();X.shadowColor='transparent';
+ rr(x+24,y+24,w-48,54,12);X.strokeStyle=grad(x,x+w);X.lineWidth=2.5;X.stroke();txt('✦',x+50,y+51,22,'#7c5cff',700);
+ const pr='Summarize this week\'s meeting notes',n=Math.floor(cl((t-.6)/1.4)*pr.length);txt(pr.slice(0,n),x+76,y+51,18,'#37352f',400,'left');
+ if(t>2.2&&t<2.9){for(let i=0;i<3;i++){X.globalAlpha=a*(.3+.7*Math.abs(Math.sin(t*6+i)));X.beginPath();X.arc(x+50+i*16,y+110,5,0,7);X.fillStyle='#7c5cff';X.fill()}X.globalAlpha=a}
+ const out=[['Key takeaways',700],['• Launch moved to June 12 — design sign-off Friday',400],['• Pricing: new Plus tier at $10/seat',400],['• Marketing owns the launch video & email',400],['Action items: 3 assigned  ·  2 due this week',600]];
+ out.forEach((o,i)=>{const pp=eo((t-2.9-i*.35)/.5);if(pp>0)txt(o[0],x+40+(1-pp)*20,y+115+i*42,i==0?20:17,i==4?'#7c5cff':'#37352f',o[1],'left',pp*a)});
+ X.restore();X.globalAlpha=1}],
+[22,27.5,t=>{bg(t,0);const a=cl((5.5-t)/.4);caption('Everything your team needs','One tool replaces them all',t);X.globalAlpha=a;
+ const f=[['📄','Docs','Beautiful, flexible pages','#7c5cff'],['📚','Wikis','Knowledge in one place','#2ec5ff'],['🗂','Projects','Boards, timelines, tables','#ff6b9a'],['✨','AI','Your built-in assistant','#ffb35c']];
+ f.forEach((c,i)=>{const p=back((t-.3-i*.15)/.7),x=110+i*270,y=200+(1-cl(p))*80;X.globalAlpha=cl(p)*a;
+  rr(x,y,240,230,18);X.fillStyle='rgba(255,255,255,.06)';X.fill();X.strokeStyle='rgba(255,255,255,.14)';X.lineWidth=1;X.stroke();
+  rr(x+24,y+24,64,64,16);X.fillStyle=c[3]+'33';X.fill();txt(c[0],x+56,y+57,32,'#fff',400);
+  txt(c[1],x+24,y+130,30,'#fff',800,'left',cl(p)*a);txt(c[2],x+24,y+170,16,'rgba(255,255,255,.65)',400,'left',cl(p)*a);
+  rr(x+24,y+196,192,4,2);X.fillStyle='rgba(255,255,255,.1)';X.fill();rr(x+24,y+196,192*eo((t-1-i*.15)/1),4,2);X.fillStyle=c[3];X.fill()});
+ X.globalAlpha=a;const st=[[100,'M+','users worldwide'],[50,'%','of Fortune 500'],[10,'x','faster writing*']];
+ st.forEach((s,i)=>{const v=Math.round(s[0]*eo((t-1.5)/1.5));txt(v+s[1],310+i*330,520,54,grad(200+i*330,420+i*330),800,'center',eo((t-1.5)/.5)*a);txt(s[2],310+i*330,568,17,'rgba(255,255,255,.6)',400,'center',eo((t-1.7)/.5)*a)});
+ X.globalAlpha=1}],
+[27.5,32,t=>{bg(t,0);const fo=cl((4.5-t)/.5);X.globalAlpha=fo;logo(640,210,back(t/.7)*1.1);
+ words(['Think','it.','Make','it.'],350,76,t-.3,i=>i>1?grad(640,1000):'#fff',.1);
+ const p=back((t-1.2)/.6);if(p>0){X.save();X.translate(640,470);X.scale(p,p);X.shadowColor='rgba(255,107,154,.5)';X.shadowBlur=40;rr(-150,-32,300,64,32);X.fillStyle='#fff';X.fill();X.shadowColor='transparent';txt('Try Notion free →',0,1,22,'#111',700);X.restore()}
+ txt('notion.so',640,550,20,'rgba(255,255,255,.6)',500,'center',eo((t-1.6)/.6)*fo);X.globalAlpha=1}]
+];
+function frame(){const T=((performance.now()-S)/1000+T0)%DUR;X.clearRect(0,0,1280,720);
+ for(const s of scenes)if(T>=s[0]&&T<s[1]){s[2](T-s[0]);break}
+ const fl=Math.min(...scenes.map(s=>Math.abs(T-s[0])));if(fl<.12){X.fillStyle=`rgba(255,255,255,${.12*(1-fl/.12)})`;X.fillRect(0,0,1280,720)}
+ X.fillStyle='rgba(255,255,255,.25)';X.fillRect(0,716,1280*T/DUR,4);requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

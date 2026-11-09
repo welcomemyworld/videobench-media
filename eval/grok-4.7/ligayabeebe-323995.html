@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>10xColleges</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#wrap{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:center center}
+canvas{display:block}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+const C=document.getElementById("c"),X=C.getContext("2d"),W=1280,H=720;
+window.DUR=28;
+const q=new URLSearchParams(location.search);
+const T0=performance.now()-((parseFloat(q.get("t"))||0)%window.DUR)*1000;
+function fit(){const s=Math.min(innerWidth/W,innerHeight/H);document.getElementById("wrap").style.transform="translate(-50%,-50%) scale("+s+")"}
+addEventListener("resize",fit);fit();
+function cl(v,a,b){return Math.max(a,Math.min(b,v))}
+function eio(t){t=cl(t,0,1);return t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2}
+function eo(t){t=cl(t,0,1);return 1-Math.pow(1-t,3)}
+function seg(t,a,b){return eio((t-a)/(b-a))}
+function fo(t,a,b,c,d){if(t<=a||t>=d)return 0;if(t<b)return(t-a)/(b-a);if(t>c)return(d-t)/(d-c);return 1}
+function rr(x,y,w,h,r){X.beginPath();X.moveTo(x+r,y);X.arcTo(x+w,y,x+w,y+h,r);X.arcTo(x+w,y+h,x,y+h,r);X.arcTo(x,y+h,x,y,r);X.arcTo(x,y,x+w,y,r);X.closePath()}
+const pts=[];
+let s=7;
+for(let i=0;i<110;i++){s=(s*16807)%2147483647;const a=s/2147483647;s=(s*16807)%2147483647;const b=s/2147483647;s=(s*16807)%2147483647;pts.push({x:a*W,y:b*H,r:(s/2147483647)*1.8+.25,v:12+a*28,ph:b*6.2})}
+const sky=[];
+for(let i=0;i<28;i++){const h=40+((i*47)%90);sky.push({x:40+i*46,w:28+((i*13)%26),h})}
+function bg(t){
+  const g=X.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,"#070b14");g.addColorStop(.55,"#0c1424");g.addColorStop(1,"#07080c");
+  X.fillStyle=g;X.fillRect(0,0,W,H);
+  const glow=X.createRadialGradient(640+Math.sin(t*.25)*40,280,40,640,360,520);
+  glow.addColorStop(0,"rgba(90,140,220,.18)");glow.addColorStop(.45,"rgba(212,168,74,.06)");glow.addColorStop(1,"rgba(0,0,0,0)");
+  X.fillStyle=glow;X.fillRect(0,0,W,H);
+  X.save();X.globalAlpha=.55;
+  pts.forEach(p=>{const y=(p.y+t*p.v)%H;X.fillStyle="rgba(230,236,255,.7)";X.beginPath();X.arc(p.x,y,p.r,0,7);X.fill()});
+  X.restore();
+  X.fillStyle="#0a1018";
+  sky.forEach((b,i)=>{const y=560-b.h+Math.sin(t*.4+i)*.6;X.fillRect(b.x,y,b.w,b.h+160);X.fillStyle=i%3?"rgba(126,196,255,.18)":"rgba(232,200,114,.22)";for(let r=0;r<4;r++)X.fillRect(b.x+6,y+12+r*16,6,6);X.fillStyle="#0a1018"});
+  const vg=X.createLinearGradient(0,500,0,720);vg.addColorStop(0,"rgba(0,0,0,0)");vg.addColorStop(1,"rgba(0,0,0,.55)");X.fillStyle=vg;X.fillRect(0,500,W,220);
+}
+function mark(x,y,sc,a,p){
+  X.save();X.translate(x,y);X.scale(sc,sc);X.globalAlpha=a;
+  X.strokeStyle="#e8c872";X.lineWidth=3;X.lineJoin="round";
+  X.beginPath();X.moveTo(0,-46);X.lineTo(36,-28);X.lineTo(36,8);X.quadraticCurveTo(36,36,0,50);X.quadraticCurveTo(-36,36,-36,8);X.lineTo(-36,-28);X.closePath();
+  X.stroke();
+  if(p>.2){X.globalAlpha=a*cl((p-.2)/.4,0,1);X.fillStyle="#e8c872";X.font="700 28px system-ui,sans-serif";X.textAlign="center";X.textBaseline="middle";X.fillText("10×",0,2)}
+  X.restore();
+}
+function label(txt,x,y,size,col,a,align,w){
+  X.save();X.globalAlpha=a;X.fillStyle=col;X.font=w+" "+size+"px system-ui,sans-serif";X.textAlign=align||"left";X.textBaseline="middle";X.fillText(txt,x,y);X.restore();
+}
+function card(x,y,w,h,a,title,body,icon){
+  X.save();X.globalAlpha=a;rr(x,y,w,h,16);X.fillStyle="rgba(12,18,32,.72)";X.fill();X.strokeStyle="rgba(232,200,114,.45)";X.lineWidth=1.5;X.stroke();
+  X.translate(x+36,y+48);X.strokeStyle="#7ec4ff";X.lineWidth=2;
+  if(icon==0){X.beginPath();X.arc(0,-6,12,Math.PI,0);X.lineTo(12,10);X.lineTo(-12,10);X.closePath();X.stroke();X.beginPath();X.moveTo(-16,10);X.lineTo(16,10);X.stroke()}
+  else if(icon==1){X.strokeRect(-14,-12,28,26);X.beginPath();X.moveTo(-6,-12);X.lineTo(-6,-20);X.lineTo(6,-20);X.lineTo(6,-12);X.moveTo(-14,2);X.lineTo(14,2);X.stroke()}
+  else{X.beginPath();X.moveTo(-14,10);X.lineTo(-4,0);X.lineTo(2,6);X.lineTo(14,-10);X.stroke()}
+  X.restore();
+  label(title,x+68,y+42,22,"#f6f1e6",a,"left","600");
+  X.save();X.globalAlpha=a;X.fillStyle="#b7c0d0";X.font="18px system-ui,sans-serif";X.textAlign="left";X.textBaseline="top";
+  const words=body.split(" "),max=w-48;let line="",ly=y+78;
+  words.forEach(wd=>{const t=line?line+" "+wd:wd;if(X.measureText(t).width>max){X.fillText(line,x+28,ly);ly+=24;line=wd}else line=t});
+  X.fillText(line,x+28,ly);X.restore();
+}
+function draw(t){
+  X.clearRect(0,0,W,H);
+  X.save();
+  const z=1+.015*Math.sin(t*.35);X.translate(W/2,H/2);X.scale(z,z);X.translate(-W/2+Math.sin(t*.2)*6,-H/2);
+  bg(t);
+  const a1=fo(t,.2,1.1,4.6,5.8);
+  mark(640,250,1.35,a1,seg(t,.4,2.2));
+  label("PRODUCT LAUNCH",640,340,16,"#e8c872",a1,"center","600");
+  label("10xColleges",640,400,72,"#f7f3ea",a1,"center","700");
+  label("Every campus decision, ten times clearer.",640,458,24,"#c5d0e0",a1*.95,"center","400");
+  const a2=fo(t,5.4,6.4,11.6,12.8);
+  label("10xColleges",80,64,22,"#f7f3ea",a2,"left","700");
+  label("THE PLATFORM",80,168,15,"#e8c872",a2,"left","600");
+  label("One place for the whole college search.",80,214,40,"#f7f3ea",a2,"left","650");
+  const lines=["Match campuses to the life you actually want.","Track every deadline on a single timeline.","Compare outcomes before you commit."];
+  lines.forEach((ln,i)=>{const u=seg(t,6.2+i*.35,7+i*.35)*a2;X.save();X.globalAlpha=u;X.fillStyle="#9fd0ff";X.fillRect(80,268+i*52,8,8);X.restore();label(ln,104,272+i*52,24,"#d5deea",u,"left","400")});
+  const a3=fo(t,12.3,13.3,19.2,20.4);
+  label("BUILT FOR THE DECISION",80,92,15,"#e8c872",a3,"left","600");
+  const cards=[["Match","Find a campus that fits how you learn, live, and grow.",0],["Apply","Deadlines, essays, and aid — one calm timeline.",1],["Decide","Outcomes side by side, before you say yes.",2]];
+  cards.forEach((c,i)=>{const u=seg(t,13+i*.28,13.9+i*.28)*a3;card(70+i*400,200+ (1-u)*24,370,250,u,c[0],c[1],c[2])});
+  const a4=fo(t,20,21.1,27.6,28);
+  mark(640,168,1.05,a4,1);
+  label("10xColleges",640,268,64,"#f7f3ea",a4,"center","700");
+  label("Nothing was screen-recorded.",640,348,28,"#e8c872",a4,"center","500");
+  label("All 7,867 frames were drawn by code.",640,392,26,"#f4efe4",a4*.95,"center","400");
+  label("Making a change means editing a script.",640,436,22,"#b7c3d4",a4*.9,"center","400");
+  X.restore();
+  const bar=cl(t/window.DUR,0,1);
+  X.fillStyle="rgba(232,200,114,.25)";X.fillRect(0,H-4,W,4);
+  X.fillStyle="#e8c872";X.fillRect(0,H-4,W*bar,4);
+  X.fillStyle="rgba(0,0,0,.15)";
+  for(let i=0;i<H;i+=3)X.fillRect(0,i,W,1);
+}
+function loop(now){let t=((now-T0)/1000)%window.DUR;if(t<0)t+=window.DUR;draw(t);requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

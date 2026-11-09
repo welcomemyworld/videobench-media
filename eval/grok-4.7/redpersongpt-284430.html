@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mimicly</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#stage{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform:translate(-50%,-50%);transform-origin:center center}
+canvas{display:block}
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=22;
+(function(){
+var c=document.getElementById("c");
+var x=c.getContext("2d");
+var stage=document.getElementById("stage")||c;
+function fit(){
+  var s=Math.min(innerWidth/1280,innerHeight/720);
+  c.style.transform="translate(-50%,-50%) scale("+s+")";
+  c.style.position="absolute";
+  c.style.left="50%";
+  c.style.top="50%";
+}
+fit(); addEventListener("resize",fit);
+var q=location.search.match(/[?&]t=([0-9.]+)/);
+var off=q?parseFloat(q[1]):0;
+var t0=performance.now()-off*1000;
+function clamp(v,a,b){return v<a?a:v>b?b:v}
+function ease(t){t=clamp(t,0,1);return t*t*(3-2*t)}
+function seg(t,a,b){return ease((t-a)/(b-a))}
+function rr(ctx,x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath()}
+var chats=[
+  {me:0,t:"can you send the shot?"},
+  {me:1,t:"already in the edit"},
+  {me:0,t:"make it look like a real chat"},
+  {me:1,t:"names, time, both sides. done."}
+];
+var themes=[
+  {name:"iMessage",bg:"#0b0b0d",me:"#0A84FF",them:"#2c2c2e",fg:"#fff",meta:"#8e8e93"},
+  {name:"WhatsApp",bg:"#0b141a",me:"#005c4b",them:"#1f2c34",fg:"#e9edef",meta:"#8696a0"},
+  {name:"AI chat",bg:"#111114",me:"#2a2a32",them:"#1a1a20",fg:"#f4f4f5",meta:"#a1a1aa"}
+];
+function drawPhone(px,py,sc,theme,prog,typing){
+  x.save(); x.translate(px,py); x.scale(sc,sc);
+  rr(x,-150,-300,300,600,36);
+  x.fillStyle="#111"; x.fill();
+  x.strokeStyle="rgba(255,255,255,.18)"; x.lineWidth=2; x.stroke();
+  rr(x,-138,-284,276,568,28);
+  x.fillStyle=theme.bg; x.fill();
+  x.fillStyle=theme.fg; x.font="600 15px sans-serif"; x.textAlign="center";
+  x.fillText(theme.name,-0,-258);
+  x.font="11px sans-serif"; x.fillStyle=theme.meta;
+  x.fillText("Today  9:41",0,-240);
+  var y=-210;
+  var n=Math.floor(prog*chats.length);
+  var frac=prog*chats.length-n;
+  for(var i=0;i<n && i<chats.length;i++){
+    var m=chats[i];
+    x.font="14px sans-serif";
+    var tw=Math.min(180,x.measureText(m.t).width+28);
+    var bx=m.me? 120-tw : -120;
+    rr(x,bx,y,tw,36,16);
+    x.fillStyle=m.me?theme.me:theme.them; x.fill();
+    x.fillStyle=theme.fg; x.textAlign="left";
+    x.fillText(m.t,bx+12,y+23);
+    y+=46;
+  }
+  if(n<chats.length && frac>0.15){
+    var m2=chats[n];
+    var w2=Math.min(180,40+frac*140);
+    var bx2=m2.me?120-w2:-120;
+    rr(x,bx2,y,w2,36,16);
+    x.fillStyle=m2.me?theme.me:theme.them; x.globalAlpha=0.85; x.fill(); x.globalAlpha=1;
+    if(typing){
+      x.fillStyle=theme.fg;
+      for(var d=0;d<3;d++){
+        var pulse=0.4+0.6*Math.abs(Math.sin((prog*8+d)*2));
+        x.globalAlpha=pulse;
+        x.beginPath(); x.arc(bx2+16+d*10,y+18,3,0,7); x.fill();
+      }
+      x.globalAlpha=1;
+    }
+  }
+  x.restore();
+}
+function panel(px,py,w,h,a){
+  x.save(); x.globalAlpha=a;
+  rr(x,px,py,w,h,18);
+  x.fillStyle="rgba(18,18,22,.92)"; x.fill();
+  x.strokeStyle="rgba(255,255,255,.08)"; x.stroke();
+  x.restore();
+}
+function label(s,px,py,size,col,align,a){
+  x.save(); x.globalAlpha=a==null?1:a;
+  x.fillStyle=col; x.font=size+"px sans-serif"; x.textAlign=align||"left";
+  x.fillText(s,px,py); x.restore();
+}
+function frame(t){
+  x.clearRect(0,0,1280,720);
+  var g=x.createLinearGradient(0,0,1280,720);
+  g.addColorStop(0,"#07080c"); g.addColorStop(1,"#10131c");
+  x.fillStyle=g; x.fillRect(0,0,1280,720);
+  x.fillStyle="rgba(110,231,255,.05)";
+  for(var i=0;i<18;i++){x.fillRect(80+i*64,0,1,720)}
+  var s1=seg(t,0.2,1.2), s1o=1-seg(t,4.6,5.4);
+  if(t<5.6){
+    label("MIMICLY",640,250,"600 18","#8ab4ff","center",s1);
+    label("Make the chat look right.",640,330,"600 54","#f5f7fb","center",s1);
+    label("Screenshots. Text stories. Dialogue videos.",640,390,"22","#a8b0c0","center",s1*0.9);
+    label("Not a generic mockup. A real editor.",640,450,"20","#7dd3fc","center",Math.min(s1,s1o));
+  }
+  var s2=seg(t,5.0,6.0)*(1-seg(t,14.2,15.0));
+  if(t>4.8 && t<15.2){
+    var th=t<8.6?0:t<11.2?1:2;
+    var local=(t-5.2)/2.6;
+    var theme=themes[th];
+    panel(70,90,420,540,s2);
+    label("Editor",96,130,"600 16","#9ca3af","left",s2);
+    label("Both sides",96,180,"22","#fff","left",s2);
+    label("Names  ·  photos  ·  time  ·  color",96,214,"16","#9ca3af","left",s2);
+    var rows=["Alex","Sam","9:41 AM","Bubble color"];
+    for(var r=0;r<4;r++){
+      var on=seg(t,5.4+r*0.35,6.0+r*0.35);
+      rr(x,96,250+r*70,300,52,12);
+      x.fillStyle="rgba(255,255,255,"+(0.04+on*0.06)+")"; x.fill();
+      label(rows[r],112,282+r*70,"18","#e5e7eb","left",s2*on);
+    }
+    drawPhone(860,360,0.92*s2+0.02,theme,clamp((t-5.6)/3.2,0,1), t>6.2 && t<8.2);
+    label(theme.name+" template",760,640,"18","#cbd5e1","center",s2);
+    if(t>8.4){
+      label("63 templates",96,560,"600 28","#fff","left",seg(t,8.4,9.2)*s2);
+      label("Chat  ·  AI  ·  social  ·  comments  ·  email",96,592,"15","#94a3b8","left",seg(t,8.8,9.6)*s2);
+    }
+  }
+  var s3=seg(t,14.4,15.2)*(1-seg(t,18.6,19.4));
+  if(t>14.2 && t<19.6){
+    drawPhone(420,360,0.78,themes[0],1,false);
+    x.save(); x.globalAlpha=s3;
+    rr(x,640,180,460,280,20);
+    x.fillStyle="#12141a"; x.fill();
+    label("Export",668,230,"600 16","#94a3b8","left",1);
+    label("Image",668,290,"28","#fff","left",1);
+    label("MP4 on supported templates",668,330,"18","#cbd5e1","left",1);
+    var bar=seg(t,15.4,17.6);
+    rr(x,668,380,380,14,7); x.fillStyle="#1f2937"; x.fill();
+    rr(x,668,380,380*bar,14,7); x.fillStyle="#38bdf8"; x.fill();
+    label(bar>0.98?"Ready":"Recording…",668,430,"16","#7dd3fc","left",1);
+    x.restore();
+    label("3 free exports. Pro removes the watermark.",640,640,"22","#e2e8f0","center",s3);
+  }
+  var s4=seg(t,18.8,19.8);
+  if(t>18.6){
+    label("Mimicly",640,300,"600 72","#f8fafc","center",s4);
+    label("Chat mockups that hold up on camera.",640,360,"24","#cbd5e1","center",s4);
+    label("Web + iPhone   ·   try 3 exports free",640,420,"20","#7dd3fc","center",s4);
+    rr(x,520,470,240,54,27);
+    x.fillStyle="rgba(56,189,248,"+(0.15+0.2*Math.sin(t*3))+")"; x.fill();
+    label("Open the editor",640,504,"18","#e0f2fe","center",s4);
+  }
+}
+function loop(now){
+  var t=((now-t0)/1000)%window.DUR;
+  if(t<0)t+=window.DUR;
+  frame(t);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

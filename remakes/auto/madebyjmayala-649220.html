@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Gene Spectra — Promo</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#s{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+canvas{display:block}
+</style></head><body>
+<div id="s"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+window.DUR=15;
+const W=1280,H=720,c=document.getElementById('c'),x=c.getContext('2d'),st=document.getElementById('s');
+function fit(){const k=Math.min(innerWidth/W,innerHeight/H);st.style.transform=`scale(${k}) translate(-50%,-50%)`;st.style.transformOrigin='0 0';st.style.left='50%';st.style.top='50%';st.style.transform=`translate(-50%,-50%) scale(${k})`;st.style.transformOrigin='50% 50%';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t')||0)||0,t0=performance.now();
+const cl=v=>Math.max(0,Math.min(1,v)),eo=v=>1-Math.pow(1-cl(v),3),eio=v=>{v=cl(v);return v<.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2};
+const hue=i=>`hsl(${i},95%,60%)`;
+let R=1;const rnd=()=>(R=(R*16807)%2147483647)/2147483647;
+const P=[];for(let i=0;i<260;i++)P.push({x:rnd()*W,y:rnd()*H,z:rnd()*2+.3,h:rnd()*300});
+const BASES='ATCG';const seq=[];for(let i=0;i<400;i++)seq.push(BASES[(rnd()*4)|0]);
+function bg(t){
+ const g=x.createRadialGradient(W/2,H/2,50,W/2,H/2,800);
+ g.addColorStop(0,'#0b0f2a');g.addColorStop(1,'#000');x.fillStyle=g;x.fillRect(0,0,W,H);
+ x.globalCompositeOperation='lighter';
+ for(const p of P){const px=(p.x+t*20*p.z)%W,py=(p.y+Math.sin(t+p.h)*10);x.fillStyle=`hsla(${p.h+t*30},90%,65%,${.15*p.z})`;x.fillRect(px,py,p.z*1.6,p.z*1.6);}
+ x.globalCompositeOperation='source-over';
+}
+function helix(t,cx,cy,len,amp,a,rot,horiz){
+ x.globalCompositeOperation='lighter';
+ const n=48;
+ for(let i=0;i<n;i++){
+  const u=i/(n-1),ph=u*Math.PI*6+t*2+rot;
+  const vis=cl(a*n*1.2-i);if(vis<=0)continue;
+  const s1=Math.sin(ph),s2=Math.sin(ph+Math.PI),z1=Math.cos(ph),z2=Math.cos(ph+Math.PI);
+  const p=(u-.5)*len;
+  const A=horiz?[cx+p,cy+s1*amp]:[cx+s1*amp,cy+p],B=horiz?[cx+p,cy+s2*amp]:[cx+s2*amp,cy+p];
+  const h=u*300+t*40;
+  x.strokeStyle=`hsla(${h},90%,60%,${.35*vis})`;x.lineWidth=2;x.beginPath();x.moveTo(...A);x.lineTo(...B);x.stroke();
+  for(const [pt,z] of [[A,z1],[B,z2]]){const r=(5+z*2.5)*vis;x.fillStyle=`hsla(${h},95%,${55+z*15}%,${(.6+z*.3)*vis})`;x.beginPath();x.arc(pt[0],pt[1],Math.max(.1,r),0,7);x.fill();
+   x.fillStyle=`hsla(${h},95%,60%,${.08*vis})`;x.beginPath();x.arc(pt[0],pt[1],r*4,0,7);x.fill();}
+ }
+ x.globalCompositeOperation='source-over';
+}
+function txt(s,X,Y,size,a,opt={}){
+ x.save();x.globalAlpha=cl(a);x.font=`${opt.w||800} ${size}px "Helvetica Neue",Arial,sans-serif`;x.textAlign=opt.al||'center';x.textBaseline='middle';
+ if(opt.ls)x.letterSpacing=opt.ls+'px';
+ if(opt.grad){const m=x.measureText(s).width,g=x.createLinearGradient(X-m/2,0,X+m/2,0);for(let i=0;i<=6;i++)g.addColorStop(i/6,hue(i*50+opt.grad*60));x.fillStyle=g;}else x.fillStyle=opt.c||'#fff';
+ if(opt.glow){x.shadowColor=opt.glow;x.shadowBlur=30;}
+ x.fillText(s,X,Y);x.restore();
+}
+function wipe(t,a,b){const k=cl((t-a)/(b-a));return k;}
+function spectrum(t,a,y0,hgt){
+ x.globalCompositeOperation='lighter';
+ const n=96,bw=W/n;
+ for(let i=0;i<n;i++){
+  const v=(Math.sin(i*.31+t*3)*.5+.5)*(Math.sin(i*.07-t*1.7)*.5+.5);
+  const hh=(.15+v*.85)*hgt*eo(a*1.5-i/n*.5);
+  const g=x.createLinearGradient(0,y0,0,y0-hh);g.addColorStop(0,`hsla(${i*3.2},95%,55%,.9)`);g.addColorStop(1,`hsla(${i*3.2+40},95%,70%,0)`);
+  x.fillStyle=g;x.fillRect(i*bw+1,y0-hh,bw-2,hh);
+  x.fillStyle=`hsla(${i*3.2},95%,55%,.25)`;x.fillRect(i*bw+1,y0+4,bw-2,hh*.25);
+ }
+ x.globalCompositeOperation='source-over';
+}
+function logo(X,Y,s,a,t){
+ x.save();x.globalAlpha=cl(a);x.translate(X,Y);x.rotate(t*.4);x.globalCompositeOperation='lighter';
+ for(let i=0;i<12;i++){x.rotate(Math.PI/6);x.fillStyle=`hsla(${i*30},95%,60%,.55)`;x.beginPath();x.ellipse(s*.45,0,s*.45,s*.12,0,0,7);x.fill();}
+ x.restore();
+}
+function frame(t){
+ bg(t);
+ // Scene 1 0-3.2: helix assembles + title
+ if(t<3.4){
+  const a=eo(t/1.6),out=1-cl((t-2.9)/.5);
+  x.globalAlpha=out;helix(t,W/2,H/2,1000*a+200,110,cl(t/1.4),0,true);x.globalAlpha=1;
+  const ta=cl((t-1.1)/.5)*out;
+  txt('GENE SPECTRA',W/2,H/2,110+ (1-eo((t-1.1)/.8))*60,ta,{grad:t,glow:'#7af',ls:6});
+  txt('THE FULL SPECTRUM OF THE GENOME',W/2,H/2+90,22,cl((t-1.7)/.5)*out,{w:500,ls:8,c:'#bcd'});
+ }
+ // Scene 2 3-6.4: sequence scanner
+ if(t>2.9&&t<6.6){
+  const s=t-2.9,a=cl(s/.4)*(1-cl((t-6.1)/.5));
+  x.save();x.globalAlpha=a;x.font='600 26px Menlo,monospace';x.textAlign='center';x.textBaseline='middle';
+  for(let r=0;r<11;r++)for(let k=0;k<34;k++){
+   const ch=seq[(r*37+k+((s*8)|0))%400],X=k*40+20-((s*320)%40),Y=150+r*44;
+   const d=Math.abs(X-(W/2+Math.sin(s*1.5)*400));const lit=d<60;
+   const hh={A:200,T:330,C:120,G:45}[ch];
+   x.fillStyle=lit?`hsl(${hh},100%,70%)`:`hsla(${hh},40%,50%,.25)`;
+   if(lit){x.shadowColor=`hsl(${hh},100%,60%)`;x.shadowBlur=18}else x.shadowBlur=0;
+   x.fillText(ch,X,Y);
+  }
+  const sx=W/2+Math.sin(s*1.5)*400,g=x.createLinearGradient(sx-60,0,sx+60,0);g.addColorStop(0,'rgba(120,180,255,0)');g.addColorStop(.5,'rgba(120,180,255,.25)');g.addColorStop(1,'rgba(120,180,255,0)');x.shadowBlur=0;x.fillStyle=g;x.fillRect(sx-60,110,120,500);
+  x.restore();
+  x.fillStyle=`rgba(0,0,0,${.65*a})`;x.fillRect(0,H/2-60,W,120);
+  txt('READ EVERY BASE.',W/2,H/2-8,64,a*eo(s/.6),{grad:t*.5,ls:4});
+  txt('Whole-genome sequencing with clinical-grade precision',W/2,H/2+40,22,a*cl((s-.5)/.5),{w:400,c:'#cde'});
+ }
+ // Scene 3 6.2-9.6: spectrum bars
+ if(t>6.1&&t<9.8){
+  const s=t-6.1,a=cl(s/.4)*(1-cl((t-9.3)/.5));
+  x.globalAlpha=a;spectrum(t,s,560,330);x.globalAlpha=1;
+  txt('SEE THE SPECTRUM.',W/2,150,64,a*eo(s/.6),{ls:4,glow:'#f6c'});
+  txt('Variants · Expression · Ancestry · Risk',W/2,212,24,a*cl((s-.5)/.5),{w:500,c:'#dce',ls:2});
+ }
+ // Scene 4 9.4-12.6: stats
+ if(t>9.4&&t<12.8){
+  const s=t-9.4,a=cl(s/.4)*(1-cl((t-12.3)/.5));
+  x.globalAlpha=a*.5;helix(t,W/2,H/2+250,1400,40,1,0,true);x.globalAlpha=1;
+  const stats=[[3.2,'B','BASE PAIRS DECODED',' '],[99.9,'%','ACCURACY',''],[30,'X','COVERAGE','']];
+  stats.forEach((d,i)=>{const k=eo((s-.2-i*.25)/1.2),X=W/2+(i-1)*380,v=d[0]*k;
+   const ring=cl((s-.2-i*.25)/1.2);x.save();x.globalAlpha=a;x.lineWidth=6;x.strokeStyle='rgba(255,255,255,.08)';x.beginPath();x.arc(X,H/2-30,120,0,7);x.stroke();
+   x.strokeStyle=hue(i*110+t*30);x.shadowColor=x.strokeStyle;x.shadowBlur=20;x.beginPath();x.arc(X,H/2-30,120,-Math.PI/2,-Math.PI/2+ring*Math.PI*2);x.stroke();x.restore();
+   txt((d[0]%1?v.toFixed(1):Math.round(v))+d[1],X,H/2-35,64,a*cl(s*3-i*.6),{});
+   txt(d[2],X,H/2+130,18,a*cl(s*2-i*.5-.5),{w:600,ls:4,c:'#abc'});});
+ }
+ // Scene 5 12.4-15: lockup
+ if(t>12.3){
+  const s=t-12.3,a=cl(s/.5)*(1-cl((t-14.6)/.4));
+  // spectral burst
+  x.save();x.globalCompositeOperation='lighter';
+  for(let i=0;i<60;i++){const an=i/60*7+t*.2,r=eo(s/1)*(500+(i%5)*60);x.strokeStyle=`hsla(${i*6},95%,60%,${.25*a})`;x.lineWidth=2;x.beginPath();x.moveTo(W/2+Math.cos(an)*r*.3,H/2-60+Math.sin(an)*r*.3);x.lineTo(W/2+Math.cos(an)*r,H/2-60+Math.sin(an)*r);x.stroke();}
+  x.restore();
+  logo(W/2,H/2-90,150*eo(s/.8),a,t);
+  txt('GENE SPECTRA',W/2,H/2+70,84,a*eo((s-.3)/.6),{grad:t,glow:'#9cf',ls:8});
+  txt('Decode your future.',W/2,H/2+140,28,a*cl((s-.8)/.5),{w:400,c:'#dde'});
+  txt('genespectra.com',W/2,H/2+200,20,a*cl((s-1.2)/.5),{w:600,ls:3,c:'#8ac'});
+ }
+ // flash transitions
+ for(const tt of [3.05,6.25,9.55,12.45]){const d=Math.abs(t-tt);if(d<.18){x.fillStyle=`rgba(255,255,255,${(1-d/.18)*.35})`;x.fillRect(0,0,W,H);}}
+ // letterbox + vignette line
+ x.fillStyle='#000';x.fillRect(0,0,W,34);x.fillRect(0,H-34,W,34);
+ const pg=x.createLinearGradient(0,0,W,0);for(let i=0;i<=6;i++)pg.addColorStop(i/6,hue(i*50));x.fillStyle=pg;x.fillRect(0,H-36,W*(t/DUR),2);
+}
+function loop(){const t=((performance.now()-t0)/1000+off)%DUR;frame(t);requestAnimationFrame(loop);}
+requestAnimationFrame(loop);
+</script></body></html>

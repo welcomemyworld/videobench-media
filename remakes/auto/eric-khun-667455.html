@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>中秋快樂 Happy Mid-Autumn</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#s{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+</style></head><body>
+<canvas id="s" width="1280" height="720"></canvas>
+<script>
+window.DUR=30;
+const C=document.getElementById('s'),X=C.getContext('2d');
+function fit(){const k=Math.min(innerWidth/1280,innerHeight/720);C.style.transform=`scale(${k}) translate(-50%,-50%)`;C.style.left='50%';C.style.top='50%';C.style.transformOrigin='0 0';C.style.transform=`translate(-50%,-50%) scale(${k})`;C.style.transformOrigin='50% 50%';}
+fit();addEventListener('resize',fit);
+const q=new URLSearchParams(location.search);const T0=parseFloat(q.get('t')||0)||0;const st=performance.now();
+const FONT='"DFKai-SB","BiauKai","KaiTi","STKaiti","Kaiti TC","標楷體",serif';
+let J=0;// jitter seed (boiling lines)
+function R(i){const x=Math.sin(i*127.1+J*311.7)*43758.5;return x-Math.floor(x);}
+function wob(a){return (R(a)-.5)*2.2;}
+// hand-drawn path helpers
+function hcirc(x,y,r,fill,stroke,lw,seed=1){X.beginPath();const n=22;for(let i=0;i<=n;i++){const a=i/n*Math.PI*2,rr=r+wob(seed+i%n)*r*.025;const px=x+Math.cos(a)*rr,py=y+Math.sin(a)*rr;i?X.lineTo(px,py):X.moveTo(px,py);}X.closePath();if(fill){X.fillStyle=fill;X.fill();}if(stroke){X.strokeStyle=stroke;X.lineWidth=lw||3;X.lineJoin='round';X.stroke();}}
+function hell(x,y,rx,ry,fill,stroke,lw,seed=3){X.save();X.translate(x,y);X.scale(1,ry/rx);hcirc(0,0,rx,fill,null,0,seed);X.restore();if(stroke){X.save();X.translate(x,y);X.scale(1,ry/rx);hcirc(0,0,rx,null,stroke,lw*rx/Math.max(rx,ry),seed);X.restore();}}
+function hline(pts,col,lw,seed=5){X.beginPath();pts.forEach((p,i)=>{const a=p[0]+wob(seed+i),b=p[1]+wob(seed+i+9);i?X.lineTo(a,b):X.moveTo(a,b);});X.strokeStyle=col;X.lineWidth=lw;X.lineCap='round';X.lineJoin='round';X.stroke();}
+function txt(s,x,y,sz,col,al='center',out='#1a0f08',lw=0){X.font=`900 ${sz}px ${FONT}`;X.textAlign=al;X.textBaseline='middle';if(lw){X.lineWidth=lw;X.strokeStyle=out;X.lineJoin='round';X.strokeText(s,x,y);}X.fillStyle=col;X.fillText(s,x+wob(s.length)*.4,y);}
+const PAPER='#f3e6c8',INK='#1b1410',RED='#c8282e',GOLD='#f1b52c';
+
+// ---- THE BEAR ----
+// opts: hat, arm (angle), mouth 'smile'|'open', look, blink, holding
+function bear(x,y,s,o={}){X.save();X.translate(x,y);X.scale(s,s);X.rotate(o.rot||0);
+const bob=o.bob||0;X.translate(0,bob);
+// body
+hell(0,95,78,88,INK,null,0,11);
+// legs
+hell(-38,175,26,16,INK,null,0,12);hell(38,175,26,16,INK,null,0,13);
+// arms
+const al=o.armL??0.3,ar=o.armR??-0.3;
+[[-62,al,-1],[62,ar,1]].forEach(([ax,a,d])=>{X.save();X.translate(ax,60);X.rotate(a*d+(d>0?-.2:.2));hell(d*8,40,22,46,INK,null,0,14+d);X.restore();});
+// V moon mark
+X.beginPath();X.moveTo(-42+wob(1),58);X.quadraticCurveTo(0,78,42+wob(2),58);X.quadraticCurveTo(10,100,0,118);X.quadraticCurveTo(-10,100,-42,58);X.fillStyle='#fffaf0';X.fill();
+// head
+hcirc(-48,-62,24,INK,null,0,21);hcirc(48,-62,24,INK,null,0,22);
+hcirc(-48,-62,12,'#8a8580',null,0,23);hcirc(48,-62,12,'#8a8580',null,0,24);
+hcirc(0,-10,66,INK,null,0,25);
+// eyes
+const bl=o.blink?0.12:1;
+[-26,26].forEach((ex,i)=>{X.save();X.translate(ex,-22);X.scale(1,bl);hcirc(0,0,17,'#fffaf0',null,0,30+i);hcirc((o.look||0)*5,1,9,INK,null,0,32+i);hcirc((o.look||0)*5+3,-3,3,'#fff',null,0,34);X.restore();});
+// muzzle
+hell(0,18,30,23,'#fffaf0',null,0,40);
+hell(0,7,10,7,INK,null,0,41);
+if(o.mouth==='open'){X.beginPath();X.ellipse(0,26,10,8,0,0,Math.PI*2);X.fillStyle='#7a1a1a';X.fill();}
+else hline([[-11,20],[-5,27],[0,22],[5,27],[11,20]],INK,3,42);
+// cheeks
+hcirc(-44,8,7,'rgba(230,90,90,.55)',null,0,43);hcirc(44,8,7,'rgba(230,90,90,.55)',null,0,44);
+if(o.hat){X.save();X.translate(0,-68);hell(0,0,58,30,'#e7ef8a','#5b7a1e',4,50);for(let i=-2;i<=2;i++)hline([[i*20,-20],[i*14,8]],'#9bb53a',2,51+i);hell(0,-30,7,12,'#5b7a1e',null,0,55);X.restore();}
+X.restore();}
+
+// props
+function mooncake(x,y,r,cut){X.save();X.translate(x,y);hcirc(0,0,r,'#c9792e',INK,3,60);hcirc(0,0,r*.72,null,'#8a4a16',2,61);for(let i=0;i<12;i++){const a=i/12*Math.PI*2;hcirc(Math.cos(a)*r*.86,Math.sin(a)*r*.86,r*.1,'#d98a3a',null,0,62+i);}X.font=`900 ${r*.7}px ${FONT}`;X.fillStyle='#8a4a16';X.textAlign='center';X.textBaseline='middle';X.fillText('月',0,2);if(cut){X.beginPath();X.moveTo(0,0);X.arc(0,0,r+2,-.6,.6);X.fillStyle=cut;X.fill();hcirc(r*.5,0,r*.22,GOLD,null,0,70);}X.restore();}
+function pomelo(x,y,r){hcirc(x,y,r,'#cfe07a',INK,3,80);hline([[x-r*.3,y-r*.5],[x-r*.1,y-r*.65]],'#fff',3,81);hell(x,y-r,5,9,'#4d7a1e',null,0,82);X.save();X.translate(x+8,y-r-4);X.rotate(.6);hell(0,0,12,5,'#5f9a2a',null,0,83);X.restore();}
+function grill(x,y,w,t){X.save();X.translate(x,y);hline([[-w*.4,30],[-w*.5,110]],INK,6,90);hline([[w*.4,30],[w*.5,110]],INK,6,91);X.beginPath();X.moveTo(-w/2,0);X.lineTo(w/2,0);X.lineTo(w*.42,40);X.lineTo(-w*.42,40);X.closePath();X.fillStyle='#2d2d2d';X.fill();X.strokeStyle=INK;X.lineWidth=4;X.stroke();
+for(let i=0;i<14;i++){const cx=-w*.4+i/13*w*.8;const f=Math.sin(t*14+i*2)*.5+.5;hcirc(cx,-4,7+f*4,`rgba(255,${90+f*90|0},30,.9)`,null,0,92+i);}
+for(let i=-6;i<=6;i++)hline([[i*w/14,-10],[i*w/14,-2]],'#777',2,100+i);
+hline([[-w/2,-8],[w/2,-8]],'#888',4,110);
+// skewers
+for(let k=0;k<4;k++){const sx=-w*.3+k*w*.2;hline([[sx-30,-22],[sx+30,-18]],'#b08a5a',3,111+k);for(let m=0;m<3;m++)X.fillStyle=['#8a3a1e','#e9c86a','#3c7a2a'][m],X.fillRect(sx-22+m*16+wob(k+m),-30,13,14);}
+// smoke
+for(let i=0;i<6;i++){const p=(t*.5+i/6)%1;hcirc(Math.sin(i*3+t)*30+(i-3)*20,-50-p*220,14+p*40,`rgba(240,235,225,${.45*(1-p)})`,null,0,120+i);}
+X.restore();}
+function stars(t,n=70){for(let i=0;i<n;i++){const x=(Math.sin(i*91.3)*.5+.5)*1280,y=(Math.sin(i*47.7)*.5+.5)*400;const a=.4+.6*Math.abs(Math.sin(t*2+i));X.fillStyle=`rgba(255,240,200,${a})`;X.fillRect(x,y,2.5,2.5);}}
+function nightBG(t,top='#0f1a3a',bot='#2a2350'){const g=X.createLinearGradient(0,0,0,720);g.addColorStop(0,top);g.addColorStop(1,bot);X.fillStyle=g;X.fillRect(-200,-200,1680,1120);stars(t);}
+function moon(x,y,r,glow=1){const g=X.createRadialGradient(x,y,r*.6,x,y,r*2.4);g.addColorStop(0,`rgba(255,220,130,${.5*glow})`);g.addColorStop(1,'rgba(255,220,130,0)');X.fillStyle=g;X.fillRect(x-r*3,y-r*3,r*6,r*6);hcirc(x,y,r,'#ffe9a8','#e0b65a',3,200);hcirc(x-r*.3,y-r*.2,r*.15,'rgba(220,180,90,.5)',null,0,201);hcirc(x+r*.25,y+r*.3,r*.2,'rgba(220,180,90,.4)',null,0,202);hcirc(x+r*.35,y-r*.35,r*.1,'rgba(220,180,90,.4)',null,0,203);}
+function taiwan(x,y,s,col){X.save();X.translate(x,y);X.scale(s,s);X.beginPath();const P=[[10,-100],[30,-92],[40,-70],[38,-30],[30,10],[20,50],[6,90],[-4,100],[-10,80],[-30,40],[-40,0],[-38,-40],[-24,-80]];P.forEach((p,i)=>{const a=p[0]+wob(i+300)*.6,b=p[1]+wob(i+320)*.6;i?X.lineTo(a,b):X.moveTo(a,b);});X.closePath();X.fillStyle=col;X.fill();X.strokeStyle=INK;X.lineWidth=3/s;X.stroke();X.restore();}
+function lantern(x,y,s,t,i){X.save();X.translate(x,y+Math.sin(t*2+i)*6);X.scale(s,s);X.rotate(Math.sin(t*1.5+i)*.08);hline([[0,-60],[0,-30]],INK,2,400);hell(0,0,26,32,RED,INK,3,401+i);X.fillStyle='rgba(255,200,80,.5)';X.fillRect(-6,-26,12,52);X.fillStyle=GOLD;X.fillRect(-14,-34,28,6);X.fillRect(-14,28,28,6);hline([[0,34],[0,52]],GOLD,3,402);X.restore();}
+function brushStroke(x,y,w,h,col){X.beginPath();X.moveTo(x,y+h*.2);for(let i=0;i<=10;i++)X.lineTo(x+w*i/10,y+wob(i+500)*3);X.lineTo(x+w+12,y+h*.5);for(let i=10;i>=0;i--)X.lineTo(x+w*i/10,y+h+wob(i+520)*3);X.closePath();X.fillStyle=col;X.fill();}
+function seal(x,y,s,str){X.save();X.translate(x,y);X.rotate(-.08);X.fillStyle=RED;X.fillRect(-s/2+wob(1),-s/2,s,s);X.strokeStyle='#f3e6c8';X.lineWidth=3;X.strokeRect(-s/2+5,-s/2+5,s-10,s-10);txt(str,0,1,s*.42,'#f3e6c8');X.restore();}
+function grain(){X.globalAlpha=.07;for(let i=0;i<260;i++){X.fillStyle=R(i)>.5?'#fff':'#000';X.fillRect(R(i+700)*1280,R(i+900)*720,2,2);}X.globalAlpha=1;
+// vignette
+const g=X.createRadialGradient(640,360,300,640,360,800);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(20,10,0,.45)');X.fillStyle=g;X.fillRect(0,0,1280,720);}
+function E(x){return x<0?0:x>1?1:1-Math.pow(1-x,3);}
+function pop(x){x=Math.max(0,Math.min(1,x));return 1+Math.sin(x*Math.PI)*.25*(1-x)+(x<1?-(1-x)*.6:0);}
+function cam(z,cx=640,cy=360,sh=0){X.translate(640+(R(77)-.5)*sh,360+(R(78)-.5)*sh);X.scale(z,z);X.translate(-cx,-cy);}
+function caption(zh,en,a){X.save();X.globalAlpha=a;brushStroke(340,612,600,80,'rgba(27,20,16,.82)');txt(zh,640,640,36,'#ffe9a8');txt(en,640,676,20,'#f3e6c8');X.restore();}
+
+// ---- SCENES ----
+const S=[
+[0,3.2,s0],[3.2,6.6,s1],[6.6,10.4,s2],[10.4,14.6,s3],[14.6,18.6,s4],[18.6,22.4,s5],[22.4,26.2,s6],[26.2,30,s7]];
+// 0: paper title slam: bear pops through paper
+function s0(t,d){X.fillStyle=PAPER;X.fillRect(0,0,1280,720);
+for(let i=0;i<14;i++)hline([[0,i*55+wob(i)],[1280,i*55+20]],'rgba(180,150,100,.18)',2,600+i);
+const k=E(t/.6);hcirc(640,330,280*k,RED,null,0,610);
+const p=pop(t/.7);bear(640,300,.95*p,{blink:(t%1.6)>1.5,mouth:'open',armL:-1.4+Math.sin(t*12)*.3,armR:1.2,bob:Math.sin(t*8)*4});
+const a=E((t-.8)/.5);X.save();X.globalAlpha=a;X.translate(0,(1-a)*30);txt('台灣黑熊',640,560,74,'#fffaf0',"center",INK,12);txt('FORMOSAN BLACK BEAR PRESENTS',640,620,24,INK);X.restore();
+seal(1150,90,90,'中秋');}
+// 1: Taiwan island map zoom, bear runs across moon
+function s1(t,d){nightBG(t);const z=1+t*.15;X.save();cam(z,640,360);moon(640,360,200);taiwan(640,360,1.6,'#3c7a3a');X.restore();
+const bx=-150+t*480;bear(bx,520,.55,{armL:Math.sin(t*20),armR:-Math.sin(t*20),bob:-Math.abs(Math.sin(t*20))*14,rot:.1,mouth:'open',look:1});
+caption('月圓了，該回家了','The moon is full — time to go home',E((t-.3)/.4));
+for(let i=0;i<5;i++)hline([[bx-120-i*30,470+i*16],[bx-80-i*30,470+i*16]],'#ffe9a8',4,630+i);}
+// 2: traffic jam home / speedy scooter on highway, with lanterns
+function s2(t,d){nightBG(t,'#1b1440','#5a2a50');
+for(let i=0;i<8;i++)lantern(80+i*160,80,.9,t,i);
+// city silhouette w/ Taipei 101
+X.fillStyle='#120c22';for(let i=0;i<20;i++){const h=80+R(i+800)*140;X.fillRect(i*70-((t*120)%70),520-h,60,h);}
+X.save();X.translate(980-t*40,520);X.fillStyle='#120c22';for(let k=0;k<8;k++){X.fillRect(-30+k*2,-60-k*36,60-k*4,34);}X.fillRect(-4,-380,8,60);X.restore();
+X.fillStyle='#2e2a3a';X.fillRect(0,520,1280,200);for(let i=0;i<10;i++){X.fillStyle=GOLD;X.fillRect(((i*160-t*900)%1440+1440)%1440-160,610,80,8);}
+// scooter
+const sx=640+Math.sin(t*3)*40,sy=520+Math.sin(t*30)*2;X.save();X.translate(sx,sy);hcirc(-70,60,28,INK,'#888',4,700);hcirc(80,60,28,INK,'#888',4,701);X.beginPath();X.moveTo(-100,30);X.lineTo(60,30);X.lineTo(100,-40);X.lineTo(120,-40);X.lineTo(110,40);X.lineTo(-100,50);X.closePath();X.fillStyle=RED;X.fill();X.strokeStyle=INK;X.lineWidth=4;X.stroke();X.restore();
+bear(sx-10,sy-140,.6,{armR:-1.5,armL:-1.2,mouth:'open',look:1});
+// box of mooncakes on back
+X.save();X.translate(sx-110,sy-30);X.fillStyle=RED;X.fillRect(-40,-50,80,60);X.strokeStyle=GOLD;X.lineWidth=4;X.strokeRect(-40,-50,80,60);txt('月餅',0,-20,26,GOLD);X.restore();
+for(let i=0;i<8;i++)hline([[sx-220-i*40,sy-40+i*14],[sx-160-i*40,sy-40+i*14]],'rgba(255,255,255,.6)',3,720+i);
+caption('連假返鄉，一路飆回家！','Long weekend — zooming home!',E((t-.2)/.4));}
+// 3: soy sauce ad origin — "一家烤肉萬家香" reveal
+function s3(t,d){X.fillStyle='#e9d6a8';X.fillRect(0,0,1280,720);
+// sunburst
+X.save();X.translate(640,360);X.rotate(t*.3);for(let i=0;i<16;i++){X.rotate(Math.PI/8);X.beginPath();X.moveTo(0,0);X.lineTo(900,-90);X.lineTo(900,90);X.fillStyle=i%2?'#f2c664':'#e8a648';X.fill();}X.restore();
+// soy bottle
+const p=pop(t/.6);X.save();X.translate(330,400);X.scale(p,p);X.rotate(Math.sin(t*4)*.1);X.fillStyle='#3a1a0e';X.beginPath();X.moveTo(-50,140);X.lineTo(-50,-20);X.quadraticCurveTo(-50,-70,-18,-90);X.lineTo(-18,-150);X.lineTo(18,-150);X.lineTo(18,-90);X.quadraticCurveTo(50,-70,50,-20);X.lineTo(50,140);X.closePath();X.fill();X.strokeStyle=INK;X.lineWidth=5;X.stroke();X.fillStyle=RED;X.fillRect(-22,-165,44,20);X.fillStyle='#fff3d8';X.fillRect(-42,10,84,90);txt('醬油',0,40,28,RED);txt('SOY',0,78,20,INK);X.restore();
+const a=E((t-.5)/.5);X.save();X.globalAlpha=a;X.translate(0,(1-a)*-40);
+X.save();X.translate(820,250);X.rotate(-.05);X.fillStyle='#fffaf0';X.fillRect(-300,-80,600,160);X.strokeStyle=INK;X.lineWidth=6;X.strokeRect(-300,-80,600,160);txt('一家烤肉萬家香',0,-10,62,RED);txt('"One family grills, ten thousand smell it"',0,50,22,INK);X.restore();X.restore();
+const b=E((t-1.3)/.5);X.globalAlpha=b;txt('1980年代醬油廣告，讓中秋烤肉成了全台傳統',820,420,26,INK);txt('A 1980s soy sauce ad turned Mid-Autumn BBQ into tradition',820,456,20,'#5a3a1a');X.globalAlpha=1;
+bear(900,600,.45*pop((t-1.6)/.5),{armR:-2.3,armL:.3,mouth:'open',look:-1});}
+// 4: BBQ party on street, zoom in & fast cuts
+function s4(t,d){nightBG(t,'#1a1236','#3a2048');moon(1080,120,70);
+for(let i=0;i<7;i++)lantern(60+i*190,60,.7,t,i+3);
+X.fillStyle='#221830';X.fillRect(0,560,1280,160);
+const z=t<2?1+t*.08:1.6,cx=t<2?640:560,cy=t<2?420:390;X.save();cam(z,cx,cy,t>2&&t<2.2?12:0);
+grill(640,500,360,t);
+// friends: mini bears & silhouettes
+bear(330,440,.55,{armR:-1.6+Math.sin(t*6)*.4,mouth:'open',look:1});
+bear(950,450,.5,{armL:-1.6+Math.sin(t*7)*.5,look:-1,mouth:t%1<.5?'open':'smile',blink:(t%2)>1.9});
+// flipping skewer
+X.save();X.translate(400,330);X.rotate(t*8);hline([[-40,0],[40,0]],'#b08a5a',4,140);X.fillStyle='#8a3a1e';X.fillRect(-25,-8,16,16);X.fillStyle='#e9c86a';X.fillRect(0,-8,16,16);X.restore();
+// corn
+X.save();X.translate(1010,350);X.rotate(-.5+Math.sin(t*5)*.2);hell(0,0,14,40,'#f2c94a',INK,3,150);X.restore();
+X.restore();
+// sizzle words
+const sz=['滋滋！','SIZZLE!','香～'];sz.forEach((s,i)=>{const p=((t*1.3+i/3)%1);X.save();X.globalAlpha=1-p;X.translate(500+i*150,360-p*120);X.rotate(-.2+i*.2);txt(s,0,0,40,GOLD,'center',INK,6);X.restore();});
+caption('全家人、好朋友，烤肉趴開始！','Family + friends — BBQ party on!',E((t-.2)/.4));}
+// 5: pomelo hat moment — slice and plop
+function s5(t,d){X.fillStyle='#2b6a3a';X.fillRect(0,0,1280,720);for(let i=0;i<20;i++)hcirc(R(i+40)*1280,R(i+60)*720,40+R(i)*60,'rgba(255,255,255,.05)',null,0,i);
+if(t<1.4){const sp=t*6;pomelo(640,380,170);// knife swipes
+X.save();X.translate(640,380);X.rotate(-.4);hline([[-260+((sp*200)%520),-200],[-260+((sp*200)%520),200]],'#fff',8,170);X.restore();txt('剝柚子！',640,120,64,'#fff',"center",INK,10);txt('Peel the pomelo!',640,180,28,'#ffe9a8');}
+else{const k=t-1.4;const drop=E(k/.5);
+bear(640,420,1,{hat:drop>=1,mouth:'open',armL:-1.8,armR:1.8,blink:k>1.6&&k<1.75,bob:Math.sin(k*10)*3});
+if(drop<1){X.save();X.translate(640,-100+drop*270);hell(0,0,58,30,'#e7ef8a','#5b7a1e',4,50);X.restore();}
+else{for(let i=0;i<10;i++){const a=i/10*Math.PI*2,r=120+E((k-.5)/.4)*60;hline([[640+Math.cos(a)*r,280+Math.sin(a)*r],[640+Math.cos(a)*(r+30),280+Math.sin(a)*(r+30)]],GOLD,5,180+i);}}
+const a=E((k-.6)/.4);X.globalAlpha=a;txt('柚子帽，戴起來！',640,90,62,'#fff',"center",INK,10);txt('Pomelo-rind hat: ON!',640,150,28,'#ffe9a8');X.globalAlpha=1;}}
+// 6: sharing mooncakes — split & pass around in a circle
+function s6(t,d){nightBG(t,'#221a3a','#4a2a40');moon(640,150,90);
+X.fillStyle='#1a1228';X.fillRect(0,540,1280,180);
+const n=4;for(let i=0;i<n;i++){const x=220+i*280;bear(x,430,.5,{hat:i===1,armR:-1+Math.sin(t*4+i)*.3,armL:-1,mouth:(t*2+i)%2<1?'open':'smile',look:i<2?1:-1});}
+// passing mooncake pieces
+for(let i=0;i<3;i++){const p=(t*.7+i/3)%1;const x=220+(i+p)*280,y=380-Math.sin(p*Math.PI)*120;mooncake(x,y,26,false);}
+mooncake(640,610,60,'#1a1228');
+caption('月餅一起分，好運一起享','Share mooncakes, share good luck',E((t-.2)/.4));}
+// 7: moon gazing finale + branding
+function s7(t,d){nightBG(t,'#0a1230','#2a1a40');const z=1.4-E(t/1.5)*.4;X.save();cam(z,640,300);moon(640,250,180,1.2);
+// hill
+X.beginPath();X.moveTo(0,720);X.quadraticCurveTo(640,470,1280,720);X.fillStyle='#14202a';X.fill();
+// bear from behind-ish? keep front: sitting gazing
+bear(640,470,.6,{hat:true,armL:.5,armR:-.5,look:0,blink:(t%2.5)>2.4});
+mooncake(560,600,24);
+X.restore();
+// floating sky lanterns
+for(let i=0;i<8;i++){const p=(t*.12+i/8)%1;X.save();X.translate(100+i*150+Math.sin(t+i)*20,720-p*800);X.globalAlpha=.85;X.fillStyle='#ffb347';X.fillRect(-12,-18,24,30);X.fillStyle='rgba(255,220,120,.4)';X.beginPath();X.arc(0,0,26,0,7);X.fill();X.restore();}
+const a=E((t-.8)/.6);X.save();X.globalAlpha=a;
+brushStroke(250,30,780,120,'rgba(200,40,46,.92)');txt('中秋節快樂',640,78,78,'#fffaf0',"center",INK,10);txt('HAPPY MID-AUTUMN FESTIVAL',640,128,26,GOLD);
+const b=E((t-1.6)/.5);X.globalAlpha=b;txt('月圓人團圓 · 台灣黑熊陪你賞月',640,660,30,'#ffe9a8','center',INK,6);txt('Full moon, together — gazing with Formosan Black Bear',640,698,18,'#f3e6c8');
+seal(1170,620,90,'台灣');X.restore();}
+
+function frame(){const now=(performance.now()-st)/1000+T0;const t=now%window.DUR;J=Math.floor(t*8);// 8fps boil
+X.setTransform(1,0,0,1,0,0);X.clearRect(0,0,1280,720);
+for(const [a,b,f] of S){if(t>=a&&t<b){X.save();f(t-a,b-a);X.restore();
+// cut flash
+const lt=t-a;if(lt<.12){X.fillStyle=`rgba(255,250,235,${1-lt/.12})`;X.fillRect(0,0,1280,720);}break;}}
+X.setTransform(1,0,0,1,0,0);grain();requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

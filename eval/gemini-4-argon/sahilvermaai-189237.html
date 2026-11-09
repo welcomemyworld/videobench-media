@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Poster Breaking Out of Frame</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Arial Black', 'Impact', system-ui, sans-serif;
+  }
+  #stage {
+    width: 1280px;
+    height: 720px;
+    background: #0c0d12;
+    box-shadow: 0 0 60px rgba(0,0,0,0.9);
+  }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+(() => {
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const W = 1280, H = 720;
+
+  window.DUR = 20;
+
+  // Responsive viewport scaling
+  function resize() {
+    const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+    canvas.style.transform = `scale(${scale})`;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // Time offset support (?t=SECONDS)
+  const params = new URLSearchParams(window.location.search);
+  const startOffset = parseFloat(params.get('t')) || 0;
+
+  // Deterministic PRNG for procedural shards, cracks, and stars
+  function mulberry32(a) {
+    return function() {
+      let t = a += 0x6D2B79F5;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // Math & Easing Helpers
+  const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+  const lerp = (a, b, t) => a + (b - a) * clamp(t, 0, 1);
+  const norm = (v, a, b) => clamp((v - a) / (b - a), 0, 1);
+  const easeOutCubic = x => 1 - Math.pow(1 - x, 3);
+  const easeInCubic = x => x * x * x;
+  const easeInOutCubic = x => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+  const easeOutBack = x => {
+    const c1 = 1.70158, c3 = c1 + 1;
+    return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
+  };
+  const easeOutElastic = x => {
+    if (x === 0 || x === 1) return x;
+    return Math.pow(2, -10 * x) * Math.sin((x * 10 - 0.75) * ((2 * Math.PI) / 3)) + 1;
+  };
+
+  // Poster Frame Dimensions (Centered)
+  const PW = 380, PH = 520;
+  const PX = -PW / 2, PY = -PH / 2;
+
+  // Pre-generate procedural data
+  const rand = mulberry32(1337);
+
+  // 1. Glass Shards
+  const shards = [];
+  for (let i = 0; i < 68; i++) {
+    const angle = rand() * Math.PI * 2;
+    const dist = rand() * 190;
+    const x = Math.cos(angle) * dist * 0.85;
+    const y = Math.sin(angle) * dist * 1.15 - 20;
+    const speed = 350 + rand() * 750;
+    const vx = Math.cos(angle) * speed + (rand() - 0.5) * 220;
+    const vy = Math.sin(angle) * speed - 180 + (rand() - 0.5) * 220;
+    const size = 14 + rand() * 44;
+    const pts = [];
+    const numPts = 3 + Math.floor(rand() * 3);
+    for (let j = 0; j < numPts; j++) {
+      const a = (j / numPts) * Math.PI * 2 + (rand() - 0.5) * 0.4;
+      const r = size * (0.45 + rand() * 0.55);
+      pts.push({ x: Math.cos(a) * r, y: Math.sin(a) * r });
+    }
+    shards.push({
+      x, y, vx, vy, pts,
+      rotSpeed: (rand() - 0.5) * 14,
+      rot0: rand() * Math.PI * 2,
+      alpha: 0.35 + rand() * 0.55,
+      tint: rand() > 0.45 ? '#e0f7ff' : (rand() > 0.5 ? '#ffffff' : '#ff2a6d')
+    });
+  }
+
+  // 2. Cosmic Particles / Stars
+  const stars = [];
+  for (let i = 0; i < 150; i++) {
+    const a = rand() * Math.PI * 2;
+    const d = 30 + rand() * 680;
+    stars.push({
+      x: Math.cos(a) * d,
+      y: Math.sin(a) * d,
+      r: 1.2 + rand() * 4,
+      color: ['#ffffff', '#05d5ff', '#ff2a6d', '#ffe600', '#a855f7'][Math.floor(rand() * 5)],
+      phase: rand() * Math.PI * 2,
+      speed: 0.4 + rand() * 1.6,
+      orbit: (rand() - 0.5) * 0.35
+    });
+  }
+
+  // 3. Impact Cracks (3 stages for progressive hits)
+  const crackData = [];
+  const impactCenters = [
+    { x: 15, y: -35, branches: 7, maxLen: 140 },
+    { x: -30, y: -60, branches: 9, maxLen: 210 },
+    { x: 0, y: -20, branches: 14, maxLen: 310 }
+  ];
+  impactCenters.forEach((ic) => {
+    const lines = [];
+    for (let b = 0; b < ic.branches; b++) {
+      let curX = ic.x, curY = ic.y;
+      let curA = (b / ic.branches) * Math.PI * 2 + (rand() - 0.5) * 0.4;
+      const segs = 5 + Math.floor(rand() * 4);
+      const pts = [{ x: curX, y: curY }];
+      for (let s = 0; s < segs; s++) {
+        const len = (ic.maxLen / segs) * (0.6 + rand() * 0.7);
+        curA += (rand() - 0.5) * 0.55;
+        curX += Math.cos(curA) * len;
+        curY += Math.sin(curA) * len;
+        pts.push({ x: curX, y: curY });
+      }
+      lines.push(pts);
+    }
+    crackData.push({ cx: ic.x, cy: ic.y, lines });
+  });
+
+  // 4. Floating Geometric Debris
+  const shapes = [];
+  for (let i = 0; i < 28; i++) {
+    const a = (i / 28) * Math.PI * 2 + rand() * 0.2;
+    const dist = 160 + rand() * 440;
+    shapes.push({
+      dist, a,
+      size: 10 + rand() * 24,
+      type: Math.floor(rand() * 3), // 0: triangle, 1: square, 2: ring
+      color: ['#ff2a6d', '#05d5ff', '#ffe600', '#ffffff'][Math.floor(rand() * 4)],
+      rotSpeed: (rand() - 0.5) * 3
+    });
+  }
+
+  // Draw Gallery Wall Background
+  function drawGalleryWall(t, breakProgress, vanishP) {
+    ctx.save();
+    ctx.fillStyle = '#12131a';
+    ctx.fillRect(0, 0, W, H);
+
+    // Subtle designer wallpaper vertical stripes
+    ctx.strokeStyle = 'rgba(255,255,255,0.022)';
+    ctx.lineWidth = 2;
+    for (let x = 0; x < W; x += 40) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, H);
+      ctx.stroke();
+    }
+
+    // Track spotlight on wall
+    const spotGrad = ctx.createRadialGradient(W / 2, H / 2 - 40, 40, W / 2, H / 2, 580);
+    const energyGlow = breakProgress * (1 - vanishP);
+    spotGrad.addColorStop(0, `rgba(${45 + energyGlow * 60}, ${42 + energyGlow * 20}, ${65 + energyGlow * 90}, 1)`);
+    spotGrad.addColorStop(0.55, 'rgba(20, 22, 32, 1)');
+    spotGrad.addColorStop(1, 'rgba(9, 10, 15, 1)');
+    ctx.fillStyle = spotGrad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Overhead light cone
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    const coneGrad = ctx.createLinearGradient(W / 2, 0, W / 2, H);
+    coneGrad.addColorStop(0, 'rgba(255, 250, 235, 0.10)');
+    coneGrad.addColorStop(1, 'rgba(255, 250, 235, 0.0)');
+    ctx.fillStyle = coneGrad;
+    ctx.beginPath();
+    ctx.moveTo(W / 2 - 90, 0);
+    ctx.lineTo(W / 2 + 90, 0);
+    ctx.lineTo(W / 2 + 460, H);
+    ctx.lineTo(W / 2 - 460, H);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // Museum plaque on the bottom right of the frame
+    ctx.save();
+    ctx.translate(W / 2 + PW / 2 + 45, H / 2 + PH / 2 - 55);
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(3, 5, 115, 44);
+    ctx.fillStyle = '#e4e2dd';
+    ctx.fillRect(0, 0, 115, 44);
+    ctx.fillStyle = '#18181c';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.fillText('FIG. 04 // BOUNDLESS', 10, 16);
+    ctx.fillStyle = '#666';
+    ctx.font = '8px sans-serif';
+    ctx.fillText('Mixed Media on Canvas', 10, 28);
+    ctx.fillText('Do Not Touch The Glass', 10, 38);
+    ctx.restore();
+
+    ctx.restore();
+  }
+
+  // Draw the 2D Flat Poster Design (Inside Frame)
+  function drawPosterBase(t, tearProgress, mode) {
+    // Background gradient
+    const bgGrad = ctx.createLinearGradient(0, PY, 0, PY + PH);
+    bgGrad.addColorStop(0, '#090418');
+    bgGrad.addColorStop(0.55, '#240b36');
+    bgGrad.addColorStop(1, '#c31432');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(PX, PY, PW, PH);
+
+    // Rising Retro Sun
+    const sunY = PY + PH * 0.56;
+    const sunR = 115;
+    const sunGrad = ctx.createLinearGradient(0, sunY - sunR, 0, sunY + sunR);
+    sunGrad.addColorStop(0, '#ffe600');
+    sunGrad.addColorStop(1, '#ff0055');
+    ctx.fillStyle = sunGrad;
+    ctx.beginPath();
+    ctx.arc(0, sunY, sunR, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Sun slice lines
+    ctx.fillStyle = '#240b36';
+    for (let i = 0; i < 7; i++) {
+      const sy = sunY + 15 + i * 15;
+      const sh = 2.5 + i * 1.7;
+      ctx.fillRect(-sunR - 10, sy, (sunR + 10) * 2, sh);
+    }
+
+    // Perspective Grid Floor
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(PX, sunY + 25, PW, PH - (sunY + 25 - PY));
+    ctx.clip();
+
+    ctx.fillStyle = '#0c041a';
+    ctx.fillRect(PX, sunY + 25, PW, PH);
+
+    ctx.strokeStyle = '#05d5ff';
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 0.65;
+    const horizonY = sunY + 25;
+    for (let i = -10; i <= 10; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * 18, horizonY);
+      ctx.lineTo(i * 95, PY + PH);
+      ctx.stroke();
+    }
+    const gridOffset = (t * 0.8) % 1;
+    for (let i = 0; i < 8; i++) {
+      const p = (i + gridOffset) / 8;
+      const gy = horizonY + Math.pow(p, 2.1) * (PY + PH - horizonY);
+      ctx.beginPath();
+      ctx.moveTo(PX, gy);
+      ctx.lineTo(PX + PW, gy);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Poster Typography
+    ctx.save();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '900 40px "Arial Black", Impact, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.letterSpacing = '3px';
+    ctx.fillText('BREAK', 0, PY + 72);
+
+    ctx.fillStyle = '#ffe600';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.letterSpacing = '5px';
+    ctx.fillText('THE FOURTH WALL', 0, PY + 98);
+
+    // Bottom graphic barcode & label
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.font = 'bold 10px monospace';
+    ctx.textAlign = 'left';
+    ctx.letterSpacing = '1px';
+    ctx.fillText('EDITION // 2025', PX + 24, PY + PH - 22);
+    ctx.textAlign = 'right';
+    ctx.fillText('VOL. IX', PX + PW - 24, PY + PH - 22);
+    ctx.restore();
+
+    // If the character hasn't broken out yet, draw the 2D version inside the poster
+    if (mode === '2D_CAPTIVE') {
+      drawCaptiveCharacter(t);
+    }
+
+    // If the character has burst through, draw a dark ripped paper void
+    if (tearProgress > 0) {
+      ctx.save();
+      ctx.scale(tearProgress, tearProgress);
+
+      // Deep cosmic void inside the tear
+      ctx.fillStyle = '#040208';
+      ctx.beginPath();
+      const holePts = 18;
+      for (let i = 0; i < holePts; i++) {
+        const a = (i / holePts) * Math.PI * 2;
+        const r = 115 + (i % 2 === 0 ? 22 : -14) + Math.sin(i * 3) * 10;
+        const hx = Math.cos(a) * r;
+        const hy = Math.sin(a) * r * 1.15 - 15;
+        if (i === 0) ctx.moveTo(hx, hy);
+        else ctx.lineTo(hx, hy);
+      }
+      ctx.closePath();
+      ctx.fill();
+
+      // White curled paper edges around the tear
+      ctx.strokeStyle = '#f2efe9';
+      ctx.lineWidth = 10;
+      ctx.stroke();
+
+      ctx.strokeStyle = '#ff2a6d';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Inner white museum mat / passe-partout border
+    ctx.strokeStyle = '#f4f1ea';
+    ctx.lineWidth = 22;
+    ctx.strokeRect(PX + 11, PY + 11, PW - 22, PH - 22);
+
+    ctx.strokeStyle = '#d5d0c5';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(PX + 22, PY + 22, PW - 44, PH - 44);
+  }
+
+  // Draw the Character while trapped inside the 2D Poster (0s -> 6.8s)
+  function drawCaptiveCharacter(t) {
+    ctx.save();
+
+    // Determine animation pose
+    let lookX = 0, lookY = 0;
+    let bodyY = 15;
+    let bodyScale = 1;
+    let lArmX = -75, lArmY = 60, lHandScale = 0.85;
+    let rArmX = 75, rArmY = 60, rHandScale = 0.85;
+
+    // 1.2s - 3.0s: Awaken & inspect boundaries
+    if (t > 1.2 && t < 3.0) {
+      lookX = Math.sin((t - 1.2) * 4.2) * 14;
+      lookY = Math.cos((t - 1.2) * 2.5) * 6;
+      bodyY = 15 + Math.sin(t * 3) * 5;
+    }
+
+    // 2.2s - 3.2s: Press left hand against the glass
+    if (t >= 2.2 && t < 3.5) {
+      const p = easeOutCubic(norm(t, 2.2, 2.6));
+      lArmX = lerp(-75, -55, p);
+      lArmY = lerp(60, -15, p);
+      lHandScale = lerp(0.85, 1.35, p);
+    }
+
+    // 3.0s - 6.8s: Pull back & deliver 3 heavy punches to the glass
+    if (t >= 3.0) {
+      bodyScale = 1.05;
+      lArmX = -65; lArmY = 15; lHandScale = 1.1;
+      rArmX = 65;  rArmY = 15; rHandScale = 1.1;
+
+      // Hit 1 at 3.5s
+      if (t >= 3.1 && t < 4.3) {
+        const windup = easeInOutCubic(norm(t, 3.1, 3.45));
+        const strike = easeOutBack(norm(t, 3.45, 3.55));
+        const recov = easeInOutCubic(norm(t, 3.65, 4.2));
+        rArmX = lerp(65, 15, strike) + recov * 40;
+        rArmY = lerp(15, -35, strike) + recov * 40;
+        rHandScale = 1.1 - windup * 0.3 + strike * 1.15 - recov * 0.85;
+        lookX = strike * 6;
+      }
+
+      // Hit 2 at 4.7s
+      if (t >= 4.3 && t < 5.5) {
+        const windup = easeInOutCubic(norm(t, 4.3, 4.65));
+        const strike = easeOutBack(norm(t, 4.65, 4.75));
+        const recov = easeInOutCubic(norm(t, 4.85, 5.4));
+        lArmX = lerp(-65, -30, strike) - recov * 35;
+        lArmY = lerp(15, -60, strike) + recov * 55;
+        lHandScale = 1.1 - windup * 0.3 + strike * 1.3 - recov * 0.9;
+        lookX = -strike * 8;
+      }
+
+      // Hit 3 (Final windup & charge) at 5.5s -> 6.8s
+      if (t >= 5.5) {
+        const charge = easeInCubic(norm(t, 5.5, 6.6));
+        const lunge = easeOutCubic(norm(t, 6.6, 6.8));
+        bodyScale = 1.05 - charge * 0.22 + lunge * 0.65;
+        bodyY = 15 + charge * 35 - lunge * 50;
+        rArmX = lerp(65, 0, lunge);
+        rArmY = lerp(15, -20, lunge);
+        rHandScale = 1.1 + lunge * 1.6;
+        lArmX = lerp(-65, -40, lunge);
+        lArmY = lerp(15, -10, lunge);
+        lHandScale = 1.1 + lunge * 1.2;
+      }
+    }
+
+    ctx.translate(0, bodyY);
+    ctx.scale(bodyScale, bodyScale);
+
+    // Character Aura
+    const aura = ctx.createRadialGradient(0, -10, 10, 0, -10, 125);
+    aura.addColorStop(0, 'rgba(5, 213, 255, 0.55)');
+    aura.addColorStop(1, 'rgba(5, 213, 255, 0)');
+    ctx.fillStyle = aura;
+    ctx.beginPath();
+    ctx.arc(0, -10, 125, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Torso Silhouette
+    ctx.fillStyle = '#0c0818';
+    ctx.strokeStyle = '#05d5ff';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(-55, 130);
+    ctx.lineTo(-42, 10);
+    ctx.lineTo(42, 10);
+    ctx.lineTo(55, 130);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Glowing Chest Core
+    ctx.fillStyle = '#ff2a6d';
+    ctx.beginPath();
+    ctx.moveTo(0, 28);
+    ctx.lineTo(18, 52);
+    ctx.lineTo(0, 76);
+    ctx.lineTo(-18, 52);
+    ctx.closePath();
+    ctx.fill();
+
+    // Head / Helmet
+    ctx.fillStyle = '#120b24';
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    ctx.roundRect(-42, -78, 84, 78, 26);
+    ctx.fill();
+    ctx.stroke();
+
+    // Glowing Visor Eyes
+    ctx.fillStyle = '#05d5ff';
+    ctx.shadowColor = '#05d5ff';
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.roundRect(-26 + lookX, -50 + lookY, 18, 10, 5);
+    ctx.roundRect(8 + lookX, -50 + lookY, 18, 10, 5);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Hands (Foreshortened floating gauntlets)
+    drawFist(lArmX, lArmY, lHandScale, false);
+    drawFist(rArmX, rArmY, rHandScale, true);
+
+    ctx.restore();
+  }
+
+  function drawFist(x, y, scale, isRight) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+
+    // Energy glow around fist
+    const g = ctx.createRadialGradient(0, 0, 5, 0, 0, 36);
+    g.addColorStop(0, 'rgba(255, 42, 109, 0.7)');
+    g.addColorStop(1, 'rgba(255, 42, 109, 0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(0, 0, 36, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Gauntlet shape
+    ctx.fillStyle = '#181030';
+    ctx.strokeStyle = '#ffe600';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.roundRect(-20, -18, 40, 36, 10);
+    ctx.fill();
+    ctx.stroke();
+
+    // Knuckle highlights
+    ctx.fillStyle = '#05d5ff';
+    const dir = isRight ? -1 : 1;
+    for (let i = -1; i <= 1; i++) {
+      ctx.fillRect(i * 9 - 3, -12, 6, 8);
+    }
+    ctx.fillRect(dir * 12, -2, 6, 12);
+    ctx.restore();
+  }
+
+  // Draw the Heavy Wooden / Metallic Picture Frame (With Splintering Physics)
+  function drawFrameBorder(t) {
+    const breakP = norm(t, 6.8, 7.6);
+    const vanishP = easeInOutCubic(norm(t, 16.5, 18.2));
+    const restoreP = easeOutBack(norm(t, 18.2, 19.3));
+
+    const pieces = [
+      // Top bar
+      {
+        pts: [[PX - 26, PY - 26], [PX + PW + 26, PY - 26], [PX + PW, PY], [PX, PY]],
+        vx: 0, vy: -95, vr: -0.14
+      },
+      // Bottom bar
+      {
+        pts: [[PX, PY + PH], [PX + PW, PY + PH], [PX + PW + 26, PY + PH + 26], [PX - 26, PY + PH + 26]],
+        vx: 0, vy: 85, vr: 0.09
+      },
+      // Left Upper bar (broken in two on impact)
+      {
+        pts: [[PX - 26, PY - 26], [PX, PY], [PX, -20], [PX - 26, -45]],
+        vx: -115, vy: -45, vr: -0.24
+      },
+      // Left Lower bar
+      {
+        pts: [[PX - 26, -45], [PX, -20], [PX, PY + PH], [PX - 26, PY + PH + 26]],
+        vx: -85, vy: 50, vr: 0.18
+      },
+      // Right Upper bar
+      {
+        pts: [[PX + PW, PY], [PX + PW + 26, PY - 26], [PX + PW + 26, 25], [PX + PW, 5]],
+        vx: 120, vy: -35, vr: 0.26
+      },
+      // Right Lower bar
+      {
+        pts: [[PX + PW, 5], [PX + PW + 26, 25], [PX + PW + 26, PY + PH + 26], [PX + PW, PY + PH]],
+        vx: 90, vy: 55, vr: -0.19
+      }
+    ];
+
+    let disp = easeOutCubic(breakP) * (1 - vanishP);
+    if (t >= 18.2) disp = 1 - restoreP;
+
+    pieces.forEach((p) => {
+      ctx.save();
+      const floatWobble = breakP > 0 && t < 18.2 ? Math.sin(t * 2.5 + p.vx) * 6 * (1 - vanishP) : 0;
+      ctx.translate(p.vx * disp, p.vy * disp + floatWobble);
+      ctx.rotate(p.vr * disp);
+
+      // Drop shadow on wall
+      ctx.shadowColor = 'rgba(0,0,0,0.65)';
+      ctx.shadowBlur = 22 + disp * 25;
+      ctx.shadowOffsetY = 12 + disp * 12;
+
+      // Dark wood / brushed anodized frame body
+      ctx.fillStyle = '#1e1b18';
+      ctx.beginPath();
+      p.pts.forEach((pt, idx) => idx === 0 ? ctx.moveTo(pt[0], pt[1]) : ctx.lineTo(pt[0], pt[1]));
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+
+      // Inner gold/brass bevel trim
+      ctx.strokeStyle = '#c5a059';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      ctx.restore();
+    });
+  }
+
+  // Draw Glass Reflection & Progressive Cracks (Before 6.8s)
+  function drawGlassAndCracks(t) {
+    if (t >= 6.8 && t < 18.4) return;
+    const alpha = t >= 18.4 ? norm(t, 18.4, 19.2) : 1;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.rect(PX, PY, PW, PH);
+    ctx.clip();
+
+    // Diagonal museum glass sheen
+    const sheenOffset = Math.sin(t * 0.7) * 25;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.065)';
+    ctx.beginPath();
+    ctx.moveTo(PX - 60 + sheenOffset, PY);
+    ctx.lineTo(PX + 90 + sheenOffset, PY);
+    ctx.lineTo(PX + PW + 40 + sheenOffset, PY + PH);
+    ctx.lineTo(PX + PW - 110 + sheenOffset, PY + PH);
+    ctx.closePath();
+    ctx.fill();
+
+    // Progressive Cracks from Impacts at 3.5s, 4.7s, 5.8s
+    if (t < 6.8) {
+      const stages = [3.5, 4.7, 5.8];
+      stages.forEach((st, idx) => {
+        if (t >= st) {
+          const c = crackData[idx];
+          const p = easeOutCubic(norm(t, st, st + 0.18));
+
+          // Impact frost ring
+          ctx.strokeStyle = 'rgba(220, 245, 255, 0.55)';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(c.cx, c.cy, 18 * p, 0, Math.PI * 2);
+          ctx.stroke();
+
+          // Radial fracture lines
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.88)';
+          ctx.lineWidth = 1.6 + idx * 0.5;
+          ctx.shadowColor = '#05d5ff';
+          ctx.shadowBlur = 8;
+          c.lines.forEach(pts => {
+            ctx.beginPath();
+            const maxIdx = Math.ceil((pts.length - 1) * p);
+            for (let i = 0; i <= maxIdx; i++) {
+              if (i === 0) ctx.moveTo(pts[i].x, pts[i].y);
+              else ctx.lineTo(pts[i].x, pts[i].y);
+            }
+            ctx.stroke();
+          });
+          ctx.shadowBlur = 0;
+        }
+      });
+    }
+
+    ctx.restore();
+  }
+
+  // Draw the Unleashed Cosmic Energy & Character Outside the Frame (6.8s -> 18.2s)
+  function drawUnleashedWorld(t) {
+    if (t < 6.75 || t > 18.3) return;
+
+    const burstP = easeOutCubic(norm(t, 6.8, 8.2));
+    const suckBackP = easeInOutCubic(norm(t, 16.2, 18.0));
+    const activeE = burstP * (1 - suckBackP);
+
+    ctx.save();
+
+    // 1. Dynamic Flowing 3D Neon Ribbons / Energy Tentacles
+    const numRibbons = 7;
+    for (let r = 0; r < numRibbons; r++) {
+      ctx.save();
+      const baseAngle = (r / numRibbons) * Math.PI * 2 + t * 0.35;
+      const color = r % 2 === 0 ? '#ff2a6d' : (r % 3 === 0 ? '#ffe600' : '#05d5ff');
+      ctx.strokeStyle = color;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 18;
+      ctx.lineCap = 'round';
+
+      const segs = 28;
+      const maxRadius = 560 * activeE;
+      for (let s = 0; s < segs - 1; s++) {
+        const f1 = s / segs;
+        const f2 = (s + 1) / segs;
+        const rad1 = f1 * maxRadius;
+        const rad2 = f2 * maxRadius;
+        const wave1 = Math.sin(f1 * 7 - t * 4.5 + r) * (55 * f1);
+        const wave2 = Math.sin(f2 * 7 - t * 4.5 + r) * (55 * f2);
+
+        const x1 = Math.cos(baseAngle) * rad1 - Math.sin(baseAngle) * wave1;
+        const y1 = Math.sin(baseAngle) * rad1 * 0.75 + Math.cos(baseAngle) * wave1;
+        const x2 = Math.cos(baseAngle) * rad2 - Math.sin(baseAngle) * wave2;
+        const y2 = Math.sin(baseAngle) * rad2 * 0.75 + Math.cos(baseAngle) * wave2;
+
+        ctx.lineWidth = (1 - f1) * 26 * activeE;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // 2. Cosmic Stars & Particles Orbiting the Room
+    stars.forEach(st => {
+      const curAngle = Math.atan2(st.y, st.x) + (t - 6.8) * st.orbit;
+      const baseDist = Math.hypot(st.x, st.y);
+      const curDist = baseDist * activeE;
+      const sx = Math.cos(curAngle) * curDist;
+      const sy = Math.sin(curAngle) * curDist * 0.75;
+      const twinkle = 0.5 + 0.5 * Math.sin(t * 6 + st.phase);
+
+      ctx.fillStyle = st.color;
+      ctx.globalAlpha = twinkle * activeE;
+      ctx.beginPath();
+      ctx.arc(sx, sy, st.r * (0.6 + activeE * 0.6), 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+
+    // 3. Floating 3D Geometric Shapes
+    shapes.forEach((sh) => {
+      const curA = sh.a + (t - 6.8) * 0.25;
+      const d = sh.dist * activeE;
+      const x = Math.cos(curA) * d * 1.15;
+      const y = Math.sin(curA) * d * 0.75;
+
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(t * sh.rotSpeed);
+      ctx.scale(activeE, activeE);
+      ctx.strokeStyle = sh.color;
+      ctx.lineWidth = 3;
+      ctx.shadowColor = sh.color;
+      ctx.shadowBlur = 10;
+
+      ctx.beginPath();
+      if (sh.type === 0) {
+        ctx.moveTo(0, -sh.size);
+        ctx.lineTo(sh.size * 0.86, sh.size * 0.5);
+        ctx.lineTo(-sh.size * 0.86, sh.size * 0.5);
+        ctx.closePath();
+      } else if (sh.type === 1) {
+        ctx.rect(-sh.size * 0.7, -sh.size * 0.7, sh.size * 1.4, sh.size * 1.4);
+      } else {
+        ctx.arc(0, 0, sh.size * 0.75, 0, Math.PI * 2);
+      }
+      ctx.stroke();
+      ctx.restore();
+    });
+
+    // 4. The Character Leaping Out & Grabbing the Frame Edges
+    const charPop = easeOutElastic(norm(t, 6.8, 7.9)) * (1 - suckBackP);
+    if (charPop > 0.01) {
+      ctx.save();
+      const hoverY = Math.sin(t * 3.2) * 14;
+      const hoverX = Math.cos(t * 1.8) * 10;
+      const scale3D = 0.85 + charPop * 0.65;
+
+      ctx.translate(hoverX, -25 + hoverY * charPop);
+      ctx.scale(scale3D, scale3D);
+
+      // Dramatic drop shadow cast onto the frame & wall behind
+      ctx.save();
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
+      ctx.shadowBlur = 45;
+      ctx.shadowOffsetY = 35;
+
+      // Flowing Dynamic Cape / Energy Wings
+      const wingSpread = 160 * charPop + Math.sin(t * 5) * 18;
+      const capeGrad = ctx.createLinearGradient(-wingSpread, -60, wingSpread, 120);
+      capeGrad.addColorStop(0, '#ff2a6d');
+      capeGrad.addColorStop(0.5, '#7928ca');
+      capeGrad.addColorStop(1, '#05d5ff');
+      ctx.fillStyle = capeGrad;
+      ctx.beginPath();
+      ctx.moveTo(0, -15);
+      ctx.quadraticCurveTo(-wingSpread * 0.8, -95, -wingSpread, 25 + Math.sin(t * 6) * 15);
+      ctx.quadraticCurveTo(-wingSpread * 0.5, 95, 0, 110);
+      ctx.quadraticCurveTo(wingSpread * 0.5, 95, wingSpread, 25 + Math.cos(t * 6) * 15);
+      ctx.quadraticCurveTo(wingSpread * 0.8, -95, 0, -15);
+      ctx.fill();
+
+      // 3D Torso Armor
+      ctx.fillStyle = '#0e0920';
+      ctx.strokeStyle = '#05d5ff';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(-58, -10);
+      ctx.lineTo(58, -10);
+      ctx.lineTo(36, 95);
+      ctx.lineTo(-36, 95);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+
+      // Radiant Chest Emblem
+      ctx.fillStyle = '#ffe600';
+      ctx.shadowColor = '#ffe600';
+      ctx.shadowBlur = 20;
+      ctx.beginPath();
+      ctx.moveTo(0, 8);
+      ctx.lineTo(24, 38);
+      ctx.lineTo(0, 68);
+      ctx.lineTo(-24, 38);
+      ctx.closePath();
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Head tilting with energy
+      ctx.save();
+      ctx.rotate(Math.sin(t * 2.2) * 0.08);
+      ctx.fillStyle = '#150d2a';
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.roundRect(-46, -92, 92, 84, 28);
+      ctx.fill();
+      ctx.stroke();
+
+      // Expressive Glowing Visor Eyes
+      ctx.fillStyle = '#05d5ff';
+      ctx.shadowColor = '#05d5ff';
+      ctx.shadowBlur = 16;
+      ctx.beginPath();
+      ctx.moveTo(-30, -56);
+      ctx.lineTo(-8, -48);
+      ctx.lineTo(-8, -38);
+      ctx.lineTo(-30, -42);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.moveTo(30, -56);
+      ctx.lineTo(8, -48);
+      ctx.lineTo(8, -38);
+      ctx.lineTo(30, -42);
+      ctx.closePath();
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.restore();
+
+      // Giant Foreshortened Hands Reaching Out Toward the Camera
+      const reachPulse = Math.sin(t * 4) * 10;
+      drawFist(-135 - reachPulse, 15 + reachPulse * 0.5, 1.45, false);
+      drawFist(135 + reachPulse, -10 - reachPulse * 0.5, 1.65, true);
+
+      ctx.restore();
+    }
+
+    // 5. Bold Kinetic Typography Breaking Out of the Frame (9.0s -> 16.5s)
+    if (t > 8.6 && t < 17.2) {
+      const textIn = easeOutBack(norm(t, 8.6, 9.6));
+      const textOut = easeInCubic(norm(t, 16.0, 17.0));
+      const textScale = textIn * (1 - textOut);
+
+      if (textScale > 0.01) {
+        ctx.save();
+        ctx.translate(0, 215);
+        ctx.scale(textScale, textScale);
+        ctx.rotate(-0.04 + Math.sin(t * 2) * 0.015);
+
+        // Banner backdrop
+        ctx.fillStyle = '#090514';
+        ctx.strokeStyle = '#ffe600';
+        ctx.lineWidth = 4;
+        ctx.shadowColor = 'rgba(0,0,0,0.8)';
+        ctx.shadowBlur = 25;
+        ctx.beginPath();
+        ctx.roundRect(-270, -42, 540, 74, 12);
+        ctx.fill();
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Chromatic offset text
+        ctx.font = '900 44px "Arial Black", Impact, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.letterSpacing = '6px';
+
+        ctx.fillStyle = '#ff2a6d';
+        ctx.fillText('UNCONTAINED', -3, 13);
+        ctx.fillStyle = '#05d5ff';
+        ctx.fillText('UNCONTAINED', 3, 9);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText('UNCONTAINED', 0, 11);
+
+        ctx.restore();
+      }
+    }
+
+    ctx.restore();
+  }
+
+  // Draw Shattering Glass Shards with Bullet-Time Slow-Mo & Rewind
+  function drawShatterShards(t) {
+    if (t < 6.8 || t > 18.2) return;
+
+    // Physics time mapping: fast burst at 6.8s, slow-mo bullet time, then reverse back at 16.2s
+    let physT = 0;
+    const dt = t - 6.8;
+    if (t < 16.2) {
+      // Fast initial impulse + slow-motion drift
+      physT = (1 - Math.exp(-dt * 3.2)) * 0.42 + dt * 0.055;
+    } else {
+      // Rewind smoothly to 0 for seamless loop
+      const maxPhysT = (1 - Math.exp(-(16.2 - 6.8) * 3.2)) * 0.42 + (16.2 - 6.8) * 0.055;
+      const revP = easeInOutCubic(norm(t, 16.2, 18.1));
+      physT = maxPhysT * (1 - revP);
+    }
+
+    ctx.save();
+    shards.forEach(s => {
+      const x = s.x + s.vx * physT;
+      const y = s.y + s.vy * physT + 0.5 * 480 * physT * physT;
+      const rot = s.rot0 + s.rotSpeed * physT;
+      const scale = 1 + physT * 0.65;
+
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(rot);
+      ctx.scale(scale, scale);
+
+      ctx.fillStyle = s.tint;
+      ctx.globalAlpha = s.alpha;
+      ctx.beginPath();
+      s.pts.forEach((pt, idx) => idx === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y));
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = Math.min(1, s.alpha + 0.3);
+      ctx.stroke();
+
+      ctx.restore();
+    });
+    ctx.restore();
+  }
+
+  // Draw Impact Shockwaves
+  function drawShockwaves(t) {
+    // Small shockwaves on punches
+    const hits = [
+      { time: 3.5, x: 15, y: -35, maxR: 95, col: '#05d5ff' },
+      { time: 4.7, x: -30, y: -60, maxR: 135, col: '#ff2a6d' },
+      { time: 5.8, x: 0, y: -20, maxR: 180, col: '#ffe600' },
+      { time: 6.8, x: 0, y: -20, maxR: 850, col: '#ffffff' }
+    ];
+
+    hits.forEach(h => {
+      if (t >= h.time && t < h.time + 0.9) {
+        const p = easeOutCubic(norm(t, h.time, h.time + 0.9));
+        ctx.save();
+        ctx.strokeStyle = h.col;
+        ctx.lineWidth = (1 - p) * (h.maxR > 400 ? 35 : 10);
+        ctx.globalAlpha = 1 - p;
+        ctx.beginPath();
+        ctx.arc(h.x, h.y, h.maxR * p, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+    });
+  }
+
+  // Main Render Loop
+  function render(now) {
+    const rawSeconds = (now / 1000) + startOffset;
+    const t = rawSeconds % window.DUR;
+
+    ctx.clearRect(0, 0, W, H);
+
+    // Camera Choreography (Zoom, Pan, and Impact Shake)
+    let camScale = 1.0;
+    let camX = W / 2;
+    let camY = H / 2;
+    let camRot = 0;
+
+    if (t < 3.0) {
+      // Slow cinematic push-in toward the poster
+      camScale = lerp(0.96, 1.14, easeInOutCubic(t / 3.0));
+    } else if (t < 6.8) {
+      // Tense zoom in as the character pounds the glass
+      camScale = lerp(1.14, 1.32, easeInCubic(norm(t, 3.0, 6.8)));
+    } else if (t < 15.8) {
+      // Dramatic pullback on shatter to reveal the full gallery room & 3D burst
+      const pullback = easeOutCubic(norm(t, 6.8, 7.6));
+      camScale = lerp(1.32, 0.94, pullback) + Math.sin(t * 0.8) * 0.02;
+      camRot = Math.sin(t * 0.6) * 0.018 * pullback;
+    } else {
+      // Smooth return to initial framing for seamless loop
+      const resetP = easeInOutCubic(norm(t, 15.8, 19.5));
+      camScale = lerp(0.94, 0.96, resetP);
+      camRot = lerp(Math.sin(15.8 * 0.6) * 0.018, 0, resetP);
+    }
+
+    // Add camera shake on impacts
+    let shakeAmt = 0;
+    [3.5, 4.7, 5.8].forEach((hitT, idx) => {
+      if (t >= hitT && t < hitT + 0.35) {
+        shakeAmt += (1 - (t - hitT) / 0.35) * (6 + idx * 5);
+      }
+    });
+    if (t >= 6.8 && t < 7.6) {
+      shakeAmt += (1 - (t - 6.8) / 0.8) * 26;
+    }
+    const shakeX = Math.sin(t * 95) * shakeAmt;
+    const shakeY = Math.cos(t * 115) * shakeAmt;
+
+    // Progress variables
+    const breakProgress = norm(t, 6.8, 7.5);
+    const vanishP = easeInOutCubic(norm(t, 16.5, 18.2));
+    const tearP = t >= 6.8 ? easeOutCubic(norm(t, 6.8, 7.2)) * (1 - vanishP) : 0;
+
+    // 1. Draw Gallery Wall
+    drawGalleryWall(t, breakProgress, vanishP);
+
+    // Apply Camera Transform
+    ctx.save();
+    ctx.translate(camX + shakeX, camY + shakeY);
+    ctx.scale(camScale, camScale);
+    ctx.rotate(camRot);
+
+    //Drop shadow of the poster frame on the wall
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+    ctx.shadowBlur = 45;
+    ctx.shadowOffsetY = 25;
+    ctx.fillRect(PX - 15, PY - 15, PW + 30, PH + 30);
+    ctx.restore();
+
+    // 2. Draw Clipped 2D Poster Interior
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(PX, PY, PW, PH);
+    ctx.clip();
+    const posterMode = (t < 6.8 || t >= 18.0) ? '2D_CAPTIVE' : 'BROKEN_OUT';
+    drawPosterBase(t, tearP, posterMode);
+    ctx.restore();
+
+    // 3. Draw Glass Reflection & Cracks (in front of 2D poster)
+    drawGlassAndCracks(t);
+
+    // 4. Draw Frame Border (Intact or Splintered & Floating)
+    drawFrameBorder(t);
+
+    // 5. Draw Unleashed 3D Character, Ribbons & Typography (Outside Frame Clip!)
+    drawUnleashedWorld(t);
+
+    // 6. Draw Shattered Glass Shards in foreground
+    drawShatterShards(t);
+
+    // 7. Draw Impact Shockwaves
+    drawShockwaves(t);
+
+    ctx.restore();
+
+    // White impact flash at the exact moment of shatter (6.8s)
+    if (t >= 6.78 && t < 7.15) {
+      const flashAlpha = 1 - norm(t, 6.78, 7.15);
+      ctx.fillStyle = `rgba(255, 255, 255, ${flashAlpha * 0.85})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    // Subtle Cinematic Vignette
+    const vig = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, W * 0.65);
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(1, 'rgba(0,0,0,0.65)');
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, W, H);
+
+    requestAnimationFrame(render);
+  }
+
+  requestAnimationFrame(render);
+})();
+</script>
+</body>
+</html>

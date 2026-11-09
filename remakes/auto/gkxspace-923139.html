@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>The 99th Spell</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);image-rendering:pixelated}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=16;
+const C=document.getElementById('c'),X=C.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);C.style.width=1280*s+'px';C.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const W=320,H=180,L=document.createElement('canvas');L.width=W;L.height=H;const g=L.getContext('2d');
+const sky=g.createImageData(W,H),SU=new Uint32Array(sky.data.buffer);
+const h=n=>{n=Math.sin(n*127.1+311.7)*43758.5453;return n-Math.floor(n)};
+const cl=v=>v<0?0:v>1?1:v;
+const px=(x,y,w,ht,c)=>{g.fillStyle=c;g.fillRect(Math.round(x),Math.round(y),w,ht)};
+const hex=s=>[parseInt(s.slice(1,3),16),parseInt(s.slice(3,5),16),parseInt(s.slice(5,7),16)];
+const mix=(a,b,f)=>a.map((v,i)=>Math.round(v+(b[i]-v)*f));
+const rgb=a=>`rgb(${a[0]},${a[1]},${a[2]})`;
+const NIGHT=['#0b0820','#140f35','#22195a','#35267a','#4b3290','#6a3f9a'].map(hex);
+const DAWN=['#2a3a8a','#4a5ab8','#8a6ac8','#e07aa8','#ff9e86','#ffd08a'].map(hex);
+const BAY=[0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5].map(v=>(v+.5)/16);
+// ground prebuild
+const G=document.createElement('canvas');G.width=W;G.height=40;const gg=G.getContext('2d');
+for(let y=0;y<40;y++)for(let x=0;x<W;x++){let r=h(x*31+y*7.3),c;
+ if(y<2)c=r<.5?'#3f7a3a':'#2f5e30';else if(y<4)c=(y==2&&r<.6)||r<.25?'#2f5e30':'#4a3226';
+ else c=r<.08?'#6b4a36':r<.5?'#3d2a20':'#33231b';gg.fillStyle=c;gg.fillRect(x,y,1,1);}
+function line(x0,y0,x1,y1,w,c){const dx=x1-x0,dy=y1-y0,n=(Math.max(Math.abs(dx),Math.abs(dy))|0)+1;g.fillStyle=c;
+ for(let i=0;i<=n;i++)g.fillRect(Math.round(x0+dx*i/n-w/2),Math.round(y0+dy*i/n-w/2),w,w);}
+function disk(x,y,r,c){x=Math.round(x);y=Math.round(y);g.fillStyle=c;for(let j=-r;j<=r;j++){const w=Math.round(Math.sqrt(r*r-j*j+.3));g.fillRect(x-w,y+j,w*2+1,1);}}
+const TX=232,TY=141;
+function treeSeg(x,y,a,l,d,s,o,tips){const x1=x+Math.cos(a)*l,y1=y+Math.sin(a)*l;o.push([x,y,x1,y1,d]);
+ if(!d){tips.push([x1,y1,s]);return}
+ treeSeg(x1,y1,a-.3-h(s)*.35,l*.74,d-1,s*2+1,o,tips);treeSeg(x1,y1,a+.28+h(s+.5)*.35,l*.72,d-1,s*2+2,o,tips);}
+function drawTree(b,t){const o=[],tips=[];const sw=Math.sin(t*1.3)*.03*b;
+ treeSeg(TX,TY,-Math.PI/2+sw,18*(1+.25*b),5,1,o,tips);
+ for(const s of o)line(s[0],s[1],s[2],s[3],Math.max(1,s[4]-1)+2,'#1c120e');
+ const bark=rgb(mix(hex('#5a4038'),hex('#7a5232'),b));
+ for(const s of o)line(s[0],s[1],s[2],s[3],Math.max(1,s[4]-1),bark);
+ if(b>0){for(const [x,y,s] of tips)for(let k=0;k<3;k++){const bb=cl(b*1.6-h(s+k)*.6);if(bb<=0)continue;
+   const ox=x+(h(s*3+k)-.5)*8,oy=y+(h(s*5+k)-.5)*6,r=Math.round(1+3*bb);
+   disk(ox,oy+1,r,'#8a2f5a');disk(ox,oy,r,bb<.5?'#5aa04a':'#f07ab0');if(r>1)px(ox-1,oy-r+1,2,1,'#ffd0e8');}}
+ return tips;}
+function wizard(x,y,cast,o){ // o:{blink,singe,bob,lift}
+ y-=o.lift||0;const bob=o.bob||0;const R='#2a3c9a',RL='#3f5ad0',OL='#120c24';
+ // shadow
+ g.globalAlpha=.4;px(x-8+((o.lift||0)>2?2:0),141,16-((o.lift||0)>2?4:0),2,'#000');g.globalAlpha=1;
+ for(let i=0;i<14;i++){const hw=3+(i>>1),ry=y-13+i;px(x-hw-1,ry,hw*2+2,1,OL);px(x-hw,ry,hw,1,R);px(x,ry,hw,1,RL);}
+ const fl=o.flutter?Math.round(Math.sin(o.flutter)*1):0;px(x-10+fl,y,20,1,OL);px(x-9+fl,y-1,18,1,'#c9a43a');
+ const yb=y+bob;
+ // staff + arm
+ const hx=x+7,hy=yb-8-Math.round(cast*7);
+ line(hx,hy-9,hx,Math.min(140,hy+12),1,'#6b4426');px(hx-1,hy-9,1,20,'#3a2414');
+ const sx=x+3,sy=yb-9;line(sx,sy,hx-1,hy,3,OL);line(sx,sy,hx-1,hy,2,RL);px(hx-1,hy-1,2,2,'#f2c49a');
+ const gx=hx,gy=hy-11;
+ px(gx-2,gy-1,5,3,OL);px(gx-1,gy-2,3,5,OL);px(gx-1,gy-1,3,3,o.gem||'#6ff0ff');px(gx-1,gy-1,1,1,'#fff');
+ // face, beard
+ const sk=o.singe?'#3a3030':'#f2c49a';px(x-4,yb-16,8,5,OL);px(x-3,yb-15,6,4,sk);
+ if(!o.blink){px(x,yb-14,1,1,'#000');px(x+2,yb-14,1,1,'#000');}else px(x,yb-14,3,1,'#9a6a50');
+ px(x+3,yb-13,1,1,o.singe?'#2a2020':'#e09a7a');
+ const bd=o.singe?'#555':'#eef';
+ for(let i=0;i<7;i++){const w=6-Math.abs(i-2)*(i>2?1:0);px(x-w/2-1,yb-11+i,w+2,1,OL);px(x-w/2,yb-11+i,w,1,bd);}
+ // hat
+ const tip=Math.round(Math.sin((o.hatT||0)*4)*2)+3;
+ for(let i=0;i<14;i++){const hw=Math.floor(i/2.6),hx2=x+Math.round(tip*(1-i/14)*(1-i/14));const ry=yb-31+i;
+  px(hx2-hw-1,ry,hw*2+3,1,OL);px(hx2-hw,ry,hw+1,1,'#5a2a8a');px(hx2+1,ry,hw,1,'#7a3fb0');}
+ px(x-9,yb-17,19,3,OL);px(x-8,yb-16,17,1,'#7a3fb0');px(x-4,yb-20,8,2,'#c9a43a');
+ if(o.singe){for(let i=0;i<3;i++){const p=(o.hatT*.8+i/3)%1;g.globalAlpha=1-p;px(x-2+i*2+Math.sin(p*9)*2,yb-32-p*14,2,2,'#888');}g.globalAlpha=1;}
+ return [gx,gy];}
+const WX=100,WY=140,AT=2.2,ST=.85,CH0=8.3,BL=10.3;
+const CAP=['fizz.','...rain?','one leaf.','ribbit.','pfft.','so close!','OW.'];
+let t0=performance.now()-(parseFloat(new URLSearchParams(location.search).get('t'))||0)*1000;
+function frame(now){const t=((now-t0)/1000)%DUR;
+ const d=cl((t-10.6)/3),bloom=cl((t-10.5)/2.4);
+ // sky
+ const pal=NIGHT.map((c,i)=>mix(c,DAWN[i],d)).map(c=>(255<<24)|(c[2]<<16)|(c[1]<<8)|c[0]);
+ for(let y=0;y<H;y++){const f=cl(y/125)*5,i0=Math.floor(f),fr=f-i0;
+  for(let x=0;x<W;x++){const i=fr>BAY[(y&3)*4+(x&3)]?Math.min(5,i0+1):i0;SU[y*W+x]=pal[i];}}
+ g.putImageData(sky,0,0);
+ // stars & moon
+ for(let i=0;i<70;i++){const tw=h(i)+Math.sin(t*3+i)*.3;if(tw<.4)continue;g.globalAlpha=(1-d)*cl(tw);
+  px(h(i*3)*W,h(i*7)*95,1,1,tw>1?'#fff':'#bcd');}
+ g.globalAlpha=1-d;disk(262,30,9,'#f4ecc8');disk(266,27,8,rgb(mix(NIGHT[0],DAWN[0],d)));
+ g.globalAlpha=d;disk(160,128-d*20,14,'#ffe9a0');disk(160,128-d*20,10,'#fff6d0');g.globalAlpha=1;
+ // mountains
+ const m1=rgb(mix(hex('#1a1440'),hex('#6a4a9a'),d)),m2=rgb(mix(hex('#100c28'),hex('#4a3070'),d));
+ for(let x=0;x<W;x++){const a=96+Math.sin(x*.03)*10+Math.sin(x*.081+1)*6;px(x,a,1,H,m1);
+  const b=114+Math.sin(x*.05+2)*7+Math.sin(x*.13)*3;px(x,b,1,H,m2);}
+ // shake
+ let sh=0;if(t>BL&&t<BL+1.2)sh=(1-(t-BL)/1.2)*4;if(t>CH0&&t<BL)sh=(t-CH0)/2*1.2;
+ const shx=Math.round((h(t*60|0)-.5)*2*sh),shy=Math.round((h((t*60|0)+.3)-.5)*2*sh);
+ g.save();g.translate(shx,shy);
+ g.drawImage(G,0,140);
+ // ground flowers after bloom
+ for(let i=0;i<30;i++){const fb=cl(bloom*1.5-h(i+9)*.8);if(fb<=0)continue;const fx=h(i*13)*W|0,fy=142+(h(i*5)*30|0);
+  px(fx,fy-Math.round(fb*3),1,Math.round(fb*3),'#4a9a3a');px(fx-1,fy-Math.round(fb*3)-1,3,2,['#ffd0e8','#ffe066','#9ad0ff'][i%3]);}
+ const tips=drawTree(bloom,t);
+ // wizard state
+ let cast=0,k=-1,a=0,singe=false,lift=0,flutter=0,gem=null;
+ if(t>=AT&&t<AT+7*ST){k=Math.floor((t-AT)/ST);a=(t-AT)/ST-k;cast=a<.25?a/.25:a<.55?1:Math.max(0,1-(a-.55)/.2);}
+ if(t>=AT+6*ST+.45*ST&&t<BL)singe=true;
+ if(t>=CH0&&t<BL+.6){const s=cl((t-CH0)/1.6);cast=s;lift=Math.round(s*4+Math.sin(t*6)*s);flutter=t*25;gem=['#6ff0ff','#fff','#ff9ef0'][(t*12|0)%3];}
+ if(t>=BL+.6){const j=t-11.6;cast=j>0&&j<.7?1:Math.max(0,1-(t-BL-.6)/.4);if(j>0&&j<.7)lift=Math.round(Math.sin(j/.7*Math.PI)*10);}
+ const blink=(t%3.1)<.12&&!(t>CH0&&t<BL+.6);
+ const [gx,gy]=wizard(WX,WY,cast,{blink,singe,bob:Math.floor(t*2)%2,lift,flutter,hatT:t,gem});
+ // attempt effects
+ const caps=[];
+ if(k>=0){const p=(a-.25)/.2,e=(a-.45)*ST;
+  if(a>.25&&a<.45){const ex=k==6?gx+6:TX,ey=k==6?gy:108,q=k==6?Math.min(p,.3):p;
+   for(let i=0;i<=12;i++){const f=i/12*q,bx=gx+(ex-gx)*f,by=gy+(ey-gy)*f+Math.sin(f*20+t*30)*2;px(bx,by,2,2,i%2?'#6ff0ff':'#fff');}}
+  if(e>0){const E=e/(.55*ST);
+   if(k==0){for(let i=0;i<6;i++){g.globalAlpha=1-E;disk(TX+(h(i)-.5)*16,104-E*18-h(i+2)*8,Math.round(2+E*6),i%2?'#8a8a9a':'#b0b0c0');}g.globalAlpha=1;caps.push([TX,80]);}
+   if(k==1){disk(WX-3,86,5,'#6a6a80');disk(WX+4,85,6,'#7a7a90');disk(WX+1,82,5,'#8a8aa0');for(let i=0;i<8;i++)px(WX-8+i*2,92+((e*90+h(i)*20)%40),1,3,'#8ac8ff');caps.push([WX,72]);}
+   if(k==2){px(TX+8+Math.sin(E*12)*6,96+E*44,2,1,'#5aa04a');caps.push([TX,80]);}
+   if(k==3){const fx=TX-6-E*34,fy=140-Math.abs(Math.sin(E*9))*7;px(fx-3,fy-3,6,3,'#2f7a2a');px(fx-3,fy-4,2,1,'#fff');px(fx+1,fy-4,2,1,'#fff');px(fx-2,fy-4,1,1,'#000');caps.push([fx,118]);}
+   if(k==4){for(let i=0;i<10;i++){const vx=(h(i)-.5)*40,vy=-20-h(i+1)*20;px(TX+vx*E,108+vy*E+70*E*E,1,1,i%2?'#ffe066':'#ff9a3a');}caps.push([TX,84]);}
+   if(k==5){const st=E<.5?E*12:6*(1-(E-.5));px(TX-18,140-st,1,st,'#4a9a3a');px(TX-19+(E>.5?1:0),139-st,3,2,E>.6?'#8a6a6a':'#f07ab0');caps.push([TX-18,112]);}
+   if(k==6){g.globalAlpha=cl(1-E);disk(gx+3,gy,Math.round(3+E*10),'#ff9a3a');disk(gx+3,gy,Math.round(2+E*6),'#ffe066');g.globalAlpha=1;caps.push([WX+10,74]);}
+  }}
+ // charge
+ if(t>=CH0&&t<BL){const s=cl((t-CH0)/2);
+  for(let i=0;i<48;i++){const f=(t*.9+h(i))%1,r=50*(1-f),an=h(i*3)*6.28+t*3*(1+h(i));g.globalAlpha=f;
+   px(gx+Math.cos(an)*r,gy+Math.sin(an)*r*.8,1+(i%3==0),1+(i%3==0),['#6ff0ff','#ff9ef0','#ffe066'][i%3]);}
+  g.globalAlpha=.5*s;disk(gx,gy,Math.round(2+s*4+Math.sin(t*20)),'#fff');
+  g.globalAlpha=.35*s;px(WX-16,141,32,1,'#6ff0ff');g.globalAlpha=1;}
+ // beam
+ if(t>=BL&&t<BL+.7){const f=1-(t-BL)/.7,w=Math.round(2+f*6);
+  line(gx,gy,TX,100,w+2,'#ff9ef0');line(gx,gy,TX,100,w,'#fff');disk(TX,100,Math.round(6+f*14),'#fff');}
+ // petals
+ if(t>11.3){for(let i=0;i<40;i++){const tp=tips[i%tips.length],l=((t-11.3)*.25+h(i))%1;
+  g.globalAlpha=cl((t-11.3)*2)*(1-l);px(tp[0]+l*90+Math.sin(l*14+i)*5,tp[1]+l*60,2,1,i%2?'#ffd0e8':'#f07ab0');}g.globalAlpha=1;}
+ g.restore();
+ if(t>=BL&&t<BL+1){g.globalAlpha=1-(t-BL);px(0,0,W,H,'#fff');g.globalAlpha=1;}
+ // compose
+ X.imageSmoothingEnabled=false;X.drawImage(L,0,0,1280,720);
+ X.textAlign='center';X.textBaseline='middle';
+ const txt=(s,x,y,sz,c,al)=>{X.globalAlpha=al;X.font=`bold ${sz}px monospace`;X.fillStyle='#000';X.fillText(s,x+4,y+4);X.fillStyle=c;X.fillText(s,x,y);X.globalAlpha=1;};
+ if(t<2.6){const al=cl(t/.6)*cl((2.6-t)/.5);txt('THE 99TH SPELL',640,250,72,'#ffe066',al);txt('goal: make the dead tree bloom',640,320,26,'#cfd8ff',al);}
+ let n=t<AT?91:t<AT+7*ST?92+k:99;
+ if(t>.3&&t<BL+.4){const fl=n==99&&(t*8|0)%2;X.textAlign='left';txt('SPELL #'+n,40,48,32,fl?'#fff':'#ffe066',1);X.textAlign='center';}
+ for(const [cx,cy] of caps)if(k>=0)txt(CAP[k],cx*4,cy*4,30,'#fff',cl((a-.45)*6));
+ if(t>CH0+.2&&t<BL)txt('...one more time.',WX*4+40,60*4,30,'#ff9ef0',cl((t-CH0-.2)*3));
+ if(t>12.6){const al=cl((t-12.6)*2);txt('SPELL #99: SUCCESS!',640,120,56,'#ffe066',al);txt('it bloomed.',640,180,30,'#fff',cl((t-13.4)*2));}
+ const fo=Math.max(cl(1-t/.3),cl((t-15.5)/.5));if(fo>0){X.fillStyle=`rgba(0,0,0,${fo})`;X.fillRect(0,0,1280,720);}
+ requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

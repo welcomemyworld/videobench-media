@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mimicly — Motion Ad</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; background: #000; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+(function() {
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const W = 1280, H = 720;
+
+  // ── Timing ──
+  const DUR = 30;
+  window.DUR = DUR;
+  const params = new URLSearchParams(window.location.search);
+  const tOffset = parseFloat(params.get('t') || '0') || 0;
+  let startTime = performance.now() - tOffset * 1000;
+  let elapsed = tOffset;
+
+  // ── Easing ──
+  const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+  const easeInOutCubic = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  const easeOutBack = t => { const c = 1.70158; const c3 = c + 1; return 1 + c3 * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+  const easeOutExpo = t => t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
+  const easeInOutQuad = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+  // ── Draw Helpers ──
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    const rr = Math.min(r, w / 2, h / 2);
+    ctx.moveTo(x + rr, y);
+    ctx.lineTo(x + w - rr, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + rr);
+    ctx.lineTo(x + w, y + h - rr);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
+    ctx.lineTo(x + rr, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - rr);
+    ctx.lineTo(x, y + rr);
+    ctx.quadraticCurveTo(x, y, x + rr, y);
+    ctx.closePath();
+  }
+
+  function fillRoundedRect(x, y, w, h, r, fill) {
+    ctx.save();
+    roundRect(x, y, w, h, r);
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function strokeRoundedRect(x, y, w, h, r, stroke, lw) {
+    ctx.save();
+    roundRect(x, y, w, h, r);
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = lw || 1;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawText(text, x, y, size, fill, align, weight, letterSpacing) {
+    ctx.save();
+    ctx.fillStyle = fill;
+    ctx.font = (weight || 'normal') + ' ' + size + 'px -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+    ctx.textAlign = align || 'left';
+    ctx.textBaseline = 'middle';
+    if (letterSpacing) { ctx.letterSpacing = letterSpacing + 'px'; }
+    ctx.fillText(text, x, y);
+    ctx.restore();
+  }
+
+  function drawCircle(x, y, r, fill) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawAvatar(x, y, r, initials, bgColor, textColor) {
+    drawCircle(x, y, r, bgColor);
+    drawText(initials, x, y, r * 0.9, textColor, 'center', 'bold');
+  }
+
+  function drawPhone(x, y, w, h, screenContent) {
+    // Phone body
+    const shadowBlur = 30;
+    ctx.save();
+    ctx.shadowColor = 'rgba(124,58,237,0.4)';
+    ctx.shadowBlur = shadowBlur;
+    ctx.shadowOffsetY = 8;
+    fillRoundedRect(x, y, w, h, 24, '#111118');
+    ctx.restore();
+    // Bezel
+    fillRoundedRect(x + 3, y + 3, w - 6, h - 6, 22, '#1a1a24');
+    // Screen
+    fillRoundedRect(x + 8, y + 8, w - 16, h - 16, 18, '#0c0c12');
+    // Notch
+    const notchW = 60, notchH = 14;
+    fillRoundedRect(x + w / 2 - notchW / 2, y + 8, notchW, notchH, 7, '#0c0c12');
+    // Camera dot
+    drawCircle(x + w / 2, y + 15, 3, '#1c1c28');
+    if (screenContent) screenContent(x + 8, y + 8, w - 16, h - 16);
+  }
+
+  function drawChatBubble(x, y, maxW, text, isSent, bubbleColor, textColor, ts, tsColor) {
+    ctx.save();
+    ctx.font = '14px -apple-system, "Segoe UI", Roboto, sans-serif';
+    const words = text.split(' ');
+    const lines = [];
+    let line = '';
+    for (const word of words) {
+      const test = line ? line + ' ' + word : word;
+      if (ctx.measureText(test).width > maxW - 24) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = test;
+      }
+    }
+    if (line) lines.push(line);
+    const lineH = 20;
+    const padX = 12, padY = 8;
+    const textH = lines.length * lineH;
+    const bw = Math.min(maxW, Math.max(40, ctx.measureText(line || text).width + padX * 2));
+    const bh = textH + padY * 2;
+    const radius = 14;
+    roundRect(x, y, bw, bh, radius);
+    ctx.fillStyle = bubbleColor;
+    ctx.fill();
+    // Tail
+    ctx.beginPath();
+    if (isSent) {
+      ctx.moveTo(x + bw - 4, y + bh - 6);
+      ctx.lineTo(x + bw + 6, y + bh + 2);
+      ctx.lineTo(x + bw - 14, y + bh - 2);
+    } else {
+      ctx.moveTo(x + 4, y + bh - 6);
+      ctx.lineTo(x - 6, y + bh + 2);
+      ctx.lineTo(x + 14, y + bh - 2);
+    }
+    ctx.closePath();
+    ctx.fillStyle = bubbleColor;
+    ctx.fill();
+    // Text
+    lines.forEach((ln, i) => {
+      drawText(ln, x + padX, y + padY + i * lineH + lineH / 2, 14, textColor, 'left', 'normal');
+    });
+    // Timestamp
+    drawText(ts, x + bw - 6, y + bh + 4, 10, tsColor, 'right', 'normal');
+    ctx.restore();
+    return { width: bw, height: bh + 10 };
+  }
+
+  // ── Chat data ──
+  const messages = [
+    { text: 'Hey! Did you see the new template?', sent: false, ts: '2:41 PM' },
+    { text: 'Yeah! Just made this in like 30 sec 😄', sent: true, ts: '2:42 PM' },
+    { text: 'No way. That looks real.', sent: false, ts: '2:42 PM' },
+    { text: 'That’s the point 😏', sent: true, ts: '2:43 PM' }
+  ];
+
+  const templates = [
+    { name: 'WhatsApp', color: '#075E54', bg: '#ECE5DD', bubbleSent: '#DCF8C6', bubbleRecv: '#FFFFFF', textSent: '#111', textRecv: '#111' },
+    { name: 'iMessage', color: '#007AFF', bg: '#FFFFFF', bubbleSent: '#007AFF', bubbleRecv: '#E9E9EB', textSent: '#FFF', textRecv: '#111' },
+    { name: 'AI Chat', color: '#10A37F', bg: '#343541', bubbleSent: '#10A37F', bubbleRecv: '#40414F', textSent: '#FFF', textRecv: '#FFF' },
+    { name: 'Instagram', color: '#833AB4', bg: '#FAFAFA', bubbleSent: '#E1306C', bubbleRecv: '#FFFFFF', textSent: '#FFF', textRecv: '#111' }
+  ];
+
+  // ── Particles ──
+  const particleCount = 50;
+  const particles = [];
+  for (let i = 0; i < particleCount; i++) {
+    particles.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      r: Math.random() * 2 + 0.5,
+      speedX: (Math.random() - 0.5) * 0.2,
+      speedY: (Math.random() - 0.5) * 0.2,
+      alpha: Math.random() * 0.4 + 0.1
+    });
+  }
+
+  function updateParticles(dt) {
+    for (const p of particles) {
+      p.x += p.speedX * dt;
+      p.y += p.speedY * dt;
+      if (p.x < 0) p.x = W;
+      if (p.x > W) p.x = 0;
+      if (p.y < 0) p.y = H;
+      if (p.y > H) p.y = 0;
+    }
+  }
+
+  function drawParticles() {
+    for (const p of particles) {
+      drawCircle(p.x, p.y, p.r, 'rgba(124,58,237,' + p.alpha + ')');
+    }
+  }
+
+  // ── Background gradient ──
+  function drawBackground(t) {
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, '#0a0a12');
+    grad.addColorStop(0.5, '#0d0d1a');
+    grad.addColorStop(1, '#08080e');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+    // Subtle radial glow
+    const cx = W * 0.5 + Math.sin(t * 0.3) * 40;
+    const cy = H * 0.4 + Math.cos(t * 0.25) * 30;
+    const rg = ctx.createRadialGradient(cx, cy, 0, cx, cy, 400);
+    rg.addColorStop(0, 'rgba(124,58,237,0.06)');
+    rg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = rg;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // ── Logo draw ──
+  function drawLogo(x, y, scale, opacity) {
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+    // Chat bubble icon
+    const iconX = -110, iconY = 0;
+    ctx.beginPath();
+    ctx.moveTo(iconX - 24, iconY - 16);
+    ctx.lineTo(iconX + 24, iconY - 16);
+    ctx.quadraticCurveTo(iconX + 32, iconY - 16, iconX + 32, iconY - 8);
+    ctx.lineTo(iconX + 32, iconY + 8);
+    ctx.quadraticCurveTo(iconX + 32, iconY + 16, iconX + 24, iconY + 16);
+    ctx.lineTo(iconX + 8, iconY + 16);
+    ctx.lineTo(iconX, iconY + 26);
+    ctx.lineTo(iconX - 8, iconY + 16);
+    ctx.lineTo(iconX - 24, iconY + 16);
+    ctx.quadraticCurveTo(iconX - 32, iconY + 16, iconX - 32, iconY + 8);
+    ctx.lineTo(iconX - 32, iconY - 8);
+    ctx.quadraticCurveTo(iconX - 32, iconY - 16, iconX - 24, iconY - 16);
+    ctx.closePath();
+    const iconGrad = ctx.createLinearGradient(iconX - 32, 0, iconX + 32, 0);
+    iconGrad.addColorStop(0, '#7C3AED');
+    iconGrad.addColorStop(1, '#3B82F6');
+    ctx.fillStyle = iconGrad;
+    ctx.fill();
+    // Three dots inside bubble
+    drawCircle(iconX - 10, iconY, 3, '#FFF');
+    drawCircle(iconX, iconY, 3, '#FFF');
+    drawCircle(iconX + 10, iconY, 3, '#FFF');
+    // Text "Mimicly"
+    drawText('Mimicly', 58, 0, 42, '#FFFFFF', 'left', 'bold', 0.5);
+    // Underline accent
+    const lineGrad = ctx.createLinearGradient(58, 22, 190, 22);
+    lineGrad.addColorStop(0, '#7C3AED');
+    lineGrad.addColorStop(1, '#3B82F6');
+    fillRoundedRect(58, 22, 132, 3, 1.5, lineGrad);
+    ctx.restore();
+  }
+
+  // ── Scene functions ──
+  function drawSceneIntro(t) {
+    // t: 0..1
+    const logoScale = easeOutBack(clamp(t, 0, 1));
+    const logoOpacity = clamp(t * 1.5, 0, 1);
+    drawLogo(W / 2, H * 0.35, logoScale, logoOpacity);
+    if (t > 0.7) {
+      const taglineT = easeOutCubic(clamp((t - 0.7) / 0.3, 0, 1));
+      drawText('Chat mockups that actually look real', W / 2, H * 0.52, 22, 'rgba(255,255,255,' + taglineT + ')', 'center', 'normal', 0.3);
+    }
+  }
+
+  function drawPhoneChat(phoneX, phoneY, phoneW, phoneH, msgProgress, phoneOpacity) {
+    ctx.save();
+    ctx.globalAlpha = phoneOpacity;
+    drawPhone(phoneX, phoneY, phoneW, phoneH, (sx, sy, sw, sh) => {
+      // Header
+      fillRoundedRect(sx, sy, sw, 44, 0, '#075E54');
+      drawCircle(sx + 22, sy + 28, 12, '#128C7E');
+      drawText('SD', sx + 22, sy + 28, 10, '#FFF', 'center', 'bold');
+      drawText('Sarah Chen', sx + 42, sy + 18, 11, '#FFF', 'left', 'bold');
+      drawText('online', sx + 42, sy + 32, 9, 'rgba(255,255,255,0.7)', 'left', 'normal');
+      // Chat area background
+      fillRoundedRect(sx, sy + 44, sw, sh - 44, 0, '#ECE5DD');
+      // Messages
+      let yOffset = sy + 60;
+      const maxBubbleW = sw * 0.72;
+      for (let i = 0; i < messages.length; i++) {
+        const msg = messages[i];
+        const appearT = clamp((msgProgress - i * 0.18) / 0.35, 0, 1);
+        if (appearT <= 0) continue;
+        const scale = easeOutBack(appearT);
+        const alpha = clamp(appearT * 1.2, 0, 1);
+        const bubbleX = msg.sent ? sx + sw - maxBubbleW - 10 : sx + 10;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.translate(bubbleX + (msg.sent ? maxBubbleW * 0.4 : maxBubbleW * 0.25), yOffset + 14);
+        ctx.scale(scale, scale);
+        ctx.translate(-(bubbleX + (msg.sent ? maxBubbleW * 0.4 : maxBubbleW * 0.25)), -(yOffset + 14));
+        const bColor = msg.sent ? '#DCF8C6' : '#FFFFFF';
+        const tColor = msg.sent ? '#111' : '#111';
+        const tsColor = msg.sent ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.4)';
+        const result = drawChatBubble(bubbleX, yOffset, maxBubbleW, msg.text, msg.sent, bColor, tColor, msg.ts, tsColor);
+        ctx.restore();
+        yOffset += result.height + 10;
+      }
+      // Typing indicator if msgProgress > last message
+      if (msgProgress > 0.85) {
+        const typingAlpha = clamp((msgProgress - 0.85) / 0.15, 0, 1);
+        ctx.save();
+        ctx.globalAlpha = typingAlpha;
+        fillRoundedRect(sx + 10, yOffset, 50, 28, 14, '#FFFFFF');
+        for (let i = 0; i < 3; i++) {
+          const dotAlpha = 0.4 + 0.3 * Math.sin(elapsed * 6 + i * 1.5);
+          drawCircle(sx + 22 + i * 14, yOffset + 14, 3.5, 'rgba(0,0,0,' + dotAlpha + ')');
+        }
+        ctx.restore();
+        yOffset += 36;
+      }
+      // Input bar
+      fillRoundedRect(sx, sy + sh - 36, sw, 36, 0, '#F0F0F0');
+      fillRoundedRect(sx + 10, sy + sh - 30, sw - 50, 24, 12, '#FFF');
+      drawText('Message', sx + 20, sy + sh - 18, 11, 'rgba(0,0,0,0.35)', 'left', 'normal');
+      drawCircle(sx + sw - 24, sy + sh - 18, 14, '#075E54');
+      drawText('➤', sx + sw - 24, sy + sh - 18, 14, '#FFF', 'center', 'normal');
+    });
+    ctx.restore();
+  }
+
+  function drawEditorPanel(panelX, panelY, panelW, panelH, editProgress, panelOpacity) {
+    ctx.save();
+    ctx.globalAlpha = panelOpacity;
+    const slideIn = easeOutCubic(clamp(editProgress, 0, 1));
+    const actualX = panelX - (1 - slideIn) * 80;
+    // Panel background
+    fillRoundedRect(actualX, panelY, panelW, panelH, 16, 'rgba(20,20,30,0.95)');
+    strokeRoundedRect(actualX, panelY, panelW, panelH, 16, 'rgba(124,58,237,0.3)', 1.5);
+    // Title
+    drawText('Edit Conversation', actualX + 20, panelY + 28, 16, '#FFF', 'left', 'bold');
+    // Avatar
+    const avatarX = actualX + 20, avatarY = panelY + 64;
+    drawAvatar(avatarX, avatarY, 22, 'SC', '#7C3AED', '#FFF');
+    drawText('Sarah Chen', avatarX + 52, avatarY - 8, 14, '#FFF', 'left', 'normal');
+    drawText('Tap to change avatar', avatarX + 52, avatarY + 12, 11, 'rgba(255,255,255,0.4)', 'left', 'normal');
+    // Timestamp field
+    drawText('Timestamp', actualX + 20, panelY + 108, 11, 'rgba(255,255,255,0.5)', 'left', 'normal');
+    fillRoundedRect(actualX + 20, panelY + 118, 150, 30, 8, 'rgba(255,255,255,0.08)');
+    drawText('2:45 PM', actualX + 32, panelY + 133, 14, '#FFF', 'left', 'normal');
+    // Color swatches
+    drawText('Bubble Color', actualX + 20, panelY + 166, 11, 'rgba(255,255,255,0.5)', 'left', 'normal');
+    const colors = ['#DCF8C6', '#007AFF', '#10A37F', '#E1306C', '#7C3AED', '#F59E0B'];
+    colors.forEach((c, i) => {
+      const cx = actualX + 24 + i * 34;
+      const cy = panelY + 192;
+      drawCircle(cx, cy, 12, c);
+      if (i === 0) strokeRoundedRect(cx - 12, cy - 12, 24, 24, 12, '#FFF', 2);
+    });
+    // Background color
+    drawText('Chat Background', actualX + 20, panelY + 222, 11, 'rgba(255,255,255,0.5)', 'left', 'normal');
+    const bgColors = ['#ECE5DD', '#FFFFFF', '#343541', '#FAFAFA'];
+    bgColors.forEach((c, i) => {
+      const cx = actualX + 24 + i * 44;
+      const cy = panelY + 248;
+      fillRoundedRect(cx - 14, cy - 10, 28, 20, 4, c);
+      if (i === 0) strokeRoundedRect(cx - 14, cy - 10, 28, 20, 4, '#7C3AED', 2);
+    });
+    // Reset button
+    fillRoundedRect(actualX + 20, panelY + 276, 110, 30, 8, 'rgba(124,58,237,0.2)');
+    strokeRoundedRect(actualX + 20, panelY + 276, 110, 30, 8, 'rgba(124,58,237,0.5)', 1);
+    drawText('↺ Reset', actualX + 75, panelY + 291, 13, '#C4B5FD', 'center', 'normal');
+    ctx.restore();
+  }
+
+  function drawTemplateCard(tx, ty, tw, th, template, alpha, scale) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(tx + tw / 2, ty + th / 2);
+    ctx.scale(scale, scale);
+    ctx.translate(-(tx + tw / 2), -(ty + th / 2));
+    fillRoundedRect(tx, ty, tw, th, 14, template.bg);
+    strokeRoundedRect(tx, ty, tw, th, 14, 'rgba(124,58,237,0.3)', 2);
+    // Mini phone content
+    const headerColor = template.color;
+    fillRoundedRect(tx, ty, tw, 28, 0, headerColor);
+    drawText(template.name, tx + 12, ty + 14, 11, '#FFF', 'left', 'bold');
+    // Mini bubbles
+    const bubbleY = ty + 36;
+    fillRoundedRect(tx + 8, bubbleY, tw * 0.55, 14, 7, template.bubbleRecv);
+    drawText('Hey! 👋', tx + 14, bubbleY + 7, 8, template.textRecv, 'left', 'normal');
+    fillRoundedRect(tx + tw * 0.45, bubbleY + 22, tw * 0.45, 14, 7, template.bubbleSent);
+    drawText('Made this in Mimicly', tx + tw * 0.45 + 8, bubbleY + 29, 7, template.textSent, 'left', 'normal');
+    fillRoundedRect(tx + 8, bubbleY + 44, tw * 0.5, 14, 7, template.bubbleRecv);
+    drawText('🔥🔥', tx + 14, bubbleY + 51, 8, template.textRecv, 'left', 'normal');
+    fillRoundedRect(tx + tw * 0.55, bubbleY + 66, tw * 0.38, 14, 7, template.bubbleSent);
+    drawText('Right?', tx + tw * 0.55 + 7, bubbleY + 73, 8, template.textSent, 'left', 'normal');
+    ctx.restore();
+  }
+
+  function drawTemplateGallery(progress, opacity) {
+    ctx.save();
+    ctx.globalAlpha = opacity;
+    const cardW = 190, cardH = 140;
+    const totalW = templates.length * cardW + (templates.length - 1) * 16;
+    const startX = W / 2 - totalW / 2;
+    const baseY = H * 0.38;
+    for (let i = 0; i < templates.length; i++) {
+      const cardX = startX + i * (cardW + 16);
+      const cardT = clamp((progress - i * 0.12) / 0.5, 0, 1);
+      const cardScale = easeOutBack(cardT);
+      const cardAlpha = clamp(cardT * 1.5, 0, 1);
+      drawTemplateCard(cardX, baseY, cardW, cardH, templates[i], cardAlpha, cardScale);
+    }
+    // Labels
+    if (progress > 0.7) {
+      const labelT = easeOutCubic(clamp((progress - 0.7) / 0.3, 0, 1));
+      drawText('63 templates. Every style you need.', W / 2, baseY + cardH + 42, 18, 'rgba(255,255,255,' + labelT + ')', 'center', 'normal', 0.2);
+      drawText('WhatsApp • iMessage • AI Chat • Instagram DM • Email • Game Chat', W / 2, baseY + cardH + 72, 13, 'rgba(255,255,255,' + labelT * 0.6 + ')', 'center', 'normal', 0.2);
+    }
+    ctx.restore();
+  }
+
+  // ── Main render ──
+  function render(time) {
+    const t = time % DUR;
+    const dt = 1 / 60;
+    updateParticles(dt);
+    drawBackground(time);
+
+    // Scene timeline
+    // Scene 0: Intro (0-4s)
+    // Scene 1: Phone chat build (4-12s)
+    // Scene 2: Editor (12-18s)
+    // Scene 3: Template gallery (18-25s)
+    // Scene 4: CTA (25-30s)
+
+    if (t < 4) {
+      // Intro
+      const sceneT = t / 4;
+      drawParticles();
+      drawSceneIntro(sceneT);
+    } else if (t < 12) {
+      // Phone chat showcase
+      const sceneT = (t - 4) / 8;
+      drawParticles();
+      // Transition in
+      const phoneInT = easeOutCubic(clamp(sceneT * 1.8, 0, 1));
+      const phoneX = W / 2 - 90 - (1 - phoneInT) * 200;
+      const phoneY = H * 0.44 - (1 - phoneInT) * 100;
+      const phoneW = 180, phoneH = 360;
+      // Show logo small in corner
+      if (sceneT > 0.15) {
+        const logoFade = easeOutCubic(clamp((sceneT - 0.15) / 0.5, 0, 1));
+        ctx.save();
+        ctx.globalAlpha = logoFade;
+        drawLogo(W / 2 + 180, H * 0.12, 0.55, 0.9);
+        ctx.restore();
+      }
+      drawPhoneChat(phoneX, phoneY, phoneW, phoneH, sceneT, 1);
+      // Label
+      if (sceneT > 0.5) {
+        const labelT = easeOutCubic(clamp((sceneT - 0.5) / 0.4, 0, 1));
+        drawText('Build a realistic chat in seconds', W / 2, H * 0.82, 20, 'rgba(255,255,255,' + labelT + ')', 'center', 'normal', 0.3);
+      }
+    } else if (t < 18) {
+      // Editor scene
+      const sceneT = (t - 12) / 6;
+      drawParticles();
+      // Transition phone out
+      const phoneOut = 1 - easeInOutCubic(clamp(sceneT * 1.2, 0, 1));
+      const phoneX = W / 2 - 180 + (1 - phoneOut) * 60;
+      const phoneY = H * 0.44;
+      const phoneW = 170, phoneH = 340;
+      drawPhoneChat(phoneX, phoneY, phoneW, phoneH, 1, phoneOut);
+      // Editor panel slides in
+      const editT = clamp((sceneT - 0.15) / 0.8, 0, 1);
+      const panelOpacity = clamp(editT * 1.2, 0, 1);
+      drawEditorPanel(W / 2 + 20, H * 0.16, 280, 320, editT, panelOpacity);
+      // Text
+      if (sceneT > 0.4) {
+        const textT = easeOutCubic(clamp((sceneT - 0.4) / 0.4, 0, 1));
+        drawText('Edit names, avatars, timestamps, colors', W / 2, H * 0.86, 19, 'rgba(255,255,255,' + textT + ')', 'center', 'normal', 0.3);
+      }
+    } else if (t < 25) {
+      // Template gallery
+      const sceneT = (t - 18) / 7;
+      drawParticles();
+      // Small header
+      if (sceneT > 0.05) {
+        const headerT = easeOutCubic(clamp((sceneT - 0.05) / 0.3, 0, 1));
+        drawText('Every chat style. One app.', W / 2, H * 0.18, 24, 'rgba(255,255,255,' + headerT + ')', 'center', 'bold', 0.3);
+      }
+      const galleryProgress = clamp((sceneT - 0.15) / 0.85, 0, 1);
+      const galleryOpacity = clamp(galleryProgress * 1.5, 0, 1);
+      drawTemplateGallery(galleryProgress, galleryOpacity);
+      // Mimicly logo small
+      if (sceneT > 0.7) {
+        const logoFade = easeOutCubic(clamp((sceneT - 0.7) / 0.3, 0, 1));
+        ctx.save();
+        ctx.globalAlpha = logoFade * 0.8;
+        drawLogo(W / 2, H * 0.88, 0.5, 0.9);
+        ctx.restore();
+      }
+    } else {
+      // CTA scene
+      const sceneT = (t - 25) / 5;
+      drawParticles();
+      // Dark overlay fade in
+      const overlayAlpha = easeInOutCubic(clamp(sceneT * 1.5, 0, 1)) * 0.5;
+      ctx.fillStyle = 'rgba(0,0,0,' + overlayAlpha + ')';
+      ctx.fillRect(0, 0, W, H);
+      // Logo
+      const logoScale = easeOutBack(clamp(sceneT * 1.2, 0, 1));
+      drawLogo(W / 2, H * 0.32, logoScale, clamp(sceneT * 2, 0, 1));
+      // Headline
+      if (sceneT > 0.3) {
+        const headlineT = easeOutExpo(clamp((sceneT - 0.3) / 0.6, 0, 1));
+        drawText('Make it look right.', W / 2, H * 0.48, 36, 'rgba(255,255,255,' + headlineT + ')', 'center', 'bold', 0.5);
+      }
+      // Subheadline
+      if (sceneT > 0.5) {
+        const subT = easeOutCubic(clamp((sceneT - 0.5) / 0.5, 0, 1));
+        drawText('63 templates · Edit everything · Export in seconds', W / 2, H * 0.56, 18, 'rgba(255,255,255,' + subT * 0.8 + ')', 'center', 'normal', 0.3);
+      }
+      // CTA button
+      if (sceneT > 0.65) {
+        const btnT = easeOutBack(clamp((sceneT - 0.65) / 0.35, 0, 1));
+        const btnW = 220, btnH = 52;
+        const btnX = W / 2 - btnW / 2, btnY = H * 0.66;
+        ctx.save();
+        ctx.translate(btnX + btnW / 2, btnY + btnH / 2);
+        ctx.scale(btnT, btnT);
+        ctx.translate(-(btnX + btnW / 2), -(btnY + btnH / 2));
+        const btnGrad = ctx.createLinearGradient(btnX, btnY, btnX + btnW, btnY + btnH);
+        btnGrad.addColorStop(0, '#7C3AED');
+        btnGrad.addColorStop(1, '#3B82F6');
+        ctx.shadowColor = 'rgba(124,58,237,0.5)';
+        ctx.shadowBlur = 20;
+        ctx.shadowOffsetY = 4;
+        fillRoundedRect(btnX, btnY, btnW, btnH, 26, btnGrad);
+        ctx.shadowColor = 'transparent';
+        drawText('Try Mimicly Free', W / 2, btnY + btnH / 2, 17, '#FFF', 'center', 'bold', 0.3);
+        ctx.restore();
+      }
+      // URL
+      if (sceneT > 0.8) {
+        const urlT = easeOutCubic(clamp((sceneT - 0.8) / 0.2, 0, 1));
+        drawText('mimicly.app', W / 2, H * 0.78, 16, 'rgba(255,255,255,' + urlT * 0.5 + ')', 'center', 'normal', 0.4);
+      }
+    }
+
+    // Fade out near loop end
+    if (t > DUR - 0.5) {
+      const fadeT = (t - (DUR - 0.5)) / 0.5;
+      ctx.fillStyle = 'rgba(0,0,0,' + fadeT + ')';
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
+
+  // ── Animation loop ──
+  function animate() {
+    const now = performance.now();
+    elapsed = (now - startTime) / 1000;
+    render(elapsed);
+    requestAnimationFrame(animate);
+  }
+
+  // ── Resize handling ──
+  function resize() {
+    const scaleX = window.innerWidth / W;
+    const scaleY = window.innerHeight / H;
+    const scale = Math.min(scaleX, scaleY);
+    canvas.style.width = (W * scale) + 'px';
+    canvas.style.height = (H * scale) + 'px';
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // Start
+  animate();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<!-- Pipeline: JavaScript (Canvas 2D) · Playwright · FFmpeg -->
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Orbe | Seu dinheiro em órbita</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+  }
+  canvas {
+    display: block; width: 100%; height: 100%;
+    object-fit: contain;
+  }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+window.DUR = 20;
+
+const canvas = document.getElementById('stage');
+const ctx = canvas.getContext('2d', { alpha: false });
+const F = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+
+// 9:16 Viewport simulado dentro do stage 1280x720 (405 x 720)
+const VW = 405, VH = 720, VX = (1280 - VW) / 2, VY = 0, R = 40;
+const CX = VX + VW / 2, CY = 230;
+
+const easeOut = t => 1 - Math.pow(1 - t, 3);
+const easeInOut = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const brl = n => n.toFixed(2).replace('.', ',');
+
+const scenes = [
+  { start: 0.5,  end: 5.5,  icon: 'mercado',     label: 'Mercado',           val: 'R$ 184,50', cash: 4.62 },
+  { start: 6.0,  end: 11.0, icon: 'posto',       label: 'Posto de Gasolina', val: 'R$ 250,00', cash: 6.25 },
+  { start: 11.5, end: 16.5, icon: 'restaurante', label: 'Restaurante',       val: 'R$ 96,80',  cash: 2.42 }
+];
+
+const params = new URLSearchParams(location.search);
+const tOffset = parseFloat(params.get('t')) || 0;
+
+function drawIcon(type, x, y) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.strokeStyle = '#00E5FF';
+  ctx.fillStyle = '#00E5FF';
+  ctx.lineWidth = 2.2;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+
+  if (type === 'mercado') {
+    ctx.beginPath();
+    ctx.moveTo(-14, -10); ctx.lineTo(-10, 8); ctx.lineTo(8, 8); ctx.lineTo(12, -10); ctx.closePath();
+    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-18, -14); ctx.lineTo(-14, -10); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-4, -10); ctx.lineTo(-2, 8); ctx.moveTo(4, -10); ctx.lineTo(2, 8); ctx.stroke();
+    ctx.beginPath(); ctx.arc(-5, 13, 2, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(6, 13, 2, 0, 7); ctx.fill();
+  } else if (type === 'posto') {
+    ctx.beginPath(); ctx.roundRect(-12, -14, 16, 28, 2); ctx.stroke();
+    ctx.beginPath(); ctx.roundRect(-8, -9, 8, 8, 1); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(4, -6); ctx.lineTo(8, -6); ctx.lineTo(12, 2); ctx.lineTo(12, 10); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-12, 14); ctx.lineTo(12, 14); ctx.stroke();
+  } else if (type === 'restaurante') {
+    ctx.beginPath();
+    ctx.moveTo(-8, -14); ctx.lineTo(-8, -4);
+    ctx.moveTo(-5, -14); ctx.lineTo(-5, -4);
+    ctx.moveTo(-2, -14); ctx.lineTo(-2, -4);
+    ctx.arc(-5, -4, 3, 0, Math.PI);
+    ctx.moveTo(-5, -1); ctx.lineTo(-5, 14);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(7, -14); ctx.quadraticCurveTo(2, -8, 5, -2);
+    ctx.lineTo(5, 14); ctx.moveTo(9, 14); ctx.lineTo(5, 14);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawStatusBar() {
+  ctx.fillStyle = '#FFF';
+  ctx.font = `600 13px ${F}`;
+  ctx.textAlign = 'left';
+  ctx.fillText('9:41', VX + 32, 36);
+
+  ctx.textAlign = 'right';
+  ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.roundRect(VX + VW - 56, 24, 24, 12, 3); ctx.stroke();
+  ctx.fillStyle = '#FFF';
+  ctx.beginPath(); ctx.roundRect(VX + VW - 54, 26, 18, 8, 1); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(VX + VW - 30, 27, 2, 6, 1); ctx.fill();
+}
+
+function drawOrbe(t, energy) {
+  ctx.save();
+  ctx.translate(CX, CY);
+  let pulse = 1 + Math.sin(t * 2) * 0.015 + energy * 0.07;
+  ctx.scale(pulse, pulse);
+
+  ctx.shadowBlur = 40 + energy * 35;
+  ctx.shadowColor = 'rgba(0, 229, 255, 0.55)';
+  let g = ctx.createRadialGradient(-16, -20, 4, 0, 0, 54);
+  g.addColorStop(0, '#E6FFFF');
+  g.addColorStop(0.2, '#00E5FF');
+  g.addColorStop(0.7, '#7C4DFF');
+  g.addColorStop(1, '#160A33');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(0, 0, 54, 0, 7); ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Wireframe interno (Data-globe)
+  ctx.save();
+  ctx.beginPath(); ctx.arc(0, 0, 54, 0, 7); ctx.clip();
+  ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+  ctx.lineWidth = 1;
+  for (let i = -2; i <= 2; i++) {
+    let ly = i * 18, r = Math.sqrt(54 * 54 - ly * ly);
+    ctx.beginPath(); ctx.ellipse(0, ly, r, r * 0.22, 0, 0, 7); ctx.stroke();
+  }
+  ctx.rotate(t * 0.45);
+  for (let i = 0; i < 3; i++) {
+    ctx.rotate(Math.PI / 3);
+    ctx.beginPath(); ctx.ellipse(0, 0, 20, 54, 0, 0, 7); ctx.stroke();
+  }
+  ctx.restore();
+
+  // Brilho de vidro
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.beginPath(); ctx.ellipse(-18, -23, 15, 7, -Math.PI / 4, 0, 7); ctx.fill();
+
+  // Anel orbital
+  ctx.rotate(t * 0.35);
+  ctx.scale(1, 0.32);
+  ctx.strokeStyle = 'rgba(0, 255, 163, 0.75)';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(0, 0, 80, 0, 7); ctx.stroke();
+
+  let ang = t * 2.2;
+  ctx.fillStyle = '#00FFA3';
+  ctx.shadowBlur = 14; ctx.shadowColor = '#00FFA3';
+  ctx.beginPath(); ctx.arc(Math.cos(ang) * 80, Math.sin(ang) * 80, 4.5, 0, 7); ctx.fill();
+  ctx.restore();
+}
+
+function drawCounter(val) {
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#8A94A6';
+  ctx.font = `600 12px ${F}`;
+  ctx.fillText('CASHBACK ACUMULADO', CX, 342);
+
+  ctx.fillStyle = '#FFF';
+  ctx.shadowBlur = 22; ctx.shadowColor = 'rgba(0,255,163,0.35)';
+  ctx.font = `700 44px ${F}`;
+  ctx.fillText(`R$ ${brl(val)}`, CX, 388);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = '#00FFA3';
+  ctx.font = `500 14px ${F}`;
+  ctx.fillText('↗  Rendendo automaticamente', CX, 416);
+}
+
+function drawCard(s, t) {
+  let inP = easeOut(clamp((t - s.start) / 0.6));
+  let outP = easeInOut(clamp((t - (s.end - 0.5)) / 0.5));
+  let alpha = inP * (1 - outP);
+  let y = lerp(620, 420, inP) + outP * 80;
+  if (alpha <= 0.01) return null;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  let cw = 325, ch = 116, cx = VX + (VW - cw) / 2;
+
+  ctx.shadowBlur = 32; ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.fillStyle = 'rgba(20, 26, 38, 0.78)';
+  ctx.beginPath(); ctx.roundRect(cx, y, cw, ch, 20); ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = 'rgba(255,255,255,0.09)';
+  ctx.lineWidth = 1; ctx.stroke();
+
+  ctx.fillStyle = 'rgba(0, 229, 255, 0.10)';
+  ctx.beginPath(); ctx.roundRect(cx + 18, y + 25, 66, 66, 16); ctx.fill();
+  drawIcon(s.icon, cx + 51, y + 58);
+
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#8A94A6';
+  ctx.font = `600 12px ${F}`;
+  ctx.fillText(s.label.toUpperCase(), cx + 100, y + 40);
+
+  ctx.fillStyle = '#FFF';
+  ctx.font = `600 25px ${F}`;
+  ctx.fillText(s.val, cx + 100, y + 72);
+
+  ctx.fillStyle = '#00FFA3';
+  ctx.font = `600 13px ${F}`;
+  ctx.fillText(`+ R$ ${brl(s.cash)} recebidos`, cx + 100, y + 94);
+
+  ctx.fillStyle = 'rgba(0, 255, 163, 0.12)';
+  ctx.beginPath(); ctx.roundRect(cx + cw - 84, y + 22, 66, 22, 11); ctx.fill();
+  ctx.fillStyle = '#00FFA3';
+  ctx.font = `700 10px ${F}`;
+  ctx.textAlign = 'center';
+  ctx.fillText('2,5% BACK', cx + cw - 51, y + 36);
+
+  ctx.restore();
+  return { cx, y, cw, alpha, flyP: clamp((t - (s.start + 0.6)) / 1.2) };
+}
+
+function drawParticles(info, t) {
+  if (!info || info.flyP <= 0 || info.flyP >= 1.02) return;
+  let p = info.flyP;
+  ctx.save();
+  ctx.globalAlpha = info.alpha * (1 - clamp((p - 0.85) / 0.15));
+
+  let sx = info.cx + info.cw - 51, sy = info.y + 33;
+  let ex = CX, ey = CY;
+  let cpx = sx + 45, cpy = sy - 160;
+
+  for (let i = 0; i < 14; i++) {
+    let delay = i * 0.035;
+    let ip = clamp((p - delay) / (1 - delay));
+    if (ip <= 0 || ip >= 1) continue;
+
+    let e = easeInOut(ip), mt = 1 - e;
+    let px = mt * mt * sx + 2 * mt * e * cpx + e * e * ex;
+    let py = mt * mt * sy + 2 * mt * e * cpy + e * e * ey;
+    px += Math.sin(i * 12 + t * 9) * 9 * Math.sin(e * Math.PI);
+    py += Math.cos(i * 8 + t * 11) * 7 * Math.sin(e * Math.PI);
+
+    ctx.fillStyle = '#00FFA3';
+    ctx.shadowBlur = 12; ctx.shadowColor = '#00FFA3';
+    ctx.beginPath(); ctx.arc(px, py, 2 + (i % 3), 0, 7); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawDust(t) {
+  ctx.save();
+  ctx.fillStyle = '#FFF';
+  for (let i = 0; i < 32; i++) {
+    let seed = i * 123.456;
+    let x = VX + (Math.sin(seed) * 0.5 + 0.5) * VW;
+    let y = (Math.cos(seed) * 0.5 + 0.5) * VH;
+    y = (y - t * (6 + (i % 3) * 5)) % VH;
+    if (y < 0) y += VH;
+    ctx.globalAlpha = 0.08 + 0.18 * Math.sin(t * 2 + seed);
+    ctx.beginPath(); ctx.arc(x, y, 0.6 + (i % 3) * 0.5, 0, 7); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawOutro(t) {
+  let pIn = easeOut(clamp((t - 16.5) / 1.2));
+  let pOut = easeInOut(clamp((t - 19.2) / 0.8));
+  let p = pIn * (1 - pOut);
+  if (p <= 0) return;
+
+  ctx.save();
+  ctx.fillStyle = `rgba(4, 6, 10, ${p * 0.88})`;
+  ctx.fillRect(VX, VY, VW, VH);
+  ctx.globalAlpha = p;
+  let oy = lerp(30, 0, pIn) + pOut * 20;
+
+  ctx.save();
+  ctx.translate(CX, 250 + oy);
+  ctx.rotate(-Math.PI / 4);
+  ctx.strokeStyle = '#00E5FF';
+  ctx.lineWidth = 4;
+  ctx.shadowBlur = 26; ctx.shadowColor = '#00E5FF';
+  ctx.beginPath(); ctx.arc(0, 0, 40, 0, 7); ctx.stroke();
+  ctx.rotate(t * 1.5);
+  ctx.strokeStyle = '#00FFA3';
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(0, 0, 54, 0, Math.PI * 1.4); ctx.stroke();
+  ctx.restore();
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#FFF';
+  ctx.font = `800 20px ${F}`;
+  ctx.fillText('O  R  B  E', CX, 338 + oy);
+
+  ctx.font = `700 40px ${F}`;
+  ctx.fillText('Seu dinheiro', CX, 412 + oy);
+  ctx.fillStyle = '#00E5FF';
+  ctx.fillText('em órbita.', CX, 458 + oy);
+
+  ctx.fillStyle = '#8A94A6';
+  ctx.font = `400 15px ${F}`;
+  ctx.fillText('Compre no dia a dia. Receba de volta.', CX, 502 + oy);
+
+  let uw = 270, uh = 56, ux = CX - uw / 2, uy = 556 + oy;
+  let ug = ctx.createLinearGradient(ux, uy, ux + uw, uy + uh);
+  ug.addColorStop(0, '#00B8D4'); ug.addColorStop(1, '#7C4DFF');
+  ctx.fillStyle = ug;
+  ctx.shadowBlur = 32; ctx.shadowColor = 'rgba(124,77,255,0.6)';
+  ctx.beginPath(); ctx.roundRect(ux, uy, uw, uh, 28); ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.roundRect(ux + 1, uy + 1, uw - 2, uh - 2, 27); ctx.stroke();
+
+  ctx.fillStyle = '#FFF';
+  ctx.font = `600 18px ${F}`;
+  ctx.fillText('lp.meuorbe.com.br', CX - 6, uy + 35);
+  ctx.font = `600 16px ${F}`;
+  ctx.fillText('↗', ux + uw - 30, uy + 34);
+
+  ctx.restore();
+}
+
+function draw(t) {
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, 1280, 720);
+
+  let outer = ctx.createRadialGradient(640, 360, 180, 640, 360, 620);
+  outer.addColorStop(0, 'rgba(18, 28, 55, 0.35)');
+  outer.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = outer;
+  ctx.fillRect(0, 0, 1280, 720);
+
+  ctx.save();
+  ctx.beginPath(); ctx.roundRect(VX, VY, VW, VH, R); ctx.clip();
+
+  let bg = ctx.createLinearGradient(VX, 0, VX + VW, VH);
+  bg.addColorStop(0, '#0A0E17'); bg.addColorStop(1, '#04060A');
+  ctx.fillStyle = bg; ctx.fillRect(VX, VY, VW, VH);
+
+  let glow = ctx.createRadialGradient(CX, CY, 10, CX, CY, 330);
+  glow.addColorStop(0, 'rgba(124, 77, 255, 0.18)');
+  glow.addColorStop(0.5, 'rgba(0, 229, 255, 0.05)');
+  glow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glow; ctx.fillRect(VX, VY, VW, VH);
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.015)';
+  ctx.lineWidth = 1; ctx.beginPath();
+  for (let i = 0; i <= VH; i += 45) { ctx.moveTo(VX, i); ctx.lineTo(VX + VW, i); }
+  for (let i = 0; i <= VW; i += 45) { ctx.moveTo(VX + i, 0); ctx.lineTo(VX + i, VH); }
+  ctx.stroke();
+
+  drawDust(t);
+
+  let intro = easeOut(clamp(t / 0.8));
+  let mainAlpha = intro * (1 - easeInOut(clamp((t - 16.5) / 1.0)));
+
+  ctx.save();
+  ctx.globalAlpha = mainAlpha;
+  drawStatusBar();
+
+  let displayCash = 0, energy = 0, active = null;
+  for (let s of scenes) {
+    if (t >= s.end) displayCash += s.cash;
+    else if (t >= s.start) {
+      let flyP = clamp((t - (s.start + 0.6)) / 1.2);
+      displayCash += s.cash * easeOut(flyP);
+      energy = Math.sin(flyP * Math.PI) * 0.9;
+      active = s;
+    }
+  }
+
+  drawOrbe(t, energy);
+  drawCounter(displayCash);
+  let info = active ? drawCard(active, t) : null;
+  drawParticles(info, t);
+  ctx.restore();
+
+  drawOutro(t);
+
+  let ref = ctx.createLinearGradient(VX, VY, VX + VW * 0.8, VH * 0.5);
+  ref.addColorStop(0, 'rgba(255,255,255,0.04)');
+  ref.addColorStop(0.5, 'rgba(255,255,255,0)');
+  ctx.fillStyle = ref; ctx.fillRect(VX, VY, VW, VH);
+  ctx.restore();
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.roundRect(VX, VY, VW, VH, R); ctx.stroke();
+  ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+  ctx.lineWidth = 6;
+  ctx.beginPath(); ctx.roundRect(VX - 3, VY - 3, VW + 6, VH + 6, R + 3); ctx.stroke();
+
+  ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.roundRect(CX - 50, 12, 100, 26, 13); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = '#0A111A';
+  ctx.beginPath(); ctx.arc(CX + 36, 25, 4, 0, 7); ctx.fill();
+}
+
+function loop(now) {
+  let t = (now / 1000 + tOffset) % window.DUR;
+  draw(t);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

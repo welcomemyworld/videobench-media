@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8"><title>X ショーリール</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=15;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px'}
+addEventListener('resize',fit);fit();
+const off=parseFloat(new URLSearchParams(location.search).get('t'))||0;
+const t0=performance.now()-off*1000;
+const F='"Hiragino Sans","Noto Sans JP","Yu Gothic",sans-serif';
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const eo=t=>1-Math.pow(1-cl(t),3);
+// phone frame (vertical 9:16) centered
+const PW=405,PH=720,PX=(1280-PW)/2;
+const stars=[...Array(90)].map((_,i)=>({x:Math.random()*1280,y:Math.random()*720,s:Math.random()*2+.5,p:Math.random()*6}));
+function txt(s,X,Y,sz,col,a=1,w='700',al='center'){x.globalAlpha=cl(a);x.fillStyle=col;x.font=w+' '+sz+'px '+F;x.textAlign=al;x.fillText(s,X,Y);x.globalAlpha=1}
+function rr(X,Y,W,H,r){x.beginPath();x.roundRect(X,Y,W,H,r)}
+function fadeIO(lt){return cl(lt/0.4)*cl((3-lt)/0.35)}
+function xLogo(cx,cy,s,a){x.save();x.globalAlpha=a;x.strokeStyle='#fff';x.lineWidth=s*.14;x.lineCap='round';
+x.beginPath();x.moveTo(cx-s/2,cy-s/2);x.lineTo(cx+s/2,cy+s/2);x.moveTo(cx+s/2,cy-s/2);x.lineTo(cx-s/2,cy+s/2);x.stroke();x.restore()}
+function avatar(cx,cy,r,a){x.save();x.globalAlpha=a;const g=x.createLinearGradient(cx-r,cy-r,cx+r,cy+r);g.addColorStop(0,'#1d9bf0');g.addColorStop(1,'#8b5cf6');
+x.fillStyle=g;x.beginPath();x.arc(cx,cy,r,0,7);x.fill();x.fillStyle='rgba(255,255,255,.9)';x.beginPath();x.arc(cx,cy-r*.2,r*.32,0,7);x.fill();
+x.beginPath();x.arc(cx,cy+r*.75,r*.6,Math.PI,0);x.fill();x.restore()}
+function post(X,Y,W,a,lines,likes,imp){x.save();x.globalAlpha=a;rr(X,Y,W,170,18);x.fillStyle='#16181c';x.fill();x.strokeStyle='#2f3336';x.lineWidth=1.5;x.stroke();x.restore();
+avatar(X+34,Y+36,18,a);txt('あなた',X+62,Y+32,16,'#fff',a,'700','left');txt('@your_account',X+62,Y+52,13,'#71767b',a,'400','left');
+lines.forEach((l,i)=>txt(l,X+22,Y+86+i*24,16,'#e7e9ea',a,'500','left'));
+txt('♡ '+likes+'   ↻ '+Math.floor(likes/6)+'   📊 '+imp,X+22,Y+152,13,'#71767b',a,'500','left')}
+function frame(){
+const T=((performance.now()-t0)/1000%DUR+DUR)%DUR;
+x.fillStyle='#05060a';x.fillRect(0,0,1280,720);
+// ambient side
+const hue=[210,200,195,0,265][Math.min(4,Math.floor(T/3))];
+const bg=x.createRadialGradient(640,360,50,640,360,700);bg.addColorStop(0,`hsla(${hue},80%,30%,.35)`);bg.addColorStop(1,'transparent');x.fillStyle=bg;x.fillRect(0,0,1280,720);
+stars.forEach(s=>{x.globalAlpha=.3+.3*Math.sin(T*2+s.p);x.fillStyle='#fff';x.fillRect(s.x,(s.y-T*s.s*8+720)%720,s.s,s.s)});x.globalAlpha=1;
+// phone stage
+x.save();rr(PX,0,PW,PH,0);x.clip();
+const g=x.createLinearGradient(0,0,0,720);g.addColorStop(0,'#000');g.addColorStop(1,`hsl(${hue},60%,8%)`);x.fillStyle=g;x.fillRect(PX,0,PW,PH);
+const cx=640,sc=Math.floor(T/3),lt=T-sc*3,a=fadeIO(lt);
+// progress bar
+for(let i=0;i<5;i++){x.fillStyle='rgba(255,255,255,.25)';x.fillRect(PX+16+i*76,18,70,3);x.fillStyle='#fff';x.fillRect(PX+16+i*76,18,70*cl((T-i*3)/3),3)}
+txt(['01 はじまり','02 やってきたこと','03 伸びた数字','04 現実','05 これから'][sc],PX+20,50,13,'#9aa',a,'600','left');
+if(sc==0){xLogo(cx,170,60*eo(lt/.6),a);avatar(cx,300,52,a*eo(lt/.5));
+txt('あなた',cx,385,26,'#fff',a);txt('@your_account',cx,412,15,'#71767b',a,'400');
+txt('20XX年',cx,500-10*eo(lt),44,'#1d9bf0',a*eo((lt-.5)/.6),'800');
+txt('Xを、はじめた。',cx,555,30,'#fff',a*eo((lt-.9)/.6),'800');
+txt('フォロワー 0 からのスタート',cx,600,15,'#8899a6',a*eo((lt-1.3)/.6),'500')}
+if(sc==1){txt('毎日、積み上げた。',cx,140,32,'#fff',a,'800');
+['📝 毎日投稿を続けた','💡 学びをそのまま発信','💬 リプで一人ずつ交流','🔁 反応を見て改善'].forEach((s,i)=>{const k=eo((lt-.3-i*.35)/.5);
+x.save();x.globalAlpha=a*k;rr(PX+40+(1-k)*60,200+i*78,PW-80,60,14);x.fillStyle='rgba(29,155,240,.12)';x.fill();x.strokeStyle='rgba(29,155,240,.5)';x.stroke();x.restore();
+txt(s,PX+62+(1-k)*60,238+i*78,18,'#fff',a*k,'600','left')});
+txt('投稿数 '+Math.floor(eo(lt/2.4)*1000).toLocaleString()+'+',cx,560,40,'#1d9bf0',a,'800')}
+if(sc==2){const k=eo(lt/2);txt('伸びたポスト',cx,120,20,'#9aa',a,'600');
+post(PX+28,145,PW-56,a*eo(lt/.5),['届けたい人に、届いた。','続けた日々が、ここで報われた。'],Math.floor(k*12000).toLocaleString(),Math.floor(k*100)+'万');
+const n=Math.floor(k*1000000);x.save();x.shadowColor='#1d9bf0';x.shadowBlur=30;txt(n.toLocaleString(),cx,430,54,'#fff',a,'900');x.restore();
+txt('インプレッション',cx,470,20,'#1d9bf0',a,'700');
+txt('フォロワー +'+Math.floor(k*5000).toLocaleString(),cx,560,28,'#fff',a*eo((lt-.6)/.6),'800')}
+if(sc==3){const sh=lt<1.2?Math.sin(lt*60)*3*(1.2-lt):0;
+txt('でも、',cx+sh,200,30,'#aaa',a,'700');txt('まだ足りない。',cx+sh,260,42,'#fff',a*eo((lt-.3)/.5),'900');
+txt('目標まで',PX+40,370,16,'#aaa',a,'600','left');
+rr(PX+40,385,PW-80,22,11);x.fillStyle='#222';x.fill();
+const p=.32*eo((lt-.6)/1);rr(PX+40,385,(PW-80)*p,22,11);x.fillStyle='#f4212e';x.fill();
+txt(Math.round(p*100)+'%',PX+PW-40,370,16,'#f4212e',a,'800','right');
+txt('数字は伸びた。',cx,480,20,'#ccc',a*eo((lt-1.2)/.5),'500');
+txt('けど、届けたい人はもっといる。',cx,515,20,'#ccc',a*eo((lt-1.6)/.5),'500')}
+if(sc==4){const fa=cl(lt/.4);for(let i=0;i<24;i++){const an=i/24*6.283+T*.3,r=60+eo(lt/2)*160;
+x.fillStyle=`hsla(${200+i*4},90%,65%,${.5*fa})`;x.beginPath();x.arc(cx+Math.cos(an)*r,330+Math.sin(an)*r,3,0,7);x.fill()}
+xLogo(cx,330,40,fa);
+txt('ここから、',cx,560,30,'#fff',fa*eo((lt-.3)/.5),'800');
+txt('もっと遠くへ。',cx,610,40,'#1d9bf0',fa*eo((lt-.7)/.5),'900');
+txt('フォローして、続きを見届けて。 @your_account',cx,665,14,'#8899a6',fa*eo((lt-1.3)/.5),'500')}
+x.restore();
+x.strokeStyle='rgba(255,255,255,.15)';x.lineWidth=2;x.strokeRect(PX,0,PW,PH);
+requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

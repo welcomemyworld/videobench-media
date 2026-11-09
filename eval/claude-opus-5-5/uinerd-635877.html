@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Last Prost – Oktoberfest</title>
+<!-- No character image was attached. A Bavarian character is drawn in code instead.
+     Rendered silent, since no external sounds are allowed. Add audio in post with ffmpeg if needed:
+     clink at 8.0s, crowd cheer at 8.0–9.5s, light switch-offs at 9.0–12.5s, wind ambience throughout. -->
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=15;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)||0;
+const t0=performance.now()-off*1000;
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const ease=v=>{v=cl(v);return v*v*(3-2*v)};
+function rnd(i){const s=Math.sin(i*127.1+311.7)*43758.5453;return s-Math.floor(s);}
+// lights go out left to right between 9s and 12.5s
+function lit(px,t){const k=9+px/1280*3.2+rnd(px)*0.3;return t<k?1:Math.max(0,1-(t-k)*6);}
+const stars=[...Array(140)].map((_,i)=>[rnd(i)*1280,rnd(i+500)*380,rnd(i+900)*1.5+0.3]);
+const tents=[{x:60,w:260,h:150,c:'#3b5fa8'},{x:360,w:200,h:120,c:'#a83b3b'},{x:900,w:300,h:160,c:'#2f7d55'}];
+function bulb(px,py,r,col,a){if(a<=0.01){x.fillStyle='#222';x.beginPath();x.arc(px,py,r*0.5,0,7);x.fill();return;}
+ x.globalCompositeOperation='lighter';const g=x.createRadialGradient(px,py,0,px,py,r*4);
+ g.addColorStop(0,col);g.addColorStop(1,'rgba(0,0,0,0)');x.globalAlpha=a*0.6;x.fillStyle=g;x.beginPath();x.arc(px,py,r*4,0,7);x.fill();
+ x.globalAlpha=a;x.fillStyle='#fff8e0';x.beginPath();x.arc(px,py,r*0.6,0,7);x.fill();x.globalAlpha=1;x.globalCompositeOperation='source-over';}
+let wheelAng=0,lastT=null;
+function mug(px,py,s,ang,fill){x.save();x.translate(px,py);x.rotate(ang);x.scale(s,s);
+ x.fillStyle='rgba(230,240,255,0.35)';x.fillRect(-22,-60,44,62);
+ x.fillStyle='#e8a51c';x.fillRect(-19,-48*fill,38,48*fill);
+ x.fillStyle='#fffbe8';x.beginPath();x.ellipse(0,-60,24,9,0,0,7);x.fill();
+ x.beginPath();x.arc(-10,-64,8,0,7);x.arc(8,-65,9,0,7);x.fill();
+ x.strokeStyle='rgba(230,240,255,0.7)';x.lineWidth=7;x.beginPath();x.arc(24,-30,14,-1.4,1.4);x.stroke();
+ x.strokeStyle='rgba(255,255,255,0.5)';x.lineWidth=2;for(let i=-12;i<=12;i+=12){x.beginPath();x.moveTo(i,-52);x.lineTo(i,-4);x.stroke();}
+ x.restore();}
+function frame(now){
+ let T=(now-t0)/1000;const t=((T%DUR)+DUR)%DUR;
+ const dt=lastT===null?0:Math.max(0,Math.min(0.1,t-lastT));lastT=t;
+ const glob=1-ease((t-9.3)/3.5);// overall lit-ness
+ // sky
+ const g=x.createLinearGradient(0,0,0,720);
+ g.addColorStop(0,'#05061a');g.addColorStop(1,`rgb(${20+50*glob|0},${12+25*glob|0},${40+10*glob|0})`);
+ x.fillStyle=g;x.fillRect(0,0,1280,720);
+ for(const s of stars){x.globalAlpha=(0.3+0.7*(1-glob))*(0.6+0.4*Math.sin(t*2+s[0]));x.fillStyle='#fff';x.fillRect(s[0],s[1],s[2],s[2]);}
+ x.globalAlpha=1;
+ // moon
+ x.fillStyle='#f3efd8';x.beginPath();x.arc(1120,90,30,0,7);x.fill();x.fillStyle='#05061a';x.beginPath();x.arc(1132,82,28,0,7);x.fill();
+ // ferris wheel
+ const wl=lit(700,t);wheelAng+=dt*0.25*Math.max(0,1-ease((t-11)/2));
+ const wx=700,wy=250,R=170;
+ x.strokeStyle='#30303e';x.lineWidth=6;x.beginPath();x.moveTo(wx-90,520);x.lineTo(wx,wy);x.lineTo(wx+90,520);x.stroke();
+ x.lineWidth=3;x.beginPath();x.arc(wx,wy,R,0,7);x.stroke();
+ for(let i=0;i<16;i++){const a=wheelAng+i*Math.PI/8;x.beginPath();x.moveTo(wx,wy);x.lineTo(wx+Math.cos(a)*R,wy+Math.sin(a)*R);x.stroke();}
+ for(let i=0;i<48;i++){const a=wheelAng+i*Math.PI/24;const hue=['#ff4a6a','#ffd04a','#4ad0ff'][i%3];
+  bulb(wx+Math.cos(a)*R,wy+Math.sin(a)*R,3,hue,wl*(0.7+0.3*Math.sin(t*6+i)));}
+ for(let i=0;i<16;i+=2){const a=wheelAng+i*Math.PI/8;const gx=wx+Math.cos(a)*R,gy=wy+Math.sin(a)*R;
+  x.fillStyle=wl>0.1?'#c23a4a':'#3a1a20';x.fillRect(gx-11,gy,22,18);}
+ // tents
+ for(const tn of tents){const l=lit(tn.x+tn.w/2,t);const by=540;
+  x.fillStyle=tn.c;x.fillRect(tn.x,by-tn.h,tn.w,tn.h);
+  x.fillStyle='rgba(0,0,0,0.35)';for(let i=0;i<tn.w;i+=40)x.fillRect(tn.x+i,by-tn.h,20,tn.h);
+  x.fillStyle='#ece6d2';x.beginPath();x.moveTo(tn.x-15,by-tn.h);x.lineTo(tn.x+tn.w/2,by-tn.h-60);x.lineTo(tn.x+tn.w+15,by-tn.h);x.fill();
+  x.fillStyle=`rgba(255,190,90,${0.15+0.75*l})`;for(let i=20;i<tn.w-30;i+=50)x.fillRect(tn.x+i,by-tn.h+40,26,30);
+  for(let i=0;i<=12;i++){const px=tn.x-15+(tn.w+30)*i/12;const py=by-tn.h-60+60*Math.abs(i-6)/6;bulb(px,py,3,'#ffcf6a',lit(px,t));}}
+ // ground + crowd silhouettes
+ x.fillStyle='#120d10';x.fillRect(0,540,1280,180);
+ x.fillStyle='#07050a';for(let i=0;i<40;i++){const px=rnd(i+40)*1280,h=40+rnd(i+70)*30,bob=Math.sin(t*4+i)*3*glob;
+  x.beginPath();x.arc(px,560-h+bob,9,0,7);x.fill();x.fillRect(px-11,560-h+8+bob,22,h);}
+ // garland across top
+ for(let i=0;i<=30;i++){const px=i*1280/30,py=40+Math.sin(i/30*Math.PI*3)*18+24;bulb(px,py,3.5,i%2?'#ff6a4a':'#ffe08a',lit(px,t));}
+ // character
+ const raise=ease((t-4)/2.5),cx=560,cy=720;
+ const charLight=0.35+0.65*lit(cx,t);
+ x.save();x.filter=`brightness(${charLight})`;
+ // body / shirt
+ x.fillStyle='#f4f0e6';x.beginPath();x.ellipse(cx,cy-40,130,150,0,0,7);x.fill();
+ x.fillStyle='#6b4423';x.fillRect(cx-70,cy-190,24,200);x.fillRect(cx+46,cy-190,24,200);
+ x.fillStyle='#3e5a2e';x.fillRect(cx-74,cy-105,148,20);
+ // head
+ x.fillStyle='#f0c8a0';x.beginPath();x.arc(cx,cy-260,70,0,7);x.fill();
+ x.fillStyle='#e8a080';x.beginPath();x.arc(cx-38,cy-245,12,0,7);x.arc(cx+38,cy-245,12,0,7);x.fill();
+ const blink=(t%3.3)<0.12?1:8;x.fillStyle='#222';x.beginPath();x.ellipse(cx-24,cy-272,6,blink*0.8,0,0,7);x.ellipse(cx+24,cy-272,6,blink*0.8,0,0,7);x.fill();
+ x.fillStyle='#6a4020';x.beginPath();x.ellipse(cx-20,cy-238,24,9,0.2,0,7);x.ellipse(cx+20,cy-238,24,9,-0.2,0,7);x.fill();
+ x.strokeStyle='#7a2a2a';x.lineWidth=4;x.beginPath();x.arc(cx,cy-232,16+6*raise,0.2,Math.PI-0.2);x.stroke();
+ // hat
+ x.fillStyle='#2e3e22';x.beginPath();x.ellipse(cx,cy-315,95,16,0,0,7);x.fill();x.fillRect(cx-52,cy-370,104,56);
+ x.fillStyle='#8a3a20';x.fillRect(cx-52,cy-332,104,10);
+ x.strokeStyle='#ddd';x.lineWidth=3;for(let i=0;i<8;i++){x.beginPath();x.moveTo(cx+45,cy-335);x.lineTo(cx+60+i*3,cy-390-i*4+Math.sin(t*3+i)*3);x.stroke();}
+ // arm with mug
+ const sx=cx+110,sy=cy-120,ang=-0.3-1.6*raise+Math.sin(t*2)*0.03;
+ const hx=sx+Math.cos(ang)*170,hy=sy+Math.sin(ang)*170;
+ x.strokeStyle='#f4f0e6';x.lineWidth=46;x.lineCap='round';x.beginPath();x.moveTo(sx,sy);x.lineTo(hx,hy);x.stroke();
+ x.fillStyle='#f0c8a0';x.beginPath();x.arc(hx,hy,24,0,7);x.fill();
+ x.restore();
+ // other mug enters from right for the clink
+ const inn=ease((t-6)/2),clink=t>8&&t<8.25?Math.sin((t-8)/0.25*Math.PI)*12:0;
+ const tilt=Math.sin(t*2)*0.03;
+ mug(hx+10,hy+20,1.5,tilt,1-0.15*ease((t-9)/2));
+ const ox=1400-(1400-(hx+120))*inn+clink;
+ if(t>5.5){x.save();x.filter=`brightness(${charLight})`;
+  x.strokeStyle='#d8a37c';x.lineWidth=40;x.lineCap='round';x.beginPath();x.moveTo(1400,hy+260);x.lineTo(ox+20,hy+30);x.stroke();x.restore();
+  x.save();x.translate(ox,hy+20);x.scale(-1,1);mug(0,0,1.5,0,1);x.restore();}
+ // foam splash
+ if(t>8&&t<10){const k=t-8;for(let i=0;i<30;i++){const a=-Math.PI/2+(rnd(i)-0.5)*2.4,v=150+rnd(i+30)*200;
+  const px=hx+60+Math.cos(a)*v*k,py=hy-60+Math.sin(a)*v*k+300*k*k;
+  x.globalAlpha=cl(1-k/1.6);x.fillStyle=i%3?'#fffbe8':'#f0b030';x.beginPath();x.arc(px,py,3+rnd(i+9)*4,0,7);x.fill();}x.globalAlpha=1;
+  // flash
+  x.globalCompositeOperation='lighter';x.globalAlpha=cl(1-k*3)*0.7;const fg=x.createRadialGradient(hx+60,hy-60,0,hx+60,hy-60,200);
+  fg.addColorStop(0,'#fff6c0');fg.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=fg;x.fillRect(0,0,1280,720);x.globalAlpha=1;x.globalCompositeOperation='source-over';}
+ // text
+ x.textAlign='center';x.font='bold 30px Georgia,serif';
+ let a=cl(t/1)*cl((4-t)/0.8);if(a>0){x.globalAlpha=a;x.fillStyle='#ffe2a0';x.fillText('Theresienwiese · Last Night of the Wiesn',640,120);}
+ a=cl((t-8)/0.2)*cl((11-t)/0.8);
+ if(a>0){const s=1+0.3*Math.max(0,1-(t-8)*3);x.save();x.globalAlpha=a;x.translate(330,250);x.scale(s,s);x.rotate(-0.08);
+  x.font='bold 110px Georgia,serif';x.lineWidth=10;x.strokeStyle='#5a1a10';x.strokeText('Prost!',0,0);x.fillStyle='#ffd24a';x.fillText('Prost!',0,0);x.restore();}
+ // final darkness & sign-off
+ const dark=ease((t-12.3)/1.2)*0.75;x.globalAlpha=dark;x.fillStyle='#000';x.fillRect(0,0,1280,720);
+ a=cl((t-12.8)/0.8)*cl((15-t)/0.5);if(a>0){x.globalAlpha=a;x.fillStyle='#f3e6c0';x.font='italic 44px Georgia,serif';x.fillText('Servus, Wiesn — see you next year',640,380);
+  x.font='22px Georgia,serif';x.fillStyle='#b9a880';x.fillText('O’zapft is… and now it’s over.',640,425);}
+ x.globalAlpha=Math.max(cl(1-t/0.6),cl((t-14.5)/0.5));x.fillStyle='#000';x.fillRect(0,0,1280,720);x.globalAlpha=1;
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

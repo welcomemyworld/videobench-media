@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000;height:100%;overflow:hidden}#w{position:fixed;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}canvas{display:block}</style></head><body><div id="w"><canvas id="c" width="1280" height="720"></canvas></div><script>
+const c=document.getElementById('c'),x=c.getContext('2d'),w=document.getElementById('w');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);w.style.transform=`scale(${s})`;w.style.left=(innerWidth-1280*s)/2+'px';w.style.top=(innerHeight-720*s)/2+'px'}
+fit();onresize=fit;
+window.DUR=32;
+const off=parseFloat(new URLSearchParams(location.search).get('t'))||0,st=performance.now();
+const B=0.5; // 120 BPM beat = 0.5s
+const eo=t=>1-Math.pow(1-Math.min(1,Math.max(0,t)),4);
+const words=["MOTION","IN","TIME","SNAP","FLOW","PULSE","BUILD","SHIP"];
+const cols=["#7c5cff","#00e5c3","#ff4d8d","#ffc23d"];
+function rr(a,b,W,H,r){x.beginPath();x.roundRect(a,b,W,H,r)}
+function draw(T){
+ const beat=T/B,bi=Math.floor(beat),bf=beat-bi,kick=Math.pow(1-bf,3);
+ x.setTransform(1,0,0,1,0,0);x.fillStyle="#000";x.fillRect(0,0,1280,720);
+ // snappy camera: per 2 beats jump with ease
+ const seg=Math.floor(beat/2),sf=eo((beat/2-seg)*4);
+ const rnd=n=>{const s=Math.sin(n*127.1)*43758.5;return s-Math.floor(s)};
+ const px=(rnd(seg)-.5)*80,py=(rnd(seg+9)-.5)*40,pxp=(rnd(seg-1)-.5)*80,pyp=(rnd(seg+8)-.5)*40;
+ const cx=pxp+(px-pxp)*sf,cy=pyp+(py-pyp)*sf;
+ const zoom=1+0.05*Math.sin(seg*2)+0.02*kick, rot=(rnd(seg+3)-.5)*0.04*sf;
+ x.translate(640,360);x.rotate(rot);x.scale(zoom,zoom);x.translate(-640-cx*.5,-360-cy*.5);
+ // grid
+ x.strokeStyle="rgba(255,255,255,0.06)";x.lineWidth=1;x.beginPath();
+ const g=40,o=(T*20)%g;
+ for(let i=-200;i<1500;i+=g){x.moveTo(i+o,-200);x.lineTo(i+o,950)}
+ for(let j=-200;j<950;j+=g){x.moveTo(-200,j);x.lineTo(1500,j)}
+ x.stroke();
+ const col=cols[seg%4];
+ // glow
+ const gr=x.createRadialGradient(640,360,0,640,360,420);gr.addColorStop(0,col+"33");gr.addColorStop(1,"#0000");
+ x.fillStyle=gr;x.fillRect(-200,-200,1700,1100);
+ // cards parallax
+ for(let i=0;i<6;i++){
+  const a=eo((beat-i*.5)/1.5),X=140+i*200+Math.sin(T+i)*10-cx*(.3+i*.1),Y=(i%2?520:90)+(1-a)*200;
+  x.globalAlpha=a*.9;x.fillStyle="#0c0c10";x.strokeStyle=cols[i%4]+"88";x.lineWidth=2;
+  rr(X,Y,170,100,16);x.fill();x.stroke();
+  x.fillStyle=cols[i%4];rr(X+16,Y+16,30,30,8);x.fill();
+  x.fillStyle="#333";rr(X+16,Y+60,120,8,4);x.fill();
+  x.fillStyle=cols[i%4];rr(X+16,Y+60,120*(.3+.7*Math.abs(Math.sin(T*.8+i))),8,4);x.fill();
+  x.globalAlpha=1;
+ }
+ // kinetic type
+ const wi=bi%words.length,wd=words[wi],p=eo(bf*4);
+ x.save();x.translate(640,360);
+ const sc=0.7+0.3*p+0.04*kick;x.scale(sc,sc);
+ x.font="900 190px Arial Black,Impact,sans-serif";x.textAlign="center";x.textBaseline="middle";
+ x.globalAlpha=Math.min(1,p*1.5);
+ x.fillStyle=col;x.fillText(wd,6*(1-p)*8,(1-p)*-40+4);
+ x.fillStyle="#fff";x.fillText(wd,0,(1-p)*-40);
+ x.globalAlpha=.5;x.strokeStyle="#fff";x.lineWidth=2;x.strokeText(wd,0,(1-p)*-40+110*0);
+ x.restore();
+ // beat bar
+ x.globalAlpha=1;
+ for(let i=0;i<4;i++){x.fillStyle=(bi%4==i)?col:"#222";rr(560+i*40,660,30,6,3);x.fill()}
+ x.font="600 16px Arial";x.fillStyle="#888";x.textAlign="left";x.fillText("120 BPM",60,668);
+ x.textAlign="right";x.fillText(String(bi%64+1).padStart(2,"0"),1220,668);
+ // flash
+ x.fillStyle=`rgba(255,255,255,${kick*.05})`;x.fillRect(-200,-200,1700,1100);
+}
+function f(){const T=((performance.now()-st)/1000+off)%DUR;draw(T);requestAnimationFrame(f)}
+f();
+</script></body></html>

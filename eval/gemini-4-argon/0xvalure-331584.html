@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PayBox Motion Reel</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  #stage {
+    width: 1280px;
+    height: 720px;
+    background: #060913;
+    box-shadow: 0 0 80px rgba(0, 194, 255, 0.15);
+    transform-origin: center center;
+  }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+(() => {
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const W = 1280, H = 720;
+
+  window.DUR = 15.0; // 15-second high-energy motion design reel
+
+  const params = new URLSearchParams(window.location.search);
+  const startOffset = parseFloat(params.get('t') || '0') || 0;
+
+  function resize() {
+    const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+    canvas.style.transform = `scale(${scale})`;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // Math & Easing Helpers
+  const PI = Math.PI;
+  const TAU = PI * 2;
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const norm = (v, a, b) => clamp((v - a) / (b - a), 0, 1);
+
+  const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+  const easeInOutCubic = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  const easeOutExpo = t => t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
+  const easeInExpo = t => t === 0 ? 0 : Math.pow(2, 10 * t - 10);
+  const easeOutBack = (t, s = 1.70158) => 1 + (s + 1) * Math.pow(t - 1, 3) + s * Math.pow(t - 1, 2);
+  const easeOutElastic = t => {
+    if (t === 0 || t === 1) return t;
+    return Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * (TAU / 3)) + 1;
+  };
+
+  // Brand Palette
+  const COL = {
+    dark: '#060913',
+    navy: '#0B132B',
+    blue: '#0066FF',
+    cyan: '#00E5FF',
+    mint: '#00F5A0',
+    violet: '#7B2CBF',
+    white: '#FFFFFF',
+    slate: '#8E9BAE'
+  };
+
+  // Rounded Rect Helper
+  function rrect(ctx, x, y, w, h, r) {
+    const min = Math.min(Math.abs(w), Math.abs(h)) / 2;
+    r = Math.min(r, min);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  // Draw the Hero "PayBox" Isometric / Geometric Logo Mark
+  // The mark combines a bold "P" ribbon with a 3D isometric "Box" hexagon
+  function drawPayBoxMark(ctx, x, y, size, morph = 1, rot = 0, glow = 0.5) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rot);
+
+    const s = size / 200;
+    ctx.scale(s, s);
+
+    if (glow > 0) {
+      ctx.shadowColor = 'rgba(0, 229, 255, ' + (0.6 * glow) + ')';
+      ctx.shadowBlur = 45 * glow;
+    }
+
+    // Isometric cube vertices
+    const p1 = easeOutBack(clamp(morph * 1.4, 0, 1));
+    const p2 = easeOutBack(clamp((morph - 0.15) * 1.4, 0, 1));
+    const p3 = easeOutBack(clamp((morph - 0.3) * 1.4, 0, 1));
+
+    // Top Diamond (Cyan -> Mint gradient)
+    ctx.save();
+    ctx.scale(p1, p1);
+    const gTop = ctx.createLinearGradient(0, -105, 0, 0);
+    gTop.addColorStop(0, COL.mint);
+    gTop.addColorStop(1, COL.cyan);
+    ctx.fillStyle = gTop;
+    ctx.beginPath();
+    ctx.moveTo(0, -100);
+    ctx.lineTo(86, -50);
+    ctx.lineTo(0, 0);
+    ctx.lineTo(-86, -50);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // Right Face (P Loop - Vibrant Electric Blue)
+    ctx.save();
+    ctx.scale(p2, p2);
+    const gRight = ctx.createLinearGradient(0, -50, 86, 50);
+    gRight.addColorStop(0, COL.cyan);
+    gRight.addColorStop(1, COL.blue);
+    ctx.fillStyle = gRight;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(86, -50);
+    ctx.lineTo(86, 35);
+    ctx.lineTo(0, 85);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // Left Face (P Stem - Deep Royal Blue + Cutout)
+    ctx.save();
+    ctx.scale(p3, p3);
+    const gLeft = ctx.createLinearGradient(-86, -50, 0, 100);
+    gLeft.addColorStop(0, '#0052D4');
+    gLeft.addColorStop(1, '#001F60');
+    ctx.fillStyle = gLeft;
+    ctx.beginPath();
+    ctx.moveTo(-86, -50);
+    ctx.lineTo(0, 0);
+    ctx.lineTo(0, 115);
+    ctx.lineTo(-45, 90);
+    ctx.lineTo(-45, 35);
+    ctx.lineTo(-86, 60);
+    ctx.closePath();
+    ctx.fill();
+
+    // Inner negative-space P countersunk detail
+    ctx.fillStyle = '#060913';
+    ctx.shadowBlur = 0;
+    ctx.beginPath();
+    ctx.moveTo(18, -10);
+    ctx.lineTo(58, -33);
+    ctx.lineTo(58, 12);
+    ctx.lineTo(18, 35);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    ctx.restore();
+  }
+
+  // Draw PayBox Wordmark
+  function drawWordmark(ctx, x, y, scale, reveal, darkText = false) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+
+    ctx.font = '900 92px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.textBaseline = 'middle';
+
+    const payText = 'Pay';
+    const boxText = 'Box';
+    const wPay = ctx.measureText(payText).width;
+
+    // Clipping mask for kinetic slide-up reveal
+    ctx.beginPath();
+    ctx.rect(-20, -70, 520 * easeOutExpo(reveal), 140);
+    ctx.clip();
+
+    const yOff = (1 - easeOutCubic(reveal)) * 60;
+
+    // "Pay"
+    ctx.fillStyle = darkText ? '#060913' : '#FFFFFF';
+    ctx.fillText(payText, 0, yOff);
+
+    // "Box" with cyan-blue gradient
+    const gBox = ctx.createLinearGradient(wPay, -40, wPay + 200, 40);
+    gBox.addColorStop(0, darkText ? '#0052D4' : COL.cyan);
+    gBox.addColorStop(1, darkText ? '#00C2FF' : COL.mint);
+    ctx.fillStyle = gBox;
+    ctx.fillText(boxText, wPay - 4, yOff);
+
+    // Accent dot
+    const dotScale = easeOutBack(clamp((reveal - 0.4) * 1.6, 0, 1));
+    ctx.fillStyle = COL.mint;
+    ctx.beginPath();
+    ctx.arc(wPay + ctx.measureText(boxText).width + 16, 22 + yOff, 11 * dotScale, 0, TAU);
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  // Subtle ambient background grid & particles
+  function drawAmbientGrid(ctx, t, intensity = 1, lightMode = false) {
+    ctx.save();
+    const spacing = 64;
+    const shiftX = (t * 30) % spacing;
+    const shiftY = (t * 18) % spacing;
+
+    ctx.strokeStyle = lightMode
+      ? `rgba(0, 82, 212, ${0.06 * intensity})`
+      : `rgba(0, 229, 255, ${0.05 * intensity})`;
+    ctx.lineWidth = 1;
+
+    for (let x = -spacing + shiftX; x < W + spacing; x += spacing) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, H);
+      ctx.stroke();
+    }
+    for (let y = -spacing + shiftY; y < H + spacing; y += spacing) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // ============================================================================
+  // SCENE 1 (0.0s - 2.6s): Quantum Spark -> Isometric Cube Ignition & Wordmark
+  // ============================================================================
+  function renderScene1(ctx, t) {
+    // Deep radial backdrop
+    const bg = ctx.createRadialGradient(W / 2, H / 2, 50, W / 2, H / 2, 750);
+    bg.addColorStop(0, '#0E1C3D');
+    bg.addColorStop(1, '#050811');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    drawAmbientGrid(ctx, t, norm(t, 0.2, 1.0));
+
+    // Phase 1a (0 - 0.6s): Converging light beams into center
+    if (t < 0.75) {
+      const p = norm(t, 0, 0.55);
+      const ep = easeOutExpo(p);
+      ctx.save();
+      ctx.translate(W / 2, H / 2);
+      for (let i = 0; i < 6; i++) {
+        const ang = (i * TAU) / 6 + p * 1.2;
+        const dist = lerp(550, 0, ep);
+        const len = lerp(180, 10, ep);
+        ctx.save();
+        ctx.rotate(ang);
+        const g = ctx.createLinearGradient(dist, 0, dist + len, 0);
+        g.addColorStop(0, COL.cyan);
+        g.addColorStop(1, 'rgba(0,229,255,0)');
+        ctx.strokeStyle = g;
+        ctx.lineWidth = 6 * (1 - p * 0.5);
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(dist, 0);
+        ctx.lineTo(dist + len, 0);
+        ctx.stroke();
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+
+    // Shockwave ring at t = 0.45s
+    if (t > 0.42 && t < 1.5) {
+      const rp = norm(t, 0.42, 1.35);
+      const erp = easeOutExpo(rp);
+      ctx.save();
+      ctx.strokeStyle = `rgba(0, 245, 160, ${(1 - erp) * 0.7})`;
+      ctx.lineWidth = 18 * (1 - erp);
+      ctx.beginPath();
+      ctx.arc(W / 2, H / 2, erp * 520, 0, TAU);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Logo Mark Pop & Slide Left to make room for Wordmark
+    const markAppear = norm(t, 0.38, 1.1);
+    const slideShift = easeInOutCubic(norm(t, 1.15, 1.75));
+    const markX = lerp(W / 2, W / 2 - 210, slideShift);
+    const markRot = (1 - easeOutBack(markAppear)) * -0.8;
+
+    if (markAppear > 0) {
+      drawPayBoxMark(ctx, markX, H / 2, 185, markAppear, markRot, 0.8);
+    }
+
+    // Wordmark reveal alongside logo
+    if (t > 1.2) {
+      const wmP = norm(t, 1.2, 1.9);
+      drawWordmark(ctx, W / 2 - 85, H / 2, 1.0, wmP, false);
+    }
+
+    // Subtitle pill badge
+    if (t > 1.55) {
+      const bp = easeOutBack(norm(t, 1.55, 2.05));
+      ctx.save();
+      ctx.translate(W / 2, H / 2 + 125);
+      ctx.scale(bp, bp);
+      ctx.fillStyle = 'rgba(0, 229, 255, 0.12)';
+      ctx.strokeStyle = 'rgba(0, 229, 255, 0.45)';
+      ctx.lineWidth = 1.5;
+      rrect(ctx, -170, -20, 340, 40, 20);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = COL.cyan;
+      ctx.font = '700 15px -apple-system, sans-serif';
+      ctx.letterSpacing = '4px';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('NEXT-GEN PAYMENTS', 0, 1);
+      ctx.restore();
+    }
+  }
+
+  // ============================================================================
+  // SCENE 2 (2.4s - 5.4s): Kinetic Typography Poster ("FAST. BORDERLESS. SMART.")
+  // ============================================================================
+  function renderScene2(ctx, t) {
+    const lt = t - 2.4; // local time 0 -> 3.0s
+
+    // High-contrast electric blue / cyan kinetic background
+    ctx.fillStyle = '#0052FF';
+    ctx.fillRect(0, 0, W, H);
+
+    // Diagonal racing stripes
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 15, 60, 0.22)';
+    for (let i = -4; i < 12; i++) {
+      const x = i * 180 - ((lt * 220) % 180);
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x + 90, 0);
+      ctx.lineTo(x - 160, H);
+      ctx.lineTo(x - 250, H);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // 3 Kinetic Beats:
+    // Beat 1 (0.0 - 1.0s): INSTANT.
+    // Beat 2 (1.0 - 2.0s): BORDERLESS.
+    // Beat 3 (2.0 - 3.0s): UNBOXED.
+    const words = [
+      { main: 'INSTANT', sub: '0.02s SETTLEMENT SPEED', accent: COL.mint },
+      { main: 'GLOBAL', sub: '140+ CURRENCIES READY', accent: COL.cyan },
+      { main: 'UNBOXED', sub: 'ZERO HIDDEN FEES EVER', accent: '#FFE600' }
+    ];
+    const idx = clamp(Math.floor(lt), 0, 2);
+    const beatT = lt - idx; // 0..1 within beat
+    const enter = easeOutExpo(norm(beatT, 0, 0.45));
+    const exit = easeInExpo(norm(beatT, 0.78, 1.0));
+
+    const item = words[idx];
+
+    // Background giant hollow outline text scrolling
+    ctx.save();
+    ctx.font = '900 250px -apple-system, sans-serif';
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = 3;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const bgShift = (beatT - 0.5) * -180;
+    ctx.strokeText(item.main, W / 2 + bgShift, H / 2 - 140);
+    ctx.strokeText(item.main, W / 2 - bgShift, H / 2 + 160);
+    ctx.restore();
+
+    // Center dark bento banner card
+    ctx.save();
+    ctx.translate(W / 2, H / 2);
+    const scaleCard = lerp(0.75, 1.0, enter) * lerp(1.0, 1.15, exit);
+    ctx.scale(scaleCard, scaleCard);
+
+    ctx.fillStyle = '#060913';
+    ctx.shadowColor = 'rgba(0,0,0,0.45)';
+    ctx.shadowBlur = 50;
+    rrect(ctx, -470, -145, 940, 290, 36);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Accent border
+    ctx.strokeStyle = item.accent;
+    ctx.lineWidth = 4;
+    ctx.stroke();
+
+    // Spinning mini PayBox icon on left of banner
+    drawPayBoxMark(ctx, -315, 0, 145, 1, beatT * PI * 0.5, 0.5);
+
+    // Main Giant Word
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '900 112px -apple-system, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(item.main, -195, -18 + (1 - enter) * 40);
+
+    // Sub-pill
+    ctx.fillStyle = item.accent;
+    rrect(ctx, -190, 56, 460 * enter, 42, 10);
+    ctx.fill();
+
+    if (enter > 0.3) {
+      ctx.fillStyle = '#060913';
+      ctx.font = '800 20px -apple-system, sans-serif';
+      ctx.fillText(item.sub, -172, 78);
+    }
+
+    // Step indicator top-right
+    ctx.fillStyle = COL.slate;
+    ctx.font = '700 20px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(`0${idx + 1} / 03`, 425, -95);
+
+    ctx.restore();
+  }
+
+  // ============================================================================
+  // SCENE 3 (5.4s - 9.2s): 3D Glass Payment Card & Live Tap Transaction UI
+  // ============================================================================
+  function renderScene3(ctx, t) {
+    const lt = t - 5.4; // 0 -> 3.8s
+
+    // Dark luxury fintech backdrop
+    const bg = ctx.createRadialGradient(W * 0.5, H * 0.4, 20, W * 0.5, H * 0.5, 800);
+    bg.addColorStop(0, '#101F42');
+    bg.addColorStop(1, '#05070F');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    drawAmbientGrid(ctx, t, 0.9);
+
+    // Floating ambient orbs behind glass card
+    ctx.save();
+    const orb1X = W / 2 - 220 + Math.sin(lt * 2) * 40;
+    const orb1Y = H / 2 - 80 + Math.cos(lt * 1.7) * 30;
+    const gOrb1 = ctx.createRadialGradient(orb1X, orb1Y, 10, orb1X, orb1Y, 220);
+    gOrb1.addColorStop(0, 'rgba(0, 245, 160, 0.55)');
+    gOrb1.addColorStop(1, 'rgba(0, 245, 160, 0)');
+    ctx.fillStyle = gOrb1;
+    ctx.beginPath();
+    ctx.arc(orb1X, orb1Y, 220, 0, TAU);
+    ctx.fill();
+
+    const orb2X = W / 2 + 240 + Math.cos(lt * 1.5) * 50;
+    const orb2Y = H / 2 + 90 + Math.sin(lt * 2.1) * 35;
+    const gOrb2 = ctx.createRadialGradient(orb2X, orb2Y, 10, orb2X, orb2Y, 260);
+    gOrb2.addColorStop(0, 'rgba(0, 102, 255, 0.65)');
+    gOrb2.addColorStop(1, 'rgba(0, 102, 255, 0)');
+    ctx.fillStyle = gOrb2;
+    ctx.beginPath();
+    ctx.arc(orb2X, orb2Y, 260, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+
+    // Card entrance & pseudo-3D tilt
+    const cardEnter = easeOutBack(norm(lt, 0.0, 0.85));
+    const tiltX = Math.sin(lt * 2.2) * 0.07;
+    const shiftX = easeInOutCubic(norm(lt, 1.2, 2.0)) * -150;
+
+    ctx.save();
+    ctx.translate(W / 2 + shiftX, H / 2 + (1 - cardEnter) * 260);
+    ctx.scale(cardEnter * (1 - Math.abs(tiltX) * 0.3), cardEnter);
+    ctx.rotate(tiltX * 0.5);
+
+    const cw = 520, ch = 320;
+    // Card base gradient
+    const cGrad = ctx.createLinearGradient(-cw / 2, -ch / 2, cw / 2, ch / 2);
+    cGrad.addColorStop(0, 'rgba(255, 255, 255, 0.18)');
+    cGrad.addColorStop(0.5, 'rgba(0, 229, 255, 0.10)');
+    cGrad.addColorStop(1, 'rgba(0, 102, 255, 0.25)');
+
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.65)';
+    ctx.shadowBlur = 60;
+    ctx.shadowOffsetY = 25;
+    ctx.fillStyle = cGrad;
+    rrect(ctx, -cw / 2, -ch / 2, cw, ch, 28);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
+
+    // Holographic sheen sweep across card
+    ctx.save();
+    rrect(ctx, -cw / 2, -ch / 2, cw, ch, 28);
+    ctx.clip();
+    const sheenX = ((lt * 380) % 900) - 450;
+    const sGrad = ctx.createLinearGradient(sheenX - 90, -ch / 2, sheenX + 90, ch / 2);
+    sGrad.addColorStop(0, 'rgba(255,255,255,0)');
+    sGrad.addColorStop(0.5, 'rgba(255,255,255,0.22)');
+    sGrad.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = sGrad;
+    ctx.fillRect(-cw / 2, -ch / 2, cw, ch);
+    ctx.restore();
+
+    // Glass border
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.38)';
+    ctx.lineWidth = 2;
+    rrect(ctx, -cw / 2, -ch / 2, cw, ch, 28);
+    ctx.stroke();
+
+    // PayBox Mark + Wordmark on Card Top-Left
+    drawPayBoxMark(ctx, -cw / 2 + 58, -ch / 2 + 56, 56, 1, 0, 0.2);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '800 28px -apple-system, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('PayBox', -cw / 2 + 96, -ch / 2 + 56);
+
+    // Contactless NFC waves top-right
+    ctx.strokeStyle = COL.cyan;
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    for (let r = 1; r <= 3; r++) {
+      const pulse = 0.4 + 0.6 * Math.sin(lt * 6 - r * 0.8);
+      ctx.strokeStyle = `rgba(0, 229, 255, ${pulse})`;
+      ctx.beginPath();
+      ctx.arc(cw / 2 - 62, -ch / 2 + 56, r * 9, -PI * 0.35, PI * 0.35);
+      ctx.stroke();
+    }
+
+    // Metallic EMV Chip
+    const chipG = ctx.createLinearGradient(-cw / 2 + 40, -20, -cw / 2 + 105, 30);
+    chipG.addColorStop(0, '#FFE082');
+    chipG.addColorStop(1, '#FFB300');
+    ctx.fillStyle = chipG;
+    rrect(ctx, -cw / 2 + 42, -18, 64, 48, 9);
+    ctx.fill();
+
+    // Balance counter on card bottom-left
+    const balProgress = easeOutCubic(norm(lt, 0.4, 2.4));
+    const balanceVal = (12450.00 + balProgress * 4280.50).toFixed(2);
+    ctx.fillStyle = 'rgba(255,255,255,0.65)';
+    ctx.font = '600 14px -apple-system, sans-serif';
+    ctx.fillText('AVAILABLE BALANCE', -cw / 2 + 42, ch / 2 - 84);
+
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '800 38px monospace';
+    ctx.fillText('$' + Number(balanceVal).toLocaleString('en-US', { minimumFractionDigits: 2 }), -cw / 2 + 42, ch / 2 - 44);
+
+    ctx.restore();
+
+    // Floating Notification / Payment Approved Widgets on the Right
+    const notifs = [
+      { t0: 1.25, title: 'Payment Sent', sub: 'Tokyo Coffee Roasters', amt: '-$6.50', col: COL.cyan },
+      { t0: 1.65, title: 'Instant Cashback', sub: 'PayBox 3% Rewards', amt: '+$12.84', col: COL.mint },
+      { t0: 2.05, title: 'Invoice Paid', sub: 'Studio Design Sprint', amt: '+$4,250.00', col: COL.mint }
+    ];
+
+    notifs.forEach((n, i) => {
+      if (lt > n.t0) {
+        const np = easeOutBack(norm(lt, n.t0, n.t0 + 0.55));
+        const nx = W / 2 + 255;
+        const ny = H / 2 - 115 + i * 112;
+
+        ctx.save();
+        ctx.translate(nx + (1 - np) * 120, ny);
+        ctx.scale(np, np);
+
+        ctx.fillStyle = 'rgba(13, 23, 48, 0.92)';
+        ctx.strokeStyle = 'rgba(0, 229, 255, 0.35)';
+        ctx.lineWidth = 1.5;
+        ctx.shadowColor = 'rgba(0,0,0,0.45)';
+        ctx.shadowBlur = 25;
+        rrect(ctx, -210, -44, 420, 88, 20);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.stroke();
+
+        // Checkmark icon circle
+        ctx.fillStyle = n.col;
+        ctx.beginPath();
+        ctx.arc(-162, 0, 24, 0, TAU);
+        ctx.fill();
+
+        ctx.strokeStyle = '#060913';
+        ctx.lineWidth = 3.5;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(-172, 0);
+        ctx.lineTo(-165, 8);
+        ctx.lineTo(-151, -7);
+        ctx.stroke();
+
+        // Text
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '700 19px -apple-system, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(n.title, -124, -10);
+
+        ctx.fillStyle = COL.slate;
+        ctx.font = '500 14px -apple-system, sans-serif';
+        ctx.fillText(n.sub, -124, 15);
+
+        // Amount
+        ctx.fillStyle = n.col;
+        ctx.font = '800 20px monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText(n.amt, 188, 3);
+
+        ctx.restore();
+      }
+    });
+  }
+
+  // ============================================================================
+  // SCENE 4 (9.2s - 12.2s): Bento Grid Ecosystem Showcase
+  // ============================================================================
+  function renderScene4(ctx, t) {
+    const lt = t - 9.2; // 0 -> 3.0s
+
+    ctx.fillStyle = '#060913';
+    ctx.fillRect(0, 0, W, H);
+    drawAmbientGrid(ctx, t, 0.7);
+
+    const pad = 22;
+    const gx = 90, gy = 65;
+    const gw = W - gx * 2, gh = H - gy * 2;
+    const colW = (gw - pad * 2) / 3;
+    const rowH = (gh - pad) / 2;
+
+    // 4 Bento Tiles:
+    // Tile 0: Top-Left (1 col, 1 row) - Smart Yield Chart
+    // Tile 1: Bottom-Left (1 col, 1 row) - Security Shield
+    // Tile 2: Center (1 col, 2 rows) - Brand Core Hub
+    // Tile 3: Right (1 col, 2 rows) - Global Currencies Ticker
+    const tiles = [
+      { x: gx, y: gy, w: colW, h: rowH, d: 0.05 },
+      { x: gx, y: gy + rowH + pad, w: colW, h: rowH, d: 0.15 },
+      { x: gx + colW + pad, y: gy, w: colW, h: gh, d: 0.25 },
+      { x: gx + (colW + pad) * 2, y: gy, w: colW, h: gh, d: 0.35 }
+    ];
+
+    tiles.forEach((b, idx) => {
+      const p = easeOutBack(norm(lt, b.d, b.d + 0.65), 1.2);
+      ctx.save();
+      const cx = b.x + b.w / 2;
+      const cy = b.y + b.h / 2;
+      ctx.translate(cx, cy);
+      ctx.scale(p, p);
+      ctx.translate(-cx, -cy);
+
+      // Card Fill
+      const g = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
+      if (idx === 2) {
+        g.addColorStop(0, '#0052FF');
+        g.addColorStop(1, '#001F6B');
+      } else {
+        g.addColorStop(0, '#101A35');
+        g.addColorStop(1, '#0A1022');
+      }
+      ctx.fillStyle = g;
+      rrect(ctx, b.x, b.y, b.w, b.h, 26);
+      ctx.fill();
+
+      ctx.strokeStyle = idx === 2 ? 'rgba(0, 229, 255, 0.65)' : 'rgba(255, 255, 255, 0.12)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Clip interior
+      rrect(ctx, b.x, b.y, b.w, b.h, 26);
+      ctx.clip();
+
+      if (idx === 0) {
+        // Smart Analytics Bar Chart
+        ctx.fillStyle = COL.slate;
+        ctx.font = '700 14px -apple-system, sans-serif';
+        ctx.fillText('REVENUE VELOCITY', b.x + 28, b.y + 38);
+
+        ctx.fillStyle = COL.mint;
+        ctx.font = '900 36px -apple-system, sans-serif';
+        ctx.fillText('+284%', b.x + 28, b.y + 82);
+
+        const bars = [0.35, 0.5, 0.42, 0.68, 0.62, 0.85, 1.0];
+        const bw = 28, gap = 14;
+        bars.forEach((bh, bi) => {
+          const bp = easeOutExpo(norm(lt, 0.35 + bi * 0.07, 1.2 + bi * 0.07));
+          const h = bh * 125 * bp;
+          const bx = b.x + 30 + bi * (bw + gap);
+          const by = b.y + b.h - 26 - h;
+          ctx.fillStyle = bi === bars.length - 1 ? COL.mint : COL.cyan;
+          rrect(ctx, bx, by, bw, h, 6);
+          ctx.fill();
+        });
+      } else if (idx === 1) {
+        // Vault Security
+        ctx.fillStyle = COL.slate;
+        ctx.font = '700 14px -apple-system, sans-serif';
+        ctx.fillText('QUANTUM VAULT', b.x + 28, b.y + 38);
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '800 26px -apple-system, sans-serif';
+        ctx.fillText('256-Bit Shield', b.x + 28, b.y + 74);
+
+        // Animated radar rings
+        const rx = b.x + b.w / 2, ry = b.y + 185;
+        for (let r = 1; r <= 3; r++) {
+          const rad = r * 26 + ((lt * 30) % 26);
+          const alpha = clamp(1 - rad / 95, 0, 1);
+          ctx.strokeStyle = `rgba(0, 245, 160, ${alpha * 0.7})`;
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.arc(rx, ry, rad, 0, TAU);
+          ctx.stroke();
+        }
+        ctx.fillStyle = COL.mint;
+        ctx.beginPath();
+        ctx.arc(rx, ry, 14, 0, TAU);
+        ctx.fill();
+      } else if (idx === 2) {
+        // Center Hero Hub
+        const mx = b.x + b.w / 2;
+        const my = b.y + b.h / 2 - 35;
+
+        // Rotating orbital ring
+        ctx.save();
+        ctx.translate(mx, my);
+        ctx.rotate(lt * 0.8);
+        ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+        ctx.setLineDash([10, 12]);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, 118, 0, TAU);
+        ctx.stroke();
+        ctx.restore();
+
+        drawPayBoxMark(ctx, mx, my, 155, 1, Math.sin(lt * 2) * 0.08, 0.9);
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '900 40px -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('One Box.', mx, b.y + b.h - 110);
+
+        ctx.fillStyle = COL.cyan;
+        ctx.font = '700 22px -apple-system, sans-serif';
+        ctx.fillText('Infinite Possibilities.', mx, b.y + b.h - 68);
+      } else if (idx === 3) {
+        // Global FX Live Stream
+        ctx.fillStyle = COL.slate;
+        ctx.font = '700 14px -apple-system, sans-serif';
+        ctx.fillText('BORDERLESS FX ENGINE', b.x + 28, b.y + 42);
+
+        ctx.fillStyle = '#FFFFFF';
+        ctx.font = '800 30px -apple-system, sans-serif';
+        ctx.fillText('0% Markup', b.x + 28, b.y + 82);
+
+        const pairs = [
+          { code: 'USD → EUR', rate: '0.9241', chg: '+0.12%' },
+          { code: 'GBP → USD', rate: '1.2784', chg: '+0.34%' },
+          { code: 'USD → JPY', rate: '154.82', chg: '+0.08%' },
+          { code: 'EUR → CHF', rate: '0.9765', chg: '+0.19%' },
+          { code: 'AUD → USD', rate: '0.6640', chg: '+0.41%' }
+        ];
+
+        pairs.forEach((pr, pi) => {
+          const py = b.y + 130 + pi * 85;
+          ctx.fillStyle = 'rgba(255,255,255,0.06)';
+          rrect(ctx, b.x + 24, py, b.w - 48, 68, 14);
+          ctx.fill();
+
+          ctx.fillStyle = '#FFFFFF';
+          ctx.font = '700 18px -apple-system, sans-serif';
+          ctx.textAlign = 'left';
+          ctx.fillText(pr.code, b.x + 42, py + 30);
+
+          ctx.fillStyle = COL.slate;
+          ctx.font = '500 14px monospace';
+          ctx.fillText('LIVE RATE ' + pr.rate, b.x + 42, py + 52);
+
+          ctx.fillStyle = COL.mint;
+          ctx.font = '700 16px monospace';
+          ctx.textAlign = 'right';
+          ctx.fillText(pr.chg, b.x + b.w - 42, py + 40);
+        });
+      }
+
+      ctx.restore();
+    });
+  }
+
+  // ============================================================================
+  // SCENE 5 (12.2s - 15.0s): Hero Logo Lockup Finale & Loop Transition
+  // ============================================================================
+  function renderScene5(ctx, t) {
+    const lt = t - 12.2; // 0 -> 2.8s
+
+    // Crisp Iris Reveal from Center
+    const iris = easeOutExpo(norm(lt, 0, 0.7));
+
+    // Keep previous dark background underneath iris
+    ctx.fillStyle = '#060913';
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(W / 2, H / 2, iris * 900, 0, TAU);
+    ctx.clip();
+
+    // Clean high-impact dark-to-royal hero stage
+    const bg = ctx.createRadialGradient(W / 2, H / 2, 40, W / 2, H / 2, 750);
+    bg.addColorStop(0, '#0F224A');
+    bg.addColorStop(1, '#060913');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    drawAmbientGrid(ctx, t, 1.0);
+
+    // Subtle celebration energy rays behind lockup
+    const lockP = easeOutBack(norm(lt, 0.15, 0.95));
+    const markX = W / 2 - 205;
+    const markY = H / 2 - 35;
+
+    // Animated orbit rings around mark
+    ctx.save();
+    ctx.translate(markX, markY);
+    ctx.strokeStyle = 'rgba(0, 229, 255, 0.18)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, 125 * lockP, 0, TAU);
+    ctx.stroke();
+    ctx.restore();
+
+    // Hero PayBox Mark
+    drawPayBoxMark(ctx, markX, markY, 185, lockP, (1 - lockP) * 0.6, 0.85);
+
+    // Hero PayBox Wordmark
+    const wmP = norm(lt, 0.25, 1.05);
+    drawWordmark(ctx, W / 2 - 80, markY, 1.05, wmP, false);
+
+    // Tagline & CTA Pill
+    if (lt > 0.55) {
+      const tp = easeOutCubic(norm(lt, 0.55, 1.2));
+      ctx.save();
+      ctx.globalAlpha = tp;
+      ctx.fillStyle = COL.slate;
+      ctx.font = '600 22px -apple-system, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Money in motion. Unbox your financial future.', W / 2, H / 2 + 88 + (1 - tp) * 20);
+
+      // Glowing CTA Pill
+      const ctaScale = easeOutBack(norm(lt, 0.75, 1.35));
+      ctx.translate(W / 2, H / 2 + 162);
+      ctx.scale(ctaScale, ctaScale);
+
+      const pillG = ctx.createLinearGradient(-150, 0, 150, 0);
+      pillG.addColorStop(0, COL.blue);
+      pillG.addColorStop(1, COL.cyan);
+      ctx.fillStyle = pillG;
+      ctx.shadowColor = 'rgba(0, 229, 255, 0.5)';
+      ctx.shadowBlur = 30;
+      rrect(ctx, -145, -26, 290, 52, 26);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      ctx.fillStyle = '#060913';
+      ctx.font = '800 18px -apple-system, sans-serif';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('paybox.app  →', 0, 1);
+
+      ctx.restore();
+    }
+
+    ctx.restore();
+
+    // Smooth fade to black at the very end (14.5s - 15.0s) for seamless loop
+    if (t > 14.5) {
+      const fade = easeInOutCubic(norm(t, 14.5, 15.0));
+      ctx.fillStyle = `rgba(6, 9, 19, ${fade})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
+
+  // Flash cut / Whip transition overlay between acts
+  function renderTransitions(ctx, t) {
+    const cuts = [2.4, 5.4, 9.2];
+    cuts.forEach(ct => {
+      const dt = Math.abs(t - ct);
+      if (dt < 0.18) {
+        const p = 1 - dt / 0.18;
+        ctx.save();
+        ctx.fillStyle = `rgba(0, 229, 255, ${p * 0.35})`;
+        ctx.fillRect(0, 0, W, H);
+        ctx.restore();
+      }
+    });
+  }
+
+  // Main Animation Loop driven purely by performance.now()
+  let t0 = null;
+  function frame(now) {
+    if (t0 === null) t0 = now;
+    const elapsed = (now - t0) / 1000 + startOffset;
+    const t = elapsed % window.DUR;
+
+    ctx.clearRect(0, 0, W, H);
+
+    if (t < 2.4) {
+      renderScene1(ctx, t);
+    } else if (t < 5.4) {
+      renderScene2(ctx, t);
+    } else if (t < 9.2) {
+      renderScene3(ctx, t);
+    } else if (t < 12.2) {
+      renderScene4(ctx, t);
+    } else {
+      renderScene5(ctx, t);
+    }
+
+    renderTransitions(ctx, t);
+
+    // Subtle cinematic vignette
+    const vig = ctx.createRadialGradient(W / 2, H / 2, H * 0.45, W / 2, H / 2, W * 0.65);
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(1, 'rgba(0,0,0,0.35)');
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, W, H);
+
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

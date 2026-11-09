@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Product demo blueprint</title>
+<style>
+*{box-sizing:border-box}
+html,body{width:100%;height:100%;margin:0;background:#000;overflow:hidden}
+body{display:flex;align-items:center;justify-content:center}
+canvas{display:block;width:min(100vw,177.77778vh);height:min(56.25vw,100vh)}
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720" aria-label="Animated product demo blueprint. Product details and repository were not supplied; the screens shown are explicitly marked placeholders."></canvas>
+<script>
+window.DUR=26;
+const c=document.getElementById('stage'),g=c.getContext('2d');
+const W=1280,H=720,ink='#eef4f3',muted='#879c9b',accent='#b9f977';
+const requested=Number(new URLSearchParams(location.search).get('t'));
+const offset=Number.isFinite(requested)?requested:0;
+let epoch;
+const clamp=v=>Math.max(0,Math.min(1,v));
+const ease=v=>{v=clamp(v);return v*v*(3-2*v)};
+const fade=(t,a,b,c,d)=>ease((t-a)/(b-a))*(1-ease((t-c)/(d-c)));
+function box(x,y,w,h,r=12,fill,stroke){
+ g.beginPath();g.roundRect(x,y,w,h,r);
+ if(fill){g.fillStyle=fill;g.fill()}
+ if(stroke){g.strokeStyle=stroke;g.lineWidth=1;g.stroke()}
+}
+function text(s,x,y,size=16,color=ink,weight=400,align='left'){
+ g.font=`${weight} ${size}px Arial, sans-serif`;g.textAlign=align;g.textBaseline='alphabetic';g.fillStyle=color;g.fillText(s,x,y);
+}
+function line(x,y,x2,y2,color,width=1){
+ g.beginPath();g.moveTo(x,y);g.lineTo(x2,y2);g.strokeStyle=color;g.lineWidth=width;g.stroke();
+}
+function dot(x,y,r,color){g.beginPath();g.arc(x,y,r,0,Math.PI*2);g.fillStyle=color;g.fill()}
+function background(t){
+ g.fillStyle='#080f12';g.fillRect(0,0,W,H);
+ let light=g.createRadialGradient(875+Math.sin(t*.2)*70,305,20,780,360,720);
+ light.addColorStop(0,'#17302a');light.addColorStop(.5,'#101e20');light.addColorStop(1,'#080f12');
+ g.fillStyle=light;g.fillRect(0,0,W,H);
+ g.save();g.globalAlpha=.17;
+ for(let x=0;x<W;x+=64)line(x,0,x,H,'#425354');
+ for(let y=0;y<H;y+=64)line(0,y,W,y,'#425354');
+ g.restore();
+ for(let i=0;i<30;i++){
+  let x=(i*197.3+Math.sin(t*.15+i)*18)%W,y=(i*113.7-t*(2+i%3)+H*10)%H;
+  dot(x,y,1,'#345349');
+ }
+}
+function chrome(t){
+ box(48,32,30,30,9,accent);
+ line(57,48,69,48,'#123029',2);line(63,42,63,54,'#123029',2);
+ text('PRODUCT / MOTION STUDY',92,52,12,'#bcc9c5',600);
+ box(1048,34,184,27,14,'#172322','#33443e');
+ dot(1063,47,3,accent);text('SOURCE PENDING',1074,51,10,'#cfdbd5',600);
+ line(48,654,1232,654,'#30403c');
+ text('DEMO BLUEPRINT · NO PRODUCT SCREENS SUPPLIED',48,684,11,muted,500);
+ text(String(Math.floor(t)).padStart(2,'0')+' / 26',1232,684,12,muted,400,'right');
+ line(48,654,48+1184*t/window.DUR,654,accent,2);
+}
+function bars(x,y,w,rows){
+ for(let i=0;i<rows;i++)box(x,y+i*30,w*(.65+.25*Math.sin(i*2+1)),8,4,'#263638');
+}
+function screen(x,y,w,h,index,p){
+ g.save();g.translate(x,y);
+ const s=w/820;g.scale(s,s);h/=s;w=820;
+ g.shadowColor='rgba(0,0,0,.5)';g.shadowBlur=40;g.shadowOffsetY=18;
+ box(0,0,w,h,18,'#10191d','#476054');
+ g.shadowColor='transparent';g.shadowBlur=0;g.shadowOffsetY=0;
+ box(0,0,w,43,18,'#1a2528');
+ g.fillStyle='#1a2528';g.fillRect(0,24,w,19);
+ for(let i=0;i<3;i++)dot(20+i*13,21,3,['#617276','#536568','#455b5b'][i]);
+ text('SCREEN PLACEHOLDER',w/2,26,10,'#90a5a4',600,'center');
+ text('0'+(index+1),w-23,27,12,accent,600,'right');
+ line(0,43,w,43,'#30403c');
+ g.fillStyle='#121e21';g.fillRect(1,44,146,h-45);
+ box(20,64,104,18,5,'#354640');
+ for(let i=0;i<5;i++){
+  box(20,108+i*38,12,12,3,i===index?accent:'#2c3e3e');
+  box(44,112+i*38,66-i%2*14,5,3,i===index?'#8ba18b':'#314445');
+ }
+ text(['ENTRY SCREEN','CORE INTERACTION','OUTCOME SCREEN'][index],176,85,12,'#9cb0a8',600);
+ if(index===0){
+  box(176,108,615,66,10,'#182629','#30413c');
+  box(194,126,190,10,4,'#4c625c');box(194,148,285,6,3,'#2d4140');
+  box(687,125,84,31,7,'#354b3b');
+  for(let j=0;j<3;j++){
+   box(176+j*211,195,193,118,10,'#162427','#2c3d38');
+   box(193+j*211,212,31,31,8,'#283e36');
+   bars(193+j*211,269,153,2);
+  }
+ }else if(index===1){
+  for(let j=0;j<3;j++){
+   box(176+j*211,109,193,221,10,'#162427','#2b3f39');
+   box(193+j*211,125,76,7,3,'#4c625c');
+   for(let k=0;k<(j===2?1:2);k++){
+    box(190+j*211,151+k*83,165,69,8,'#213133','#354941');
+    box(204+j*211,168+k*83,104,6,3,'#49615a');
+    box(204+j*211,185+k*83,74,5,3,'#334843');
+   }
+  }
+ }else{
+  box(176,109,615,221,10,'#162427','#2d4139');
+  g.save();g.globalAlpha=.4;
+  for(let i=0;i<4;i++)line(205,158+i*42,763,158+i*42,'#3d5449');
+  g.restore();
+  const pts=[[207,284],[288,262],[369,268],[449,220],[530,225],[611,176],[693,150],[762,142]];
+  g.beginPath();pts.forEach((v,i)=>i?g.lineTo(...v):g.moveTo(...v));g.strokeStyle='#6d8d70';g.lineWidth=3;g.stroke();
+ }
+ // Explicitly distinguish the visual scaffold from an actual product UI.
+ box(280,174,371,95,12,'rgba(8,16,18,.96)','#58734f');
+ text('ACTUAL SCREEN GOES HERE',465,211,17,ink,600,'center');
+ text('Repository needed to show the real product',465,238,12,'#9cadab',400,'center');
+ g.restore();
+}
+function intro(t){
+ let a=fade(t,0,.8,4.8,5.7);if(!a)return;
+ g.save();g.globalAlpha=a;
+ let p=ease(t/2);
+ text('A PRODUCT STORY, BUILT FROM THE SOURCE',64,161+(1-p)*20,12,accent,600);
+ text('[PRODUCT NAME]',60,253+(1-p)*25,70,ink,600);
+ text('[ONE LINE: what it is and who it’s for]',64,302+(1-p)*25,24,'#a7b9b3');
+ line(64,350,540,350,'#3a4e42');
+ text('Real screens. Real sequence.',64,396,28,ink,400);
+ text('A clear path from first action to final result.',64,432,18,muted);
+ box(64,481,323,42,21,'#182824','#364e40');
+ dot(84,502,4,accent);text('Your product details are not supplied yet.',99,507,13,'#b8c9be');
+ g.save();g.translate(932,362);g.rotate(-.055);
+ for(let i=2;i>=0;i--){
+  g.save();g.translate(i*20,-i*25);
+  box(-178,-173,352,289,20,i?'#132221':'#1c3029',i?'#354b3e':'#658253');
+  text('0'+(3-i),-150,-134,13,accent,600);
+  bars(-148,-100,241,3);
+  box(-148,18,292,64,10,'#223b30','#3e5c45');
+  text('SCREEN PLACEHOLDER',-1,56,12,'#a8bea8',600,'center');
+  g.restore();
+ }
+ g.restore();
+ text('01',818,564,12,accent);line(847,559,1086,559,'#476344');dot(1091,559,4,accent);
+ g.restore();
+}
+const headings=['Begin with the real entry point.','Follow the core interaction.','Show the actual outcome.'];
+const descriptions=['The first screen a real user sees.','The essential action, in its natural order.','The finished state, exactly as it appears.'];
+function sequence(t){
+ let a=fade(t,4.7,5.7,19,20);if(!a)return;
+ let q=(t-5.5)/4.5,idx=Math.max(0,Math.min(2,Math.floor(q)));
+ let local=clamp(q-idx),p=ease(local/.17);
+ g.save();g.globalAlpha=a;
+ text('THE USER JOURNEY',64,116,12,accent,600);
+ text(headings[idx],64,161,35,ink,600);
+ text(descriptions[idx],65,196,17,muted);
+ g.save();g.globalAlpha*=p;
+ screen(238+(1-p)*45,225,820,358,idx,p);
+ g.restore();
+ // Sequence navigation uses labels, not unverified product claims.
+ const labels=['Entry','Action','Outcome'];
+ for(let i=0;i<3;i++){
+  let x=311+i*290;
+  if(i<2)line(x+50,610,x+239,610,'#3a5042');
+  dot(x,610,12,i===idx?accent:'#21322b');
+  text(String(i+1),x,614,11,i===idx?'#14251a':'#8ea398',600,'center');
+  text(labels[i],x+23,615,13,i===idx?ink:muted,i===idx?600:400);
+ }
+ g.restore();
+}
+function outro(t){
+ let a=fade(t,19,20.2,25,26);if(!a)return;
+ g.save();g.globalAlpha=a;
+ let p=ease((t-19)/1.5);
+ dot(640,172,27,accent);
+ line(628,172,651,172,'#1b3224',3);line(640,160,640,184,'#1b3224',3);
+ text('[PRODUCT NAME]',640,280+(1-p)*20,64,ink,600,'center');
+ text('Your real workflow. In motion.',640,335+(1-p)*20,28,'#b3c4ba',400,'center');
+ box(363,387,554,138,15,'#152321','#3a5142');
+ text('READY FOR THE REAL PRODUCT',640,422,12,accent,600,'center');
+ text('Provide the repository and complete the brief.',640,457,20,ink,400,'center');
+ text('Then replace this blueprint with verified screens.',640,488,15,muted,400,'center');
+ text('No repository was available in this conversation.',640,567,13,'#839b8e',400,'center');
+ g.restore();
+}
+function frame(now){
+ if(epoch===undefined)epoch=now;
+ let t=((now-epoch)/1000+offset)%window.DUR;
+ if(t<0)t+=window.DUR;
+ background(t);intro(t);sequence(t);outro(t);chrome(t);
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

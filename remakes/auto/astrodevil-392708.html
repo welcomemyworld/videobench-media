@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Studio1 Showreel</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#s{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+canvas{display:block}
+</style></head><body>
+<div id="s"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+window.DUR=15;
+const c=document.getElementById('c'),x=c.getContext('2d'),S=document.getElementById('s');
+function fit(){const k=Math.min(innerWidth/1280,innerHeight/720);S.style.transform=`scale(${k}) translate(-50%,-50%)`;S.style.left='50%';S.style.top='50%';S.style.transform=`translate(-50%,-50%) scale(${k})`;}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)||0;const t0=performance.now()-off*1000;
+const W=1280,H=720,ac='#ff3b2f',ac2='#3bd1ff';
+const cl=v=>Math.max(0,Math.min(1,v));
+const eo=v=>1-Math.pow(1-cl(v),3);
+const eio=v=>{v=cl(v);return v<.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2};
+function R(n){let s=Math.sin(n*127.1)*43758.5453;return s-Math.floor(s)}
+function txt(s,X,Y,sz,col,al='center',w='800',a=1,sp=0){x.save();x.globalAlpha=a;x.fillStyle=col;x.font=`${w} ${sz}px Helvetica,Arial,sans-serif`;x.textAlign=al;x.textBaseline='middle';if(sp&&x.letterSpacing!==undefined)x.letterSpacing=sp+'px';x.fillText(s,X,Y);x.restore()}
+function reveal(s,X,Y,sz,col,p,al='center'){x.save();x.font=`900 ${sz}px Helvetica,Arial,sans-serif`;const m=x.measureText(s).width;let lx=al=='center'?X-m/2:X;x.beginPath();x.rect(lx-10,Y-sz*.6,m+20,sz*1.2);x.clip();txt(s,X,Y+sz*1.2*(1-eo(p)),sz,col,al,'900');x.restore()}
+function bg(t,hue){const g=x.createRadialGradient(W/2,H/2,50,W/2,H/2,800);g.addColorStop(0,`hsl(${hue},40%,10%)`);g.addColorStop(1,'#030305');x.fillStyle=g;x.fillRect(0,0,W,H);
+x.strokeStyle='rgba(255,255,255,0.05)';x.lineWidth=1;const o=(t*40)%80;for(let i=-1;i<18;i++){x.beginPath();x.moveTo(i*80+o,0);x.lineTo(i*80+o,H);x.stroke()}for(let j=0;j<10;j++){x.beginPath();x.moveTo(0,j*80);x.lineTo(W,j*80);x.stroke()}}
+function particles(t,n,col){for(let i=0;i<n;i++){const px=(R(i)*W+t*(20+R(i+5)*80))%W,py=(R(i+9)*H-t*(10+R(i+3)*30)%H+H)%H;x.fillStyle=col;x.globalAlpha=.3+R(i+2)*.5;x.fillRect(px,py,2,2)}x.globalAlpha=1}
+function wipe(p,col){if(p<=0||p>=1)return;const a=eio(p*2),b=eio(p*2-1);x.fillStyle=col;x.fillRect(W*b,0,W*(a-b),H)}
+// scenes
+function s1(t){bg(t,250);particles(t,120,'#fff');
+// burst lines
+for(let i=0;i<40;i++){const an=i/40*Math.PI*2+t*.3,r1=60+eo(t/1.2)*200,r2=r1+40+R(i)*200*eo(t);x.strokeStyle=i%3?ac:ac2;x.globalAlpha=cl(1-t/3)*.8;x.lineWidth=2;x.beginPath();x.moveTo(W/2+Math.cos(an)*r1,H/2+Math.sin(an)*r1);x.lineTo(W/2+Math.cos(an)*r2,H/2+Math.sin(an)*r2);x.stroke()}x.globalAlpha=1;
+const sc=1+.04*t;x.save();x.translate(W/2,H/2);x.scale(sc,sc);
+x.strokeStyle=ac;x.lineWidth=6;x.beginPath();x.arc(0,0,150,-Math.PI/2,-Math.PI/2+Math.PI*2*eo(t/1.5));x.stroke();
+reveal('STUDIO',-20,-10,96,'#fff',(t-.3)/.8);
+x.save();x.globalAlpha=cl((t-.9)*3);txt('1',150,-10,150*(1+.5*(1-eo((t-.9)*2))),ac,'center','900');x.restore();
+txt('SHOWREEL 2025',0,80,22,'#aaa','center','600',cl((t-1.4)*2),8);x.restore()}
+function s2(t){bg(t,10);
+const words=['BRAND','MOTION','DIGITAL'];
+for(let i=0;i<3;i++){const p=(t-i*.35)/.7;const y=200+i*140;x.save();x.globalAlpha=cl(p*2);const dx=(1-eo(p))*(i%2?-600:600);
+x.fillStyle=i==1?ac:'#fff';x.fillRect(120+dx,y-55,12,110);
+reveal(words[i],160+dx,y,110,i==1?ac:'#fff',p,'left');x.restore()}
+// rotating shapes
+x.save();x.translate(1020,360);x.rotate(t*.8);x.strokeStyle=ac2;x.lineWidth=3;for(let k=0;k<5;k++){const s=60+k*35*eo(t);x.globalAlpha=.8-k*.12;x.strokeRect(-s,-s,s*2,s*2);x.rotate(.2)}x.restore();
+txt('WE CRAFT STORIES THAT MOVE',W/2,660,20,'#bbb','center','600',cl((t-1)*2),6)}
+function s3(t){bg(t,200);
+txt('CASE STUDIES',80,80,20,ac2,'left','700',cl(t*3),6);
+const cs=[['NOVA BANK','Brand Identity','+240% recall',ac],['PULSE','Launch Film','12M views',ac2],['ORBIT APP','Product UI','4.9★ rating','#ffcc33']];
+cs.forEach((d,i)=>{const p=eo((t-i*.25)/.8);const X=80+i*385,Y=150+(1-p)*400;x.save();x.globalAlpha=p;
+x.fillStyle='#0d0f15';x.fillRect(X,Y,360,450);
+// procedural art
+x.save();x.beginPath();x.rect(X,Y,360,280);x.clip();x.fillStyle=d[3];x.globalAlpha=p*.2;x.fillRect(X,Y,360,280);x.globalAlpha=p;
+for(let k=0;k<6;k++){x.strokeStyle=d[3];x.lineWidth=3;x.beginPath();const r=30+k*25+Math.sin(t*2+k+i)*8;
+if(i==0){x.arc(X+180,Y+140,r,0,Math.PI*2)}else if(i==1){x.moveTo(X,Y+140+Math.sin(t*3+k)*20+k*12-36);for(let u=0;u<=360;u+=10)x.lineTo(X+u,Y+140+Math.sin(u*.03+t*3+k)*30+k*12-36)}else{x.rect(X+180-r*.6,Y+140-r*.4,r*1.2,r*.8)}x.stroke()}
+x.restore();
+txt(d[0],X+24,Y+320,34,'#fff','left','900');txt(d[1],X+24,Y+358,18,'#999','left','500');
+txt(d[2],X+24,Y+410,26,d[3],'left','800');x.restore()})}
+function s4(t){bg(t,340);particles(t,80,ac);
+const st=[[150,'+','PROJECTS'],[48,'','AWARDS'],[32,'','COUNTRIES']];
+st.forEach((d,i)=>{const p=eo((t-i*.2)/1.4);const X=W/2+(i-1)*380;
+x.strokeStyle=ac;x.globalAlpha=.3;x.lineWidth=2;x.beginPath();x.arc(X,320,120,0,Math.PI*2);x.stroke();x.globalAlpha=1;x.strokeStyle=i==1?ac2:ac;x.lineWidth=6;x.beginPath();x.arc(X,320,120,-Math.PI/2,-Math.PI/2+Math.PI*2*p);x.stroke();
+txt(Math.round(d[0]*p)+d[1],X,310,80,'#fff','center','900');txt(d[2],X,370,18,'#bbb','center','700',1,4)});
+reveal('NUMBERS THAT SPEAK',W/2,560,46,'#fff',(t-.8)/.8)}
+function s5(t){bg(t,250);particles(t,150,'#fff');
+const p=eo(t/1);x.save();x.translate(W/2,300);const s=1.4-.4*p;x.scale(s,s);
+x.shadowColor=ac;x.shadowBlur=40*p;
+txt('STUDIO',-40,0,120,'#fff','center','900',p);txt('1',190,0,170,ac,'center','900',p);x.restore();
+x.fillStyle=ac;x.fillRect(W/2-300*eo((t-.5)/.8),390,600*eo((t-.5)/.8),4);
+reveal('IDEAS. IN MOTION.',W/2,460,40,'#fff',(t-.8)/.8);
+txt('studio1.com',W/2,560,22,ac2,'center','600',cl((t-1.5)*2),4)}
+const sc=[[0,3,s1],[3,6,s2],[6,9.5,s3],[9.5,12.2,s4],[12.2,15,s5]];
+function frame(){const T=((performance.now()-t0)/1000)%DUR;
+x.clearRect(0,0,W,H);
+for(const [a,b,f] of sc){if(T>=a&&T<b){x.save();const k=T-a;
+// shake/zoom on cut
+const z=1+.06*Math.max(0,1-k*4);x.translate(W/2,H/2);x.scale(z,z);x.translate(-W/2,-H/2);f(k);x.restore()}}
+for(const [a] of sc){if(a>0){wipe((T-a+.25)/.5,ac)}}
+// letterbox + vignette + frame
+x.fillStyle='#000';x.fillRect(0,0,W,24);x.fillRect(0,H-24,W,24);
+x.fillStyle='rgba(255,255,255,.5)';x.font='600 11px Helvetica,Arial';x.textAlign='left';x.fillText('STUDIO1 — REEL',30,15);x.textAlign='right';x.fillText('00:'+String(Math.floor(T)).padStart(2,'0'),W-30,15);
+x.fillStyle=ac;x.fillRect(0,H-3,W*T/DUR,3);
+// fade loop
+const f=Math.max(cl(1-T*3),cl((T-14.6)/.4));if(f>0){x.fillStyle=`rgba(0,0,0,${f})`;x.fillRect(0,0,W,H)}
+requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

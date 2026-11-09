@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000;height:100%;overflow:hidden}#c{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:center;background:#000}</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+window.DUR=30;
+const c=document.getElementById('c'),g=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.transform='translate(-50%,-50%) scale('+s+')'}fit();onresize=fit;
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t'))||0,t0=performance.now();
+const W=1280,H=720,N=48,M=27,tw=W/N,th=H/M;
+function rnd(i){let x=Math.sin(i*127.1+311.7)*43758.5453;return x-Math.floor(x)}
+// 仮のエンド画面:色をタイルに割り当てる(画像は添付が読めないため手続き的に再現)
+function endColor(x,y){const u=x/N,v=y/M;
+let r=235-40*v,gg=225-30*v,b=215-10*v;return[r,gg,b]}
+function isText(x,y){// 文字・ロゴ・ボタン領域
+return (y>=6&&y<=10&&x>=8&&x<=39)||(y>=12&&y<=14&&x>=14&&x<=33)||(y>=19&&y<=23&&x>=16&&x<=31)||(y>=1&&y<=3&&x>=2&&x<=9)}
+function textCol(x,y){if(y>=19&&y<=23&&x>=16&&x<=31){const edge=y==19||y==23||x==16||x==31;
+if(!edge){const m=(y==21&&x>=19&&x<=28&&(x%2==0))||(y==20&&x%3==0&&x>=19&&x<=28)||(y==22&&x%3==1&&x>=19&&x<=28);return m?[255,255,255]:[225,70,60]}return[225,70,60]}
+return((x+y)%3==0)?[255,255,255]:[40,45,70]}
+const cx0=N/2,cy0=M/2;
+function ease(x){x=Math.max(0,Math.min(1,x));return x*x*(3-2*x)}
+function draw(t){
+g.fillStyle='#d9d2c6';g.fillRect(0,0,W,H);
+// カメラ: 床すれすれ→引き→真上
+let zoom=t<10?5-2*ease((t-3)/7):t<21?3-2*ease((t-10)/11):1;
+let tilt=ease((t-21)/5);
+g.save();g.translate(W/2,H/2);g.scale(zoom,zoom);g.translate(-W/2,-H/2);
+const blur=t<21?Math.max(0,4-t*0.15):0;
+// チョーク線
+g.strokeStyle='rgba(200,40,40,.35)';g.lineWidth=3;g.beginPath();g.moveTo(0,40);g.lineTo(W,60);g.stroke();
+for(let y=0;y<M;y++)for(let x=0;x<N;x++){
+const i=y*N+x,d=Math.hypot((x-cx0)/1.8,y-cy0);
+let land,flip=0;
+if(t<3){if(x!=cx0||y!=cy0)continue;land=1}
+else{const s=3+d*0.25+rnd(i)*1.2; if(t<10&&t<s)continue; if(t>=10)land=1; else land=1;
+const spread=10+d*0.4*(11/ Math.hypot(N/3.6,M/2));
+if(t>=10&&t<spread&&d>3){continue}}
+let ft=0;
+const tx=isText(x,y);
+if(tx){ft=ease((t-24-x/N*1.6)/0.4)}
+let base=endColor(x,y),col=base;
+const bg=[[225,215,200],[215,205,190],[230,222,210]][(x*7+y*3)%3];
+if(tx){col=ft>0.5?textCol(x,y):bg}else col=ft>0?base:base;
+if(!tx&&t<21){const k=ease((t-10)/11);col=[bg[0]*(1-k)+base[0]*k,bg[1]*(1-k)+base[1]*k,bg[2]*(1-k)+base[2]*k]}
+if(t<3)col=[40,40,45];
+const j=(rnd(i+9)-.5)*14;
+let sx=1;if(tx&&ft>0&&ft<1)sx=Math.abs(Math.cos(ft*Math.PI));
+let drop=0;if(t>=3&&t<10){const s=3+d*0.25+rnd(i)*1.2;drop=Math.max(0,1-(t-s)/0.6)*60}
+let press=0;if(t>27&&y>=19&&y<=23&&x>=16&&x<=31)press=ease((t-27)*3)*2*(t<28?1:Math.max(0,1-(t-28)*.5));
+g.save();g.translate(x*tw+tw/2,y*th+th/2-drop);
+if(t<10&&t>=3)g.rotate(drop*0.03*(rnd(i)-.5));
+g.fillStyle='rgb('+(col[0]+j|0)+','+(col[1]+j|0)+','+(col[2]+j|0)+')';
+g.fillRect(-tw/2*sx+.5,-th/2+.5+press,(tw-1)*sx,th-1);
+g.restore();
+}
+g.restore();
+// カーソル
+if(t>26){const k=ease((t-26)/1.2),cx=900-(900-640)*k,cy=600-(600-420)*k;
+g.fillStyle='#fff';g.strokeStyle='#000';g.beginPath();g.moveTo(cx,cy);g.lineTo(cx+14,cy+22);g.lineTo(cx+6,cy+20);g.lineTo(cx,cy+28);g.closePath();g.fill();g.stroke()}
+// 文字
+if(t>25.5){const a=ease((t-25.5)/1);g.globalAlpha=a;g.textAlign='center';g.fillStyle='#fff';
+g.font='bold 52px sans-serif';g.fillText('すべてがタイルでできている',W/2,215);
+g.font='24px sans-serif';g.fillText('一枚ずつ、世界をつくる。',W/2,285);
+g.font='bold 30px sans-serif';g.fillText('無料体験はこちら',W/2,440);g.globalAlpha=1}
+}
+function loop(){const t=((performance.now()-t0)/1000+off)%DUR;draw(t);requestAnimationFrame(loop)}
+window.seek=draw;loop();
+</script></body></html>

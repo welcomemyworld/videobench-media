@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CHRONO-GENESIS // THE LIVING CATHEDRAL</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Courier New', monospace;
+  }
+  #stage {
+    position: relative; width: 1280px; height: 720px;
+    transform-origin: center center;
+    box-shadow: 0 0 60px rgba(0, 200, 255, 0.15);
+    overflow: hidden; background: #000;
+  }
+  canvas {
+    position: absolute; top: 0; left: 0;
+    width: 1280px; height: 720px; display: block;
+  }
+  #hud { pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="gl" width="1280" height="720"></canvas>
+  <canvas id="hud" width="1280" height="720"></canvas>
+</div>
+<script>
+window.DUR = 36;
+
+// Fit 1280x720 stage cleanly to any viewport
+function resize() {
+  const s = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+  document.getElementById('stage').style.transform = `scale(${s})`;
+}
+window.addEventListener('resize', resize);
+resize();
+
+const glCanvas = document.getElementById('gl');
+const gl = glCanvas.getContext('webgl', { preserveDrawingBuffer: true, antialias: false, depth: false, stencil: false });
+const hudCanvas = document.getElementById('hud');
+const ctx = hudCanvas.getContext('2d');
+
+const vsSource = `
+attribute vec2 a_pos;
+void main() {
+  gl_Position = vec4(a_pos, 0.0, 1.0);
+}`;
+
+const fsSource = `
+precision highp float;
+uniform float u_time;
+uniform vec2 u_res;
+
+mat2 rot(float a) {
+  float s = sin(a), c = cos(a);
+  return mat2(c, -s, s, c);
+}
+
+float smin(float a, float b, float k) {
+  float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+  return mix(b, a, h) - k * h * (1.0 - h);
+}
+
+float sdBox(vec3 p, vec3 b) {
+  vec3 q = abs(p) - b;
+  return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+}
+
+// Phase timings across 36s loop
+void getPhases(float t, out float m1, out float m2, out float m3, out float m4) {
+  m1 = smoothstep(6.5, 10.5, t);
+  m2 = smoothstep(14.5, 18.5, t);
+  m3 = smoothstep(22.5, 26.5, t);
+  m4 = smoothstep(31.5, 35.5, t);
+}
+
+vec4 map(vec3 p) {
+  float t = u_time;
+  float m1, m2, m3, m4;
+  getPhases(t, m1, m2, m3, m4);
+
+  // Seamless return to origin state at end of loop
+  float active = 1.0 - m4;
+  m1 *= active;
+  m2 *= active;
+  m3 *= active;
+
+  // Phase 1: Singularity Core + Dyson Rings
+  vec3 q = p;
+  q.xy *= rot(t * 0.5);
+  q.yz *= rot(t * 0.35);
+
+  float disp = sin(q.x * 5.0 + t * 2.5) * sin(q.y * 5.0 - t * 2.0) * sin(q.z * 5.0 + t * 1.5);
+  float dCore = length(q) - (1.05 + 0.14 * disp * (1.0 - 0.6 * m1));
+
+  vec3 r1 = p;
+  r1.yz *= rot(t * 0.6 + 0.4);
+  r1.xz *= rot(t * 0.4);
+  float dRing1 = max(abs(length(r1.xy) - 1.95) - 0.07, abs(r1.z) - 0.05);
+
+  vec3 r2 = p;
+  r2.xz *= rot(-t * 0.7 - 0.5);
+  r2.xy *= rot(t * 0.3);
+  float dRing2 = max(abs(length(r2.xy) - 2.45) - 0.05, abs(r2.z) - 0.04);
+
+  float dRings = min(dRing1, dRing2);
+  float dSingularity = smin(dCore, dRings, 0.18);
+
+  // Phase 2 & 3 & 4: Apollonian Kaleidoscopic Megastructure
+  vec3 z = p;
+  if (m2 > 0.001) {
+    float twist = sin(z.z * 0.18 + t * 0.5) * 0.45 * m2 * (1.0 - 0.5 * m3);
+    z.xy *= rot(twist);
+    vec3 repP = mod(z + 4.0, 8.0) - 4.0;
+    z = mix(z, repP, m2);
+  }
+
+  float scale = 1.0;
+  float trap = 1e10;
+  float shift = mix(1.45, 2.05, m2) + 0.25 * m3 * sin(t * 1.2);
+  float foldAngle = 0.18 * sin(t * 0.35) * m1 + 0.55 * m3;
+
+  for (int i = 0; i < 6; i++) {
+    z = abs(z);
+    if (z.x < z.y) z.xy = z.yx;
+    if (z.x < z.z) z.xz = z.zx;
+    if (z.y < z.z) z.yz = z.zy;
+
+    z.xy *= rot(foldAngle);
+
+    float k = clamp(shift / max(dot(z, z), 0.14), 1.0, 3.1);
+    z *= k;
+    scale *= k;
+    z -= vec3(1.15, 0.75, 1.45) * (0.65 + 0.35 * m2);
+
+    trap = min(trap, length(z.xy) / scale);
+  }
+
+  float dBox = sdBox(z, vec3(1.1, 1.1, 2.8)) / scale;
+  float dCage = (length(z.xy) - 0.28) / scale;
+  float dFractal = mix(dBox, max(dBox, -dCage), m1) - 0.008;
+
+  // Morph between Singularity and Cathedral
+  float d = mix(dSingularity, dFractal, m1);
+
+  // Phase 4: Hyper-Conduit Lattice Beams
+  float dBeams = 1e5;
+  if (m2 > 0.01) {
+    vec3 bp = mod(p + 2.0, 4.0) - 2.0;
+    float b1 = length(bp.xy) - 0.035;
+    float b2 = length(bp.yz) - 0.035;
+    float b3 = length(bp.xz) - 0.035;
+    dBeams = min(b1, min(b2, b3));
+    d = min(d, mix(10.0, dBeams, m2));
+  }
+
+  float mat = 0.0;
+  if (dRings < dCore && m1 < 0.5) mat = 1.0;
+  if (m2 > 0.01 && dBeams < dFractal + 0.02) mat = 2.0;
+
+  return vec4(d, trap, mat, dRings);
+}
+
+vec3 calcNormal(vec3 p) {
+  vec2 e = vec2(0.002, -0.002);
+  return normalize(
+    e.xyy * map(p + e.xyy).x +
+    e.yyx * map(p + e.yyx).x +
+    e.yxy * map(p + e.yxy).x +
+    e.xxx * map(p + e.xxx).x
+  );
+}
+
+vec3 palette(float t) {
+  vec3 a = vec3(0.5, 0.5, 0.55);
+  vec3 b = vec3(0.5, 0.5, 0.45);
+  vec3 c = vec3(1.0, 1.0, 1.0);
+  vec3 d = vec3(0.00, 0.35, 0.67);
+  return a + b * cos(6.28318 * (c * t + d));
+}
+
+void main() {
+  vec2 uv = (gl_FragCoord.xy - 0.5 * u_res) / u_res.y;
+  float t = u_time;
+
+  float m1, m2, m3, m4;
+  getPhases(t, m1, m2, m3, m4);
+  float active = 1.0 - m4;
+
+  // Cinematic Camera Choreography
+  float camRadius = mix(4.2, 6.2, m1 * active) * (1.0 - 0.3 * m3 * active);
+  float camSpeed = t * 0.35 + m3 * active * (t - 22.5) * 0.8;
+  vec3 ro = vec3(sin(camSpeed) * camRadius, sin(t * 0.25) * 1.4, cos(camSpeed) * camRadius);
+  vec3 ta = vec3(0.0, 0.0, 0.0);
+
+  if (m2 > 0.001) {
+    vec3 tunnelRo = vec3(sin(t * 0.4) * 1.2, cos(t * 0.3) * 1.2, t * 3.5);
+    vec3 tunnelTa = vec3(sin(t * 0.4 + 0.5) * 0.8, cos(t * 0.3 + 0.5) * 0.8, t * 3.5 + 4.0);
+    ro = mix(ro, tunnelRo, m2 * active);
+    ta = mix(ta, tunnelTa, m2 * active);
+  }
+
+  vec3 ww = normalize(ta - ro);
+  vec3 uu = normalize(cross(ww, vec3(sin(t * 0.15) * 0.3, 1.0, 0.0)));
+  vec3 vv = normalize(cross(uu, ww));
+
+  // Subtle barrel lens distortion during hyper-drive
+  float r2 = dot(uv, uv);
+  vec2 dUv = uv * (1.0 + (0.12 + 0.22 * m3 * active) * r2);
+  float fov = mix(1.25, 0.85, m3 * active);
+  vec3 rd = normalize(dUv.x * uu + dUv.y * vv + fov * ww);
+
+  // Volumetric Raymarching Loop
+  float totalD = 0.0;
+  vec3 glow = vec3(0.0);
+  vec4 res = vec4(0.0);
+  bool hit = false;
+
+  for (int i = 0; i < 84; i++) {
+    vec3 p = ro + rd * totalD;
+    res = map(p);
+    float d = res.x;
+
+    // Accumulate multi-spectrum volumetric aura
+    float g = 0.011 / (0.018 + d * d * 7.0);
+    vec3 gCol = palette(res.y * 1.8 + t * 0.12 + float(i) * 0.012);
+    if (res.z > 1.5) gCol = vec3(0.2, 0.9, 1.0) * 1.8;
+    else if (res.z > 0.5) gCol = vec3(1.0, 0.65, 0.2) * 1.5;
+
+    glow += gCol * g * (0.45 + 0.55 * m1);
+
+    if (abs(d) < 0.0018 || totalD > 26.0) {
+      if (abs(d) < 0.0018) hit = true;
+      break;
+    }
+    totalD += d * 0.78;
+  }
+
+  // Deep Space Background & Nebula
+  vec3 col = vec3(0.01, 0.015, 0.03) * (1.0 - 0.5 * r2);
+  float stars = pow(clamp(fract(sin(dot( floor(rd * 220.0), vec3(12.9898, 78.233, 45.164))) * 43758.5453), 0.0, 1.0), 35.0);
+  col += vec3(0.7, 0.85, 1.0) * stars * (1.0 - clamp(length(glow), 0.0, 1.0));
+
+  if (hit) {
+    vec3 p = ro + rd * totalD;
+    vec3 n = calcNormal(p);
+    vec3 v = -rd;
+
+    // Cheap 2-tap Ambient Occlusion
+    float ao = clamp(map(p + n * 0.08).x / 0.08, 0.0, 1.0) *
+               clamp(map(p + n * 0.22).x / 0.22, 0.0, 1.0);
+    ao = pow(ao, 0.6);
+
+    vec3 l1 = normalize(vec3(1.0, 1.5, -1.0));
+    vec3 l2 = normalize(vec3(-1.2, -0.8, 0.8));
+
+    float diff1 = max(dot(n, l1), 0.0);
+    float diff2 = max(dot(n, l2), 0.0);
+    float spec = pow(max(dot(reflect(-l1, n), v), 0.0), 28.0);
+    float fres = pow(1.0 - max(dot(n, v), 0.0), 3.5);
+
+    vec3 baseCol = palette(res.y * 2.5 + p.z * 0.05 + t * 0.1);
+    if (res.z > 1.5) baseCol = vec3(0.6, 0.95, 1.0);
+    else if (res.z > 0.5) baseCol = vec3(1.0, 0.75, 0.3);
+
+    // Sub-surface gold/cyan veins pulsing along fractal traps
+    float vein = smoothstep(0.04, 0.0, abs(fract(res.y * 8.0 - t * 0.8) - 0.5));
+    vec3 veinCol = mix(vec3(1.0, 0.55, 0.1), vec3(0.1, 0.9, 1.0), sin(t * 0.5) * 0.5 + 0.5);
+
+    vec3 surf = baseCol * (diff1 * vec3(1.0, 0.9, 0.8) * 0.85 + diff2 * vec3(0.2, 0.5, 0.9) * 0.45 + 0.12) * ao;
+    surf += spec * vec3(1.0, 0.95, 0.85) * 0.9 * ao;
+    surf += fres * palette(res.y + 0.4) * 1.1;
+    surf += vein * veinCol * 1.4;
+
+    float fog = exp(-0.0045 * totalD * totalD);
+    col = mix(col, surf, fog);
+  }
+
+  // Add volumetric energy glow
+  col += glow * 0.085;
+
+  // Phase transition flash accents
+  float flash = exp(-pow((t - 8.5) * 2.2, 2.0)) * 0.35 +
+                exp(-pow((t - 16.5) * 2.2, 2.0)) * 0.35 +
+                exp(-pow((t - 24.5) * 2.2, 2.0)) * 0.45;
+  col += vec3(0.5, 0.8, 1.0) * flash;
+
+  // ACES Filmic Tone Mapping
+  col *= 1.15;
+  vec3 x = max(vec3(0.0), col - 0.004);
+  col = (x * (6.2 * x + 0.5)) / (x * (6.2 * x + 1.7) + 0.06);
+
+  // Subtle scanlines and cinematic vignette
+  float scan = 0.97 + 0.03 * sin(gl_FragCoord.y * 3.14159);
+  col *= scan * (1.0 - 0.38 * r2);
+
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+function compileShader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  return s;
+}
+
+const prog = gl.createProgram();
+gl.attachShader(prog, compileShader(gl.VERTEX_SHADER, vsSource));
+gl.attachShader(prog, compileShader(gl.FRAGMENT_SHADER, fsSource));
+gl.linkProgram(prog);
+gl.useProgram(prog);
+
+const quad = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+
+const aPos = gl.getAttribLocation(prog, 'a_pos');
+gl.enableVertexAttribArray(aPos);
+gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+const uTime = gl.getUniformLocation(prog, 'u_time');
+const uRes = gl.getUniformLocation(prog, 'u_res');
+gl.uniform2f(uRes, 1280, 720);
+
+const chapters = [
+  { start: 0,  end: 8.5,  id: "ACT I // 01", title: "PRIMORDIAL SINGULARITY", sub: "QUANTUM HARMONIC RESONANCE STABILIZED", dim: "3.000D" },
+  { start: 8.5, end: 16.5, id: "ACT II // 02", title: "HYPER-FOLD ARCHITECTURE", sub: "APOLLONIAN MANIFOLD UNFOLDING IN 4-SPACE", dim: "4.618D" },
+  { start: 16.5,end: 24.5, id: "ACT III // 03", title: "CELESTIAL CATHEDRAL", sub: "INFINITE RECURSIVE LATTICE SYNCHRONIZED", dim: "7.389D" },
+  { start: 24.5,end: 36.0, id: "ACT IV // 04", title: "TRANSCENDENCE CONDUIT", sub: "DIMENSIONAL CONVERGENCE // OMEGA LOOP", dim: "11.000D" }
+];
+
+function drawHUD(t) {
+  ctx.clearRect(0, 0, 1280, 720);
+
+  // Cinema Letterbox Bars
+  ctx.fillStyle = '#04060a';
+  ctx.fillRect(0, 0, 1280, 44);
+  ctx.fillRect(0, 676, 1280, 44);
+
+  ctx.strokeStyle = 'rgba(0, 210, 255, 0.35)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, 44.5); ctx.lineTo(1280, 44.5);
+  ctx.moveTo(0, 675.5); ctx.lineTo(1280, 675.5);
+  ctx.stroke();
+
+  // Determine current chapter
+  let ch = chapters[0];
+  for (let i = 0; i < chapters.length; i++) {
+    if (t >= chapters[i].start && t < chapters[i].end) { ch = chapters[i]; break; }
+  }
+  const localT = t - ch.start;
+  const chDur = ch.end - ch.start;
+  const textAlpha = Math.min(1, localT / 1.0) * Math.min(1, (chDur - localT) / 1.0);
+
+  // Top Telemetry Bar
+  ctx.fillStyle = 'rgba(160, 230, 255, 0.85)';
+  ctx.font = 'bold 12px "Courier New", monospace';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  ctx.fillText('CHRONO-GENESIS // REALTIME RAYMARCHED SYNTHESIS', 28, 22);
+
+  ctx.textAlign = 'center';
+  const freq = (432 + Math.sin(t * 2.1) * 48).toFixed(2);
+  const entropy = (0.042 + Math.cos(t * 0.7) * 0.019).toFixed(4);
+  ctx.fillStyle = 'rgba(0, 210, 255, 0.75)';
+  ctx.fillText(`RESONANCE: ${freq} THz   |   TOPOLOGY: ${ch.dim}   |   ENTROPY: ${entropy} J/K`, 640, 22);
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = 'rgba(255, 190, 90, 0.9)';
+  const timeStr = t.toFixed(2).padStart(5, '0') + 's / 36.00s';
+  ctx.fillText(`T+ ${timeStr}`, 1252, 22);
+
+  // Center Sacred Geometry Reticle (subtle)
+  ctx.save();
+  ctx.translate(640, 360);
+  ctx.strokeStyle = 'rgba(0, 220, 255, 0.14)';
+  ctx.lineWidth = 1;
+
+  // Rotating outer compass ring
+  ctx.save();
+  ctx.rotate(t * 0.08);
+  ctx.beginPath();
+  ctx.arc(0, 0, 275, 0, Math.PI * 2);
+  ctx.stroke();
+
+  for (let i = 0; i < 24; i++) {
+    const a = (i / 24) * Math.PI * 2;
+    const rIn = (i % 3 === 0) ? 265 : 270;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * rIn, Math.sin(a) * rIn);
+    ctx.lineTo(Math.cos(a) * 275, Math.sin(a) * 275);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // Counter-rotating inner ticks
+  ctx.save();
+  ctx.rotate(-t * 0.15);
+  ctx.strokeStyle = 'rgba(255, 180, 70, 0.15)';
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+    ctx.beginPath();
+    ctx.arc(0, 0, 190, a - 0.18, a + 0.18);
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.restore();
+
+  // Left & Right HUD Framing Brackets
+  ctx.strokeStyle = 'rgba(0, 210, 255, 0.35)';
+  ctx.lineWidth = 1.5;
+  // Left bracket
+  ctx.beginPath();
+  ctx.moveTo(42, 85); ctx.lineTo(28, 85); ctx.lineTo(28, 635); ctx.lineTo(42, 635);
+  // Right bracket
+  ctx.moveTo(1238, 85); ctx.lineTo(1252, 85); ctx.lineTo(1252, 635); ctx.lineTo(1238, 635);
+  ctx.stroke();
+
+  // Dynamic Harmonic Spectrum Analyzer on Right Side
+  ctx.fillStyle = 'rgba(0, 210, 255, 0.45)';
+  for (let i = 0; i < 18; i++) {
+    const y = 260 + i * 11;
+    const w = 6 + Math.abs(Math.sin(t * 3.5 + i * 0.55)) * 22;
+    ctx.fillRect(1244 - w, y, w, 5);
+  }
+
+  // Chapter Title Card (Lower Left)
+  if (textAlpha > 0.01) {
+    ctx.save();
+    ctx.globalAlpha = textAlpha;
+
+    // Accent bar
+    ctx.fillStyle = '#00e5ff';
+    ctx.fillRect(52, 565, 3, 72);
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#ffb84d';
+    ctx.font = 'bold 12px "Courier New", monospace';
+    ctx.fillText(ch.id, 68, 576);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 26px "Courier New", monospace';
+    ctx.shadowColor = 'rgba(0, 229, 255, 0.6)';
+    ctx.shadowBlur = 12;
+    ctx.fillText(ch.title, 68, 603);
+    ctx.shadowBlur = 0;
+
+    ctx.fillStyle = 'rgba(180, 235, 255, 0.85)';
+    ctx.font = '12px "Courier New", monospace';
+    ctx.fillText(ch.sub, 68, 628);
+
+    ctx.restore();
+  }
+
+  // Bottom Progress Timeline
+  const progW = (t / window.DUR) * 1224;
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.12)';
+  ctx.fillRect(28, 696, 1224, 3);
+  ctx.fillStyle = '#00e5ff';
+  ctx.fillRect(28, 696, progW, 3);
+
+  // Chapter markers on timeline
+  for (let i = 0; i < chapters.length; i++) {
+    const mx = 28 + (chapters[i].start / window.DUR) * 1224;
+    ctx.fillStyle = t >= chapters[i].start ? '#ffb84d' : 'rgba(255,255,255,0.3)';
+    ctx.fillRect(mx - 1, 693, 2, 9);
+  }
+}
+
+const urlParams = new URLSearchParams(window.location.search);
+const startOffset = parseFloat(urlParams.get('t')) || 0;
+let baseTime = null;
+
+function frame(now) {
+  if (baseTime === null) baseTime = now;
+  const elapsed = ((now - baseTime) * 0.001 + startOffset) % window.DUR;
+
+  gl.uniform1f(uTime, elapsed);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+  drawHUD(elapsed);
+
+  requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

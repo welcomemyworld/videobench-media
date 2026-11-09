@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Armillary</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#stage{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform:translate(-50%,-50%) scale(var(--sc,1));transform-origin:center center}
+canvas{display:block;background:#000}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+window.DUR = 40;
+const W = 1280, H = 720, TAU = Math.PI * 2;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const stage = document.getElementById('stage');
+function fit(){
+  const sc = Math.min(innerWidth / W, innerHeight / H);
+  stage.style.setProperty('--sc', sc);
+}
+fit();
+addEventListener('resize', fit);
+
+function mulberry(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+const rnd = mulberry(2027);
+const stars = [];
+for (let i = 0; i < 340; i++){
+  stars.push({x: rnd()*W, y: rnd()*H, r: 0.3 + rnd()*1.35, p: rnd()*TAU, k: 0.4 + rnd()*0.8});
+}
+const embers = [];
+for (let i = 0; i < 160; i++){
+  embers.push({a: rnd()*TAU, rad: 78 + rnd()*210, sp: (0.35 + rnd()*1.4) * (rnd()<0.5?-1:1), h: (rnd()-0.5)*18, w: rnd()});
+}
+const motes = [];
+for (let i = 0; i < 70; i++){
+  motes.push({x: (rnd()-0.5)*700, y: (rnd()-0.5)*420, z: (rnd()-0.5)*180, p: rnd()*TAU});
+}
+
+const qs = new URLSearchParams(location.search);
+let off = parseFloat(qs.get('t') || '0');
+if (!isFinite(off)) off = 0;
+let origin = null;
+
+function project(x, y, z, depth){
+  const d = z + depth;
+  if (d < 36) return null;
+  const s = 720 / d;
+  return [W/2 + x * s, H/2 + y * s, s];
+}
+function xform(x, y, z, yaw, pitch, roll, depth){
+  const cy = Math.cos(yaw), sy = Math.sin(yaw);
+  let x1 = x*cy - z*sy, z1 = x*sy + z*cy;
+  const cp = Math.cos(pitch), sp = Math.sin(pitch);
+  let y2 = y*cp - z1*sp, z2 = y*sp + z1*cp;
+  const cr = Math.cos(roll), sr = Math.sin(roll);
+  let x3 = x1*cr - y2*sr, y3 = x1*sr + y2*cr;
+  return project(x3, y3, z2, depth);
+}
+function ringXYZ(R, a, ax, ay){
+  let x = Math.cos(a)*R, y = Math.sin(a)*R, z = 0;
+  const cx = Math.cos(ax), sx = Math.sin(ax);
+  let y1 = y*cx - z*sx, z1 = y*sx + z*cx;
+  const cy = Math.cos(ay), sy = Math.sin(ay);
+  let x2 = x*cy + z1*sy, z2 = -x*sy + z1*cy;
+  return [x2, y1, z2];
+}
+
+function render(t){
+  const u = t / window.DUR;
+  const yaw = u * TAU * 0.65;
+  const pitch = Math.sin(u * TAU) * 0.42 + 0.18;
+  const roll = Math.sin(u * TAU * 2) * 0.07;
+  const depth = 500 + Math.sin(u * TAU) * 55;
+  const energy = 0.62 + 0.38 * Math.sin(u * Math.PI);
+  const spin = u * TAU * 5;
+
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#02010a';
+  ctx.fillRect(0,0,W,H);
+
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0, '#07061a');
+  g.addColorStop(0.45, '#0a0612');
+  g.addColorStop(1, '#140804');
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,W,H);
+
+  ctx.globalCompositeOperation = 'lighter';
+  const neb = [
+    [280, 180, 340, 'rgba(40,90,160,0.10)'],
+    [980, 520, 380, 'rgba(180,60,30,0.09)'],
+    [640, 360, 260, 'rgba(255,170,70,' + (0.05*energy) + ')']
+  ];
+  for (const n of neb){
+    const ng = ctx.createRadialGradient(n[0], n[1], 0, n[0], n[1], n[2]);
+    ng.addColorStop(0, n[3]);
+    ng.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = ng;
+    ctx.beginPath();
+    ctx.arc(n[0], n[1], n[2], 0, TAU);
+    ctx.fill();
+  }
+
+  ctx.globalCompositeOperation = 'source-over';
+  for (const s of stars){
+    let dx = s.x - W/2, dy = s.y - H/2;
+    const r2 = dx*dx + dy*dy + 900;
+    const bend = 1 + 22000 / r2;
+    const tw = Math.sin(dx*0.004 + t*0.15);
+    const px = W/2 + dx*bend + tw*dy*0.012;
+    const py = H/2 + dy*bend - tw*dx*0.012;
+    const rr = Math.hypot(px - W/2, py - H/2);
+    if (rr < 52) continue;
+    const twk = 0.35 + 0.65*(0.5 + 0.5*Math.sin(t*1.7*s.k + s.p));
+    ctx.globalAlpha = twk * (0.35 + s.r*0.4);
+    ctx.fillStyle = rr < 160 ? '#ffe2b0' : (s.p > 3 ? '#c9e7ff' : '#fff6e8');
+    ctx.fillRect(px, py, s.r, s.r);
+  }
+  ctx.globalAlpha = 1;
+
+  ctx.globalCompositeOperation = 'lighter';
+  const rings = [
+    {R: 250, ax: 1.15, ay: 0.2, col: 'rgba(255,196,110,', w: 1.4},
+    {R: 250, ax: 0.15, ay: 1.05, col: 'rgba(120,220,255,', w: 1.2},
+    {R: 268, ax: 0.7, ay: 0.7, col: 'rgba(255,120,70,', w: 1.1},
+    {R: 232, ax: 1.57, ay: 0.35, col: 'rgba(255,230,190,', w: 1.3},
+    {R: 290, ax: 0.4, ay: 1.8, col: 'rgba(90,160,255,', w: 1.0}
+  ];
+  for (const rg of rings){
+    const N = 140;
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i <= N; i++){
+      const a = i / N * TAU + spin * 0.15;
+      const p = ringXYZ(rg.R, a, rg.ax + yaw*0.25, rg.ay);
+      const q = xform(p[0], p[1], p[2], yaw, pitch, roll, depth);
+      if (!q){ started = false; continue; }
+      if (!started){ ctx.moveTo(q[0], q[1]); started = true; }
+      else ctx.lineTo(q[0], q[1]);
+    }
+    ctx.strokeStyle = rg.col + (0.28*energy) + ')';
+    ctx.lineWidth = rg.w * 3.2;
+    ctx.stroke();
+    ctx.strokeStyle = rg.col + (0.75*energy) + ')';
+    ctx.lineWidth = rg.w;
+    ctx.stroke();
+    for (let i = 0; i < 24; i++){
+      const a = i / 24 * TAU + spin * 0.15;
+      const p0 = ringXYZ(rg.R - 8, a, rg.ax + yaw*0.25, rg.ay);
+      const p1 = ringXYZ(rg.R + 10, a, rg.ax + yaw*0.25, rg.ay);
+      const q0 = xform(p0[0], p0[1], p0[2], yaw, pitch, roll, depth);
+      const q1 = xform(p1[0], p1[1], p1[2], yaw, pitch, roll, depth);
+      if (!q0 || !q1) continue;
+      ctx.beginPath();
+      ctx.moveTo(q0[0], q0[1]);
+      ctx.lineTo(q1[0], q1[1]);
+      ctx.strokeStyle = 'rgba(255,236,200,' + (0.45*energy) + ')';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+  }
+
+  for (let layer = 0; layer < 6; layer++){
+    const rad = 86 + layer * 32;
+    const N = 120;
+    const sp = spin * (1.15 + layer * 0.22) * (layer % 2 ? -1 : 1);
+    let prev = null;
+    for (let i = 0; i <= N; i++){
+      const a = i / N * TAU + sp;
+      const ix = Math.cos(a) * rad;
+      const iz = Math.sin(a) * rad * 0.28;
+      const iy = Math.sin(a) * rad * 0.08;
+      const q = xform(ix, iy, iz, yaw*0.15, pitch, roll, depth);
+      if (prev && q){
+        const hot = 0.5 + 0.5 * Math.cos(a - spin);
+        const alpha = (0.15 + hot * 0.55) * energy * (1 - layer*0.08);
+        ctx.beginPath();
+        ctx.moveTo(prev[0], prev[1]);
+        ctx.lineTo(q[0], q[1]);
+        if (hot > 0.55) ctx.strokeStyle = 'rgba(190,235,255,' + alpha + ')';
+        else ctx.strokeStyle = 'rgba(255,' + (90+hot*80|0) + ',40,' + alpha + ')';
+        ctx.lineWidth = (2.8 - layer*0.25) * (q[2] * 1.1);
+        ctx.stroke();
+      }
+      prev = q;
+    }
+  }
+
+  for (const e of embers){
+    const a = e.a + t * e.sp * 0.55;
+    const ix = Math.cos(a) * e.rad;
+    const iz = Math.sin(a) * e.rad * 0.28;
+    const q = xform(ix, e.h, iz, yaw*0.15, pitch, roll, depth);
+    if (!q) continue;
+    const hot = 0.5 + 0.5*Math.cos(a);
+    ctx.globalAlpha = (0.25 + 0.6*e.w) * energy;
+    ctx.fillStyle = hot > 0.5 ? '#d8f6ff' : '#ffb15a';
+    const sz = Math.max(0.6, q[2] * 2.2);
+    ctx.fillRect(q[0], q[1], sz, sz);
+  }
+  ctx.globalAlpha = 1;
+
+  const bh = xform(0, 0, 0, yaw, pitch, roll, depth);
+  const bs = bh ? bh[2] : 1;
+  const bx = bh ? bh[0] : W/2, by = bh ? bh[1] : H/2;
+  const R = 54 * bs * (720/depth) * (depth/720) * 1.15;
+  const hole = 46 * (720 / depth);
+
+  const cg = ctx.createRadialGradient(bx, by, hole*0.2, bx, by, hole*7);
+  cg.addColorStop(0, 'rgba(255,220,160,' + (0.55*energy) + ')');
+  cg.addColorStop(0.18, 'rgba(255,90,40,' + (0.22*energy) + ')');
+  cg.addColorStop(0.45, 'rgba(40,80,180,0.08)');
+  cg.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = cg;
+  ctx.beginPath();
+  ctx.arc(bx, by, hole*7, 0, TAU);
+  ctx.fill();
+
+  for (let k = 0; k < 3; k++){
+    const ph = (t / 8 + k / 3) % 1;
+    const sr = hole * 1.1 + ph * 340;
+    ctx.beginPath();
+    ctx.arc(bx, by, sr, 0, TAU);
+    ctx.strokeStyle = 'rgba(255,210,150,' + ((1-ph)*(1-ph)*0.28*energy) + ')';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.beginPath();
+  ctx.arc(bx, by, hole, 0, TAU);
+  ctx.fillStyle = '#000';
+  ctx.fill();
+
+  ctx.globalCompositeOperation = 'lighter';
+  const rimCols = [
+    ['rgba(255,50,40,0.55)', 3.2, 2.2],
+    ['rgba(80,220,255,0.5)', -2.4, 1.6],
+    ['rgba(255,226,170,0.9)', 0, 0]
+  ];
+  for (const rc of rimCols){
+    ctx.beginPath();
+    ctx.arc(bx + rc[1], by + rc[2]*0.4, hole + 1.5, 0, TAU);
+    ctx.strokeStyle = rc[0];
+    ctx.lineWidth = rc[2] === 0 ? 2.2 : 4;
+    ctx.globalAlpha = energy;
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  for (let i = 0; i < 18; i++){
+    const a = i / 18 * TAU + t * 0.05;
+    const len = 90 + 40*Math.sin(t*0.8 + i);
+    ctx.beginPath();
+    ctx.moveTo(bx + Math.cos(a)*hole*1.05, by + Math.sin(a)*hole*1.05);
+    ctx.lineTo(bx + Math.cos(a)*(hole + len), by + Math.sin(a)*(hole + len));
+    ctx.strokeStyle = 'rgba(255,200,140,' + (0.04 + 0.03*Math.sin(t+i)) * energy + ')';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  for (const m of motes){
+    const q = xform(m.x, m.y, m.z, yaw*0.4, pitch*0.5, roll, depth - 80);
+    if (!q) continue;
+    const fl = 0.4 + 0.6*(0.5+0.5*Math.sin(t*2 + m.p));
+    ctx.globalAlpha = 0.25 * fl * energy;
+    ctx.fillStyle = '#ffe6c4';
+    const sz = 1.2 + q[2]*3;
+    ctx.beginPath();
+    ctx.arc(q[0], q[1], sz, 0, TAU);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  ctx.globalCompositeOperation = 'source-over';
+  const vg = ctx.createRadialGradient(W/2, H/2, 180, W/2, H/2, 640);
+  vg.addColorStop(0, 'rgba(0,0,0,0)');
+  vg.addColorStop(1, 'rgba(0,0,0,0.72)');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0,0,W,H);
+
+  const capIn = Math.max(0, Math.min(1, (t - 6) / 2));
+  const capOut = Math.max(0, Math.min(1, (t - 28) / 3));
+  const capA = capIn * (1 - capOut) * 0.9;
+  if (capA > 0.01){
+    ctx.globalAlpha = capA;
+    ctx.fillStyle = '#f3e6d0';
+    ctx.font = '22px Georgia, "Palatino Linotype", serif';
+    const label = 'ARMILLARY';
+    const gap = 10;
+    let tw = 0;
+    for (const ch of label) tw += ctx.measureText(ch).width + gap;
+    tw -= gap;
+    let x = W/2 - tw/2;
+    const y = 86;
+    for (const ch of label){
+      ctx.fillText(ch, x, y);
+      x += ctx.measureText(ch).width + gap;
+    }
+    ctx.font = '13px Georgia, serif';
+    ctx.globalAlpha = capA * 0.75;
+    const sub = 'a clock built around nothing';
+    ctx.fillText(sub, W/2 - ctx.measureText(sub).width/2, 112);
+    ctx.globalAlpha = 1;
+  }
+
+  const edge = Math.min(1, t / 1.1, (window.DUR - t) / 1.1);
+  if (edge < 1){
+    ctx.globalAlpha = 1 - edge;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0,0,W,H);
+    ctx.globalAlpha = 1;
+  }
+}
+
+function frame(now){
+  if (origin === null) origin = now - off * 1000;
+  let t = (now - origin) / 1000;
+  t = ((t % window.DUR) + window.DUR) % window.DUR;
+  render(t);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>GravityDEX x Gojo</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=30;
+const c=document.getElementById('c'),x=c.getContext('2d'),W=1280,H=720;
+function fit(){const s=Math.min(innerWidth/W,innerHeight/H);c.style.width=W*s+'px';c.style.height=H*s+'px'}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),T0=parseFloat(q.get('t')||0)||0,start=performance.now();
+let seed=7;const R=()=>(seed=(seed*16807)%2147483647)/2147483647;
+const P=[];for(let i=0;i<700;i++)P.push({a:R()*6.283,r:80+R()*900,s:.5+R()*2,z:R()});
+const S=[];for(let i=0;i<400;i++)S.push({x:R()*2-1,y:R()*2-1,z:R()});
+const C=[];let v=0;for(let i=0;i<40;i++){const o=v;v+=(R()-.42)*30;C.push({o,c:v,h:Math.max(o,v)+R()*15,l:Math.min(o,v)-R()*15})}
+const BEAT=60/140;
+const cl=(a,b,t)=>Math.max(a,Math.min(b,t)),ease=t=>1-Math.pow(1-cl(0,1,t),3);
+function glow(px,py,r,col,a){const g=x.createRadialGradient(px,py,0,px,py,r);g.addColorStop(0,col.replace('A',a));g.addColorStop(1,col.replace('A',0));x.fillStyle=g;x.beginPath();x.arc(px,py,r,0,7);x.fill()}
+function slam(txt,lt,y,size,col,sub){if(lt<0)return;const k=ease(lt*4),sc=1+(1-k)*2.5;
+x.save();x.translate(W/2,y);x.scale(sc,sc);x.globalAlpha=k;x.textAlign='center';x.textBaseline='middle';
+x.font=`900 italic ${size}px Impact,Arial Black,sans-serif`;
+x.fillStyle='#f0f';x.fillText(txt,-4,0);x.fillStyle='#0ff';x.fillText(txt,4,0);x.fillStyle=col;x.fillText(txt,0,0);
+if(sub){x.font='600 22px Arial,sans-serif';x.fillStyle='#ddd';x.fillText(sub,0,size*.75)}x.restore()}
+function orb(px,py,r,col,t){glow(px,py,r*3.5,col,.35);glow(px,py,r*1.4,col,.9);x.fillStyle='#fff';x.beginPath();x.arc(px,py,r*.45,0,7);x.fill();
+x.strokeStyle=col.replace('A',.8);x.lineWidth=2;for(let i=0;i<3;i++){x.beginPath();x.ellipse(px,py,r*(1.6+i*.4),r*(.5+i*.2),t*(1+i)+i,0,7);x.stroke()}}
+function candles(t,mode,ox,oy){for(let i=0;i<C.length;i++){const d=C[i];let bx=80+i*28,by=420;
+let dx=bx-ox,dy=by-oy,dist=Math.hypot(dx,dy)+1,f=mode*cl(0,1,t)*9000/dist;
+bx+=dx/dist*f;by+=dy/dist*f;const up=d.c>d.o;x.strokeStyle=x.fillStyle=up?'#3f8':'#f35';
+x.globalAlpha=.8;x.beginPath();x.moveTo(bx,by-d.h);x.lineTo(bx,by-d.l);x.stroke();
+x.fillRect(bx-8,by-Math.max(d.o,d.c),16,Math.max(3,Math.abs(d.c-d.o)))}x.globalAlpha=1}
+function gojo(t,a){x.save();x.globalAlpha=a;x.translate(W/2,H+40);
+const hx=0,hy=-430;glow(hx,hy,320,'rgba(120,80,255,A)',.4);
+x.fillStyle='#0a0a14';x.beginPath();x.moveTo(-330,0);x.quadraticCurveTo(-300,-250,-90,-290);x.lineTo(90,-290);x.quadraticCurveTo(300,-250,330,0);x.fill();
+x.fillRect(-55,-340,110,80);
+x.fillStyle='#e8d8cc';x.beginPath();x.ellipse(hx,hy,95,120,0,0,7);x.fill();
+x.fillStyle='#f4f6ff';x.beginPath();for(let i=0;i<=14;i++){const an=Math.PI+i/14*Math.PI,rr=i%2?130:205+Math.sin(i*3+t*3)*8;
+x.lineTo(hx+Math.cos(an)*rr*1.05,hy-30+Math.sin(an)*rr)}x.closePath();x.fill();
+x.fillStyle='#111';x.beginPath();x.moveTo(-100,hy-40);x.lineTo(100,hy-40);x.lineTo(98,hy+5);x.lineTo(-98,hy+5);x.fill();
+// glint of eye
+const e=cl(0,1,(t-23)*2);if(e>0){glow(-40,hy-18,40*e,'rgba(90,200,255,A)',1);glow(40,hy-18,40*e,'rgba(90,200,255,A)',1)}
+// hand
+x.fillStyle='#e8d8cc';x.save();x.translate(200,-260);x.rotate(-.3);x.fillRect(-25,-40,50,70);x.fillRect(-22,-120,18,85);x.fillRect(2,-125,18,90);x.restore();
+x.restore()}
+function frame(){const t=((performance.now()-start)/1000+T0)%DUR;
+const bt=(t%BEAT)/BEAT,pulse=Math.pow(1-bt,4);let shake=pulse*4;
+x.setTransform(1,0,0,1,0,0);x.fillStyle='rgba(0,0,0,.35)';x.fillRect(0,0,W,H);
+if(t>14&&t<16)shake+=20*(1-(t-14)/2);
+x.translate((R()-.5)*shake,(R()-.5)*shake);
+const cx=W/2,cy=H/2;
+if(t<4){ // gravity well
+for(const p of P){const rr=p.r*(1-ease(t/4)*.9)+20;const a=p.a+t*p.s*(200/rr);
+x.fillStyle=`hsl(${200+p.z*80},100%,70%)`;x.fillRect(cx+Math.cos(a)*rr,cy+Math.sin(a)*rr*.6,2,2)}
+glow(cx,cy,120+pulse*40,'rgba(130,90,255,A)',.6);x.fillStyle='#000';x.beginPath();x.arc(cx,cy,50,0,7);x.fill();
+slam('GRAVITYDEX',t-1.2,600,96,'#fff','WHERE LIQUIDITY BENDS');}
+else if(t<9){const lt=t-4;candles(lt/3,-1,cx,cy);
+for(const p of P.slice(0,300)){const rr=p.r*Math.pow(.4,lt)+10,a=p.a+lt*p.s*3;x.fillStyle='#6cf';x.fillRect(cx+Math.cos(a)*rr,cy+Math.sin(a)*rr,2,2)}
+orb(cx,cy,30+ease(lt)*25+pulse*8,'rgba(40,140,255,A)',t);slam('術式順転「蒼」',lt-.3,110,70,'#bdf','CURSED TECHNIQUE LAPSE: BLUE — ALL ORDERS PULLED IN');}
+else if(t<14){const lt=t-9;candles(lt/2,1.5,cx,cy);
+for(const p of P.slice(300,600)){const rr=10+p.r*ease(lt/2)*1.2,a=p.a;x.fillStyle='#f55';x.fillRect(cx+Math.cos(a)*rr,cy+Math.sin(a)*rr,3,2)}
+orb(cx,cy,35+ease(lt)*20+pulse*8,'rgba(255,40,60,A)',-t);slam('術式反転「赫」',lt-.3,110,70,'#fbb','REVERSAL: RED — VOLATILITY REPELLED');}
+else if(t<20){const lt=t-14,m=ease(lt/1.2),d=260*(1-m);
+if(lt<1.3){orb(cx-d,cy,40,'rgba(40,140,255,A)',t);orb(cx+d,cy,40,'rgba(255,40,60,A)',-t)}
+else{const bw=ease((lt-1.3)/.6);const by=cy;
+x.globalCompositeOperation='lighter';
+glow(cx,by,300+pulse*60,'rgba(170,60,255,A)',.7);
+const g=x.createLinearGradient(0,by-140,0,by+140);g.addColorStop(0,'rgba(120,0,255,0)');g.addColorStop(.5,'rgba(230,180,255,.95)');g.addColorStop(1,'rgba(120,0,255,0)');
+x.fillStyle=g;x.fillRect(cx,by-140*bw,(W)*bw,280*bw);
+for(let i=0;i<40;i++){x.fillStyle='rgba(255,220,255,.6)';x.fillRect(cx+R()*W*bw,by+(R()-.5)*260*bw,40+R()*80,2)}
+x.globalCompositeOperation='source-over';orb(cx,cy,70+pulse*12,'rgba(170,60,255,A)',t);}
+if(lt>1.25&&lt<1.6){x.fillStyle=`rgba(255,255,255,${1-(lt-1.25)/.35})`;x.fillRect(-50,-50,W+100,H+100)}
+slam('虚式「茈」',lt-1.6,120,90,'#e6c8ff','HOLLOW PURPLE — MARKET ERASED');
+slam('LIQUIDITY: ∞',lt-3.5,620,60,'#fff');}
+else if(t<26){const lt=t-20;
+for(const s of S){const z=((s.z-lt*.15)%1+1)%1,sx=cx+s.x/z*120,sy=cy+s.y/z*120,sz=(1-z)*3;
+x.fillStyle=`hsla(${190+s.z*100},100%,80%,${1-z})`;x.fillRect(sx,sy,sz,sz)}
+x.strokeStyle='rgba(150,120,255,.25)';for(let i=0;i<8;i++){x.beginPath();x.arc(cx,cy,((lt*120+i*90)%800),0,7);x.stroke()}
+gojo(t,ease(lt/1.5));
+slam('領域展開',lt-.8,90,72,'#fff');slam('無量空処',lt-2,180,72,'#9df','DOMAIN EXPANSION: INFINITE VOID');}
+else{const lt=t-26;glow(cx,cy,500,'rgba(110,60,255,A)',.35+pulse*.2);
+for(const p of P){const rr=40+p.r*.6,a=p.a+t*.3*p.s;x.fillStyle=p.z>.5?'#6cf':'#c8f';x.fillRect(cx+Math.cos(a)*rr,cy+Math.sin(a)*rr*.5,2,2)}
+slam('GRAVITYDEX × GOJO',lt,300,88,'#fff');
+slam('天上天下唯我独尊',lt-.8,430,52,'#d9c4ff','THROUGHOUT HEAVEN AND EARTH, LIQUIDITY FLOWS ONLY TO ME');
+if(lt>3.4){x.fillStyle=`rgba(0,0,0,${(lt-3.4)/.6})`;x.fillRect(-50,-50,W+100,H+100)}}
+// letterbox + flash
+x.setTransform(1,0,0,1,0,0);x.fillStyle='#000';x.fillRect(0,0,W,36);x.fillRect(0,H-36,W,36);
+if([4,9,14,20,26].some(k=>t>k&&t<k+.15)){x.fillStyle='rgba(255,255,255,.8)';x.fillRect(0,0,W,H)}
+requestAnimationFrame(frame)}
+x.fillRect(0,0,W,H);requestAnimationFrame(frame);
+</script></body></html>

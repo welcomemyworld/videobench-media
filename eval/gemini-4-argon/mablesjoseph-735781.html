@@ -1,0 +1,1088 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>The Context Tax — Motion Graphics Explainer</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  #stage {
+    width: 1280px;
+    height: 720px;
+    background: #07090e;
+    box-shadow: 0 0 80px rgba(0,0,0,0.9);
+  }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+(() => {
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const W = 1280, H = 720;
+
+  window.DUR = 40; // 40 second cinematic explainer loop
+
+  const params = new URLSearchParams(location.search);
+  const startOffset = parseFloat(params.get('t') || '0') || 0;
+
+  function resize() {
+    const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+    canvas.style.transform = `scale(${s})`;
+    canvas.style.transformOrigin = 'center center';
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // Math & Easing helpers
+  const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const invLerp = (a, b, v) => clamp((v - a) / (b - a));
+  const easeOutCubic = t => 1 - Math.pow(1 - clamp(t), 3);
+  const easeInOutCubic = t => {
+    t = clamp(t);
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  };
+  const easeOutBack = t => {
+    t = clamp(t);
+    const c1 = 1.70158, c3 = c1 + 1;
+    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+  };
+
+  // Palette (Modern X / Linear / Vercel dark technical aesthetic)
+  const C = {
+    bg: '#06080d',
+    panel: '#0e131d',
+    panel2: '#131a28',
+    border: '#1f293d',
+    borderHi: '#334466',
+    text: '#f5f7fa',
+    muted: '#8896ab',
+    blue: '#1d9bf0',    // X blue / deep flow
+    cyan: '#00e5ff',    // Working memory nodes
+    red: '#ff3b5c',     // Context tax / interrupts
+    amber: '#ffb020',   // Recovery / Attention residue
+    green: '#00e676',   // Flow / Shipped code
+    purple: '#a855f7'
+  };
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, r);
+  }
+
+  function drawPill(x, y, text, color, bgAlpha = 0.14) {
+    ctx.save();
+    ctx.font = '700 13px ui-monospace, SFMono-Regular, Menlo, monospace';
+    const tw = ctx.measureText(text).width;
+    const pw = tw + 24, ph = 28;
+    roundRect(x, y, pw, ph, 14);
+    ctx.fillStyle = color + Math.round(bgAlpha * 255).toString(16).padStart(2, '0');
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x + 12, y + ph / 2 + 0.5);
+    ctx.restore();
+    return pw;
+  }
+
+  // Background ambient grid + subtle glow
+  function drawBackground(t, accentColor = C.blue) {
+    ctx.fillStyle = C.bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // Subtle radial spotlight
+    const grad = ctx.createRadialGradient(W * 0.5, H * 0.42, 40, W * 0.5, H * 0.45, 760);
+    grad.addColorStop(0, accentColor + '16');
+    grad.addColorStop(1, '#00000000');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Isometric / Cartesian subtle engineering grid
+    ctx.save();
+    ctx.strokeStyle = '#ffffff07';
+    ctx.lineWidth = 1;
+    const step = 48;
+    const ox = (t * 14) % step;
+    for (let x = -step + ox; x < W + step; x += step) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, H);
+      ctx.stroke();
+    }
+    for (let y = 0; y < H; y += step) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
+      ctx.stroke();
+    }
+
+    // Crosshairs at intersections every 4 steps
+    ctx.strokeStyle = '#ffffff14';
+    for (let x = -step + ox; x < W + step; x += step * 4) {
+      for (let y = step * 2; y < H - 80; y += step * 3) {
+        ctx.beginPath();
+        ctx.moveTo(x - 4, y); ctx.lineTo(x + 4, y);
+        ctx.moveTo(x, y - 4); ctx.lineTo(x, y + 4);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  // Top Header Chrome
+  function drawHeader(chapterIdx, chapterName, t) {
+    ctx.save();
+    ctx.fillStyle = '#090d15cc';
+    ctx.fillRect(0, 0, W, 52);
+    ctx.strokeStyle = C.border;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, 52); ctx.lineTo(W, 52);
+    ctx.stroke();
+
+    // Left X-style badge + thread tag
+    roundRect(36, 13, 26, 26, 6);
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.fillStyle = '#000000';
+    ctx.font = '900 16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('𝕏', 49, 26.5);
+
+    ctx.textAlign = 'left';
+    ctx.font = '700 13px ui-monospace, SFMono-Regular, monospace';
+    ctx.fillStyle = C.text;
+    ctx.fillText('ENGINEERING BRIEF // THE CONTEXT TAX', 74, 27);
+
+    // Chapter indicator
+    ctx.fillStyle = C.muted;
+    ctx.fillText(`0${chapterIdx} / 06  —  ${chapterName}`, 410, 27);
+
+    // Right status indicator (Remotion + ElevenLabs style telemetry bar)
+    const dotPulse = 0.5 + 0.5 * Math.sin(t * 6);
+    ctx.fillStyle = C.red;
+    ctx.globalAlpha = 0.6 + 0.4 * dotPulse;
+    ctx.beginPath();
+    ctx.arc(W - 195, 26, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    ctx.font = '600 12px ui-monospace, SFMono-Regular, monospace';
+    ctx.fillStyle = C.muted;
+    ctx.textAlign = 'right';
+    ctx.fillText(`60FPS  |  TC 00:${Math.floor(t).toString().padStart(2, '0')}.${Math.floor((t % 1) * 60).toString().padStart(2, '0')}`, W - 36, 27);
+    ctx.restore();
+  }
+
+  // Bottom Voiceover Teleprompter + Audio Waveform HUD
+  const CAPTIONS = [
+    [0.0, 6.5, "Every engineering team pays a hidden levy that never shows up in Jira: The Context Tax."],
+    [6.5, 13.0, "Coding isn't typing. It's holding a fragile house of cards of state, types, and edge-cases in RAM."],
+    [13.0, 19.5, "One 'Quick Question' ping shatters that mental graph—and costs 23 minutes to rebuild from cold cache."],
+    [19.5, 26.5, "Compare a fragmented calendar of 30-minute gaps against an uninterrupted Maker block. Output drops 72%."],
+    [26.5, 33.5, "And every task switch leaves behind 'Attention Residue', compounding cognitive load until velocity stalls."],
+    [33.5, 40.0, "Repeal the Context Tax: Async by default, batch PR reviews, and fiercely defend 4-hour Maker blocks."]
+  ];
+
+  function drawNarrationHUD(t) {
+    ctx.save();
+    const barY = H - 68;
+    ctx.fillStyle = '#090d15eb';
+    ctx.fillRect(0, barY, W, 68);
+    ctx.strokeStyle = C.border;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, barY); ctx.lineTo(W, barY);
+    ctx.stroke();
+
+    // ElevenLabs-inspired neural voice waveform on the left
+    const waveX = 36, waveY = barY + 34;
+    roundRect(waveX, barY + 13, 148, 42, 8);
+    ctx.fillStyle = C.panel2;
+    ctx.fill();
+    ctx.strokeStyle = C.borderHi;
+    ctx.stroke();
+
+    ctx.fillStyle = C.blue;
+    ctx.font = '700 10px ui-monospace, SFMono-Regular, monospace';
+    ctx.fillText('VOICE // AI', waveX + 12, barY + 25);
+
+    const bars = 22;
+    for (let i = 0; i < bars; i++) {
+      const n = Math.sin(t * 14 + i * 0.7) * Math.cos(t * 7 - i * 0.4);
+      const bh = 4 + Math.abs(n) * 16;
+      const bx = waveX + 12 + i * 5.6;
+      ctx.fillStyle = i % 3 === 0 ? C.cyan : C.blue;
+      roundRect(bx, barY + 41 - bh / 2, 3, bh, 1.5);
+      ctx.fill();
+    }
+
+    // Active subtitle text
+    let activeCap = CAPTIONS[0];
+    for (const c of CAPTIONS) {
+      if (t >= c[0] && t < c[1]) { activeCap = c; break; }
+    }
+    const localP = invLerp(activeCap[0], activeCap[0] + 0.4, t) * (1 - invLerp(activeCap[1] - 0.3, activeCap[1], t));
+
+    ctx.globalAlpha = clamp(localP, 0, 1);
+    ctx.font = '500 18px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.fillStyle = C.text;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(activeCap[2], 208, barY + 34);
+    ctx.globalAlpha = 1;
+
+    // Overall timeline progress bar at very bottom
+    const prog = (t / window.DUR) * W;
+    ctx.fillStyle = '#192236';
+    ctx.fillRect(0, H - 4, W, 4);
+    const grad = ctx.createLinearGradient(0, 0, W, 0);
+    grad.addColorStop(0, C.blue);
+    grad.addColorStop(0.5, C.red);
+    grad.addColorStop(1, C.green);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, H - 4, prog, 4);
+
+    ctx.restore();
+  }
+
+  // ============================================================================
+  // SCENE 1 (0.0 - 6.5s): VIRAL X ARTICLE HOOK -> THE CONTEXT TAX
+  // ============================================================================
+  function scene1(t) {
+    const lt = t;
+    drawBackground(t, C.blue);
+    drawHeader(1, 'THE HIDDEN LEVY ON ENGINEERING VELOCITY', t);
+
+    // Intro card scales in and shifts left as big typography reveals on right
+    const cardEnter = easeOutBack(invLerp(0.1, 1.0, lt));
+    const shiftLeft = easeInOutCubic(invLerp(2.0, 3.0, lt));
+
+    const cardW = 540, cardH = 390;
+    const cardX = lerp((W - cardW) / 2, 64, shiftLeft);
+    const cardY = 128;
+
+    ctx.save();
+    ctx.translate(cardX + cardW / 2, cardY + cardH / 2);
+    ctx.scale(0.85 + 0.15 * cardEnter, 0.85 + 0.15 * cardEnter);
+    ctx.translate(-cardW / 2, -cardH / 2);
+    ctx.globalAlpha = clamp(lt * 4, 0, 1);
+
+    // Card background
+    roundRect(0, 0, cardW, cardH, 18);
+    ctx.fillStyle = C.panel;
+    ctx.fill();
+    ctx.strokeStyle = C.borderHi;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // X Article Badge
+    drawPill(28, 26, '𝕏 ARTICLE  •  ENGINEERING LEADERSHIP', C.blue, 0.18);
+
+    // Author row
+    ctx.beginPath();
+    ctx.arc(48, 86, 20, 0, Math.PI * 2);
+    ctx.fillStyle = '#1d9bf0';
+    ctx.fill();
+    ctx.font = '800 15px sans-serif';
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('CT', 48, 86);
+
+    ctx.textAlign = 'left';
+    ctx.font = '700 16px sans-serif';
+    ctx.fillStyle = C.text;
+    ctx.fillText('Staff Eng Notes  ✓', 78, 79);
+    ctx.font = '400 13px ui-monospace, monospace';
+    ctx.fillStyle = C.muted;
+    ctx.fillText('@systems_craft  •  8 min read', 78, 98);
+
+    // Article Headline inside card
+    ctx.font = '800 34px -apple-system, sans-serif';
+    ctx.fillStyle = C.text;
+    ctx.fillText('The Context Tax:', 28, 152);
+    ctx.fillStyle = C.red;
+    ctx.fillText('Why Your Best Engineers', 28, 192);
+    ctx.fillText('Feel Unproductive.', 28, 232);
+
+    // Article excerpt lines
+    ctx.font = '400 16px -apple-system, sans-serif';
+    ctx.fillStyle = C.muted;
+    ctx.fillText('You hired 10x engineers, gave them modern tooling, yet', 28, 276);
+    ctx.fillText('shipping simple features takes weeks. The bottleneck is', 28, 300);
+    ctx.fillText('not code complexity—it is cognitive fragmentation.', 28, 324);
+
+    // Live engagement counters
+    ctx.strokeStyle = C.border;
+    ctx.beginPath();
+    ctx.moveTo(28, 344); ctx.lineTo(cardW - 28, 344);
+    ctx.stroke();
+
+    const views = Math.floor(lerp(120, 1420, clamp(lt / 5, 0, 1)));
+    ctx.font = '600 13px ui-monospace, monospace';
+    ctx.fillStyle = C.blue;
+    ctx.fillText(`↻ 4.8K Reposts     ♥ 19.2K Likes     ▮ ${views}K Views`, 28, 368);
+    ctx.restore();
+
+    // Right side: Giant Kinetic Breakdown (appears after shiftLeft)
+    if (lt > 2.1) {
+      const rp = easeOutCubic(invLerp(2.1, 3.2, lt));
+      const rx = 648;
+      ctx.save();
+      ctx.globalAlpha = rp;
+      ctx.translate((1 - rp) * 40, 0);
+
+      drawPill(rx, 132, 'SYSTEMS DIAGNOSIS', C.red, 0.16);
+
+      ctx.font = '900 58px -apple-system, sans-serif';
+      ctx.fillStyle = C.text;
+      ctx.fillText('THE HIDDEN', rx, 210);
+      ctx.fillStyle = C.red;
+      ctx.fillText('LEVY ON RAM.', rx, 272);
+
+      // 3 Metric boxes
+      const metrics = [
+        { k: '23m 15s', l: 'Avg reload time after 1 interrupt', c: C.red, d: 2.7 },
+        { k: '5.2 hrs', l: 'Lost per engineer every week to Slack/Syncs', c: C.amber, d: 3.2 },
+        { k: '-62%', l: 'Drop in deep-architecture throughput', c: C.blue, d: 3.7 }
+      ];
+
+      metrics.forEach((m, idx) => {
+        const mp = easeOutCubic(invLerp(m.d, m.d + 0.7, lt));
+        const my = 312 + idx * 70;
+        ctx.save();
+        ctx.globalAlpha = mp;
+        ctx.translate((1 - mp) * 30, 0);
+        roundRect(rx, my, 568, 58, 10);
+        ctx.fillStyle = C.panel2;
+        ctx.fill();
+        ctx.strokeStyle = C.border;
+        ctx.stroke();
+
+        // Left color bar
+        roundRect(rx, my, 6, 58, 3);
+        ctx.fillStyle = m.c;
+        ctx.fill();
+
+        ctx.font = '800 24px ui-monospace, monospace';
+        ctx.fillStyle = m.c;
+        ctx.fillText(m.k, rx + 22, my + 36);
+
+        ctx.font = '500 16px -apple-system, sans-serif';
+        ctx.fillStyle = C.text;
+        ctx.fillText(m.l, rx + 150, my + 35);
+        ctx.restore();
+      });
+
+      ctx.restore();
+    }
+  }
+
+  // ============================================================================
+  // SCENE 2 (6.5 - 13.0s): THE MENTAL MODEL (HOUSE OF CARDS IN WORKING RAM)
+  // ============================================================================
+  const NODES = [
+    { id: 'AST / Types', x: 430, y: 195, layer: 0 },
+    { id: 'Auth State', x: 640, y: 170, layer: 0 },
+    { id: 'DB Locks', x: 850, y: 195, layer: 0 },
+    { id: 'Race Edge-Case', x: 340, y: 335, layer: 1 },
+    { id: 'Cache Invalidation', x: 540, y: 315, layer: 1 },
+    { id: 'Retry Backoff', x: 740, y: 315, layer: 1 },
+    { id: 'Null Pointer Guard', x: 940, y: 335, layer: 1 },
+    { id: 'API Contract', x: 450, y: 455, layer: 2 },
+    { id: 'Memory Buffer', x: 640, y: 470, layer: 2 },
+    { id: 'Webhook Idempotency', x: 830, y: 455, layer: 2 }
+  ];
+
+  const EDGES = [
+    [0,1],[1,2],[0,3],[0,4],[1,4],[1,5],[2,5],[2,6],
+    [3,7],[4,7],[4,8],[5,8],[5,9],[6,9],[3,4],[5,6],[7,8],[8,9]
+  ];
+
+  function scene2(t) {
+    const lt = t - 6.5;
+    drawBackground(t, C.cyan);
+    drawHeader(2, 'ANATOMY OF DEEP WORK // MENTAL WORKING MEMORY', t);
+
+    // Title left/top
+    drawPill(60, 78, 'MENTAL RAM UTILIZATION: 96.4%', C.cyan, 0.16);
+    ctx.font = '800 32px -apple-system, sans-serif';
+    ctx.fillStyle = C.text;
+    ctx.fillText('Coding is holding a fragile graph in working memory.', 60, 140);
+
+    // Draw Edges assembling
+    EDGES.forEach((e, i) => {
+      const ep = easeOutCubic(invLerp(0.3 + i * 0.12, 1.1 + i * 0.12, lt));
+      if (ep <= 0) return;
+      const a = NODES[e[0]], b = NODES[e[1]];
+      const ax = a.x, ay = a.y + Math.sin(t * 2.2 + e[0]) * 5;
+      const bx = lerp(ax, b.x, ep), by = lerp(ay, b.y + Math.sin(t * 2.2 + e[1]) * 5, ep);
+
+      ctx.save();
+      ctx.strokeStyle = C.cyan + '55';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx, by);
+      ctx.stroke();
+
+      // Traveling data packet along assembled edge
+      if (ep >= 1) {
+        const pkt = (t * 0.9 + i * 0.23) % 1;
+        const px = lerp(ax, bx, pkt), py = lerp(ay, by, pkt);
+        ctx.fillStyle = C.cyan;
+        ctx.beginPath();
+        ctx.arc(px, py, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    });
+
+    // Draw Nodes
+    NODES.forEach((n, i) => {
+      const np = easeOutBack(invLerp(0.1 + i * 0.22, 0.75 + i * 0.22, lt));
+      if (np <= 0) return;
+      const ny = n.y + Math.sin(t * 2.2 + i) * 5;
+
+      ctx.save();
+      ctx.translate(n.x, ny);
+      ctx.scale(np, np);
+
+      // Outer pulse ring
+      ctx.strokeStyle = C.cyan + '33';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, 32 + Math.sin(t * 4 + i) * 3, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Node pill
+      ctx.font = '700 13px ui-monospace, monospace';
+      const tw = ctx.measureText(n.id).width;
+      const pw = tw + 28, ph = 36;
+      roundRect(-pw / 2, -ph / 2, pw, ph, 10);
+      ctx.fillStyle = '#0c1824';
+      ctx.fill();
+      ctx.strokeStyle = C.cyan;
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+
+      ctx.fillStyle = C.text;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(n.id, 0, 1);
+      ctx.restore();
+    });
+
+    // Left & Right Telemetry Gauges
+    const ramFill = clamp(lt / 3.8, 0.15, 0.96);
+    ctx.save();
+    roundRect(60, 190, 210, 310, 14);
+    ctx.fillStyle = C.panel;
+    ctx.fill();
+    ctx.strokeStyle = C.border;
+    ctx.stroke();
+
+    ctx.font = '700 13px ui-monospace, monospace';
+    ctx.fillStyle = C.muted;
+    ctx.fillText('COGNITIVE STACK', 82, 222);
+
+    const slots = ['L1: Syntax & Types', 'L2: Local State', 'L3: Service Graph', 'L4: Biz Invariants', 'L5: Race Conditions'];
+    slots.forEach((s, idx) => {
+      const active = lt > 0.6 + idx * 0.65;
+      const sy = 246 + idx * 46;
+      roundRect(80, sy, 170, 34, 6);
+      ctx.fillStyle = active ? '#0b2938' : '#121824';
+      ctx.fill();
+      ctx.strokeStyle = active ? C.cyan : C.border;
+      ctx.stroke();
+      ctx.font = '600 12px ui-monospace, monospace';
+      ctx.fillStyle = active ? C.cyan : C.muted;
+      ctx.fillText(s, 92, sy + 21);
+    });
+
+    // Right status box
+    roundRect(1010, 190, 210, 310, 14);
+    ctx.fillStyle = C.panel;
+    ctx.fill();
+    ctx.strokeStyle = C.border;
+    ctx.stroke();
+
+    ctx.font = '700 13px ui-monospace, monospace';
+    ctx.fillStyle = C.muted;
+    ctx.fillText('FLOW STATE METRICS', 1032, 222);
+
+    ctx.font = '800 42px ui-monospace, monospace';
+    ctx.fillStyle = C.cyan;
+    ctx.fillText(`${Math.round(ramFill * 100)}%`, 1032, 278);
+    ctx.font = '500 13px -apple-system, sans-serif';
+    ctx.fillStyle = C.muted;
+    ctx.fillText('Context Loaded in Brain', 1032, 302);
+
+    ctx.font = '800 34px ui-monospace, monospace';
+    ctx.fillStyle = C.green;
+    ctx.fillText('10.0x', 1032, 368);
+    ctx.font = '500 13px -apple-system, sans-serif';
+    ctx.fillStyle = C.muted;
+    ctx.fillText('Throughput Multiplier', 1032, 392);
+
+    drawPill(1032, 435, 'FRAGILE: DO NOT PING', C.amber, 0.2);
+    ctx.restore();
+  }
+
+  // ============================================================================
+  // SCENE 3 (13.0 - 19.5s): THE "QUICK QUESTION" SHATTER + 23-MINUTE REBUILD
+  // ============================================================================
+  function scene3(t) {
+    const lt = t - 13.0;
+    const hitTime = 1.25;
+    const isHit = lt >= hitTime;
+    const sinceHit = Math.max(0, lt - hitTime);
+
+    drawBackground(t, isHit ? C.red : C.cyan);
+    drawHeader(3, 'THE INTERRUPTION COLLISION // CACHE EVICTION', t);
+
+    // Screen-shake right at impact
+    ctx.save();
+    if (sinceHit > 0 && sinceHit < 0.45) {
+      const mag = (0.45 - sinceHit) * 28;
+      ctx.translate(Math.sin(lt * 90) * mag, Math.cos(lt * 75) * mag);
+    }
+
+    // Before hit: nodes still floating; After hit: nodes shatter & fall with gravity
+    NODES.forEach((n, i) => {
+      let nx = n.x, ny = n.y, rot = 0, alpha = 1;
+      if (isHit) {
+        const vx = (n.x - 640) * 1.4 + (i % 2 === 0 ? -90 : 90);
+        const vy = -120 - (i * 25) + 680 * sinceHit;
+        nx = n.x + vx * sinceHit;
+        ny = n.y + vy * sinceHit * 0.5;
+        rot = (i % 2 === 0 ? 1 : -1) * sinceHit * 2.5;
+        alpha = clamp(1 - sinceHit * 0.55, 0.12, 1);
+      }
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(nx, ny);
+      ctx.rotate(rot);
+      ctx.font = '700 13px ui-monospace, monospace';
+      const tw = ctx.measureText(n.id).width;
+      const pw = tw + 26, ph = 34;
+      roundRect(-pw / 2, -ph / 2, pw, ph, 8);
+      ctx.fillStyle = isHit ? '#260b12' : '#0c1824';
+      ctx.fill();
+      ctx.strokeStyle = isHit ? C.red : C.cyan;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.fillStyle = isHit ? '#ff8fa3' : C.text;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(n.id, 0, 1);
+      ctx.restore();
+    });
+
+    // Incoming Slack / Teams Ping Projectile
+    const pingPop = easeOutBack(invLerp(0.3, 1.15, lt));
+    if (pingPop > 0) {
+      ctx.save();
+      const py = lerp(95, 118, pingPop);
+      roundRect(350, py, 580, 96, 16);
+      ctx.fillStyle = '#18101c';
+      ctx.fill();
+      ctx.strokeStyle = C.red;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      // Red notification badge
+      roundRect(372, py + 20, 54, 54, 12);
+      ctx.fillStyle = C.red;
+      ctx.fill();
+      ctx.font = '900 26px sans-serif';
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('!', 399, py + 48);
+
+      ctx.textAlign = 'left';
+      ctx.font = '700 15px ui-monospace, monospace';
+      ctx.fillStyle = C.red;
+      ctx.fillText('SLACK DIRECT MESSAGE  •  NOW', 444, py + 32);
+
+      ctx.font = '700 22px -apple-system, sans-serif';
+      ctx.fillStyle = C.text;
+      ctx.fillText('“Hey, got 2 mins for a quick question?”', 444, py + 64);
+      ctx.restore();
+    }
+
+    // Center Impact Telemetry: 23 MINUTES TO RELOAD
+    if (sinceHit > 0.25) {
+      const cp = easeOutCubic(invLerp(0.25, 1.0, sinceHit));
+      ctx.save();
+      ctx.globalAlpha = cp;
+      roundRect(220, 245, 840, 275, 20);
+      ctx.fillStyle = '#0d111aee';
+      ctx.fill();
+      ctx.strokeStyle = C.red;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      drawPill(256, 272, 'MEMORY DUMPED  //  COLD CACHE REBUILD REQUIRED', C.red, 0.2);
+
+      // Giant Stopwatch Counter
+      const mins = Math.min(23, Math.floor(lerp(0, 24, clamp((sinceHit - 0.3) / 2.8, 0, 1))));
+      const secs = mins === 23 ? 15 : Math.floor((sinceHit * 60) % 60);
+      ctx.font = '900 92px ui-monospace, SFMono-Regular, monospace';
+      ctx.fillStyle = C.red;
+      ctx.fillText(`${mins.toString().padStart(2, '0')}m ${secs.toString().padStart(2, '0')}s`, 256, 395);
+
+      ctx.font = '600 20px -apple-system, sans-serif';
+      ctx.fillStyle = C.text;
+      ctx.fillText('Average time to reconstruct deep mental state after ONE interruption.', 256, 442);
+
+      // Comparison bar: Message duration vs Cost paid
+      ctx.font = '600 13px ui-monospace, monospace';
+      ctx.fillStyle = C.muted;
+      ctx.fillText('PING DURATION: 45s', 256, 482);
+      ctx.fillStyle = C.amber;
+      ctx.fillText('ACTUAL COGNITIVE TAX PAID: 23m 15s (31x MULTIPLIER)', 460, 482);
+
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  // ============================================================================
+  // SCENE 4 (19.5 - 26.5s): SWISS-CHEESE CALENDAR VS MAKER SCHEDULE
+  // ============================================================================
+  function scene4(t) {
+    const lt = t - 19.5;
+    drawBackground(t, C.amber);
+    drawHeader(4, 'SCHEDULE TOPOLOGY // MANAGER VS. MAKER', t);
+
+    ctx.font = '800 30px -apple-system, sans-serif';
+    ctx.fillStyle = C.text;
+    ctx.fillText('Why “4 Free Hours” on a Fragmented Calendar Equals Zero Deep Output', 60, 108);
+
+    const hours = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
+    const colW = 550, colH = 440, topY = 140;
+
+    // LEFT COLUMN: Fragmented Schedule
+    ctx.save();
+    roundRect(60, topY, colW, colH, 16);
+    ctx.fillStyle = C.panel;
+    ctx.fill();
+    ctx.strokeStyle = C.red + '88';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    drawPill(84, topY + 20, 'SWISS-CHEESE CALENDAR (FRAGMENTED)', C.red, 0.18);
+
+    // Blocks in fragmented day
+    const fragBlocks = [
+      { y: 0, h: 34, type: 'sync', label: 'Daily Standup (30m)' },
+      { y: 38, h: 42, type: 'ramp', label: 'Context Ramp-up... (Interrupted)' },
+      { y: 84, h: 36, type: 'sync', label: 'Slack Thread + Triage Ping' },
+      { y: 124, h: 44, type: 'ramp', label: 'Reloading State... (0 Shipping)' },
+      { y: 172, h: 46, type: 'sync', label: '1:1 / Architecture Sync (45m)' },
+      { y: 222, h: 40, type: 'ramp', label: 'Warm-up Tax (23m Rebuild)' },
+      { y: 266, h: 34, type: 'sync', label: '“Quick Question” Huddle' },
+      { y: 304, h: 42, type: 'ramp', label: 'Shallow Bugfix / Context Thrash' }
+    ];
+
+    fragBlocks.forEach((b, i) => {
+      const bp = easeOutCubic(invLerp(0.2 + i * 0.2, 0.7 + i * 0.2, lt));
+      if (bp <= 0) return;
+      const by = topY + 64 + b.y;
+      ctx.save();
+      ctx.globalAlpha = bp;
+      roundRect(140, by, 444 * bp, b.h, 6);
+      if (b.type === 'sync') {
+        ctx.fillStyle = '#33121c';
+        ctx.fill();
+        ctx.strokeStyle = C.red;
+        ctx.stroke();
+        ctx.fillStyle = '#ff8fa3';
+      } else {
+        ctx.fillStyle = '#291f10';
+        ctx.fill();
+        ctx.strokeStyle = C.amber + '88';
+        ctx.setLineDash([5, 4]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = C.amber;
+      }
+      ctx.font = '600 13px ui-monospace, monospace';
+      ctx.fillText(b.label, 154, by + b.h / 2 + 4);
+      ctx.restore();
+    });
+
+    // Hour labels on left
+    hours.forEach((h, i) => {
+      ctx.font = '500 12px ui-monospace, monospace';
+      ctx.fillStyle = C.muted;
+      ctx.fillText(h, 84, topY + 76 + i * 40);
+    });
+
+    // Bottom summary left
+    ctx.font = '800 18px ui-monospace, monospace';
+    ctx.fillStyle = C.red;
+    ctx.fillText('DEEP FLOW ACHIEVED: 0 HRS   |   SHIPPED: 18%', 84, topY + colH - 22);
+    ctx.restore();
+
+    // RIGHT COLUMN: Maker Schedule
+    ctx.save();
+    const rx = 670;
+    roundRect(rx, topY, colW, colH, 16);
+    ctx.fillStyle = C.panel;
+    ctx.fill();
+    ctx.strokeStyle = C.green + '88';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    drawPill(rx + 24, topY + 20, 'PROTECTED MAKER SCHEDULE (BATCHED)', C.green, 0.18);
+
+    hours.forEach((h, i) => {
+      ctx.font = '500 12px ui-monospace, monospace';
+      ctx.fillStyle = C.muted;
+      ctx.fillText(h, rx + 24, topY + 76 + i * 40);
+    });
+
+    const makerBlocks = [
+      { y: 0, h: 28, c: C.amber, bg: '#291f10', label: 'Single 20m Context Ramp-up' },
+      { y: 32, h: 210, c: C.green, bg: '#0b2b1d', label: 'UNINTERRUPTED DEEP ARCHITECTURE FLOW (4.0 HRS)' },
+      { y: 248, h: 98, c: C.blue, bg: '#0d2238', label: 'BATCHED COMMS: Standup + PR Reviews + 1:1s' }
+    ];
+
+    makerBlocks.forEach((b, i) => {
+      const bp = easeOutCubic(invLerp(0.6 + i * 0.45, 1.3 + i * 0.45, lt));
+      if (bp <= 0) return;
+      const by = topY + 64 + b.y;
+      ctx.save();
+      ctx.globalAlpha = bp;
+      roundRect(rx + 80, by, 444 * bp, b.h, 8);
+      ctx.fillStyle = b.bg;
+      ctx.fill();
+      ctx.strokeStyle = b.c;
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+
+      ctx.font = '700 14px ui-monospace, monospace';
+      ctx.fillStyle = b.c;
+      ctx.fillText(b.label, rx + 98, by + b.h / 2 + 5);
+      ctx.restore();
+    });
+
+    ctx.font = '800 18px ui-monospace, monospace';
+    ctx.fillStyle = C.green;
+    ctx.fillText('DEEP FLOW ACHIEVED: 4.0 HRS  |   SHIPPED: 100%', rx + 24, topY + colH - 22);
+    ctx.restore();
+  }
+
+  // ============================================================================
+  // SCENE 5 (26.5 - 33.5s): ATTENTION RESIDUE & COMPOUNDING COGNITIVE TAX
+  // ============================================================================
+  function scene5(t) {
+    const lt = t - 26.5;
+    drawBackground(t, C.purple);
+    drawHeader(5, 'ATTENTION RESIDUE // COMPOUNDING COGNITIVE DEBT', t);
+
+    drawPill(60, 76, 'SOPHIE LEROY RESEARCH // COGNITIVE SCIENCE', C.purple, 0.18);
+    ctx.font = '800 32px -apple-system, sans-serif';
+    ctx.fillStyle = C.text;
+    ctx.fillText('Switching tasks leaves “Attention Residue” stuck in your brain.', 60, 134);
+
+    // Left: Stacked Bar Chart of Brain Capacity across 1..5 concurrent contexts
+    const bx = 70, by = 185, bw = 620, bh = 370;
+    roundRect(bx, by, bw, bh, 16);
+    ctx.fillStyle = C.panel;
+    ctx.fill();
+    ctx.strokeStyle = C.border;
+    ctx.stroke();
+
+    ctx.font = '700 13px ui-monospace, monospace';
+    ctx.fillStyle = C.muted;
+    ctx.fillText('AVAILABLE BRAIN CPU vs. CONCURRENT PROJECTS / THREADS', bx + 24, by + 32);
+
+    const bars = [
+      { n: '1 Project', active: 92, residue: 0, overhead: 8 },
+      { n: '2 Projects', active: 65, residue: 20, overhead: 15 },
+      { n: '3 Projects', active: 42, residue: 35, overhead: 23 },
+      { n: '4 Projects', active: 22, residue: 48, overhead: 30 },
+      { n: '5 Projects', active: 9, residue: 56, overhead: 35 }
+    ];
+
+    bars.forEach((b, i) => {
+      const bp = easeOutCubic(invLerp(0.2 + i * 0.35, 1.0 + i * 0.35, lt));
+      const rowY = by + 62 + i * 56;
+      ctx.font = '700 14px ui-monospace, monospace';
+      ctx.fillStyle = C.text;
+      ctx.fillText(b.n, bx + 24, rowY + 22);
+
+      const barStart = bx + 135, maxW = 445;
+      const wAct = (b.active / 100) * maxW * bp;
+      const wRes = (b.residue / 100) * maxW * bp;
+      const wOvr = (b.overhead / 100) * maxW * bp;
+
+      // Active green/blue bar
+      roundRect(barStart, rowY, Math.max(2, wAct), 32, 4);
+      ctx.fillStyle = C.green;
+      ctx.fill();
+
+      // Residue purple/amber bar
+      if (wRes > 1) {
+        roundRect(barStart + wAct + 3, rowY, wRes, 32, 4);
+        ctx.fillStyle = C.purple;
+        ctx.fill();
+      }
+      // Tax overhead red bar
+      if (wOvr > 1) {
+        roundRect(barStart + wAct + wRes + 6, rowY, wOvr, 32, 4);
+        ctx.fillStyle = C.red;
+        ctx.fill();
+      }
+
+      ctx.font = '700 12px ui-monospace, monospace';
+      ctx.fillStyle = '#06120c';
+      if (b.active >= 20 && bp > 0.7) {
+        ctx.fillText(`${b.active}% Flow`, barStart + 10, rowY + 20);
+      }
+    });
+
+    // Legend at bottom of chart
+    ctx.font = '600 12px ui-monospace, monospace';
+    ctx.fillStyle = C.green; ctx.fillText('■ Productive Flow', bx + 24, by + bh - 18);
+    ctx.fillStyle = C.purple; ctx.fillText('■ Attention Residue (Ghost Threads)', bx + 185, by + bh - 18);
+    ctx.fillStyle = C.red; ctx.fillText('■ Switch Tax', bx + 475, by + bh - 18);
+
+    // Right: Ghost threads visual (lingering processes eating mental CPU)
+    const rx = 720, ry = 185, rw = 490, rh = 370;
+    roundRect(rx, ry, rw, rh, 16);
+    ctx.fillStyle = C.panel;
+    ctx.fill();
+    ctx.strokeStyle = C.border;
+    ctx.stroke();
+
+    ctx.font = '700 13px ui-monospace, monospace';
+    ctx.fillStyle = C.muted;
+    ctx.fillText('LIVE COGNITIVE TASK MANAGER // GHOST PROCESSES', rx + 24, ry + 32);
+
+    const ghosts = [
+      { pid: 'PID 401', name: 'Unresolved PR debate from 10:15am', cpu: '24% RAM', c: C.purple },
+      { pid: 'PID 882', name: 'Slack DM: “Can we hop on a call?”', cpu: '19% RAM', c: C.red },
+      { pid: 'PID 914', name: 'Prod alert false-positive check', cpu: '16% RAM', c: C.amber },
+      { pid: 'PID 990', name: 'Upcoming 2:30pm status meeting prep', cpu: '18% RAM', c: C.purple },
+      { pid: 'PID 102', name: 'Actual Feature Code (Starved)', cpu: '9% RAM', c: C.green }
+    ];
+
+    ghosts.forEach((g, i) => {
+      const gp = easeOutCubic(invLerp(0.5 + i * 0.35, 1.1 + i * 0.35, lt));
+      if (gp <= 0) return;
+      const gy = ry + 56 + i * 58;
+      ctx.save();
+      ctx.globalAlpha = gp;
+      roundRect(rx + 22, gy, rw - 44, 46, 8);
+      ctx.fillStyle = '#131926';
+      ctx.fill();
+      ctx.strokeStyle = g.c + '77';
+      ctx.stroke();
+
+      ctx.font = '700 12px ui-monospace, monospace';
+      ctx.fillStyle = g.c;
+      ctx.fillText(g.pid, rx + 36, gy + 28);
+
+      ctx.font = '500 14px -apple-system, sans-serif';
+      ctx.fillStyle = C.text;
+      ctx.fillText(g.name, rx + 104, gy + 28);
+
+      ctx.font = '700 13px ui-monospace, monospace';
+      ctx.fillStyle = g.c;
+      ctx.textAlign = 'right';
+      ctx.fillText(g.cpu, rx + rw - 38, gy + 28);
+      ctx.restore();
+    });
+  }
+
+  // ============================================================================
+  // SCENE 6 (33.5 - 40.0s): THE ENGINEERING PLAYBOOK (REPEALING THE TAX)
+  // ============================================================================
+  function scene6(t) {
+    const lt = t - 33.5;
+    drawBackground(t, C.green);
+    drawHeader(6, 'THE PLAYBOOK // REPEALING THE CONTEXT TAX', t);
+
+    drawPill(60, 74, 'ACTIONABLE TEAM PROTOCOL', C.green, 0.18);
+    ctx.font = '900 36px -apple-system, sans-serif';
+    ctx.fillStyle = C.text;
+    ctx.fillText('How High-Velocity Engineering Teams Repeal the Context Tax', 60, 132);
+
+    const cards = [
+      {
+        num: '01',
+        title: 'PROTECT 4-HOUR MAKER BLOCKS',
+        desc: 'Defend one uninterrupted 4-hour window every day. Zero standups, zero syncs, zero pings during deep build hours.',
+        stat: '+240% Deep Code Output',
+        color: C.green
+      },
+      {
+        num: '02',
+        title: 'ASYNC BY DEFAULT (NO “HEY”)',
+        desc: 'Ban naked “Hey, quick question?” pings. Send full context, logs, and proposed solutions in one async message.',
+        stat: '-78% Context Shatters',
+        color: C.cyan
+      },
+      {
+        num: '03',
+        title: 'BATCH PR REVIEWS & SLACK',
+        desc: 'Treat code reviews and Slack like email batches at natural transition boundaries (11:30am & 4:30pm), never mid-flow.',
+        stat: 'Zero Attention Residue',
+        color: C.blue
+      },
+      {
+        num: '04',
+        title: 'CODIFY CONTEXT IN DOCS & AI',
+        desc: 'Keep architecture decisions, runbooks, and invariants in repo docs so engineers don’t act as human routers.',
+        stat: 'Self-Serve Team RAM',
+        color: C.amber
+      }
+    ];
+
+    cards.forEach((c, i) => {
+      const cp = easeOutBack(invLerp(0.15 + i * 0.28, 0.85 + i * 0.28, lt));
+      if (cp <= 0) return;
+      const col = i % 2, row = Math.floor(i / 2);
+      const cw = 564, ch = 178;
+      const cx = 60 + col * (cw + 32);
+      const cy = 162 + row * (ch + 24);
+
+      ctx.save();
+      ctx.translate(cx + cw / 2, cy + ch / 2);
+      ctx.scale(cp, cp);
+      ctx.translate(-cw / 2, -ch / 2);
+
+      roundRect(0, 0, cw, ch, 16);
+      ctx.fillStyle = C.panel;
+      ctx.fill();
+      ctx.strokeStyle = c.color + '99';
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+
+      // Number badge
+      roundRect(22, 22, 44, 34, 8);
+      ctx.fillStyle = c.color + '22';
+      ctx.fill();
+      ctx.strokeStyle = c.color;
+      ctx.stroke();
+      ctx.font = '800 15px ui-monospace, monospace';
+      ctx.fillStyle = c.color;
+      ctx.fillText(c.num, 34, 44);
+
+      // Title
+      ctx.font = '800 20px -apple-system, sans-serif';
+      ctx.fillStyle = C.text;
+      ctx.fillText(c.title, 80, 45);
+
+      // Description (2 lines)
+      ctx.font = '400 15px -apple-system, sans-serif';
+      ctx.fillStyle = C.muted;
+      const words = c.desc.split(' ');
+      let line = '', ly = 84;
+      for (const w of words) {
+        const test = line + w + ' ';
+        if (ctx.measureText(test).width > cw - 48) {
+          ctx.fillText(line, 24, ly);
+          line = w + ' ';
+          ly += 22;
+        } else {
+          line = test;
+        }
+      }
+      ctx.fillText(line, 24, ly);
+
+      // Bottom stat pill
+      drawPill(24, ch - 42, c.stat, c.color, 0.16);
+      ctx.restore();
+    });
+
+    // Final closing tagline banner
+    if (lt > 1.8) {
+      const fp = easeOutCubic(invLerp(1.8, 2.6, lt));
+      ctx.save();
+      ctx.globalAlpha = fp;
+      roundRect(60, 568, 1160, 56, 12);
+      ctx.fillStyle = '#0c2419';
+      ctx.fill();
+      ctx.strokeStyle = C.green;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      ctx.font = '800 19px ui-monospace, monospace';
+      ctx.fillStyle = C.green;
+      ctx.textAlign = 'center';
+      ctx.fillText('PROTECT THE RAM.  DEFEND THE FLOW.  REPEAL THE CONTEXT TAX.', W / 2, 602);
+      ctx.restore();
+    }
+  }
+
+  // Smooth cross-scene flash transition
+  function drawSceneTransition(t) {
+    const cuts = [6.5, 13.0, 19.5, 26.5, 33.5];
+    for (const c of cuts) {
+      const dt = Math.abs(t - c);
+      if (dt < 0.18) {
+        const a = (1 - dt / 0.18) * 0.35;
+        ctx.fillStyle = `rgba(255,255,255,${a.toFixed(3)})`;
+        ctx.fillRect(0, 52, W, H - 120);
+      }
+    }
+  }
+
+  // Master Render Loop driven purely by performance.now()
+  let t0 = null;
+  function frame(now) {
+    if (t0 === null) t0 = now;
+    const elapsed = (now - t0) / 1000 + startOffset;
+    const t = elapsed % window.DUR;
+
+    ctx.clearRect(0, 0, W, H);
+
+    if (t < 6.5) {
+      scene1(t);
+    } else if (t < 13.0) {
+      scene2(t);
+    } else if (t < 19.5) {
+      scene3(t);
+    } else if (t < 26.5) {
+      scene4(t);
+    } else if (t < 33.5) {
+      scene5(t);
+    } else {
+      scene6(t);
+    }
+
+    drawSceneTransition(t);
+    drawNarrationHUD(t);
+
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

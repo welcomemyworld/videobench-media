@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>分镜预览与素材缺口（未生成成片）</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+canvas{width:100vw;height:56.25vw;max-height:100vh;max-width:177.78vh;background:#0b0d12}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+// ===== Config: product, copy and shot timing are kept separate so they can be replaced later =====
+const PRODUCT = { name: null, image: null };          // Not provided: product name and product image from the assets folder
+const COPY = {
+  scene: null, step1: null, step2: null, result: null   // Not provided: facts / copy
+};
+const SHOTS = [ // Frame numbers at 30fps
+  {id:1, from:0,   to:90,  title:"展示商品 + 一句使用场景", need:"商品图 + 场景文案"},
+  {id:2, from:90,  to:180, title:"操作第 1 步（单一动作）", need:"第1步动作说明"},
+  {id:3, from:180, to:270, title:"操作第 2 步（单一动作）", need:"第2步动作说明"},
+  {id:4, from:270, to:390, title:"展示结果（保留停留）",     need:"结果事实描述"},
+  {id:5, from:390, to:450, title:"产品名称（无购买引导）",   need:"产品正式名称"}
+];
+const GAPS = [
+  "assets/ 目录未提供商品图（无法访问）",
+  "产品名称未提供",
+  "使用场景文案未提供",
+  "两步操作的具体动作未提供",
+  "使用结果的事实描述未提供"
+];
+const FPS=30, FRAMES=450;
+window.DUR = FRAMES/FPS;
+
+const cv=document.getElementById('c'), x=cv.getContext('2d');
+const q=new URLSearchParams(location.search);
+const off=parseFloat(q.get('t'))||0;
+let t0=null;
+const ease=v=>v<0?0:v>1?1:1-Math.pow(1-v,3);
+const F="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC',sans-serif";
+
+function txt(s,X,Y,size,col,al,w){x.font=(w||400)+" "+size+"px "+F;x.fillStyle=col;x.textAlign=al||"left";x.fillText(s,X,Y);}
+
+function phone(f,shot){
+  // Vertical 9:16 preview frame (represents 1080×1920)
+  const W=342,H=608,X0=60,Y0=56;
+  x.save();
+  x.fillStyle="#141821";x.strokeStyle="#3a4252";x.lineWidth=2;
+  x.beginPath();x.roundRect(X0,Y0,W,H,18);x.fill();x.stroke();
+  x.beginPath();x.roundRect(X0,Y0,W,H,18);x.clip();
+  const lf=f-shot.from, a=ease(lf/12);
+  // Product image area: missing asset, shown as a dashed placeholder only (no substitute image)
+  x.globalAlpha=a;
+  x.setLineDash([8,6]);x.strokeStyle="#e0a040";x.lineWidth=2;
+  const bw=240,bh=shot.id===5?120:240,bx=X0+(W-bw)/2,by=Y0+130+(1-a)*20;
+  x.strokeRect(bx,by,bw,bh);x.setLineDash([]);
+  txt("素材缺失",X0+W/2,by+bh/2-6,20,"#e0a040","center",600);
+  txt(shot.id===5?"产品名称":"商品图（assets）",X0+W/2,by+bh/2+20,14,"#b98a3c","center");
+  // Caption area (laid out separately)
+  x.fillStyle="rgba(255,255,255,.06)";x.fillRect(X0+24,Y0+440,W-48,70);
+  txt("字幕区 · "+shot.need,X0+W/2,Y0+472,15,"#9aa4b8","center");
+  txt("（待提供事实后填写）",X0+W/2,Y0+496,13,"#6b7488","center");
+  // Shot progress
+  x.globalAlpha=1;
+  const p=lf/(shot.to-shot.from);
+  x.fillStyle="#2a3140";x.fillRect(X0+24,Y0+H-40,W-48,4);
+  x.fillStyle="#5aa9ff";x.fillRect(X0+24,Y0+H-40,(W-48)*p,4);
+  txt("镜头 "+shot.id+" · 帧 "+f+" / "+FRAMES,X0+24,Y0+40,15,"#cfd6e4","left",600);
+  txt("1080×1920 预览",X0+W-24,Y0+40,13,"#6b7488","right");
+  x.restore();
+}
+
+function panel(f){
+  const X=450;
+  txt("分镜表（450 帧 @30fps）",X,84,24,"#ffffff","left",700);
+  SHOTS.forEach((s,i)=>{
+    const y=110+i*58, on=f>=s.from&&f<s.to;
+    x.fillStyle=on?"rgba(90,169,255,.18)":"rgba(255,255,255,.04)";
+    x.beginPath();x.roundRect(X,y,380,48,8);x.fill();
+    if(on){x.fillStyle="#5aa9ff";x.fillRect(X,y,4,48);}
+    txt((s.from/FPS)+"–"+(s.to/FPS)+"s",X+16,y+30,15,on?"#5aa9ff":"#7d879b","left",600);
+    txt(s.title,X+92,y+30,16,on?"#fff":"#b7bfce");
+  });
+  const GX=860;
+  txt("素材缺口",GX,84,24,"#e0a040","left",700);
+  GAPS.forEach((g,i)=>{
+    const y=126+i*48;
+    x.fillStyle="#e0a040";x.beginPath();x.arc(GX+8,y-5,4,0,7);x.fill();
+    x.font="15px "+F;
+    const words=g; txt(words,GX+22,y,15,"#e6d6b8");
+  });
+  // Status
+  x.fillStyle="rgba(224,80,64,.12)";x.beginPath();x.roundRect(X,430,770,170,10);x.fill();
+  x.strokeStyle="rgba(224,80,64,.5)";x.stroke();
+  txt("状态：已停止制作",X+24,470,22,"#ff8a7a","left",700);
+  const L=["缺少必要素材，按要求未用假素材代替，未生成 MP4 与静帧。",
+           "本画面仅为分镜与时间轴预览，动效均以当前帧号计算，无随机数。",
+           "请提供 assets 商品图、产品名称、场景、两步动作与结果事实，",
+           "随后再搭建 Remotion 项目（1080×1920 / 30fps / 450 帧）。"];
+  L.forEach((s,i)=>txt(s,X+24,504+i*24,15,"#d6dbe6"));
+  // Timeline
+  const TY=640;
+  x.fillStyle="#222836";x.fillRect(X,TY,770,8);
+  SHOTS.forEach((s,i)=>{x.fillStyle=["#3d5a80","#4a6fa5","#5a83c0","#6b97d6","#7cabe8"][i];
+    x.fillRect(X+770*s.from/FRAMES,TY,770*(s.to-s.from)/FRAMES-2,8);});
+  x.fillStyle="#fff";x.fillRect(X+770*f/FRAMES-1,TY-6,3,20);
+  [1,5,10,14].forEach(sec=>{const px=X+770*sec*FPS/FRAMES;
+    txt(sec+"s",px,TY+30,12,"#7d879b","center");});
+  txt("静帧节点（待成片后导出）",X+770,TY+30,12,"#5d6678","right");
+}
+
+function frame(now){
+  if(t0===null)t0=now;
+  const t=((now-t0)/1000+off)%window.DUR;
+  const f=Math.min(FRAMES-1,Math.floor(t*FPS));
+  x.fillStyle="#0b0d12";x.fillRect(0,0,1280,720);
+  const shot=SHOTS.find(s=>f>=s.from&&f<s.to);
+  phone(f,shot);panel(f);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Shola Jegede — DevRel Showreel</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+// Note: this is a self-contained recreation (no external captures, audio or Remotion possible here).
+// Only facts given in the brief are used. Set EMAIL below to your real address to show it in the outro.
+const EMAIL = "";
+window.DUR = 60;
+const BEAT = 0.5; // 120 BPM; every scene boundary is on a beat
+const cv = document.getElementById('c'), x = cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const C = {paper:'#F4F2EC', ink:'#111114', acc:'#4F46E5'};
+const F = 'Inter, "Helvetica Neue", Helvetica, Arial, sans-serif';
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const eo=t=>1-Math.pow(1-cl(t),3), eio=t=>{t=cl(t);return t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2};
+function rr(X,Y,W,H,r){x.beginPath();x.roundRect(X,Y,W,H,r);}
+function txt(s,X,Y,size,col,w=700,al='center',a=1){x.globalAlpha*=a;x.font=`${w} ${size}px ${F}`;x.fillStyle=col;x.textAlign=al;x.textBaseline='middle';x.fillText(s,X,Y);x.globalAlpha/=a||1;}
+function wrap(s,maxW,size,w){x.font=`${w} ${size}px ${F}`;const ws=s.split(' '),L=[];let l='';for(const q of ws){const t=l?l+' '+q:q;if(x.measureText(t).width>maxW&&l){L.push(l);l=q}else l=t}if(l)L.push(l);return L;}
+function bar(X,Y,W,H,col,a=1){x.globalAlpha*=a;x.fillStyle=col;rr(X,Y,W,H,H/2);x.fill();x.globalAlpha/=a||1;}
+
+// Browser frame with a stylised page inside
+function browser(cx,cy,W,H,url,dark,page){
+  const X=cx-W/2,Y=cy-H/2;
+  x.save();x.shadowColor='rgba(0,0,0,.25)';x.shadowBlur=50;x.shadowOffsetY=20;
+  rr(X,Y,W,H,14);x.fillStyle=dark?'#1b1b20':'#fff';x.fill();x.restore();
+  x.save();rr(X,Y,W,H,14);x.clip();
+  x.fillStyle=dark?'#26262c':'#e9e7e1';x.fillRect(X,Y,W,36);
+  [0,1,2].forEach(i=>{x.fillStyle=dark?'#55555e':'#c9c6be';x.beginPath();x.arc(X+20+i*16,Y+18,5,0,7);x.fill();});
+  rr(X+W/2-160,Y+8,320,20,10);x.fillStyle=dark?'#1b1b20':'#fff';x.fill();
+  txt(url,X+W/2,Y+18,11,dark?'#aaa':'#555',500);
+  x.translate(X,Y+36);page(W,H-36,dark);x.restore();
+}
+function phone(cx,cy,W,H,page,dark){
+  const X=cx-W/2,Y=cy-H/2;
+  x.save();x.shadowColor='rgba(0,0,0,.3)';x.shadowBlur=50;x.shadowOffsetY=20;
+  rr(X,Y,W,H,36);x.fillStyle=C.ink;x.fill();x.restore();
+  x.save();rr(X+10,Y+10,W-20,H-20,28);x.fillStyle=dark?'#1b1b20':'#fff';x.fill();x.clip();
+  x.translate(X+10,Y+10);page(W-20,H-20,dark,true);x.restore();
+  rr(cx-40,Y+18,80,18,9);x.fillStyle=C.ink;x.fill();
+}
+function nav(W,dark,mob){
+  const fg=dark?C.paper:C.ink;
+  txt('Shola Jegede',24,28,mob?14:16,fg,800,'left');
+  if(!mob)['Home','Ask','Packages','Hire'].forEach((n,i)=>txt(n,W-300+i*70,28,13,i==3?C.acc:fg,600,'left'));
+  else{bar(W-44,22,20,3,fg);bar(W-44,30,20,3,fg);}
+}
+function homePage(W,H,dark,mob){
+  const fg=dark?C.paper:C.ink;nav(W,dark,mob);
+  const s=mob?.6:1,cy=H*.42;
+  txt('Developer Relations',W/2,cy-40*s,46*s,fg,800);
+  txt('Engineer',W/2,cy+14*s,46*s,C.acc,800);
+  bar(W/2-160*s,cy+60*s,320*s,8,fg,.25);bar(W/2-120*s,cy+78*s,240*s,8,fg,.25);
+  rr(W/2-70*s,cy+105*s,140*s,38*s,19*s);x.fillStyle=C.acc;x.fill();txt('Ask me',W/2,cy+124*s,15*s,C.paper,700);
+  const n=mob?1:3,cw=mob?W-48:(W-96)/3;
+  for(let i=0;i<n;i++){rr(24+i*(cw+24),H*.72,cw,H*.2,10);x.fillStyle=dark?'#26262c':'#f2f0ea';x.fill();bar(40+i*(cw+24),H*.76,cw*.5,8,fg,.5);bar(40+i*(cw+24),H*.8,cw*.7,6,fg,.2);}
+}
+function pkgPage(W,H,dark,hi){
+  nav(W,dark);
+  txt('Packages',W/2,80,34,C.ink,800);
+  ['Content','Code','Community'].forEach((n,i)=>{
+    const cw=240,X=W/2-390+i*270,Y=130,on=i==hi;
+    x.save();if(on){x.translate(X+cw/2,Y+150);x.scale(1.06,1.06);x.translate(-X-cw/2,-Y-150);}
+    rr(X,Y,cw,300,14);x.fillStyle=on?C.ink:'#f2f0ea';x.fill();
+    txt(n,X+cw/2,Y+50,22,on?C.paper:C.ink,800);
+    for(let k=0;k<4;k++)bar(X+30,Y+100+k*30,cw-60-k*20,8,on?C.paper:C.ink,.3);
+    rr(X+30,Y+240,cw-60,36,18);x.fillStyle=C.acc;x.fill();txt('Details',X+cw/2,Y+258,13,C.paper,700);
+    x.restore();
+  });
+}
+function hirePage(W,H,dark){
+  nav(W,dark);
+  txt('Hire',W/2,H*.3,64,C.ink,800);
+  txt('Let’s work together.',W/2,H*.3+60,24,C.ink,500,'center',.7);
+  [0,1].forEach(i=>{rr(W/2-220,H*.5+i*56,440,42,8);x.strokeStyle='#ccc';x.lineWidth=1.5;x.stroke();bar(W/2-205,H*.5+i*56+18,120,6,C.ink,.2);});
+  rr(W/2-90,H*.5+124,180,46,23);x.fillStyle=C.acc;x.fill();txt('Get in touch',W/2,H*.5+147,16,C.paper,700);
+}
+
+// Big bold chat scene
+function chat(p,q,a){
+  const fg=C.ink;
+  txt('Ask',640,70,18,C.acc,800,'center',eo(p*4));
+  const qa=eo((p-.04)*5), qL=wrap(q,900,54,800);
+  x.save();x.translate(0,(1-qa)*30);x.globalAlpha=qa;
+  const qh=qL.length*64+40,qy=150;
+  rr(640-480,qy,960,qh,28);x.fillStyle=C.ink;x.fill();
+  qL.forEach((l,i)=>txt(l,640,qy+52+i*64,54,C.paper,800));
+  x.restore();
+  const tp=cl((p-.25)/.5), aL=wrap(a,960,40,700);
+  const total=a.length, shown=Math.floor(eio(tp)*total);
+  let used=0;const ay=qy+qh+70;
+  if(p>.2){
+    x.globalAlpha=eo((p-.2)*6);
+    aL.forEach((l,i)=>{const n=cl(shown-used,0,l.length);used+=l.length+1;
+      txt(l.slice(0,n),160,ay+i*54,40,fg,700,'left');});
+    if(tp<1&&Math.floor(p*16)%2){x.fillStyle=C.acc;x.fillRect(160+(()=>{x.font=`700 40px ${F}`;let li=0,u=0;for(;li<aL.length;li++){if(shown<=u+aL[li].length)break;u+=aL[li].length+1}li=Math.min(li,aL.length-1);return x.measureText(aL[li].slice(0,shown-u)).width})(),ay-22+Math.min(aL.length-1,0)*54,4,44);}
+    x.globalAlpha=1;
+  }
+}
+
+const scenes=[
+ [0,6,p=>{const a=eo(p*2.5);x.globalAlpha=a;
+   txt('Shola Jegede',640,330+(1-a)*40,96,C.ink,800);
+   x.globalAlpha=eo((p-.3)*3);txt('Developer Relations Engineer',640,420,30,C.acc,700);
+   x.globalAlpha=1;bar(640-200*eo((p-.2)*2),470,400*eo((p-.2)*2),4,C.ink,.8);}],
+ [6,14,p=>{const s=.85+.1*eio(p);x.save();x.translate(640,370);x.scale(s,s);x.translate(-640,-370);
+   browser(640,370,1000,580,'sholajegede.com',false,homePage);x.restore();
+   txt('Home',640,690,18,C.ink,700,'center',eo(p*4));}],
+ [14,24,p=>chat(p,'What do you do?','I’m a Developer Relations Engineer — I help developers succeed through content, code and community.')],
+ [24,30,p=>{const hi=Math.min(2,Math.floor(p*3));
+   browser(640,360+(1-eo(p*3))*60,1000,580,'sholajegede.com/packages',false,(W,H,d)=>pkgPage(W,H,d,hi));}],
+ [30,36,p=>{const o=eo(p*2);
+   phone(640-260*eio(p),360+(1-o)*80,300,600,homePage,false);
+   txt('Mobile',900,330,64,C.ink,800,'center',eo((p-.3)*3));
+   txt('Built for every screen',900,390,22,C.acc,700,'center',eo((p-.4)*3));}],
+ [36,42,p=>{const d=p>.45;const w=eio((p-.35)/.2);
+   x.fillStyle=C.ink;x.globalAlpha=w;x.beginPath();x.arc(1080,90,1600*w,0,7);x.fill();x.globalAlpha=1;
+   browser(640,370,980,560,'sholajegede.com',d,homePage);
+   txt(d?'Dark mode':'Light mode',640,690,18,d?C.paper:C.ink,700);}],
+ [42,50,p=>chat(p,'Can I hire you?','Yes — head to the Hire page to start a conversation about your project.')],
+ [50,54,p=>{browser(640,360+(1-eo(p*3))*60,1000,580,'sholajegede.com/hire',false,hirePage);}],
+ [54,60,p=>{const a=eo(p*2.5);
+   x.fillStyle=C.ink;x.fillRect(0,0,1280,720*a);
+   txt('sholajegede.com',640,330,76,C.paper,800,'center',eo((p-.1)*3));
+   txt(EMAIL||'Developer Relations Engineer',640,420,30,C.acc,700,'center',eo((p-.3)*3));
+   txt('Ask · Packages · Hire',640,480,20,C.paper,600,'center',.6*eo((p-.45)*3));}]
+];
+const FADE=BEAT*1.5;
+let t0=performance.now()-(parseFloat(new URLSearchParams(location.search).get('t'))||0)*1000;
+function frame(now){
+  const t=((now-t0)/1000)%DUR;
+  x.globalAlpha=1;x.fillStyle=C.paper;x.fillRect(0,0,1280,720);
+  // subtle beat pulse grid
+  const bp=1-((t%BEAT)/BEAT);x.globalAlpha=.04+.03*bp*bp;x.fillStyle=C.ink;
+  for(let i=0;i<32;i++)for(let j=0;j<18;j++){x.fillRect(20+i*40,20+j*40,2,2);}
+  x.globalAlpha=1;
+  for(const [s,e,f] of scenes){
+    if(t<s-FADE||t>e+FADE)continue;
+    const a=Math.min(eio((t-s+FADE)/(2*FADE)),eio((e+FADE-t)/(2*FADE)));
+    if(a<=0)continue;
+    x.save();x.globalAlpha=a;const sc=.97+.03*a;x.translate(640,360);x.scale(sc,sc);x.translate(-640,-360);
+    f(cl((t-s)/(e-s)));x.restore();
+  }
+  x.globalAlpha=1;bar(0,716,1280*(t/DUR),4,C.acc,.8);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

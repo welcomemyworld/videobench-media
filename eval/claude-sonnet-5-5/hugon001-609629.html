@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000;height:100%;overflow:hidden}canvas{position:absolute;left:50%;top:50%;transform-origin:0 0}</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+window.DUR=15;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.transform`translate`;c.style.transform=`scale(${s}) translate(-50%,-50%)`;c.style.transformOrigin='0 0';c.style.left=innerWidth/2+'px';c.style.top=innerHeight/2+'px';c.style.transform=`translate(${-640*s}px,${-360*s}px) scale(${s})`}
+fit();onresize=fit;
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t'))||0,st=performance.now();
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const eo=t=>1-Math.pow(1-cl(t),3);
+const eb=t=>{t=cl(t);const s=1.70158;return 1+(s+1)*Math.pow(t-1,3)+s*Math.pow(t-1,2)};
+function rnd(i){const s=Math.sin(i*127.1+311.7)*43758.5453;return s-Math.floor(s)}
+const P=[];for(let i=0;i<120;i++)P.push([rnd(i)*1280,rnd(i+300)*720,rnd(i+600)*2+.5,rnd(i+900)]);
+function bg(t,h){const g=x.createLinearGradient(0,0,1280,720);g.addColorStop(0,`hsl(${h},70%,9%)`);g.addColorStop(1,`hsl(${h+60},70%,16%)`);x.fillStyle=g;x.fillRect(0,0,1280,720);
+for(const p of P){const y=(p[1]-t*20*p[2]+720*5)%720;x.fillStyle=`hsla(${h+40},90%,75%,${.1+.3*p[3]})`;x.beginPath();x.arc(p[0],y,p[2],0,7);x.fill()}}
+function txt(s,px,py,size,a,col='#fff',w=800,al='center'){x.save();x.globalAlpha=cl(a);x.font=`${w} ${size}px Helvetica,Arial,sans-serif`;x.textAlign=al;x.textBaseline='middle';x.fillStyle=col;x.fillText(s,px,py);x.restore()}
+function logo(px,py,r,t){x.save();x.translate(px,py);x.rotate(Math.sin(t)*.05);
+const g=x.createLinearGradient(-r,-r,r,r);g.addColorStop(0,'#7c5cff');g.addColorStop(1,'#ff5cb8');
+x.fillStyle=g;x.shadowColor='#a070ff';x.shadowBlur=40;x.beginPath();x.roundRect(-r,-r,2*r,2*r,r*.3);x.fill();x.shadowBlur=0;
+x.strokeStyle='#fff';x.lineWidth=r*.12;x.lineCap='round';x.lineJoin='round';x.beginPath();x.moveTo(-r*.5,r*.45);x.lineTo(-r*.5,-r*.45);x.lineTo(0,r*.1);x.lineTo(r*.5,-r*.45);x.lineTo(r*.5,r*.45);x.stroke();x.restore()}
+function phone(px,py,sc,t,mode){x.save();x.translate(px,py);x.scale(sc,sc);
+x.fillStyle='#111';x.shadowColor='rgba(150,100,255,.5)';x.shadowBlur=50;x.beginPath();x.roundRect(-120,-250,240,500,34);x.fill();x.shadowBlur=0;
+x.save();x.beginPath();x.roundRect(-110,-240,220,480,26);x.clip();
+const g=x.createLinearGradient(0,-240,0,240);g.addColorStop(0,'#1d1540');g.addColorStop(1,'#0c0a22');x.fillStyle=g;x.fillRect(-110,-240,220,480);
+if(mode==0){for(let i=0;i<5;i++){const y=-190+i*80,k=eo(t*2-i*.2);x.globalAlpha=k;x.fillStyle=`hsl(${260+i*25},70%,55%)`;x.beginPath();x.roundRect(-90+(1-k)*60,y,180,64,14);x.fill();x.fillStyle='#fff';x.fillRect(-72+(1-k)*60,y+18,100+i*8,8);x.globalAlpha=k*.5;x.fillRect(-72+(1-k)*60,y+36,70,6)}}
+else if(mode==1){x.strokeStyle='#ff5cb8';x.lineWidth=4;x.beginPath();for(let i=0;i<=40;i++){const u=i/40,yy=60-u*100+Math.sin(u*9+t*3)*25-Math.sin(u*3)*30;if(u<cl(t*1.5))i?x.lineTo(-90+u*180,yy):x.moveTo(-90+u*180,yy)}x.stroke();
+for(let i=0;i<4;i++){x.fillStyle='rgba(255,255,255,.1)';x.fillRect(-90+i*47,110,40,90*(.4+.6*Math.abs(Math.sin(i+t*2))))}}
+else{for(let i=0;i<3;i++){const a=t*2+i*2.1;x.strokeStyle=`hsl(${280+i*40},90%,65%)`;x.lineWidth=10;x.beginPath();x.arc(0,0,40+i*28,a,a+3.5);x.stroke()}txt('98%',0,0,34,1)}
+x.restore();x.restore()}
+const S=[
+[0,3,'Et si votre esprit',  'respirait enfin ?',260],
+[3,6,'MENTIS','L’app qui organise votre esprit',270],
+[6,9,'Intelligente','Des idées triées automatiquement',300],
+[9,12,'Puissante','Suivez vos progrès en temps réel',320],
+[12,15,'MENTIS','Disponible dès aujourd’hui',280]];
+function frame(T){
+const si=Math.min(4,Math.floor(T/3));const s=S[si],lt=T-s[0],h=s[4];
+bg(T,h);
+// rings
+for(let i=0;i<4;i++){const r=(lt*180+i*130)%520;x.strokeStyle=`hsla(${h+30},90%,70%,${.25*(1-r/520)})`;x.lineWidth=2;x.beginPath();x.arc(640,360,r,0,7);x.stroke()}
+const out=1-eo((lt-2.7)*3.3);
+x.save();x.globalAlpha=cl(out);
+if(si==0){txt(s[2],640,300,64,eo(lt*2),'#fff',300);txt(s[3],640+(1-eo(lt-.6))*80,390,76,eo((lt-.6)*2),'#c9b6ff',800);
+for(let i=0;i<14;i++){const a=i*.9+T,r=240+Math.sin(T*2+i)*30;x.fillStyle=`hsla(${260+i*10},90%,70%,.6)`;x.beginPath();x.arc(640+Math.cos(a)*r*1.9,360+Math.sin(a)*r*.9,6+i%4*3,0,7);x.fill()}}
+else if(si==1){const k=eb(lt*1.5);logo(640,250,70*k,T);txt(s[2],640,400,110*eo(lt*2)+1,1,'#fff',900);x.save();x.globalAlpha=eo(lt-.8);txt(s[3],640,490,34,1,'#d9ccff',400);x.restore();
+x.fillStyle='#fff';x.globalAlpha=.9*cl(1-lt*4);x.fillRect(0,0,1280,720)}
+else if(si<4){const m=si-2;const k=eb(lt*1.4);phone(820+(1-k)*400,370,k*1.05,lt,m);
+txt(s[2],90,260,78,eo(lt*2),'#fff',900,'left');x.save();x.globalAlpha=eo(lt-.5);x.fillStyle='#ff5cb8';x.fillRect(90,310,120*eo(lt-.5),5);x.restore();
+const w=s[3].split(' ');txt(s[3],90,370,30,eo(lt-.6),'#d9ccff',400,'left');
+for(let i=0;i<3;i++){const e=eo(lt-1-i*.25);x.save();x.globalAlpha=e;x.fillStyle='rgba(255,255,255,.1)';x.beginPath();x.roundRect(90+(1-e)*-50,430+i*60,300,44,22);x.fill();x.fillStyle=`hsl(${h+i*30},90%,70%)`;x.beginPath();x.arc(114+(1-e)*-50,452+i*60,8,0,7);x.fill();x.restore();txt(['Rapide','Sécurisé','Sans effort'][i],140+(1-e)*-50,452+i*60,22,e,'#fff',500,'left')}}
+else{logo(640,220,80*eb(lt*1.5),T);txt('MENTIS',640,360,120*eo(lt*2)+1,1,'#fff',900);
+txt(s[3],640,440,36,eo(lt-.5),'#d9ccff',400);
+const e=eb(lt-1),pulse=1+Math.sin(T*6)*.03;x.save();x.translate(640,540);x.scale(e*pulse,e*pulse);const g=x.createLinearGradient(-150,0,150,0);g.addColorStop(0,'#7c5cff');g.addColorStop(1,'#ff5cb8');x.fillStyle=g;x.shadowColor='#a070ff';x.shadowBlur=30;x.beginPath();x.roundRect(-160,-34,320,68,34);x.fill();x.restore();
+txt('Télécharger gratuitement',640,540,26,eo(lt-1.2),'#fff',700)}
+x.restore();
+// transition wipe
+if(lt>2.7&&si<4){const w=(lt-2.7)/.3;x.fillStyle=`hsl(${S[si+1][4]},80%,50%)`;x.fillRect(-1280+w*2560*.5*2-1280+0,0,0,0);x.globalAlpha=Math.sin(w*Math.PI)*.5;x.fillRect(0,0,1280,720);x.globalAlpha=1}
+// progress bar
+x.fillStyle='rgba(255,255,255,.15)';x.fillRect(0,712,1280,8);x.fillStyle='#ff5cb8';x.fillRect(0,712,1280*T/15,8);
+// letterbox
+x.fillStyle='#000';const lb=30*eo(T*2);x.fillRect(0,0,1280,lb);x.fillRect(0,720-lb,1280,lb);
+}
+function loop(n){const T=((n-st)/1000+off)%DUR;x.clearRect(0,0,1280,720);frame(T);requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+</script></body></html>

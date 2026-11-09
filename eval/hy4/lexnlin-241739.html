@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Cinematic Exploration</title>
+<style>
+    body { margin: 0; background: #000; overflow: hidden; }
+    canvas { display: block; width: 100vw; height: 100vh; object-fit: contain; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl', { preserveDrawingBuffer: true, antialias: false });
+
+const vsSource = `
+attribute vec2 position;
+void main() { gl_Position = vec4(position, 0.0, 1.0); }
+`;
+
+const fsSource = `
+precision highp float;
+uniform vec2 iResolution;
+uniform float u_time;
+
+mat2 rot(float a) { float c=cos(a), s=sin(a); return mat2(c,-s,s,c); }
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float noise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    vec2 u = f*f*(3.0-2.0*f);
+    return mix(mix(hash(i), hash(i+vec2(1,0)), u.x),
+               mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), u.x), u.y);
+}
+float sdBox(vec3 p, vec3 b) {
+    vec3 q = abs(p) - b;
+    return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+}
+float sdTorus(vec3 p, vec2 t) {
+    vec2 q = vec2(length(p.xz) - t.x, p.y);
+    return length(q) - t.y;
+}
+float smin(float a, float b, float k) {
+    float h = clamp(0.5 + 0.5*(b-a)/k, 0.0, 1.0);
+    return mix(b, a, h) - k*h*(1.0-h);
+}
+float sdCylBase(vec3 p, float r, float h) {
+    vec2 d = abs(vec2(length(p.xz), p.y - h*0.5)) - vec2(r, h*0.5);
+    return min(max(d.x, d.y), 0.0) + length(max(d, 0.0));
+}
+
+float getTerrain(vec2 xz) {
+    float n1 = noise(xz * 0.012);
+    float n2 = noise(xz * 0.05);
+    float h = -15.0 + pow(n1, 2.0) * 60.0 + n2 * 10.0;
+    h -= 40.0 * exp(-0.0015 * dot(xz, xz)); 
+    return h;
+}
+
+vec2 map(vec3 p) {
+    float th = getTerrain(p.xz);
+    vec2 res = vec2((p.y - th) * 0.5, 1.0);
+    
+    if (p.y < 160.0 && p.y > -30.0 && length(p.xz) < 120.0) {
+        vec3 q = p;
+        q.y -= 45.0;
+        q.xz *= rot(q.y * 0.008); 
+        
+        float base = max(abs(q.x) + abs(q.z) - 50.0 + q.y * 0.8, q.y - 5.0);
+        base = max(base, -q.y - 25.0);
+        
+        vec3 c = q;
+        c.xz = abs(c.xz) - 14.0;
+        float core = sdBox(c, vec3(6.0, 60.0, 6.0));
+        
+        float spire = sdCylBase(q + vec3(0.0, 20.0, 0.0), 8.0 - q.y*0.02, 100.0);
+        
+        vec3 a1 = q - vec3(0.0, 10.0, 0.0);
+        a1.yz *= rot(1.5708); 
+        float arch1 = max(sdTorus(a1, vec2(45.0, 4.0)), -q.y);
+
+        vec3 a2 = q - vec3(0.0, 10.0, 0.0);
+        a2.xy *= rot(1.5708); 
+        float arch2 = max(sdTorus(a2, vec2(45.0, 4.0)), -q.y);
+        
+        float mega = smin(base, core, 5.0);
+        mega = smin(mega, spire, 5.0);
+        mega = smin(mega, min(arch1, arch2), 3.0);
+        
+        vec3 r = q;
+        r.y -= 25.0;
+        r.yz *= rot(1.2);
+        float ring1 = sdTorus(r, vec2(75.0, 1.5));
+        r.xz *= rot(0.5);
+        r.xy *= rot(0.8);
+        float ring2 = sdTorus(r, vec2(95.0, 0.8));
+        mega = min(mega, min(ring1, ring2));
+        
+        vec3 orb = q - vec3(0.0, 40.0, 0.0);
+        orb.xz = abs(orb.xz) - 30.0;
+        mega = min(mega, sdBox(orb, vec3(4.0)));
+        
+        float detail = sin(q.x * 1.5) * sin(q.y * 1.5) * sin(q.z * 1.5) * 0.3;
+        detail += sin(q.x * 4.0) * sin(q.y * 4.0) * sin(q.z * 4.0) * 0.1;
+        mega += detail * smoothstep(-10.0, 10.0, q.y);
+        
+        if (mega < res.x) res = vec2(mega, 3.0);
+    }
+    
+    if (p.y < 70.0 && p.y > -25.0 && length(p.xz) < 250.0) {
+        vec2 fId = floor(p.xz / 14.0);
+        if (length(fId) > 3.5) {
+            vec3 f = p;
+            f.xz = mod(p.xz, 14.0) - 7.0;
+            f.xz += (vec2(hash(fId), hash(fId+1.0)) - 0.5) * 8.0;
+            float tH = getTerrain(p.xz - f.xz);
+            f.y = p.y - tH;
+            float h = 10.0 + 8.0 * hash(fId+2.0);
+            float trunk = max(length(f.xz) - 0.4, f.y - h);
+            float leaves = length(f.xz) - (3.5 * pow(max(0.0, 1.0 - f.y/h), 0.7));
+            leaves = max(leaves, f.y - h);
+            leaves = max(leaves, -f.y + 2.0);
+            float tree = min(trunk, leaves);
+            if (tree < res.x) res = vec2(tree, 4.0);
+        }
+        
+        vec2 rId = floor(p.xz / 70.0);
+        if (length(rId) > 0.5) {
+            vec3 ru = p;
+            ru.xz = mod(p.xz, 70.0) - 35.0;
+            float ruH = getTerrain(p.xz - ru.xz);
+            ru.y -= ruH;
+            ru.xz *= rot(hash(rId) * 6.28);
+            
+            vec3 bp = ru;
+            bp.x = abs(bp.x) - 12.0;
+            bp.z = abs(bp.z) - 12.0;
+            float bpD = sdCylBase(bp, 2.0, 15.0 + hash(rId+1.0)*20.0);
+            
+            vec3 lin = ru - vec3(0.0, 12.0, 0.0);
+            lin.yz *= rot(0.4);
+            float linD = sdBox(lin, vec3(18.0, 2.5, 4.0));
+            
+            float ruins = min(bpD, linD);
+            if (ruins < res.x) res = vec2(ruins, 5.0);
+        }
+    }
+    return res;
+}
+
+float softShadow(vec3 ro, vec3 rd, float mint, float maxt, float k) {
+    float res = 1.0;
+    float t = mint;
+    for(int i=0; i<16; i++) {
+        float h = map(ro + rd * t).x;
+        if(h < 0.002) return 0.0;
+        res = min(res, k * h / t);
+        t += clamp(h, 0.2, 5.0);
+        if(t > maxt) break;
+    }
+    return clamp(res, 0.0, 1.0);
+}
+
+vec3 getMaterial(float id, vec3 p, vec3 n) {
+    vec3 col = vec3(1.0);
+    if (id == 1.0) {
+        col = mix(vec3(0.08, 0.09, 0.12), vec3(0.25, 0.28, 0.25), n.y);
+        col = mix(col, vec3(0.3, 0.4, 0.3), smoothstep(0.6, 0.9, n.y) * noise(p.xz * 0.1));
+        col *= 0.7 + 0.5 * noise(p.xz * 1.5);
+    } else if (id == 2.0) {
+        col = vec3(0.02, 0.08, 0.12);
+    } else if (id == 3.0) {
+        col = vec3(0.6, 0.55, 0.45);
+        col *= 0.8 + 0.4 * noise(p.xy * 2.0);
+    } else if (id == 4.0) {
+        col = vec3(0.04, 0.12, 0.08);
+        col *= 0.8 + 0.4 * noise(p.xz * 3.0);
+    } else if (id == 5.0) {
+        col = vec3(0.35, 0.35, 0.4);
+        col *= 0.6 + 0.6 * noise(p.xy * 1.0);
+    }
+    return col;
+}
+
+void main() {
+    vec2 uv = (gl_FragCoord.xy - 0.5 * iResolution.xy) / iResolution.y;
+    
+    float tNorm = u_time / 30.0;
+    float angle = tNorm * 6.28318;
+    
+    float r = 130.0 + 70.0 * cos(angle * 2.0);
+    float h = 42.5 + 37.5 * sin(angle - 1.57); 
+    vec3 ro = vec3(cos(angle) * r, h, sin(angle) * r);
+    ro.y = max(ro.y, getTerrain(ro.xz) + 8.0);
+
+    vec3 ta = vec3(
+        sin(angle * 1.5) * 20.0,
+        30.0 + 15.0 * sin(angle * 3.0),
+        cos(angle * 1.5) * 20.0
+    );
+
+    ro += vec3(sin(u_time*10.0), cos(u_time*12.0), sin(u_time*8.0)) * 0.15;
+    ta += vec3(cos(u_time*9.0), sin(u_time*11.0), cos(u_time*7.0)) * 0.3;
+
+    vec3 cw = normalize(ta - ro);
+    vec3 cu = normalize(cross(cw, vec3(0,1,0)));
+    vec3 cv = cross(cu, cw);
+    float roll = sin(angle) * 0.04;
+    cu = normalize(cu * cos(roll) + cv * sin(roll));
+    cv = cross(cu, cw);
+    vec3 rd = normalize(uv.x * cu + uv.y * cv + 1.4 * cw);
+
+    vec3 sunDir = normalize(vec3(0.8, 0.15, 0.2));
+    vec3 sunCol = vec3(1.0, 0.7, 0.4);
+    vec3 skyCol = vec3(0.05, 0.1, 0.2);
+    float sunDot = max(dot(rd, sunDir), 0.0);
+
+    float tWater = 1e20;
+    if (rd.y < -0.0001) {
+        tWater = (-2.0 - ro.y) / rd.y;
+        if (tWater < 0.0) tWater = 1e20;
+    }
+    float tMax = min(250.0, tWater);
+
+    float t = 0.0;
+    float id = 0.0;
+    for(int i=0; i<90; i++) {
+        vec3 p = ro + rd * t;
+        vec2 d = map(p);
+        if(d.x < 0.002 * t) { id = d.y; break; }
+        t += d.x * 0.5;
+        if(t > tMax) break;
+    }
+    if(id == 0.0 && tWater < 250.0) {
+        t = tWater;
+        id = 2.0;
+    }
+
+    vec3 col = vec3(0.0);
+
+    if (id > 0.0 && t < 250.0) {
+        vec3 p = ro + rd * t;
+        vec3 n;
+        if (id == 2.0) {
+            n = normalize(vec3(-cos(p.x*0.1 + u_time)*0.02, 1.0, sin(p.z*0.15 + u_time)*0.03));
+        } else {
+            vec2 e = vec2(0.05, 0.0);
+            n = normalize(vec3(
+                map(p + e.xyy).x - map(p - e.xyy).x,
+                map(p + e.yxy).x - map(p - e.yxy).x,
+                map(p + e.yyx).x - map(p - e.yyx).x
+            ));
+        }
+        
+        vec3 mat = getMaterial(id, p, n);
+        
+        float dif = clamp(dot(n, sunDir), 0.0, 1.0);
+        float sha = 1.0;
+        if (dif > 0.0) sha = softShadow(p + n*0.1, sunDir, 0.1, 100.0, 16.0);
+        float amb = 0.5 + 0.5 * n.y;
+        float bac = clamp(dot(n, -sunDir), 0.0, 1.0) * 0.2;
+        
+        vec3 lin = vec3(0.0);
+        lin += dif * vec3(1.2, 0.8, 0.5) * sha;
+        lin += amb * vec3(0.2, 0.3, 0.5);
+        lin += bac * vec3(0.2, 0.1, 0.05);
+        
+        col = mat * lin;
+        
+        vec3 hVec = normalize(sunDir - rd);
+        float spe = pow(clamp(dot(n, hVec), 0.0, 1.0), 32.0) * dif * sha;
+        col += spe * vec3(1.0, 0.9, 0.7) * (id == 2.0 ? 2.0 : 0.3);
+        
+        if (id == 2.0) {
+            vec3 refRd = reflect(rd, n);
+            vec3 rSky = mix(vec3(0.1, 0.15, 0.2), vec3(0.9, 0.5, 0.3), pow(max(dot(refRd, sunDir), 0.0), 4.0));
+            float glint = pow(max(dot(refRd, sunDir), 0.0), 128.0);
+            col = mix(col, rSky, 0.8) + glint * vec3(1.0, 0.8, 0.5) * 2.0;
+        }
+        
+        if (id == 3.0) {
+            float v = sin(p.y * 0.2 + noise(p.xz * 0.1) * 20.0);
+            col += smoothstep(0.85, 1.0, v) * vec3(0.1, 0.8, 1.0) * (1.0 + sin(u_time * 3.0)) * 1.5;
+        }
+        if (id == 5.0) {
+            col += smoothstep(0.9, 1.0, sin(p.y * 0.5 + u_time * 2.0)) * vec3(0.1, 0.5, 0.8) * 1.5;
+        }
+        
+        float fog = 1.0 - exp(-0.00008 * t * t);
+        vec3 fogCol = mix(vec3(0.1, 0.15, 0.25), vec3(0.9, 0.5, 0.3), pow(sunDot, 4.0));
+        fogCol += sunCol * pow(sunDot, 32.0) * 0.5;
+        col = mix(col, fogCol, fog);
+    } else {
+        col = skyCol - rd.y * 0.1;
+        col = mix(col, vec3(0.4, 0.3, 0.3), smoothstep(0.0, -0.2, rd.y));
+        col += pow(sunDot, 128.0) * sunCol * 2.0;
+        col += sunCol * pow(sunDot, 4.0) * 0.4;
+    }
+
+    float sDotCw = dot(sunDir, cw);
+    if (sDotCw > 0.0) {
+        vec2 sunUV = vec2(dot(sunDir, cu), dot(sunDir, cv)) * (1.4 / sDotCw);
+        vec2 dUV = uv - sunUV;
+        float angleUV = atan(dUV.y, dUV.x);
+        float rays = noise(vec2(angleUV * 15.0, u_time * 0.1)) * 0.5 + 0.5;
+        rays = smoothstep(0.4, 0.9, rays);
+        col += vec3(1.0, 0.6, 0.3) * pow(sunDot, 6.0) * rays * (id == 0.0 ? 0.8 : 0.3);
+    }
+
+    col = col / (1.0 + col);
+    col = pow(col, vec3(0.4545));
+    col = mix(vec3(dot(col, vec3(0.333))), col, 1.2);
+    col = smoothstep(0.0, 1.0, col);
+    
+    vec2 q = gl_FragCoord.xy / iResolution.xy;
+    col *= 0.5 + 0.5 * pow(16.0 * q.x * q.y * (1.0 - q.x) * (1.0 - q.y), 0.2);
+
+    gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+function compileShader(type, source) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, source);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(s));
+    return s;
+}
+
+const prog = gl.createProgram();
+gl.attachShader(prog, compileShader(gl.VERTEX_SHADER, vsSource));
+gl.attachShader(prog, compileShader(gl.FRAGMENT_SHADER, fsSource));
+gl.linkProgram(prog);
+gl.useProgram(prog);
+
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+const loc = gl.getAttribLocation(prog, 'position');
+gl.enableVertexAttribArray(loc);
+gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+gl.uniform2f(gl.getUniformLocation(prog, 'iResolution'), 1280, 720);
+const uTime = gl.getUniformLocation(prog, 'u_time');
+
+window.DUR = 30.0;
+const urlParams = new URLSearchParams(window.location.search);
+let tOffset = parseFloat(urlParams.get('t')) || 0.0;
+let startTime = performance.now();
+
+function render(now) {
+    let t = (now - startTime) / 1000.0 + tOffset;
+    t = t % window.DUR;
+    gl.uniform1f(uTime, t);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    requestAnimationFrame(render);
+}
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>From Article to Educational Video</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#0b1020}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=42;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t')||0)||0,t0=performance.now();
+const E=v=>v<0?0:v>1?1:1-Math.pow(1-v,3),cl=v=>v<0?0:v>1?1:v;
+const S=[
+{t:'From Article to Video',s:'A 6-step guide to teaching what you read',d:intro},
+{t:'1. Extract the Key Ideas',s:'Highlight 3–5 core points. Cut the rest.',d:read},
+{t:'2. Build a Structure',s:'Hook → Problem → Key Points → Recap',d:struct},
+{t:'3. Visualize Each Idea',s:'One clear picture per point',d:story},
+{t:'4. Script & Narrate',s:'Short sentences. Speak like a teacher, not a page.',d:voice},
+{t:'5. Pace & Recap',s:'Repeat key ideas. Ask a question to end.',d:recap}];
+const SL=7;
+function txt(s,X,Y,sz,col,al,w){x.font=(w||'600')+' '+sz+'px Segoe UI,Helvetica,Arial,sans-serif';x.fillStyle=col;x.textAlign=al||'center';x.fillText(s,X,Y);}
+function rr(X,Y,W,H,r){x.beginPath();x.roundRect(X,Y,W,H,r);}
+function doc(X,Y,a,hl){x.globalAlpha=a;x.fillStyle='#f4f1e8';rr(X,Y,300,380,12);x.fill();
+ x.fillStyle='#223';x.fillRect(X+30,Y+30,180,16);
+ for(let i=0;i<14;i++){const w=200+((i*53)%40),yy=Y+75+i*20;
+  if(hl&&hl[i]!==undefined){x.fillStyle='rgba(255,214,0,.8)';x.fillRect(X+26,yy-4,(w+8)*hl[i],14);}
+  x.fillStyle='#889';x.fillRect(X+30,yy,w,6);}
+ x.globalAlpha=1;}
+function intro(p){doc(200,170,E(p*2));
+ const a=E(p*2-.6);x.save();x.globalAlpha=a;
+ x.strokeStyle='#6cf';x.lineWidth=6;x.beginPath();x.moveTo(540,360);x.lineTo(720,360);x.stroke();
+ x.beginPath();x.moveTo(720,340);x.lineTo(745,360);x.lineTo(720,380);x.fill();x.fillStyle='#6cf';x.fill();
+ x.fillStyle='#1b2540';rr(780,220,320,200,14);x.fill();x.strokeStyle='#6cf';x.lineWidth=3;x.stroke();
+ x.fillStyle='#fff';x.beginPath();x.moveTo(920,280);x.lineTo(975,320);x.lineTo(920,360);x.fill();
+ x.fillStyle='#345';x.fillRect(800,395,280,6);x.fillStyle='#f55';x.fillRect(800,395,280*cl(p*1.5-.6),6);
+ x.restore();}
+function read(p){const hl={};[2,5,9,12].forEach((i,k)=>hl[i]=E(p*3-k*.4));doc(160,170,1,hl);
+ const pts=['Main claim','Key evidence','Surprising fact','Takeaway'];
+ pts.forEach((s,k)=>{const a=E(p*3-k*.4-.3);x.globalAlpha=a;x.fillStyle='#1b2540';rr(620+(1-a)*60,190+k*90,460,64,12);x.fill();
+  x.fillStyle='#ffd600';x.beginPath();x.arc(655+(1-a)*60,222+k*90,14,0,7);x.fill();
+  txt(String(k+1),655+(1-a)*60,229+k*90,18,'#0b1020');txt(s,690+(1-a)*60,232+k*90,28,'#fff','left');x.globalAlpha=1;});}
+function struct(p){const L=['Hook','Problem','Key Points','Recap'],C=['#f55','#fa3','#6cf','#5d8'];
+ L.forEach((s,k)=>{const a=E(p*2.5-k*.35),X=110+k*270;x.globalAlpha=a;x.fillStyle=C[k];rr(X,330-(1-a)*40,220,110,16);x.fill();
+  txt(s,X+110,395-(1-a)*40,30,'#0b1020','center','700');
+  if(k<3){x.fillStyle='#fff';x.beginPath();x.moveTo(X+232,385);x.lineTo(X+258,375);x.lineTo(X+258,395);x.fill();}x.globalAlpha=1;});
+ const tm=['0:00','0:15','0:45','2:30'];tm.forEach((s,k)=>{x.globalAlpha=E(p*2.5-k*.35-.3);txt(s,220+k*270,480,22,'#9ab');x.globalAlpha=1;});}
+function story(p){for(let k=0;k<4;k++){const a=E(p*2.5-k*.3),X=130+k*265,Y=220;x.globalAlpha=a;
+ x.fillStyle='#1b2540';rr(X,Y,230,170,10);x.fill();x.strokeStyle='#6cf';x.lineWidth=2;x.stroke();
+ const cx=X+115,cy=Y+85,tt=p*6+k;x.strokeStyle='#ffd600';x.fillStyle='#ffd600';x.lineWidth=4;
+ if(k==0){x.beginPath();x.arc(cx,cy-10,30,0,7);x.stroke();x.fillRect(cx-12,cy+25,24,14);}
+ if(k==1){for(let i=0;i<4;i++){const h=20+i*18*(.6+.4*Math.sin(tt+i));x.fillRect(cx-60+i*32,cy+50-h,22,h);}}
+ if(k==2){x.beginPath();x.arc(cx,cy,45,-1.57,-1.57+6.28*cl(p*2-.6));x.lineTo(cx,cy);x.fill();}
+ if(k==3){x.beginPath();x.moveTo(cx-60,cy+40);for(let i=0;i<=12;i++)x.lineTo(cx-60+i*10,cy+40-i*5-Math.sin(i+tt)*6);x.stroke();}
+ txt(['Concept','Compare','Proportion','Trend'][k],cx,Y+210,24,'#cde');x.globalAlpha=1;}}
+function voice(p){x.fillStyle='#1b2540';rr(150,190,980,90,14);x.fill();
+ const s='"Here\'s the one idea you need to remember…"',n=Math.floor(s.length*cl(p*1.6));
+ txt(s.slice(0,n),640,247,32,'#fff','center','500');
+ x.strokeStyle='#5d8';x.lineWidth=4;x.beginPath();
+ for(let i=0;i<=200;i++){const X=190+i*4.5,amp=50*Math.sin(i*.07+p*30)*Math.sin(i*.31+p*12)*(n<s.length?1:.2);i?x.lineTo(X,420+amp):x.moveTo(X,420+amp);}x.stroke();
+ txt('≈ 150 words per minute',640,540,26,'#9ab');}
+function recap(p){const L=['Extract','Structure','Visualize','Narrate','Recap'];
+ L.forEach((s,k)=>{const a=E(p*3-k*.3);x.globalAlpha=a;const Y=200+k*66;
+  x.strokeStyle='#5d8';x.lineWidth=4;rr(440,Y,36,36,6);x.stroke();
+  if(a>.9){x.beginPath();x.moveTo(448,Y+18);x.lineTo(456,Y+28);x.lineTo(470,Y+8);x.stroke();}
+  txt(s,500,Y+29,30,'#fff','left');x.globalAlpha=1;});
+ x.globalAlpha=E(p*3-2);txt('What article will you teach next?',640,590,30,'#ffd600','center','700');x.globalAlpha=1;}
+function frame(){const T=((performance.now()-t0)/1000+off)%DUR;
+ const i=Math.min(5,Math.floor(T/SL)),lt=T-i*SL,p=lt/SL;
+ const g=x.createLinearGradient(0,0,1280,720);g.addColorStop(0,'#0b1020');g.addColorStop(1,'#1a1238');x.fillStyle=g;x.fillRect(0,0,1280,720);
+ for(let k=0;k<40;k++){x.fillStyle='rgba(120,180,255,.06)';x.beginPath();x.arc((k*197+T*10)%1280,(k*131)%720,2+k%4,0,7);x.fill();}
+ const fa=cl(lt*2)*cl((SL-lt)*2);x.globalAlpha=fa;
+ txt(S[i].t,640,90,46,'#fff','center','800');txt(S[i].s,640,135,24,'#9cf','center','400');
+ x.save();S[i].d(p);x.restore();x.globalAlpha=1;
+ for(let k=0;k<6;k++){x.fillStyle=k==i?'#6cf':'#345';x.fillRect(440+k*70,680,60,6);}
+ x.fillStyle='#6cf';x.fillRect(0,716,1280*T/DUR,4);
+ requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

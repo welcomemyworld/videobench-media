@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bone & Fire — A Procedural Music Film</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000}
+body{display:flex;align-items:center;justify-content:center}
+#stage{position:relative;width:1280px;height:720px;flex:none;transform-origin:center}
+canvas{display:block;width:1280px;height:720px}
+button{position:absolute;left:94px;top:594px;border:1px solid #665e4e;background:#080807;color:#ede3ce;padding:12px 17px;font:10px monospace;letter-spacing:2px;cursor:pointer}
+button:hover{border-color:#f87930;color:#f87930}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="screen" width="1280" height="720"></canvas><button id="sound" aria-label="Enable procedural soundtrack">ENABLE SOUND ↗</button></div>
+<script>
+'use strict';
+/*
+  Self-contained original procedural music film.
+  No remote song, transcription, model, or stem-separation services are called.
+  Original lyrics and the ten-scene storyboard are embedded below.
+  Perspective-projected 3D engraving geometry is rendered without dependencies.
+  The optional original instrumental is synthesized locally and loudness-normalized.
+  A 16-frame contact sheet is available in the console: exportContactSheet().
+*/
+window.DUR=50;
+const W=1280,H=720,PW=1080,PH=1920,TAU=Math.PI*2;
+const canvas=document.getElementById('screen'),ctx=canvas.getContext('2d');
+const portrait=document.createElement('canvas');portrait.width=PW;portrait.height=PH;
+const p=portrait.getContext('2d');
+const bone='#eee4cf',orange='#f77932',black='#080807';
+const startOffset=Number(new URLSearchParams(location.search).get('t'))||0;
+let epoch,nowTime=0,lastScene=-1;
+const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const smooth=x=>{x=clamp(x);return x*x*(3-2*x)};
+const mix=(a,b,t)=>a+(b-a)*t;
+const rng=seed=>()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296};
+const scenes=[
+{word:'SPARK',lyric:'I held a spark beneath the stone.',show:'A living seed inside a fractured shell',camera:'SLOW ORBIT / CLOSE',kind:'seed'},
+{word:'RIVER',lyric:'The dark became a riverbed.',show:'An orange current through etched waves',camera:'LOW FLIGHT / FORWARD',kind:'river'},
+{word:'WINGS',lyric:'I taught my paper wings to rise.',show:'A bird assembled from engraved feathers',camera:'ASCENDING / THREE-QUARTER',kind:'bird'},
+{word:'CITY',lyric:'The city burned behind my eyes.',show:'A city of black needles against an ember sun',camera:'ORBIT / WIDE',kind:'city'},
+{word:'CLIMB',lyric:'I climbed the names I left below.',show:'A spiral staircase suspended in darkness',camera:'CRANE / UPWARD',kind:'stairs'},
+{word:'HEART',lyric:'A borrowed heart began to glow.',show:'A wire-carved heart and concentric pulses',camera:'PUSH IN / FRONTAL',kind:'heart'},
+{word:'SKY',lyric:'I saw the sky inside the sea.',show:'A celestial eye above a field of ripples',camera:'DOLLY / FLOATING',kind:'eye'},
+{word:'ROOTS',lyric:'My roots remembered how to fly.',show:'A suspended tree with roots like wings',camera:'ORBIT / REVEAL',kind:'tree'},
+{word:'BEYOND',lyric:'I walked where every shadow ends.',show:'Nine nested gates opening into light',camera:'FORWARD / THROUGH',kind:'door'},
+{word:'MORNING',lyric:'And made a morning of my bones.',show:'A rising engraved sun with a crown of rays',camera:'PULL BACK / HORIZON',kind:'sun'}
+];
+const models=[];
+function path(model,points,color=0,width=1,opacity=1,closed=false){model.push({points,color,width,opacity,closed})}
+function line(m,a,b,c=0,w=1,o=1){path(m,[a,b],c,w,o)}
+function curve(m,fn,n=80,c=0,w=1,o=1,closed=false){let a=[];for(let i=0;i<=n;i++)a.push(fn(i/n));path(m,a,c,w,o,closed)}
+function circle(m,r,y=0,c=0,w=1,axis='xz',center=[0,0,0],n=96){
+curve(m,t=>{let a=t*TAU;return axis==='xy'?[center[0]+r*Math.cos(a),center[1]+r*Math.sin(a)+y,center[2]]:axis==='yz'?[center[0],center[1]+r*Math.cos(a)+y,center[2]+r*Math.sin(a)]:[center[0]+r*Math.cos(a),center[1]+y,center[2]+r*Math.sin(a)]},n,c,w);
+}
+function sphere(m,r=1,center=[0,0,0],c=0){
+for(let j=1;j<38;j++){let lat=-Math.PI/2+j*Math.PI/38;curve(m,t=>{let a=t*TAU,rr=r*Math.cos(lat);return[center[0]+rr*Math.cos(a),center[1]+r*Math.sin(lat),center[2]+rr*Math.sin(a)]},96,c,j%4===0?1.4:.65,.75)}
+for(let j=0;j<28;j++){let a=j*TAU/28;curve(m,t=>{let lat=-Math.PI/2+t*Math.PI;return[center[0]+r*Math.cos(lat)*Math.cos(a),center[1]+r*Math.sin(lat),center[2]+r*Math.cos(lat)*Math.sin(a)]},60,c,.65,.45)}
+}
+function box(m,x,y,z,w,h,d,c=0){
+const a=[[x-w/2,y,z-d/2],[x+w/2,y,z-d/2],[x+w/2,y,z+d/2],[x-w/2,y,z+d/2]];
+path(m,[...a,a[0]],c,1.4);
+let b=a.map(v=>[v[0],v[1]+h,v[2]]);path(m,[...b,b[0]],c,1.4);
+for(let k=0;k<4;k++)line(m,a[k],b[k],c,1);
+for(let j=.08;j<h;j+=.10)line(m,[x-w/2,y+j,z-d/2],[x+w/2,y+j,z-d/2],c,.6,.5);
+}
+function build(kind,index){
+let m=[],rand=rng(500+index);
+if(kind==='seed'){
+sphere(m,1.02,[0,.2,0]);
+for(let j=0;j<28;j++){
+let a=j*TAU/28;
+curve(m,t=>{let q=t*Math.PI,rad=1.23+.12*Math.sin(q*9+a);return[rad*Math.sin(q)*Math.cos(a),.2-1.2*Math.cos(q),rad*Math.sin(q)*Math.sin(a)]},64,0,.9,.65);
+}
+sphere(m,.43,[0,.2,0],1);
+for(let k=0;k<90;k++){let a=rand()*TAU,z=rand()*2-1,r=Math.sqrt(1-z*z),rr=1.5+rand()*.6;line(m,[r*Math.cos(a)*rr,z*rr+.2,r*Math.sin(a)*rr],[r*Math.cos(a)*(rr+.09),z*(rr+.09)+.2,r*Math.sin(a)*(rr+.09)],1,.8,.7)}
+for(let i=0;i<10;i++)circle(m,1.2+i*.07,-1.3,0,.7);
+}
+if(kind==='river'){
+for(let j=0;j<90;j++){let z=-3.5+j*.075;curve(m,t=>{let x=(t-.5)*6.4;return[x,-.4+.24*Math.sin(x*2+z*1.8)+.09*Math.sin(x*7-z*3),z]},80,j>38&&j<45?1:0,j%6===0?1.5:.7,.85)}
+for(let j=0;j<32;j++){let x=-3.1+j*.2;curve(m,t=>{let z=(t-.5)*7;return[x,-.4+.24*Math.sin(x*2+z*1.8)+.09*Math.sin(x*7-z*3),z]},70,0,.55,.4)}
+sphere(m,.52,[0,1.0,-2.1],1);
+}
+if(kind==='bird'){
+for(let side of [-1,1]){
+for(let j=0;j<38;j++){let q=j/37,a=.14+q*1.12,len=2.5-.7*q;
+curve(m,t=>{let x=side*(.10+len*t*Math.cos(a));return[x,.15+len*t*Math.sin(a)-.85*t*t,.15*Math.sin(t*Math.PI)+.3*q]},40,j%9===0?1:0,j%5===0?1.5:.8,.9);
+curve(m,t=>{let x=side*(.10+len*t*Math.cos(a)+.05*Math.sin(t*Math.PI));return[x,.15+len*t*Math.sin(a)-.85*t*t-.09*Math.sin(t*Math.PI),.15*Math.sin(t*Math.PI)+.3*q]},40,0,.6,.6);
+for(let k=2;k<10;k++){let t=k/10,x=side*(.1+len*t*Math.cos(a)),y=.15+len*t*Math.sin(a)-.85*t*t;
+line(m,[x,y,.15*Math.sin(t*Math.PI)+.3*q],[x+side*.08,y+.09,.15*Math.sin(t*Math.PI)+.3*q],0,.55,.5)}
+}
+}
+for(let j=0;j<18;j++)curve(m,t=>{let a=t*TAU;return[.19*Math.cos(a)*Math.sin(j*Math.PI/18),.55*Math.sin(a),.16*Math.sin(a+j*.2)]},60,0,.9);
+sphere(m,.20,[0,.48,0],1);
+line(m,[.12,.52,0],[.34,.48,.03],1,1.7);
+for(let j=0;j<15;j++)line(m,[0,-.3,0],[(j-7)*.05,-1.1-Math.abs(j-7)*.014,.18],0,1);
+for(let j=0;j<5;j++)circle(m,1.6+j*.09,-1.45,0,.6);
+}
+if(kind==='city'){
+for(let k=0;k<38;k++){let a=k*2.39996,r=.35+Math.sqrt(k/38)*2.1,x=Math.cos(a)*r,z=Math.sin(a)*r,h=.45+rand()*1.95;box(m,x,-1.4,z,.13+rand()*.22,h,.15+rand()*.22,k%11===0?1:0);
+if(k%3===0)line(m,[x,-1.4+h,z],[x,-1.4+h+.35,z],0,.9)}
+for(let i=0;i<18;i++)circle(m,.4+i*.13,-1.42,0,.6);
+sphere(m,.84,[0,1.4,-1.55],1);
+}
+if(kind==='stairs'){
+for(let i=0;i<48;i++){
+let a=i*.23,y=-1.6+i*.067,r=.94;
+let points=[[.24*Math.cos(a),y,.24*Math.sin(a)],[1.4*Math.cos(a),y,1.4*Math.sin(a)],[1.4*Math.cos(a+.19),y,1.4*Math.sin(a+.19)],[.24*Math.cos(a+.19),y,.24*Math.sin(a+.19)]];
+path(m,[...points,points[0]],i%8===0?1:0,1.6);
+for(let k=0;k<7;k++){let t=k/7;line(m,[mix(points[0][0],points[1][0],t),y,mix(points[0][2],points[1][2],t)],[mix(points[3][0],points[2][0],t),y,mix(points[3][2],points[2][2],t)],0,.65,.6)}
+line(m,points[1],[points[1][0],y+.38,points[1][2]],0,.8,.7);
+}
+curve(m,t=>{let a=t*47*.23;return[1.4*Math.cos(a),-1.22+t*47*.067,1.4*Math.sin(a)]},180,1,1.7);
+for(let j=0;j<20;j++){let a=j*TAU/20;line(m,[.18*Math.cos(a),-1.6,.18*Math.sin(a)],[.18*Math.cos(a),1.6,.18*Math.sin(a)],0,.65)}
+}
+if(kind==='heart'){
+const hp=(a,s,z)=>[s*.083*16*Math.pow(Math.sin(a),3),s*.083*(13*Math.cos(a)-5*Math.cos(2*a)-2*Math.cos(3*a)-Math.cos(4*a))+.2,z];
+for(let i=0;i<52;i++){let z=-.72+1.44*i/51,s=Math.sqrt(Math.max(0,1-z*z/.72/.72));curve(m,t=>hp(t*TAU,s,z),110,i%10===0?1:0,i%5===0?1.4:.8,.8)}
+for(let j=0;j<48;j++){let a=j*TAU/48;curve(m,t=>{let u=-Math.PI/2+t*Math.PI;return hp(a,Math.cos(u),.72*Math.sin(u))},60,0,.7,.55)}
+for(let j=0;j<8;j++)circle(m,1.7+j*.12,0,j<2?1:0,.65,'xy');
+}
+if(kind==='eye'){
+for(let j=0;j<22;j++){let f=j/22;curve(m,t=>{let a=t*TAU,x=2.25*Math.cos(a),y=.87*Math.sin(a)*(1-f*.7);return[x,y,.35*Math.sin(a)*Math.sin(a)+f*.1]},96,0,j%5===0?1.4:.6,.7)}
+sphere(m,.71,[0,0,.35],1);
+for(let j=0;j<88;j++){let a=j*TAU/88;curve(m,t=>{let r=.28+t*.37;return[r*Math.cos(a),r*Math.sin(a),.96+.035*Math.sin(t*30+a*7)]},24,j%7===0?1:0,.8,.8)}
+for(let j=0;j<18;j++)circle(m,1+j*.11,-1.45,0,.7);
+for(let s of [-1,1])for(let j=0;j<16;j++){let a=.15+j*.17;line(m,[2.12*Math.cos(a),s*.87*Math.sin(a),.1],[2.28*Math.cos(a),s*(.87*Math.sin(a)+.2),.1],0,.9)}
+}
+if(kind==='tree'){
+function branch(a,angle,len,depth,root=false){
+let b=[a[0]+Math.sin(angle)*len,a[1]+Math.cos(angle)*len*(root?-1:1),a[2]+(rand()-.5)*len*.5];
+for(let j=0;j<Math.max(2,depth*2);j++){let off=(j-depth)*.011;
+curve(m,t=>[mix(a[0],b[0],t)+off*Math.sin(t*Math.PI),mix(a[1],b[1],t),mix(a[2],b[2],t)+off],12,depth===1?1:0,depth>3?1.1:.65,.85)}
+if(depth>0){branch(b,angle-.35-rand()*.25,len*.72,depth-1,root);branch(b,angle+.35+rand()*.25,len*.73,depth-1,root)}
+else{for(let j=0;j<3;j++)curve(m,t=>[b[0]+Math.sin(t*TAU)*.07,b[1]+Math.cos(t*TAU)*.12,b[2]+j*.025],20,1,.6,.65)}
+}
+branch([0,-.7,0],0,.85,5);
+branch([0,-.7,0],-.7,.53,4,true);branch([0,-.7,0],.7,.53,4,true);
+for(let j=0;j<7;j++)circle(m,1.1+j*.12,-1.9,0,.6);
+}
+if(kind==='door'){
+for(let j=0;j<10;j++){
+let z=-3+j*.62,w=1.02,h=1.55;
+for(let k=0;k<6;k++){let e=k*.026;path(m,[[-w-e,-h,z],[-w-e,h,z],[w+e,h,z],[w+e,-h,z]],j===0?1:0,k===0?1.8:.65,.65)}
+for(let k=0;k<15;k++){let y=-1.5+k*.2;line(m,[-1.18,y,z],[-1.02,y+.1,z],0,.6);line(m,[1.02,y,z],[1.18,y+.1,z],0,.6)}
+}
+for(let k=-12;k<=12;k++)line(m,[k*.22,-1.56,-4],[k*.22,-1.56,3],0,.7,.6);
+for(let j=0;j<35;j++)line(m,[-2.7,-1.56,-4+j*.2],[2.7,-1.56,-4+j*.2],0,.6,.5);
+sphere(m,.19,[0,-.54,-3.1],1);
+path(m,[[-.12,-.74,-3.1],[-.2,-1.3,-3.1],[.2,-1.3,-3.1],[.12,-.74,-3.1]],1,2);
+}
+if(kind==='sun'){
+sphere(m,1.16,[0,.38,0],1);
+for(let k=0;k<100;k++){let a=k*TAU/100,r=1.35,r2=1.6+.43*Math.pow(Math.sin(a*7),2);line(m,[r*Math.cos(a),.38+r*Math.sin(a),0],[r2*Math.cos(a),.38+r2*Math.sin(a),0],k%4===0?1:0,k%5===0?1.8:.7,.85)}
+for(let j=0;j<38;j++){let z=-3+j*.16;curve(m,t=>{let x=(t-.5)*6;return[x,-1.4+.07*Math.sin(x*4+z*3),z]},60,0,.7,.65)}
+circle(m,1.31,.38,1,1.2,'xy');
+}
+return m;
+}
+for(let i=0;i<10;i++)models.push(build(scenes[i].kind,i));
+const particles=[];let pr=rng(781);
+for(let i=0;i<175;i++)particles.push([pr()*PW,pr()*PH,pr(),pr()*TAU]);
+const grain=document.createElement('canvas');grain.width=270;grain.height=480;
+let gc=grain.getContext('2d'),im=gc.createImageData(270,480),gr=rng(7891);
+for(let i=0;i<im.data.length;i+=4){let v=gr()>.58?220:0;im.data[i]=v;im.data[i+1]=v*.96;im.data[i+2]=v*.87;im.data[i+3]=gr()*20}
+gc.putImageData(im,0,0);
+function text(c,s,x,y,size,color=bone,align='left',font='monospace'){
+c.fillStyle=color;c.font=`${size}px ${font}`;c.textAlign=align;c.fillText(s,x,y);
+}
+function spaced(c,s,x,y,size,spacing,color=bone){
+c.font=`${size}px monospace`;let width=[...s].reduce((a,b)=>a+c.measureText(b).width+spacing,0)-spacing;
+c.fillStyle=color;let xx=x-width/2;for(let ch of s){c.fillText(ch,xx,y);xx+=c.measureText(ch).width+spacing}
+}
+function drawModel(c,index,u,time,alpha){
+const kind=scenes[index].kind;
+let yaw=.28+u*.55,pitch=.12+Math.sin(u*Math.PI)*.07,dist=6.8;
+if(kind==='river'){yaw=-.12+u*.22;pitch=.52;dist=7.4}
+if(kind==='bird'){yaw=-.35+u*.7;pitch=.12;dist=7.4}
+if(kind==='city'){yaw=.3+u*.6;pitch=.30;dist=7.8}
+if(kind==='stairs'){yaw=-.3+u*.9;pitch=.16-u*.18}
+if(kind==='heart'){yaw=-.23+u*.46;dist=7.1-u*.55;pitch=.04}
+if(kind==='eye'){yaw=-.12+u*.24;pitch=.12;dist=7.4}
+if(kind==='tree'){yaw=-.35+u*.55;pitch=.03;dist=7.7}
+if(kind==='door'){yaw=.035*Math.sin(u*Math.PI);pitch=.02;dist=8.4-u*1.8}
+if(kind==='sun'){yaw=-.17+u*.28;pitch=.08;dist=6.8+u*.8}
+const cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pitch),sp=Math.sin(pitch);
+const beat=Math.pow(Math.max(0,1-(time%.625)/.625),3);
+function project(v){
+let x=v[0],y=v[1],z=v[2];
+if(kind==='river')y+=.055*Math.sin(x*3+z*2-time*2.4);
+if(kind==='bird')y+=Math.abs(x)*.11*Math.sin(time*2.1);
+if(kind==='heart'){let s=1+beat*.032;x*=s;y*=s;z*=s}
+if(kind==='tree')x+=Math.max(0,y)*.025*Math.sin(time*1.3+y);
+if(kind==='sun')y+=(u-.5)*.17;
+let xx=x*cy+z*sy,zz=-x*sy+z*cy,yy=y*cp-zz*sp;zz=y*sp+zz*cp;
+let scale=1340/(dist-zz);
+return[PW/2+xx*scale,965-yy*scale,zz];
+}
+let sorted=models[index].map(a=>({a,z:a.points.reduce((s,v)=>s+(-v[0]*sy+v[2]*cy),0)/a.points.length})).sort((a,b)=>a.z-b.z);
+c.save();c.globalAlpha=alpha;c.lineJoin='round';c.lineCap='round';
+for(let item of sorted){
+let a=item.a,depth=clamp((item.z+3.5)/7),op=a.opacity*(.28+.72*depth);
+c.globalAlpha=alpha*op;c.strokeStyle=a.color?orange:bone;c.lineWidth=a.width*1.65;
+c.beginPath();
+for(let i=0;i<a.points.length;i++){let v=project(a.points[i]);if(i===0)c.moveTo(v[0],v[1]);else c.lineTo(v[0],v[1])}
+if(a.closed)c.closePath();c.stroke();
+}
+c.restore();
+}
+function drawPortrait(t){
+let index=Math.floor(t/5)%10,u=(t%5)/5;
+p.globalAlpha=1;p.fillStyle=black;p.fillRect(0,0,PW,PH);
+let grd=p.createRadialGradient(540,950,20,540,950,950);grd.addColorStop(0,'#17150f');grd.addColorStop(.7,'#0c0b08');grd.addColorStop(1,black);p.fillStyle=grd;p.fillRect(0,0,PW,PH);
+p.strokeStyle='#494337';p.lineWidth=1;p.strokeRect(42,42,996,1836);
+for(let x of [42,1038])for(let y of [42,1878]){p.strokeStyle=orange;p.lineWidth=3;p.beginPath();p.moveTo(x,y+(y<100?32:-32));p.lineTo(x,y);p.lineTo(x+(x<100?32:-32),y);p.stroke()}
+p.save();p.beginPath();p.rect(50,370,980,1100);p.clip();
+for(let a of particles){let x=a[0]+Math.sin(t*.16+a[3])*15,y=(a[1]-t*(3+a[2]*8)+PH*2)%PH;p.fillStyle=a[2]>.94?orange:bone;p.globalAlpha=.10+a[2]*.18;p.fillRect(x,y,a[2]>.8?2:1,a[2]>.8?2:1)}
+p.globalAlpha=1;
+let reveal=smooth((u*5)/.55),exit=smooth((5-u*5)/.35);
+if(u<.1&&index>0)drawModel(p,index-1,1,t,1-reveal);
+drawModel(p,index,u,t,reveal*exit);
+p.restore();
+spaced(p,'B O N E   &   F I R E',540,115,21,3,bone);
+text(p,'A SONG IN TEN ENGRAVINGS',540,156,15,'#8f8674','center');
+p.strokeStyle='#514a3c';p.lineWidth=1;p.beginPath();p.moveTo(86,193);p.lineTo(994,193);p.stroke();
+p.save();p.globalAlpha=smooth(u*5/.34)*smooth((5-u*5)/.27);
+let size=scenes[index].word.length>6?95:126;
+p.fillStyle=bone;p.textAlign='center';p.font=`${size}px Georgia,serif`;p.fillText(scenes[index].word,540,332);
+spaced(p,String(index+1).padStart(2,'0')+' / 10',540,394,17,4,orange);
+p.restore();
+p.strokeStyle='#625947';p.lineWidth=1;p.beginPath();p.moveTo(470,1435);p.lineTo(610,1435);p.stroke();
+p.strokeStyle=orange;p.beginPath();p.moveTo(540,1428);p.lineTo(547,1435);p.lineTo(540,1442);p.lineTo(533,1435);p.closePath();p.stroke();
+p.save();p.globalAlpha=smooth(u*5/.4)*smooth((5-u*5)/.3);
+p.fillStyle=bone;p.textAlign='center';p.font='italic 45px Georgia,serif';
+const words=scenes[index].lyric.split(' ');let lines=[],s='';
+for(let w of words){if(p.measureText(s+w).width>845){lines.push(s.trim());s=w+' '}else s+=w+' '}lines.push(s.trim());
+for(let j=0;j<lines.length;j++)p.fillText(lines[j],540,1540+j*64-(lines.length-1)*25);
+p.restore();
+spaced(p,'BLACK / BONE / ORANGE',540,1696,15,3,'#9e927d');
+p.strokeStyle='#403a30';p.lineWidth=1;p.beginPath();p.moveTo(86,1745);p.lineTo(994,1745);p.stroke();
+for(let k=0;k<10;k++){
+p.fillStyle=k<index?orange:k===index?bone:'#383328';p.fillRect(86+k*92,1772,80,4);
+if(k===index){p.fillStyle=orange;p.fillRect(86+k*92,1772,80*u,4)}
+}
+text(p,String(Math.floor(t)).padStart(2,'0')+' : '+String(Math.floor((t%1)*60)).padStart(2,'0'),86,1837,18,'#ac9f87');
+text(p,'50 SEC / 9:16',994,1837,18,'#ac9f87','right');
+p.save();p.globalAlpha=.32;p.drawImage(grain,0,0,PW,PH);p.restore();
+}
+function drawBackground(t){
+ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
+ctx.save();ctx.strokeStyle='#181712';ctx.lineWidth=.65;
+for(let side of [-1,1]){
+let x=640+side*490,y=366;
+for(let j=0;j<32;j++){
+let r=70+j*7;
+ctx.beginPath();
+for(let k=0;k<=160;k++){let a=k/160*TAU,rr=r+5*Math.sin(a*5+j*.24+t*.12),xx=x+rr*Math.cos(a)*.72,yy=y+rr*Math.sin(a);if(k===0)ctx.moveTo(xx,yy);else ctx.lineTo(xx,yy)}
+ctx.stroke();
+}
+}
+ctx.restore();
+text(ctx,'ORIGINAL VISUAL SCORE',94,97,10,'#958a77');
+ctx.fillStyle=bone;ctx.font='52px Georgia,serif';ctx.fillText('BONE',90,170);ctx.fillText('& FIRE',90,226);
+ctx.strokeStyle=orange;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(94,253);ctx.lineTo(151,253);ctx.stroke();
+text(ctx,'A PROCEDURAL',94,290,11,'#b1a58e');
+text(ctx,'MUSIC FILM',94,310,11,'#b1a58e');
+text(ctx,'TEN LINES.',94,362,10,'#827863');
+text(ctx,'TEN WORLDS.',94,380,10,'#827863');
+text(ctx,'ONE WAY INTO THE LIGHT.',94,398,10,'#827863');
+let i=Math.floor(t/5),s=scenes[i],u=t%5;
+text(ctx,'CHAPTER / '+String(i+1).padStart(2,'0'),896,112,10,orange);
+text(ctx,s.word,896,154,29,bone,'left','Georgia,serif');
+text(ctx,'CAMERA',896,211,9,'#746a58');
+text(ctx,s.camera,896,233,10,'#c6b99f');
+text(ctx,'THE IMAGE',896,280,9,'#746a58');
+let ws=s.show.split(' '),ls=[],lineText='';
+ctx.font='12px Georgia,serif';
+for(let w of ws){if(ctx.measureText(lineText+w).width>270){ls.push(lineText);lineText=w+' '}else lineText+=w+' '}ls.push(lineText);
+ls.forEach((l,j)=>text(ctx,l,896,304+j*20,12,'#b9ad95','left','Georgia,serif'));
+ctx.strokeStyle='#3e382c';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(896,405);ctx.lineTo(1168,405);ctx.stroke();
+for(let k=0;k<10;k++){ctx.fillStyle=k<=i?orange:'#302b22';ctx.fillRect(896+k*27,425,19,2)}
+text(ctx,'50 SECONDS',896,473,10,'#a59982');
+text(ctx,'PORTRAIT / 1080 × 1920',896,492,10,'#a59982');
+text(ctx,'ENGRAVED IN MOTION',896,511,10,'#a59982');
+text(ctx,'LOCAL SYNTHESIS / −14 LUFS',896,607,9,'#736b5b');
+text(ctx,'00:'+String(Math.floor(t)).padStart(2,'0')+' / 00:50',1168,646,10,'#ae9f84','right');
+ctx.drawImage(portrait,449,20,382.5,680);
+ctx.strokeStyle='#564c38';ctx.lineWidth=.7;ctx.strokeRect(449.5,20.5,382,679);
+text(ctx,'I',428,36,9,orange);
+text(ctx,'X',842,692,9,orange);
+}
+function resize(){document.getElementById('stage').style.transform=`scale(${Math.min(innerWidth/W,innerHeight/H)})`}
+addEventListener('resize',resize);resize();
+function frame(ms){
+if(epoch===undefined)epoch=ms;
+nowTime=((ms-epoch)/1000+startOffset)%50;if(nowTime<0)nowTime+=50;
+drawPortrait(nowTime);drawBackground(nowTime);
+requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* Local instrumental: 96 BPM, 80 beats, ten five-second phrases.
+   K-weighted, gated loudness measurement controls gain before playback. */
+let audioContext=null,audioBuffer=null,source=null,audioEnabled=false;
+function makeScore(ac){
+const sr=24000,len=sr*50,b=ac.createBuffer(2,len,sr),L=b.getChannelData(0),R=b.getChannelData(1),random=rng(8113);
+const hz=n=>440*Math.pow(2,(n-69)/12),beat=.625;
+function tone(at,duration,midi,amp,pan,type){
+let st=Math.floor(at*sr),N=Math.floor(duration*sr),f=hz(midi);
+for(let j=0;j<N&&st+j<len;j++){
+let t=j/sr,q=t/duration,e=Math.min(1,t/.035)*Math.pow(1-q,type===1?2:1.3);
+let a=Math.sin(TAU*f*t),v;
+if(type===1)v=(a+.22*Math.sin(TAU*f*2*t)+.1*Math.sin(TAU*f*3*t))*e;
+else v=(a*.6+Math.sin(TAU*f*1.003*t)*.25+Math.sin(TAU*f*.5*t)*.15)*e;
+let fade=Math.min(1,(50-at-t)/.8);v*=amp*Math.max(0,fade);
+L[st+j]+=v*Math.sqrt((1-pan)*.5);R[st+j]+=v*Math.sqrt((1+pan)*.5);
+}
+}
+function drum(at,kind,amp){
+let st=Math.floor(at*sr),dur=kind===0?.31:kind===1?.18:.07,N=Math.floor(dur*sr),phase=0;
+for(let j=0;j<N&&st+j<len;j++){
+let t=j/sr,v;
+if(kind===0){phase+=TAU*(42+110*Math.exp(-t*35))/sr;v=Math.sin(phase)*Math.exp(-t*16)}
+else {let noise=random()*2-1;v=noise*Math.exp(-t*(kind===1?29:80));if(kind===1)v=.8*v+.2*Math.sin(TAU*175*t)*Math.exp(-t*23)}
+let a=v*amp;L[st+j]+=a;R[st+j]+=a;
+}
+}
+const chords=[[50,57,62,65],[46,53,58,62],[41,48,57,60],[48,55,60,64]];
+const melody=[[74,77,76,72],[70,74,77,74],[69,72,76,77],[72,76,74,69]];
+for(let bar=0;bar<20;bar++){
+let at=bar*4*beat,c=chords[Math.floor(bar/2)%4],volume=bar<2?.68:bar>17?.78:1;
+c.forEach((n,j)=>tone(at,2.6,n,.085*volume,(j-1.5)*.35,0));
+for(let k=0;k<4;k++){
+let bt=at+k*beat;
+tone(bt,.43,c[0]-12,.22*volume,0,1);
+drum(bt,0,.28*volume);
+if((k===1||k===3)&&bar>1)drum(bt,1,.095*volume);
+if(bar>1){drum(bt,2,.025);drum(bt+beat/2,2,.018)}
+let n=melody[Math.floor(bar/2)%4][k];
+tone(bt+.015,.53,n,.065*volume,Math.sin(bar+k)*.5,1);
+if(bar>7&&bar<17)tone(bt+beat/2,.25,c[2]+12,.026,(k%2?-.6:.6),1);
+}
+}
+function biquad(data,b0,b1,b2,a1,a2){
+let out=new Float32Array(data.length),x1=0,x2=0,y1=0,y2=0;
+for(let i=0;i<data.length;i++){let x=data[i],y=b0*x+b1*x1+b2*x2-a1*y1-a2*y2;out[i]=y;x2=x1;x1=x;y2=y1;y1=y}
+return out;
+}
+function weighted(data){
+let K=Math.tan(Math.PI*1681.974450955533/sr),Vh=Math.pow(10,3.99984385397/20),Vb=Math.pow(Vh,.49966677415454),Q=.7071752369554196,a0=1+K/Q+K*K;
+let x=biquad(data,(Vh+Vb*K/Q+K*K)/a0,2*(K*K-Vh)/a0,(Vh-Vb*K/Q+K*K)/a0,2*(K*K-1)/a0,(1-K/Q+K*K)/a0);
+K=Math.tan(Math.PI*38.13547087602444/sr);Q=.5003270373238773;a0=1+K/Q+K*K;
+return biquad(x,1/a0,-2/a0,1/a0,2*(K*K-1)/a0,(1-K/Q+K*K)/a0);
+}
+let wl=weighted(L),wr=weighted(R),blocks=[],N=Math.floor(sr*.4),hop=Math.floor(sr*.1);
+for(let st=0;st+N<len;st+=hop){let e=0;for(let j=st;j<st+N;j++)e+=wl[j]*wl[j]+wr[j]*wr[j];e/=N;if(-.691+10*Math.log10(e+1e-20)>-70)blocks.push(e)}
+let average=blocks.reduce((a,v)=>a+v,0)/blocks.length,gate=average*.1,gated=blocks.filter(v=>v>gate);
+average=gated.reduce((a,v)=>a+v,0)/gated.length;
+let lufs=-.691+10*Math.log10(average),gain=Math.pow(10,(-14-lufs)/20),peak=0;
+for(let j=0;j<len;j++){L[j]*=gain;R[j]*=gain;peak=Math.max(peak,Math.abs(L[j]),Math.abs(R[j]))}
+if(peak>.98){let scale=.98/peak;for(let j=0;j<len;j++){L[j]*=scale;R[j]*=scale}}
+return b;
+}
+const sound=document.getElementById('sound');
+sound.addEventListener('click',async()=>{
+if(audioEnabled){if(source)source.stop();source=null;audioEnabled=false;sound.textContent='ENABLE SOUND ↗';return}
+sound.textContent='SYNTHESIZING…';
+try{
+audioContext=audioContext||new(window.AudioContext||window.webkitAudioContext)();
+await audioContext.resume();
+if(!audioBuffer)audioBuffer=makeScore(audioContext);
+source=audioContext.createBufferSource();source.buffer=audioBuffer;source.loop=true;source.connect(audioContext.destination);source.start(0,nowTime);
+audioEnabled=true;sound.textContent='SOUND ON / MUTE';
+}catch(e){sound.textContent='ENABLE SOUND ↗'}
+});
+window.exportContactSheet=function(){
+const sheet=document.createElement('canvas');sheet.width=1080;sheet.height=1920;
+const c=sheet.getContext('2d');c.fillStyle=black;c.fillRect(0,0,1080,1920);
+for(let i=0;i<16;i++){let t=(i+.5)*50/16;drawPortrait(t);c.drawImage(portrait,(i%4)*270,Math.floor(i/4)*480,270,480)}
+drawPortrait(nowTime);
+const a=document.createElement('a');a.download='bone-and-fire-16-frame-contact-sheet.png';a.href=sheet.toDataURL('image/png');a.click();
+};
+</script>
+</body>
+</html>

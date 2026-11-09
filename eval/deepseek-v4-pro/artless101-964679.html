@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dawn Rocket Launch — Ocean Platform</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #000;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  canvas {
+    width: calc(min(100vw, 100vh * 16 / 9));
+    height: calc(min(100vh, 100vw * 9 / 16));
+    display: block;
+    box-shadow: 0 0 100px rgba(255, 120, 40, 0.15);
+  }
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+"use strict";
+window.DUR = 30;
+const params = new URLSearchParams(window.location.search);
+const tParam = parseFloat(params.get('t') || '0');
+const startTime = isNaN(tParam) ? 0 : tParam;
+
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl', { preserveDrawingBuffer: true, antialias: true, alpha: false });
+if (!gl) { document.body.innerHTML = 'WebGL not supported'; throw new Error('WebGL unavailable'); }
+gl.clearColor(0.05, 0.04, 0.09, 1);
+gl.enable(gl.DEPTH_TEST);
+gl.depthFunc(gl.LEQUAL);
+
+// ============ MAT4 UTILITIES ============
+function mat4Identity() { return new Float32Array([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]); }
+function mat4Perspective(fovDeg, aspect, near, far) {
+  const f = 1 / Math.tan(fovDeg * Math.PI / 360);
+  const nf = 1 / (near - far);
+  return new Float32Array([
+    f/aspect,0,0,0, 0,f,0,0, 0,0,(far+near)*nf,-1, 0,0,2*far*near*nf,0
+  ]);
+}
+function mat4Multiply(a, b) {
+  const o = new Float32Array(16);
+  for (let c=0; c<4; c++) for (let r=0; r<4; r++) {
+    let s=0; for (let i=0; i<4; i++) s += a[i*4+r] * b[c*4+i];
+    o[c*4+r]=s;
+  }
+  return o;
+}
+function mat4Translate(m, x, y, z) {
+  const o = new Float32Array(m);
+  o[12] += m[0]*x + m[4]*y + m[8]*z;
+  o[13] += m[1]*x + m[5]*y + m[9]*z;
+  o[14] += m[2]*x + m[6]*y + m[10]*z;
+  return o;
+}
+function mat4RotateY(m, ang) {
+  const c=Math.cos(ang), s=Math.sin(ang);
+  const r = new Float32Array([c,0,-s,0, 0,1,0,0, s,0,c,0, 0,0,0,1]);
+  return mat4Multiply(m, r);
+}
+function mat4RotateX(m, ang) {
+  const c=Math.cos(ang), s=Math.sin(ang);
+  const r = new Float32Array([1,0,0,0, 0,c,s,0, 0,-s,c,0, 0,0,0,1]);
+  return mat4Multiply(m, r);
+}
+function mat4Scale(m, sx, sy, sz) {
+  const o = new Float32Array(m);
+  o[0]*=sx; o[1]*=sx; o[2]*=sx;
+  o[4]*=sy; o[5]*=sy; o[6]*=sy;
+  o[8]*=sz; o[9]*=sz; o[10]*=sz;
+  return o;
+}
+function mat4LookAt(eye, target, up) {
+  const zx=eye[0]-target[0], zy=eye[1]-target[1], zz=eye[2]-target[2];
+  const zl=Math.sqrt(zx*zx+zy*zy+zz*zz)||1;
+  const fx=zx/zl, fy=zy/zl, fz=zz/zl;
+  let rx=up[1]*fz-up[2]*fy, ry=up[2]*fx-up[0]*fz, rz=up[0]*fy-up[1]*fx;
+  const rl=Math.sqrt(rx*rx+ry*ry+rz*rz)||1;
+  rx/=rl; ry/=rl; rz/=rl;
+  const ux=fy*rz-fz*ry, uy=fz*rx-fx*rz, uz=fx*ry-fy*rx;
+  return new Float32Array([
+    rx,ux,-fx,0, ry,uy,-fy,0, rz,uz,-fz,0,
+    -(rx*eye[0]+ry*eye[1]+rz*eye[2]),
+    -(ux*eye[0]+uy*eye[1]+uz*eye[2]),
+    (fx*eye[0]+fy*eye[1]+fz*eye[2]), 1
+  ]);
+}
+function mat3FromMat4(m) {
+  return new Float32Array([m[0],m[1],m[2], m[4],m[5],m[6], m[8],m[9],m[10]]);
+}
+function lerp(a,b,t){return a+(b-a)*t;}
+function smoothstep(t){return t*t*(3-2*t);}
+function clamp(v,lo,hi){return Math.max(lo,Math.min(hi,v));}
+
+// ============ SHADER HELPERS ============
+function compileShader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    console.error('Shader compile:', gl.getShaderInfoLog(s));
+    return null;
+  }
+  return s;
+}
+function createProgram(vsSrc, fsSrc) {
+  const vs = compileShader(gl.VERTEX_SHADER, vsSrc);
+  const fs = compileShader(gl.FRAGMENT_SHADER, fsSrc);
+  if (!vs || !fs) return null;
+  const p = gl.createProgram();
+  gl.attachShader(p, vs);
+  gl.attachShader(p, fs);
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+    console.error('Link:', gl.getProgramInfoLog(p));
+    return null;
+  }
+  return p;
+}
+
+// ============ SHADERS ============
+const SKY_VS = `
+attribute vec2 aPos;
+varying vec3 vDir;
+uniform float uAspect;
+uniform float uFov;
+void main() {
+  vDir = vec3(aPos.x * uAspect * tan(uFov*0.5), aPos.y * tan(uFov*0.5), -1.0);
+  gl_Position = vec4(aPos, 0.0, 1.0);
+}`;
+const SKY_FS = `
+precision mediump float;
+varying vec3 vDir;
+uniform vec3 uSunDir;
+uniform float uTime;
+void main() {
+  vec3 dir = normalize(vDir);
+  float horizon = dir.y;
+  float h = clamp(horizon * 0.5 + 0.5, 0.0, 1.0);
+  vec3 top = vec3(0.05, 0.04, 0.15);
+  vec3 mid = vec3(0.30, 0.18, 0.35);
+  vec3 low = vec3(0.75, 0.40, 0.30);
+  vec3 hor = vec3(0.95, 0.65, 0.45);
+  vec3 col;
+  if (h < 0.5) { col = mix(top, mid, h*2.0); }
+  else if (h < 0.75) { col = mix(mid, low, (h-0.5)*4.0); }
+  else { col = mix(low, hor, (h-0.75)*4.0); }
+  float sunDot = max(dot(dir, normalize(uSunDir)), 0.0);
+  col += vec3(1.0, 0.75, 0.45) * pow(sunDot, 80.0) * 2.0;
+  col += vec3(0.9, 0.5, 0.25) * pow(sunDot, 12.0) * 0.55;
+  col += vec3(0.7, 0.3, 0.18) * pow(sunDot, 4.0) * 0.25;
+  float haze = 1.0 - clamp(horizon + 0.15, 0.0, 1.0);
+  col = mix(col, vec3(0.8, 0.55, 0.4), haze * 0.35);
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+const OBJ_VS = `
+attribute vec3 aPos;
+attribute vec3 aNormal;
+uniform mat4 uProj;
+uniform mat4 uView;
+uniform mat4 uModel;
+varying vec3 vNormal;
+varying vec3 vWorldPos;
+void main() {
+  vec4 wp = uModel * vec4(aPos, 1.0);
+  vWorldPos = wp.xyz;
+  vNormal = mat3(uModel) * aNormal;
+  gl_Position = uProj * uView * wp;
+}`;
+const OBJ_FS = `
+precision mediump float;
+varying vec3 vNormal;
+varying vec3 vWorldPos;
+uniform vec3 uLightDir;
+uniform vec3 uLightCol;
+uniform vec3 uAmbient;
+uniform vec3 uDiffuse;
+uniform vec3 uSpecular;
+uniform float uShininess;
+uniform vec3 uFogColor;
+uniform float uFogDensity;
+uniform vec3 uCamPos;
+void main() {
+  vec3 n = normalize(vNormal);
+  vec3 l = normalize(uLightDir);
+  vec3 v = normalize(uCamPos - vWorldPos);
+  vec3 h = normalize(l + v);
+  float diff = max(dot(n, l), 0.0);
+  float spec = pow(max(dot(n, h), 0.0), uShininess);
+  vec3 col = uAmbient + uDiffuse * uLightCol * diff + uSpecular * uLightCol * spec;
+  float dist = length(uCamPos - vWorldPos);
+  float fog = 1.0 - exp(-uFogDensity * uFogDensity * dist * dist);
+  col = mix(col, uFogColor, clamp(fog, 0.0, 1.0));
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+const OCEAN_VS = `
+attribute vec3 aPos;
+attribute vec3 aNormal;
+uniform mat4 uProj;
+uniform mat4 uView;
+uniform mat4 uModel;
+uniform float uTime;
+varying vec3 vNormal;
+varying vec3 vWorldPos;
+varying float vHeight;
+void main() {
+  vec3 p = aPos;
+  float w1 = sin(p.x*0.25 + uTime*1.6) * 0.45;
+  float w2 = sin(p.z*0.33 + uTime*1.9) * 0.35;
+  float w3 = sin((p.x+p.z)*0.18 + uTime*1.3) * 0.25;
+  float w4 = sin(p.x*0.5 + p.z*0.7 + uTime*2.1) * 0.12;
+  p.y = w1 + w2 + w3 + w4;
+  vHeight = p.y;
+  float dx = 0.25*0.45*cos(p.x*0.25 + uTime*1.6) + 0.18*0.25*cos((p.x+p.z)*0.18 + uTime*1.3) + 0.5*0.12*cos(p.x*0.5+p.z*0.7+uTime*2.1);
+  float dz = 0.33*0.35*cos(p.z*0.33 + uTime*1.9) + 0.18*0.25*cos((p.x+p.z)*0.18 + uTime*1.3) + 0.7*0.12*cos(p.x*0.5+p.z*0.7+uTime*2.1);
+  vec3 nrm = normalize(vec3(-dx, 1.0, -dz));
+  vec4 wp = uModel * vec4(p, 1.0);
+  vWorldPos = wp.xyz;
+  vNormal = mat3(uModel) * nrm;
+  gl_Position = uProj * uView * wp;
+}`;
+const OCEAN_FS = `
+precision mediump float;
+varying vec3 vNormal;
+varying vec3 vWorldPos;
+varying float vHeight;
+uniform vec3 uLightDir;
+uniform vec3 uLightCol;
+uniform vec3 uCamPos;
+uniform vec3 uFogColor;
+uniform float uFogDensity;
+uniform float uTime;
+void main() {
+  vec3 n = normalize(vNormal);
+  vec3 l = normalize(uLightDir);
+  vec3 v = normalize(uCamPos - vWorldPos);
+  vec3 h = normalize(l + v);
+  float diff = max(dot(n, l), 0.0);
+  float spec = pow(max(dot(n, h), 0.0), 160.0);
+  vec3 deep = vec3(0.07, 0.18, 0.30);
+  vec3 shallow = vec3(0.15, 0.32, 0.42);
+  vec3 baseCol = mix(deep, shallow, clamp(vHeight*0.8+0.5, 0.0, 1.0));
+  vec3 col = baseCol * (0.25 + 0.75 * diff);
+  col += uLightCol * spec * 2.5;
+  float dist = length(uCamPos - vWorldPos);
+  float fog = 1.0 - exp(-uFogDensity * uFogDensity * dist * dist);
+  col = mix(col, uFogColor, clamp(fog, 0.0, 1.0));
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+const PART_VS = `
+attribute vec3 aPos;
+attribute vec4 aColor;
+attribute float aSize;
+uniform mat4 uProj;
+uniform mat4 uView;
+varying vec4 vColor;
+void main() {
+  vec4 vp = uView * vec4(aPos, 1.0);
+  gl_Position = uProj * vp;
+  float pd = max(0.1, -vp.z);
+  gl_PointSize = aSize * (240.0 / pd);
+  vColor = aColor;
+}`;
+const PART_FS = `
+precision mediump float;
+varying vec4 vColor;
+void main() {
+  float d = length(gl_PointCoord - 0.5);
+  if (d > 0.5) discard;
+  float alpha = smoothstep(0.5, 0.05, d) * vColor.a;
+  gl_FragColor = vec4(vColor.rgb, alpha);
+}`;
+
+// ============ PROGRAMS ============
+const skyProg = createProgram(SKY_VS, SKY_FS);
+const objProg = createProgram(OBJ_VS, OBJ_FS);
+const oceanProg = createProgram(OCEAN_VS, OCEAN_FS);
+const partProg = createProgram(PART_VS, PART_FS);
+
+// ============ GEOMETRY ============
+function createBoxMesh(w, h, d) {
+  const hw=w/2, hh=h/2, hd=d/2;
+  const pos = [], nrm = [], idx = [];
+  const faces = [
+    {n:[0,0,-1], v:[[-hw,-hh,-hd],[hw,-hh,-hd],[hw,hh,-hd],[-hw,hh,-hd]]},
+    {n:[0,0,1], v:[[hw,-hh,hd],[-hw,-hh,hd],[-hw,hh,hd],[hw,hh,hd]]},
+    {n:[-1,0,0], v:[[-hw,-hh,hd],[-hw,-hh,-hd],[-hw,hh,-hd],[-hw,hh,hd]]},
+    {n:[1,0,0], v:[[hw,-hh,-hd],[hw,-hh,hd],[hw,hh,hd],[hw,hh,-hd]]},
+    {n:[0,-1,0], v:[[-hw,-hh,hd],[-hw,-hh,-hd],[hw,-hh,-hd],[hw,-hh,hd]]},
+    {n:[0,1,0], v:[[-hw,hh,-hd],[-hw,hh,hd],[hw,hh,hd],[hw,hh,-hd]]}
+  ];
+  for (const f of faces) {
+    const base = pos.length/3;
+    for (const v of f.v) { pos.push(...v); nrm.push(...f.n); }
+    idx.push(base, base+1, base+2, base, base+2, base+3);
+  }
+  return { pos: new Float32Array(pos), nrm: new Float32Array(nrm), idx: new Uint16Array(idx) };
+}
+function createCylinderMesh(rTop, rBot, height, segs, capVerts) {
+  const pos=[], nrm=[], idx=[];
+  for (let i=0; i<segs; i++) {
+    const a = (i/segs)*Math.PI*2;
+    const ax = Math.cos(a), az = Math.sin(a);
+    const na = ax, nz = az;
+    pos.push(ax*rBot, -height/2, az*rBot); nrm.push(na,0,nz);
+    pos.push(ax*rTop, height/2, az*rTop); nrm.push(na,0,nz);
+  }
+  for (let i=0; i<segs; i++) {
+    const j=(i+1)%segs;
+    const a=i*2, b=j*2;
+    idx.push(a,b,a+1, a+1,b,b+1);
+  }
+  if (capVerts) {
+    const bc = pos.length/3;
+    pos.push(0,-height/2,0); nrm.push(0,-1,0);
+    for (let i=0; i<segs; i++) {
+      const a=(i/segs)*Math.PI*2;
+      pos.push(Math.cos(a)*rBot,-height/2,Math.sin(a)*rBot); nrm.push(0,-1,0);
+    }
+    for (let i=0; i<segs; i++) {
+      const j=(i+1)%segs;
+      idx.push(bc, bc+1+i, bc+1+j);
+    }
+  }
+  return { pos: new Float32Array(pos), nrm: new Float32Array(nrm), idx: new Uint16Array(idx) };
+}
+function createConeMesh(r, height, segs) {
+  const pos=[], nrm=[], idx=[];
+  const hh = height/2;
+  for (let i=0; i<segs; i++) {
+    const a=(i/segs)*Math.PI*2;
+    const ax=Math.cos(a), az=Math.sin(a);
+    const slope = height / r;
+    const nl = r / Math.sqrt(r*r+height*height);
+    pos.push(ax*r, -hh, az*r);
+    nrm.push(ax*nl, height/Math.sqrt(r*r+height*height), az*nl);
+  }
+  const tip = pos.length/3;
+  pos.push(0, hh, 0);
+  nrm.push(0,1,0);
+  for (let i=0; i<segs; i++) {
+    const j=(i+1)%segs;
+    idx.push(i,j,tip);
+  }
+  return { pos: new Float32Array(pos), nrm: new Float32Array(nrm), idx: new Uint16Array(idx) };
+}
+function createPlaneMesh(size, segs) {
+  const pos=[], nrm=[], idx=[];
+  const step = size/segs;
+  const off = size/2;
+  for (let i=0; i<=segs; i++) {
+    for (let j=0; j<=segs; j++) {
+      pos.push(-off+j*step, 0, -off+i*step);
+      nrm.push(0,1,0);
+    }
+  }
+  for (let i=0; i<segs; i++) {
+    for (let j=0; j<segs; j++) {
+      const a=i*(segs+1)+j, b=a+1, c=a+(segs+1), d=c+1;
+      idx.push(a,b,c, b,d,c);
+    }
+  }
+  return { pos: new Float32Array(pos), nrm: new Float32Array(nrm), idx: new Uint16Array(idx) };
+}
+
+function createMeshFromData(data) {
+  const vbo = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+  gl.bufferData(gl.ARRAY_BUFFER, data.pos, gl.STATIC_DRAW);
+  const nbo = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, nbo);
+  gl.bufferData(gl.ARRAY_BUFFER, data.nrm, gl.STATIC_DRAW);
+  const ibo = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, data.idx, gl.STATIC_DRAW);
+  return { vbo, nbo, ibo, count: data.idx.length };
+}
+
+// ============ SCENE ============
+// Sky quad (fullscreen triangle)
+const skyBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, skyBuf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+
+// Ocean
+const oceanData = createPlaneMesh(300, 80);
+const oceanMesh = createMeshFromData(oceanData);
+
+// Platform
+const platformParts = [];
+function addBox(name, px, py, pz, sx, sy, sz, color) {
+  const data = createBoxMesh(sx, sy, sz);
+  const mesh = createMeshFromData(data);
+  platformParts.push({ mesh, px, py, pz, sx: sx||1, sy: sy||1, sz: sz||1, color: color||[0.4,0.4,0.4] });
+}
+// Deck
+addBox('deck', 0, 10, 0, 22, 2, 22, [0.35,0.35,0.38]);
+// Legs (4)
+for (const [lx,lz] of [[-8,-8],[8,-8],[8,8],[-8,8]]) {
+  addBox('leg', lx, 5, lz, 1.6, 10, 1.6, [0.30,0.32,0.36]);
+}
+// Cross braces
+for (const [bx,bz,blen] of [[-8,0,14],[8,0,14],[0,-8,14],[0,8,14]]) {
+  addBox('brace', bx, 7.5, bz, Math.abs(blen)>10?14:1.4, 0.8, Math.abs(blen)>10?1.4:14, [0.28,0.30,0.34]);
+}
+// Launch tower
+addBox('towerBase', 6, 12, 0, 2.5, 6, 2.5, [0.33,0.35,0.38]);
+addBox('towerTop', 6, 19, 0, 1.8, 8, 1.8, [0.33,0.35,0.38]);
+addBox('towerArm1', 4.2, 13, 0, 3.2, 0.6, 1.2, [0.40,0.42,0.44]);
+addBox('towerArm2', 4.2, 16, 0, 3.2, 0.6, 1.2, [0.40,0.42,0.44]);
+// Rocket support pad
+addBox('pad', 0, 11.2, 0, 4, 0.4, 4, [0.45,0.45,0.48]);
+
+// Rocket meshes
+const rocketBodyData = createCylinderMesh(1.8, 1.8, 9, 24, false);
+const rocketBodyMesh = createMeshFromData(rocketBodyData);
+const rocketNoseData = createConeMesh(1.8, 3.5, 24);
+const rocketNoseMesh = createMeshFromData(rocketNoseData);
+const rocketNozzleData = createCylinderMesh(0.7, 1.1, 1.2, 16, false);
+const rocketNozzleMesh = createMeshFromData(rocketNozzleData);
+const finData = createBoxMesh(0.3, 2.2, 1.8);
+const finMesh = createMeshFromData(finData);
+
+// ============ PARTICLE SYSTEM ============
+const MAX_PARTICLES = 2500;
+const pPos = new Float32Array(MAX_PARTICLES * 3);
+const pVel = new Float32Array(MAX_PARTICLES * 3);
+const pCol = new Float32Array(MAX_PARTICLES * 4);
+const pSize = new Float32Array(MAX_PARTICLES);
+const pLife = new Float32Array(MAX_PARTICLES);
+const pMaxLife = new Float32Array(MAX_PARTICLES);
+const pActive = new Uint8Array(MAX_PARTICLES);
+let pCount = 0;
+const pVBO = gl.createBuffer();
+function spawnParticle(x, y, z, vx, vy, vz, r, g, b, a, size, life) {
+  if (pCount >= MAX_PARTICLES) return;
+  const i = pCount++;
+  pPos[i*3]=x; pPos[i*3+1]=y; pPos[i*3+2]=z;
+  pVel[i*3]=vx; pVel[i*3+1]=vy; pVel[i*3+2]=vz;
+  pCol[i*4]=r; pCol[i*4+1]=g; pCol[i*4+2]=b; pCol[i*4+3]=a;
+  pSize[i]=size;
+  pLife[i]=life; pMaxLife[i]=life;
+  pActive[i]=1;
+}
+function updateParticles(dt) {
+  for (let i=0; i<pCount; i++) {
+    if (!pActive[i]) continue;
+    pLife[i] -= dt;
+    if (pLife[i] <= 0) { pActive[i]=0; continue; }
+    pPos[i*3] += pVel[i*3] * dt;
+    pPos[i*3+1] += pVel[i*3+1] * dt;
+    pPos[i*3+2] += pVel[i*3+2] * dt;
+    const t = 1 - pLife[i] / pMaxLife[i];
+    if (pVel[i*3+1] < 8) pVel[i*3+1] += 0.8 * dt;
+  }
+  // Compact
+  let w = 0;
+  for (let i=0; i<pCount; i++) {
+    if (pActive[i]) {
+      if (w !== i) {
+        pPos[w*3]=pPos[i*3]; pPos[w*3+1]=pPos[i*3+1]; pPos[w*3+2]=pPos[i*3+2];
+        pVel[w*3]=pVel[i*3]; pVel[w*3+1]=pVel[i*3+1]; pVel[w*3+2]=pVel[i*3+2];
+        pCol[w*4]=pCol[i*4]; pCol[w*4+1]=pCol[i*4+1]; pCol[w*4+2]=pCol[i*4+2]; pCol[w*4+3]=pCol[i*4+3];
+        pSize[w]=pSize[i]; pLife[w]=pLife[i]; pMaxLife[w]=pMaxLife[i]; pActive[w]=1;
+        pActive[i]=0;
+      }
+      w++;
+    }
+  }
+  pCount = w;
+}
+
+// ============ UNIFORM LOCATIONS ============
+const skyLoc = { pos: gl.getAttribLocation(skyProg,'aPos'), aspect: gl.getUniformLocation(skyProg,'uAspect'), fov: gl.getUniformLocation(skyProg,'uFov'), sunDir: gl.getUniformLocation(skyProg,'uSunDir'), time: gl.getUniformLocation(skyProg,'uTime') };
+const objLoc = { pos: gl.getAttribLocation(objProg,'aPos'), nrm: gl.getAttribLocation(objProg,'aNormal'), proj: gl.getUniformLocation(objProg,'uProj'), view: gl.getUniformLocation(objProg,'uView'), model: gl.getUniformLocation(objProg,'uModel'), lightDir: gl.getUniformLocation(objProg,'uLightDir'), lightCol: gl.getUniformLocation(objProg,'uLightCol'), ambient: gl.getUniformLocation(objProg,'uAmbient'), diffuse: gl.getUniformLocation(objProg,'uDiffuse'), specular: gl.getUniformLocation(objProg,'uSpecular'), shininess: gl.getUniformLocation(objProg,'uShininess'), fogColor: gl.getUniformLocation(objProg,'uFogColor'), fogDensity: gl.getUniformLocation(objProg,'uFogDensity'), camPos: gl.getUniformLocation(objProg,'uCamPos') };
+const oceanLoc = { pos: gl.getAttribLocation(oceanProg,'aPos'), nrm: gl.getAttribLocation(oceanProg,'aNormal'), proj: gl.getUniformLocation(oceanProg,'uProj'), view: gl.getUniformLocation(oceanProg,'uView'), model: gl.getUniformLocation(oceanProg,'uModel'), time: gl.getUniformLocation(oceanProg,'uTime'), lightDir: gl.getUniformLocation(oceanProg,'uLightDir'), lightCol: gl.getUniformLocation(oceanProg,'uLightCol'), camPos: gl.getUniformLocation(oceanProg,'uCamPos'), fogColor: gl.getUniformLocation(oceanProg,'uFogColor'), fogDensity: gl.getUniformLocation(oceanProg,'uFogDensity') };
+const partLoc = { pos: gl.getAttribLocation(partProg,'aPos'), col: gl.getAttribLocation(partProg,'aColor'), size: gl.getAttribLocation(partProg,'aSize'), proj: gl.getUniformLocation(partProg,'uProj'), view: gl.getUniformLocation(partProg,'uView') };
+
+// ============ LIGHTING & FOG ============
+const sunWorldDir = [-0.55, 0.15, -0.70];
+const sunWorldDirN = (()=>{const l=Math.sqrt(sunWorldDir[0]**2+sunWorldDir[1]**2+sunWorldDir[2]**2); return sunWorldDir.map(v=>v/l);})();
+const lightColor = [1.0, 0.75, 0.5];
+const ambientLight = [0.18, 0.15, 0.20];
+const fogColor = [0.65, 0.45, 0.38];
+const fogDensity = 0.035;
+
+// ============ ANIMATION STATE ============
+let mouseX = 0, mouseY = 0;
+canvas.addEventListener('mousemove', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  mouseX = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  mouseY = ((e.clientY - rect.top) / rect.height) * 2 - 1;
+});
+canvas.addEventListener('touchmove', (e) => {
+  if (e.touches.length > 0) {
+    const rect = canvas.getBoundingClientRect();
+    mouseX = ((e.touches[0].clientX - rect.left) / rect.width) * 2 - 1;
+    mouseY = ((e.touches[0].clientY - rect.top) / rect.height) * 2 - 1;
+  }
+}, { passive: true });
+
+function getRocketY(t) {
+  if (t < 8) return 0;
+  const lt = t - 8;
+  return 0.5 * 1.2 * lt * lt;
+}
+function getIgnitionPhase(t) {
+  // 0: idle, 1: ignition start, 2: full ignition, 3: liftoff
+  if (t < 5) return 0;
+  if (t < 8) return 1 + (t - 5) / 3;
+  return 3;
+}
+function getCamera(t, rocketY) {
+  const baseTarget = [0, 11 + rocketY, 0];
+  if (t < 8) {
+    const angle = (t / 8) * Math.PI * 2 + mouseX * 0.35;
+    const radius = 42 - mouseY * 5;
+    const height = 16 + mouseY * 8;
+    return {
+      eye: [Math.sin(angle) * radius, height, Math.cos(angle) * radius],
+      target: [0, 12, 0],
+      fov: 58
+    };
+  } else if (t < 12) {
+    const s = smoothstep((t - 8) / 4);
+    const a0 = 2 * Math.PI;
+    const eye0 = [Math.sin(a0) * 42, 16, Math.cos(a0) * 42];
+    const eye1 = [22 + mouseX * 3, rocketY + 24, 26 - mouseY * 4];
+    const eye = eye0.map((v, i) => lerp(v, eye1[i], s));
+    const tgt = [0, lerp(12, 10 + rocketY, s), 0];
+    return { eye, target: tgt, fov: lerp(58, 55, s) };
+  } else {
+    const s = clamp((t - 12) / 8, 0, 1);
+    const eye = [16 + mouseX * 4, rocketY + 28, 22 - mouseY * 6];
+    const target = [0, rocketY + 10, 0];
+    return { eye, target, fov: lerp(55, 50, s) };
+  }
+}
+
+function renderObject(mesh, modelMat, diffuse, specular, shininess, loc) {
+  gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vbo);
+  gl.vertexAttribPointer(loc.pos, 3, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(loc.pos);
+  gl.bindBuffer(gl.ARRAY_BUFFER, mesh.nbo);
+  gl.vertexAttribPointer(loc.nrm, 3, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(loc.nrm);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ibo);
+  gl.uniformMatrix4fv(loc.model, false, modelMat);
+  gl.uniform3fv(loc.diffuse, diffuse);
+  gl.uniform3fv(loc.specular, specular);
+  gl.uniform1f(loc.shininess, shininess);
+  gl.drawElements(gl.TRIANGLES, mesh.count, gl.UNSIGNED_SHORT, 0);
+  gl.disableVertexAttribArray(loc.pos);
+  gl.disableVertexAttribArray(loc.nrm);
+}
+
+function renderPlatform(viewMat, projMat) {
+  gl.useProgram(objProg);
+  gl.uniformMatrix4fv(objLoc.proj, false, projMat);
+  gl.uniformMatrix4fv(objLoc.view, false, viewMat);
+  gl.uniform3fv(objLoc.lightDir, sunWorldDirN);
+  gl.uniform3fv(objLoc.lightCol, lightColor);
+  gl.uniform3fv(objLoc.ambient, ambientLight);
+  gl.uniform3fv(objLoc.fogColor, fogColor);
+  gl.uniform1f(objLoc.fogDensity, fogDensity);
+  gl.uniform3fv(objLoc.camPos, camPos);
+  for (const part of platformParts) {
+    let m = mat4Identity();
+    m = mat4Translate(m, part.px, part.py, part.pz);
+    renderObject(part.mesh, m, part.color, [0.7,0.7,0.75], 24, objLoc);
+  }
+}
+
+function renderRocket(viewMat, projMat, rocketY, ignition) {
+  gl.useProgram(objProg);
+  gl.uniformMatrix4fv(objLoc.proj, false, projMat);
+  gl.uniformMatrix4fv(objLoc.view, false, viewMat);
+  gl.uniform3fv(objLoc.lightDir, sunWorldDirN);
+  gl.uniform3fv(objLoc.lightCol, lightColor);
+  const warmAmbient = [
+    ambientLight[0] + ignition * 0.15,
+    ambientLight[1] + ignition * 0.08,
+    ambientLight[2] + ignition * 0.03
+  ];
+  gl.uniform3fv(objLoc.ambient, warmAmbient);
+  gl.uniform3fv(objLoc.fogColor, fogColor);
+  gl.uniform1f(objLoc.fogDensity, fogDensity);
+  gl.uniform3fv(objLoc.camPos, camPos);
+  const baseY = 11.2 + rocketY;
+  // Body
+  let m = mat4Identity();
+  m = mat4Translate(m, 0, baseY + 4.5, 0);
+  renderObject(rocketBodyMesh, m, [0.85,0.85,0.88], [0.6,0.6,0.65], 32, objLoc);
+  // Nose
+  m = mat4Identity();
+  m = mat4Translate(m, 0, baseY + 9 + 1.75, 0);
+  renderObject(rocketNoseMesh, m, [0.75,0.75,0.78], [0.5,0.5,0.55], 28, objLoc);
+  // Nozzle
+  m = mat4Identity();
+  m = mat4Translate(m, 0, baseY - 0.6, 0);
+  renderObject(rocketNozzleMesh, m, [0.25,0.25,0.28], [0.4,0.4,0.45], 20, objLoc);
+  // Fins (4)
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+    m = mat4Identity();
+    m = mat4Translate(m, Math.cos(a) * 1.1, baseY + 1.1, Math.sin(a) * 1.1);
+    m = mat4RotateY(m, a);
+    renderObject(finMesh, m, [0.70,0.70,0.72], [0.5,0.5,0.55], 26, objLoc);
+  }
+}
+
+function renderOcean(viewMat, projMat, t) {
+  gl.useProgram(oceanProg);
+  gl.uniformMatrix4fv(oceanLoc.proj, false, projMat);
+  gl.uniformMatrix4fv(oceanLoc.view, false, viewMat);
+  gl.uniform1f(oceanLoc.time, t);
+  const oceanModel = mat4Identity();
+  gl.uniformMatrix4fv(oceanLoc.model, false, oceanModel);
+  gl.uniform3fv(oceanLoc.lightDir, sunWorldDirN);
+  gl.uniform3fv(oceanLoc.lightCol, lightColor);
+  gl.uniform3fv(oceanLoc.camPos, camPos);
+  gl.uniform3fv(oceanLoc.fogColor, fogColor);
+  gl.uniform1f(oceanLoc.fogDensity, fogDensity);
+  gl.bindBuffer(gl.ARRAY_BUFFER, oceanMesh.vbo);
+  gl.vertexAttribPointer(oceanLoc.pos, 3, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(oceanLoc.pos);
+  gl.bindBuffer(gl.ARRAY_BUFFER, oceanMesh.nbo);
+  gl.vertexAttribPointer(oceanLoc.nrm, 3, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(oceanLoc.nrm);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, oceanMesh.ibo);
+  gl.drawElements(gl.TRIANGLES, oceanMesh.count, gl.UNSIGNED_SHORT, 0);
+  gl.disableVertexAttribArray(oceanLoc.pos);
+  gl.disableVertexAttribArray(oceanLoc.nrm);
+}
+
+function renderSky(viewMat, projMat, t) {
+  gl.disable(gl.DEPTH_TEST);
+  gl.useProgram(skyProg);
+  gl.bindBuffer(gl.ARRAY_BUFFER, skyBuf);
+  gl.vertexAttribPointer(skyLoc.pos, 2, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(skyLoc.pos);
+  gl.uniform1f(skyLoc.aspect, 1280/720);
+  gl.uniform1f(skyLoc.fov, (55 * Math.PI / 180));
+  // Transform sun direction to view space
+  const vSunDir = [
+    sunWorldDirN[0]*viewMat[0] + sunWorldDirN[1]*viewMat[4] + sunWorldDirN[2]*viewMat[8],
+    sunWorldDirN[0]*viewMat[1] + sunWorldDirN[1]*viewMat[5] + sunWorldDirN[2]*viewMat[9],
+    sunWorldDirN[0]*viewMat[2] + sunWorldDirN[1]*viewMat[6] + sunWorldDirN[2]*viewMat[10]
+  ];
+  gl.uniform3fv(skyLoc.sunDir, vSunDir);
+  gl.uniform1f(skyLoc.time, t);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.disableVertexAttribArray(skyLoc.pos);
+  gl.enable(gl.DEPTH_TEST);
+}
+
+function renderParticles(viewMat, projMat, t) {
+  if (pCount === 0) return;
+  gl.useProgram(partProg);
+  gl.uniformMatrix4fv(partLoc.proj, false, projMat);
+  gl.uniformMatrix4fv(partLoc.view, false, viewMat);
+  gl.bindBuffer(gl.ARRAY_BUFFER, pVBO);
+  gl.bufferData(gl.ARRAY_BUFFER, pPos.subarray(0, pCount*3), gl.DYNAMIC_DRAW);
+  gl.vertexAttribPointer(partLoc.pos, 3, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(partLoc.pos);
+  const colBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, colBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, pCol.subarray(0, pCount*4), gl.DYNAMIC_DRAW);
+  gl.vertexAttribPointer(partLoc.col, 4, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(partLoc.col);
+  const sizeBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, sizeBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, pSize.subarray(0, pCount), gl.DYNAMIC_DRAW);
+  gl.vertexAttribPointer(partLoc.size, 1, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(partLoc.size);
+  // First pass: fire (additive)
+  gl.blendFunc(gl.ONE, gl.ONE);
+  gl.depthMask(false);
+  gl.drawArrays(gl.POINTS, 0, pCount);
+  // Second pass: smoke/water (normal alpha)
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.drawArrays(gl.POINTS, 0, pCount);
+  gl.depthMask(true);
+  gl.disableVertexAttribArray(partLoc.pos);
+  gl.disableVertexAttribArray(partLoc.col);
+  gl.disableVertexAttribArray(partLoc.size);
+  gl.deleteBuffer(colBuf);
+  gl.deleteBuffer(sizeBuf);
+}
+
+// ============ EMIT PARTICLES ============
+function emitLaunchParticles(t, rocketY, ignition, dt) {
+  const nozzleY = 11.2 + rocketY - 0.8;
+  // Fire particles
+  if (ignition > 0.01) {
+    const fireRate = Math.floor(ignition * 120);
+    for (let i = 0; i < fireRate; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const r = 0.15 + Math.random() * 0.5;
+      const spd = 2 + Math.random() * 4 + ignition * 6;
+      spawnParticle(
+        Math.cos(angle)*r, nozzleY - Math.random()*0.3, Math.sin(angle)*r,
+        Math.cos(angle)*r*3, -spd, Math.sin(angle)*r*3,
+        1.0, 0.7 + Math.random()*0.3, 0.1 + Math.random()*0.2,
+        0.85, 0.6 + Math.random()*0.8, 0.3 + Math.random()*0.4
+      );
+    }
+  }
+  // Smoke particles
+  if (ignition > 0.2) {
+    const smokeRate = Math.floor(ignition * 15);
+    for (let i = 0; i < smokeRate; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const r = 0.3 + Math.random() * 1.0;
+      const spd = 1.5 + Math.random() * 2.5;
+      const gray = 0.6 + Math.random() * 0.35;
+      spawnParticle(
+        Math.cos(angle)*r*0.8, nozzleY - Math.random()*0.5, Math.sin(angle)*r*0.8,
+        Math.cos(angle)*r*1.2 + (Math.random()-0.5)*0.8,
+        -spd * 0.6,
+        Math.sin(angle)*r*1.2 + (Math.random()-0.5)*0.8,
+        gray*0.8, gray*0.75, gray*0.7,
+        0.35 + ignition * 0.2,
+        1.8 + Math.random()*2.5,
+        1.8 + Math.random()*2.5
+      );
+    }
+  }
+  // Water spray at ocean surface during ignition
+  if (ignition > 0.5 && rocketY < 1) {
+    const waterRate = Math.floor(ignition * 50);
+    for (let i = 0; i < waterRate; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 3 + Math.random() * 7;
+      const h = 0.5 + Math.random() * 2.5;
+      spawnParticle(
+        Math.cos(angle)*dist, 0, Math.sin(angle)*dist,
+        (Math.random()-0.5)*2, h * 4, (Math.random()-0.5)*2,
+        0.75, 0.8, 0.9, 0.45,
+        0.5 + Math.random()*1.0,
+        0.6 + Math.random()*0.8
+      );
+    }
+  }
+}
+
+// ============ RENDER LOOP ============
+let camPos = [50, 16, 50];
+let lastFrameTime = performance.now();
+
+function render(now) {
+  requestAnimationFrame(render);
+  const realTime = now / 1000;
+  const t = (startTime + realTime) % window.DUR;
+  const dt = Math.min((now - lastFrameTime) / 1000, 0.1);
+  lastFrameTime = now;
+
+  const rocketY = getRocketY(t);
+  const ignition = getIgnitionPhase(t);
+  const cam = getCamera(t, rocketY);
+  camPos = cam.eye;
+
+  const projMat = mat4Perspective(cam.fov, 1280/720, 0.5, 800);
+  const viewMat = mat4LookAt(cam.eye, cam.target, [0, 1, 0]);
+
+  // Update particles
+  updateParticles(dt);
+  emitLaunchParticles(t, rocketY, ignition, dt);
+
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  // Sky
+  renderSky(viewMat, projMat, t);
+
+  // Ocean
+  renderOcean(viewMat, projMat, t);
+
+  // Platform
+  renderPlatform(viewMat, projMat);
+
+  // Rocket
+  renderRocket(viewMat, projMat, rocketY, ignition);
+
+  // Particles
+  gl.enable(gl.BLEND);
+  renderParticles(viewMat, projMat, t);
+  gl.disable(gl.BLEND);
+}
+
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

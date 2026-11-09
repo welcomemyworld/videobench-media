@@ -1,0 +1,273 @@
+<html>
+<head>
+<meta charset="utf-8">
+<title>The Broken Message</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#wrap{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:center center}
+canvas{display:block;background:#000}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+window.DUR=56;
+(function(){
+var wrap=document.getElementById('wrap');
+function fit(){var s=Math.min(innerWidth/1280,innerHeight/720);wrap.style.transform='translate(-50%,-50%) scale('+s+')';}
+addEventListener('resize',fit);fit();
+var cv=document.getElementById('c'),ctx=cv.getContext('2d');
+var q=new URLSearchParams(location.search),off=parseFloat(q.get('t'))||0;
+var t0=performance.now()-off*1000;
+function clamp(a,b,c){return Math.max(b,Math.min(c,a));}
+function lerp(a,b,t){return a+(b-a)*t;}
+function ease(t){t=clamp(t,0,1);return t*t*(3-2*t);}
+function seg(t,a,b){return ease((t-a)/(b-a));}
+function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+function bodyPath(){
+ctx.beginPath();
+ctx.moveTo(640,78);
+ctx.bezierCurveTo(612,78,598,108,598,138);
+ctx.bezierCurveTo(598,168,614,178,614,198);
+ctx.lineTo(548,214);
+ctx.bezierCurveTo(470,250,430,340,448,470);
+ctx.lineTo(470,620);
+ctx.lineTo(530,640);
+ctx.lineTo(548,500);
+ctx.lineTo(590,640);
+ctx.lineTo(690,640);
+ctx.lineTo(732,500);
+ctx.lineTo(750,640);
+ctx.lineTo(810,620);
+ctx.lineTo(832,470);
+ctx.bezierCurveTo(850,340,810,250,732,214);
+ctx.lineTo(666,198);
+ctx.bezierCurveTo(666,178,682,168,682,138);
+ctx.bezierCurveTo(682,108,668,78,640,78);
+ctx.closePath();
+}
+function drawBody(a){
+ctx.save();ctx.globalAlpha=a;
+ctx.fillStyle='#0c1520';bodyPath();ctx.fill();
+ctx.strokeStyle='#1e3a4c';ctx.lineWidth=2;ctx.stroke();
+ctx.strokeStyle='rgba(94,234,212,.25)';ctx.lineWidth=1;
+ctx.beginPath();ctx.moveTo(640,200);ctx.lineTo(640,430);ctx.stroke();
+ctx.restore();
+}
+function pancreas(x,y,s,a){
+ctx.save();ctx.translate(x,y);ctx.scale(s,s);ctx.globalAlpha=a;
+ctx.fillStyle='#c4a574';
+ctx.beginPath();
+ctx.moveTo(-70,-18);
+ctx.bezierCurveTo(-40,-36,40,-28,90,-8);
+ctx.bezierCurveTo(130,8,120,28,70,22);
+ctx.bezierCurveTo(20,40,-50,30,-78,8);
+ctx.bezierCurveTo(-92,-6,-90,-8,-70,-18);
+ctx.fill();
+ctx.strokeStyle='#8a6a40';ctx.lineWidth=1.2;ctx.stroke();
+for(var i=0;i<18;i++){
+var px=-60+i*8+((i*17)%5),py=-6+Math.sin(i*1.3)*8;
+ctx.fillStyle=i%5===0?'#fbbf24':'#7dd3c0';
+ctx.beginPath();ctx.arc(px,py,i%5===0?3.2:1.6,0,6.3);ctx.fill();
+}
+ctx.restore();
+}
+function hex(x,y,r,col){
+ctx.beginPath();
+for(var i=0;i<6;i++){var a=Math.PI/6+i*Math.PI/3;var px=x+Math.cos(a)*r,py=y+Math.sin(a)*r;i?ctx.lineTo(px,py):ctx.moveTo(px,py);}
+ctx.closePath();ctx.fillStyle=col;ctx.fill();
+}
+function insulin(x,y,r,a){
+ctx.save();ctx.globalAlpha=a;ctx.translate(x,y);
+ctx.strokeStyle='#fbbf24';ctx.lineWidth=1.6;
+ctx.beginPath();ctx.moveTo(0,-r);ctx.lineTo(r*0.6,r*0.2);ctx.lineTo(-r*0.2,r*0.15);ctx.closePath();ctx.stroke();
+ctx.beginPath();ctx.moveTo(0,-r*0.2);ctx.lineTo(r*0.35,r);ctx.lineTo(-r*0.45,r*0.55);ctx.closePath();ctx.stroke();
+ctx.restore();
+}
+function label(txt,x,y,size,col,align){
+ctx.fillStyle=col||'#e8eef7';ctx.font=(size||16)+'px sans-serif';ctx.textAlign=align||'left';ctx.textBaseline='middle';ctx.fillText(txt,x,y);
+}
+function panel(x,y,w,h){
+ctx.fillStyle='rgba(8,14,22,.78)';rr(x,y,w,h,12);ctx.fill();
+ctx.strokeStyle='rgba(94,234,212,.25)';ctx.stroke();
+}
+function curve(fn,x0,y0,w,h,col,amt){
+ctx.beginPath();
+for(var i=0;i<=80;i++){
+var u=i/80,v=fn(u);
+var x=x0+u*w,y=y0+h-v*h;
+if(i/80>amt)break;
+i?ctx.lineTo(x,y):ctx.moveTo(x,y);
+}
+ctx.strokeStyle=col;ctx.lineWidth=2.4;ctx.stroke();
+}
+function gHealthy(u){return 0.28+0.55*Math.exp(-Math.pow((u-0.28)/0.16,2))*Math.min(1,u*8)*(0.35+0.65*Math.exp(-u*1.6));}
+function gT1(u){return 0.3+0.62*(1-Math.exp(-u*3.2));}
+function gTx(u){return 0.28+0.42*Math.sin(Math.min(u,0.45)*6)*Math.exp(-u*0.4)+0.08*Math.sin(u*14)*Math.exp(-u);}
+function requestFrame(ts){
+var t=((ts-t0)/1000)%window.DUR; if(t<0)t+=window.DUR;
+ctx.clearRect(0,0,1280,720);
+var g=ctx.createLinearGradient(0,0,0,720);
+g.addColorStop(0,'#070b12');g.addColorStop(1,'#05070c');
+ctx.fillStyle=g;ctx.fillRect(0,0,1280,720);
+ctx.fillStyle='rgba(94,234,212,.04)';
+for(var i=0;i<16;i++)ctx.fillRect(0,i*46,1280,1);
+var s1=seg(t,0,4),sOut=seg(t,4.2,6.2);
+var intro=1-sOut;
+if(intro>0.01){
+ctx.save();ctx.globalAlpha=intro;
+drawBody(0.9);
+pancreas(640,360,1.15,0.85);
+label('THE BROKEN MESSAGE',80,86,36,'#f8fafc');
+label('Type 1 diabetes, from the whole body to one molecule',80,128,18,'#94a3b8');
+panel(760,200,430,250);
+label('Not sugar. Not weight. Not lifestyle.',784,236,16,'#e2e8f0');
+label('It is autoimmune.',784,268,20,'#5eead4');
+label('The immune system destroys the',784,310,15,'#cbd5e1');
+label('beta cells that make insulin.',784,334,15,'#cbd5e1');
+label('Islets are only 1–2% of the pancreas.',784,378,14,'#94a3b8');
+label('Educational visualization · not medical advice',80,680,13,'#64748b');
+ctx.restore();
+}
+var z=seg(t,5.5,11);
+if(t>5.2&&t<14.5){
+var a=seg(t,5.4,6.4)*(1-seg(t,13.2,14.4));
+ctx.save();ctx.globalAlpha=a;
+ctx.save();ctx.translate(640,360);ctx.scale(1+z*2.2,1+z*2.2);ctx.translate(-640,-340);
+drawBody(0.35);pancreas(640,360,1.4,1);ctx.restore();
+panel(70,70,520,150);
+label('WHERE THE MESSAGE STARTS',94,104,18,'#5eead4');
+label('Beta cells live in islets — tiny clusters,',94,140,15,'#e2e8f0');
+label('about 1–2% of the pancreas.',94,164,15,'#e2e8f0');
+label('Gold dots: islets with beta cells',94,196,13,'#fbbf24');
+var fade=seg(t,8,12);
+for(var k=0;k<8;k++){
+var ang=t*0.8+k;
+insulin(900+Math.cos(ang)*40,280+Math.sin(ang*1.3)*30,10,fade*(0.4+0.6*Math.sin(t*3+k)));
+}
+panel(760,420,440,160);
+label('After a meal they sense rising glucose',784,456,15,'#e2e8f0');
+label('and release insulin — the message.',784,482,15,'#e2e8f0');
+label('Muscle and fat take glucose in.',784,516,14,'#94a3b8');
+label('The liver is told to release less.',784,540,14,'#94a3b8');
+ctx.restore();
+}
+if(t>13.6&&t<24){
+var a2=seg(t,13.8,14.6)*(1-seg(t,22.8,23.8));
+var broken=seg(t,17.2,21.5);
+ctx.save();ctx.globalAlpha=a2;
+label('INTACT  →  BROKEN',80,70,28,'#f8fafc');
+label('Drag of the disease: the signal fades',80,108,16,'#94a3b8');
+var sx=200,sw=880;
+ctx.fillStyle='#12202c';rr(sx,160,sw,18,9);ctx.fill();
+var knob=sx+broken*sw;
+ctx.fillStyle='#5eead4';rr(sx,160,Math.max(8,broken*sw),18,9);ctx.fill();
+ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(knob,169,12,0,6.3);ctx.fill();
+label('INTACT',sx,200,13,'#34d399');
+label('BROKEN',sx+sw-70,200,13,'#fb7185');
+var organs=[{n:'Muscle',x:180},{n:'Fat',x:480},{n:'Liver',x:780}];
+organs.forEach(function(o,i){
+panel(o.x,250,250,200);
+label(o.n,o.x+20,278,18,'#e2e8f0');
+var sig=1-broken;
+hex(o.x+50,360,16,'#fb7185');
+label('glucose',o.x+76,360,13,'#fda4af');
+insulin(o.x+180,340,14,0.3+sig*0.7);
+label(sig>0.45?'signal arrives':'signal missing',o.x+20,410,14,sig>0.45?'#34d399':'#fb7185');
+});
+panel(180,480,850,150);
+var msg=broken<0.35?'Insulin tells tissues to take glucose in, and the liver to release less.':
+broken<0.75?'Beta cells are being destroyed. The message grows faint.':'In Type 1, that signal disappears. The fuel is still there. The message is missing.';
+label(msg,204,530,18,'#e2e8f0');
+label('So glucose builds up in the blood.',204,568,16,'#fb7185');
+label('Signal strength  '+Math.round((1-broken)*100)+'%',204,600,14,'#94a3b8');
+ctx.restore();
+}
+if(t>23.2&&t<36.5){
+var a3=seg(t,23.4,24.2)*(1-seg(t,35.2,36.4));
+ctx.save();ctx.globalAlpha=a3;
+label('SAME MEAL, THREE SYSTEMS',70,64,26,'#f8fafc');
+label('Glucose after eating',70,98,15,'#94a3b8');
+panel(60,130,760,500);
+ctx.strokeStyle='#1e293b';ctx.lineWidth=1;
+for(var gy=0;gy<5;gy++){ctx.beginPath();ctx.moveTo(120,200+gy*80);ctx.lineTo(760,200+gy*80);ctx.stroke();}
+label('high',78,200,12,'#64748b');label('low',84,520,12,'#64748b');
+label('meal',120,560,12,'#64748b');label('time',720,560,12,'#64748b');
+var amt=seg(t,24.4,32);
+curve(gHealthy,120,190,620,340,'#34d399',amt);
+curve(gT1,120,190,620,340,'#fb7185',amt);
+curve(gTx,120,190,620,340,'#38bdf8',amt);
+panel(850,150,380,220);
+label('Healthy',874,186,16,'#34d399');
+label('Rise, then insulin brings it down.',874,214,13,'#cbd5e1');
+label('Type 1',874,252,16,'#fb7185');
+label('Almost no insulin. Glucose stays high.',874,280,13,'#cbd5e1');
+label('Type 1 + insulin',874,318,16,'#38bdf8');
+label('Replaces the missing signal. Balance.',874,346,13,'#cbd5e1');
+panel(850,390,380,220);
+label('Therapy is not a cure.',874,428,16,'#fbbf24');
+label('Too little: glucose rises.',874,464,14,'#e2e8f0');
+label('Too much: it can fall dangerously low.',874,490,14,'#e2e8f0');
+label('Food, exercise, stress and timing',874,524,13,'#94a3b8');
+label('all change the picture.',874,548,13,'#94a3b8');
+ctx.restore();
+}
+if(t>35.8&&t<46.2){
+var a4=seg(t,36,36.8)*(1-seg(t,45.2,46.1));
+ctx.save();ctx.globalAlpha=a4;
+label('FOLLOW ONE GLUCOSE MOLECULE',70,64,26,'#f8fafc');
+var u=seg(t,36.6,44.5);
+var path=[{x:160,y:420,n:'Meal'},{x:360,y:300,n:'Blood'},{x:560,y:240,n:'Islet'},{x:760,y:300,n:'No insulin'},{x:980,y:420,n:'Stays in blood'}];
+ctx.strokeStyle='#334155';ctx.lineWidth=3;ctx.beginPath();
+path.forEach(function(p,i){i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y);});ctx.stroke();
+path.forEach(function(p){ctx.fillStyle='#0f172a';ctx.beginPath();ctx.arc(p.x,p.y,8,0,6.3);ctx.fill();ctx.strokeStyle='#5eead4';ctx.stroke();label(p.n,p.x-30,p.y+28,13,'#94a3b8');});
+var idx=u*(path.length-1),i0=Math.floor(idx),f=idx-i0,i1=Math.min(path.length-1,i0+1);
+var mx=lerp(path[i0].x,path[i1].x,f),my=lerp(path[i0].y,path[i1].y,f);
+hex(mx,my,18,'#fb7185');
+panel(80,500,520,150);
+label('With almost no insulin, fat breaks down fast.',100,540,15,'#e2e8f0');
+label('The liver makes ketones.',100,568,15,'#e2e8f0');
+label('They can build into DKA — a medical emergency.',100,600,15,'#fb7185');
+panel(640,500,560,150);
+label('DKA is not the everyday story for everyone.',664,540,14,'#cbd5e1');
+label('It is what unchecked insulin deficiency can become.',664,568,14,'#cbd5e1');
+label('The molecule is fuel. Without the message, it accumulates.',664,604,14,'#94a3b8');
+ctx.restore();
+}
+if(t>45.4){
+var a5=seg(t,45.6,46.4);
+ctx.save();ctx.globalAlpha=a5;
+label('TECHNOLOGY HELPS THE BALANCE',70,64,26,'#f8fafc');
+panel(60,120,360,250);
+label('CGM',84,156,20,'#5eead4');
+label('Tracks glucose every few minutes.',84,196,14,'#e2e8f0');
+ctx.strokeStyle='#38bdf8';ctx.lineWidth=2;ctx.beginPath();
+for(var i=0;i<40;i++){var x=90+i*7,y=300+Math.sin(i*0.45+t)*18+Math.sin(i*0.1)*8;i?ctx.lineTo(x,y):ctx.moveTo(x,y);}ctx.stroke();
+label('A continuous trace, not a single poke.',84,340,13,'#94a3b8');
+panel(450,120,360,250);
+label('Insulin pump',474,156,20,'#fbbf24');
+label('Delivers insulin the body cannot make.',474,196,14,'#e2e8f0');
+rr(520,240,220,70,16);ctx.strokeStyle='#fbbf24';ctx.stroke();
+label('basal + bolus',575,275,14,'#fde68a');
+panel(840,120,380,250);
+label('AID',864,156,20,'#34d399');
+label('Automated insulin delivery',864,196,14,'#e2e8f0');
+label('adjusts insulin from CGM readings.',864,220,14,'#e2e8f0');
+label('Sensor  →  algorithm  →  pump',864,280,15,'#5eead4');
+label('Still a tool. Still needs a person.',864,320,13,'#94a3b8');
+panel(60,400,1160,200);
+label('Type 1 diabetes changes the system.',90,450,28,'#f8fafc');
+label('It does not define the person.',90,496,24,'#5eead4');
+label('Insulin therapy replaces a signal the body can no longer provide adequately.',90,546,16,'#cbd5e1');
+label('Educational visualization · not medical advice',90,578,13,'#64748b');
+ctx.restore();
+}
+var ticks=Math.floor(t);ctx.fillStyle='#1e293b';ctx.fillRect(40,700,1200,4);
+ctx.fillStyle='#5eead4';ctx.fillRect(40,700,1200*(t/window.DUR),4);
+requestAnimationFrame(requestFrame);
+}
+requestAnimationFrame(requestFrame);
+})();
+</script>
+</body>
+</html>

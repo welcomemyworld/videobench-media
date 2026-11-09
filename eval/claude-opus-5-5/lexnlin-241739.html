@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>The Silent Monuments</title>
+<style>
+html,body{margin:0;background:#000;overflow:hidden;height:100%}
+#s{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+canvas{position:absolute;left:0;top:0;width:1280px;height:720px}
+</style></head><body>
+<div id="s"><canvas id="g" width="1024" height="576"></canvas><canvas id="o" width="1280" height="720"></canvas></div>
+<script>
+window.DUR=48;
+const S=document.getElementById('s');
+function fit(){const k=Math.min(innerWidth/1280,innerHeight/720);S.style.transform=`scale(${k}) translate(-50%,-50%)`;S.style.transform=`translate(-50%,-50%) scale(${k})`;S.style.transformOrigin='center';S.style.left='50%';S.style.top='50%';S.style.marginLeft='0'}
+fit();addEventListener('resize',fit);
+const cv=document.getElementById('g'),gl=cv.getContext('webgl',{preserveDrawingBuffer:true});
+const ov=document.getElementById('o').getContext('2d');
+const VS=`attribute vec2 p;void main(){gl_Position=vec4(p,0,1);}`;
+const FS=`precision highp float;
+uniform vec2 uR;uniform float uT;uniform vec3 uC,uL;
+const vec3 SUN=normalize(vec3(-.5,.32,-.8));
+float h1(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float ns(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);
+return mix(mix(h1(i),h1(i+vec2(1,0)),f.x),mix(h1(i+vec2(0,1)),h1(i+1.),f.x),f.y);}
+float fbm(vec2 p){float s=0.,a=.5;mat2 m=mat2(1.6,1.2,-1.2,1.6);for(int i=0;i<5;i++){s+=a*ns(p);p=m*p;a*=.5;}return s;}
+float ter(vec2 p){float h=fbm(p*.006)*150.;float v=abs(p.x+30.*sin(p.y*.01));
+h*=smoothstep(15.,160.,v)*.95+.05;h-=14.;float t=h/9.;h=mix(h,(floor(t)+smoothstep(.3,1.,fract(t)))*9.,.6);return h;}
+float box(vec3 p,vec3 b){vec3 q=abs(p)-b;return length(max(q,0.))+min(max(q.x,max(q.y,q.z)),0.);}
+mat2 rot(float a){float c=cos(a),s=sin(a);return mat2(c,-s,s,c);}
+vec2 U(vec2 a,vec2 b){return a.x<b.x?a:b;}
+vec2 map(vec3 p){
+vec2 r=vec2((p.y-ter(p.xz))*.45,1.);
+// colossal ribbed ring
+vec3 q=p-vec3(0,62,-300);float ring=length(vec2(length(q.xy)-58.,q.z))-7.;
+ring+=.8*sin(atan(q.y,q.x)*60.);
+float ring2=length(vec2(length(q.xy)-75.,q.z))-1.5;
+r=U(r,vec2(ring*.7,2.));r=U(r,vec2(ring2,3.));
+// twisted towers
+q=p-vec3(-125,0,-520);q.xz=rot(q.y*.018)*q.xz;
+float tw=box(q-vec3(0,140,0),vec3(11,140,11))*.6;
+q=p-vec3(-125,290,-520);tw=min(tw,length(q)-22.);
+vec3 q2=p-vec3(150,0,-720);float bh=230.;q2.xz=rot(-q2.y*.012)*q2.xz;
+float tw2=box(q2-vec3(0,bh*.5,0),vec3(8.+4.*sin(q2.y*.08),bh*.5,8.+4.*sin(q2.y*.08)))*.5;
+r=U(r,vec2(tw,4.));r=U(r,vec2(tw2,4.));
+// floating inverted pyramid with hanging spire
+q=p-vec3(55,160,-1020);q.xz=rot(uT*.05)*q.xz;
+vec3 a=abs(q*vec3(1,.55,1));float py=max((a.x+a.y+a.z-55.)*.45,q.y-4.);
+py=max(py,-(box(q-vec3(0,-6,0),vec3(70,1.2,70))));
+vec3 sq=q;sq.y+=60.;float sp=max(length(sq.xz)-3.*clamp(-sq.y*.02+1.2,0.,2.),abs(sq.y)-55.);
+r=U(r,vec2(min(py,sp),5.));
+// ziggurat
+q=p-vec3(-90,-5,-1230);float z=1e9;
+for(int i=0;i<7;i++){float fi=float(i);z=min(z,box(q-vec3(0,fi*14.+7.,0),vec3(70.-fi*9.,7.,70.-fi*9.)));}
+z=max(z,-box(q-vec3(0,40,0),vec3(80,12,6)));
+r=U(r,vec2(z*.8,6.));
+// broken colonnade
+q=p;if(q.z<-1350.&&q.z>-1780.){vec2 c=vec2(floor(q.z/40.),sign(q.x));q.z=mod(q.z,40.)-20.;
+q.x=abs(q.x)-38.;float hh=30.+50.*h1(c);float col=max(length(q.xz)-4.5,abs(q.y-hh*.5)-hh*.5);
+col=max(col,-(length(q.xz)-4.2+.6*step(.5,fract(atan(q.z,q.x)*2.))));
+float lint=box(vec3(q.x+38.,q.y-90.,q.z),vec3(42,3,22));lint=max(lint,p.z+1500.);
+r=U(r,vec2(min(col,lint)*.8,7.));}
+return r;}
+vec3 nor(vec3 p){vec2 e=vec2(.08,0);return normalize(vec3(map(p+e.xyy).x-map(p-e.xyy).x,map(p+e.yxy).x-map(p-e.yxy).x,map(p+e.yyx).x-map(p-e.yyx).x));}
+float shd(vec3 p){float t=1.,s=1.;for(int i=0;i<28;i++){float h=map(p+SUN*t).x;s=min(s,8.*h/t);t+=clamp(h,1.,40.);if(s<.01)break;}return clamp(s,0.,1.);}
+vec3 sky(vec3 d){vec3 c=mix(vec3(.95,.65,.45),vec3(.18,.28,.5),pow(max(d.y,0.),.5));
+float s=max(dot(d,SUN),0.);c+=vec3(1.,.7,.4)*pow(s,8.)*.5+vec3(1,.9,.7)*pow(s,900.)*6.;
+if(d.y>0.){vec2 u=d.xz/d.y*.004;float cl=smoothstep(.45,.8,fbm(u*3.+uT*.01));c=mix(c,vec3(1,.8,.7)*(.7+.5*s),cl*.6*smoothstep(0.,.2,d.y));}
+return c;}
+void main(){vec2 uv=(gl_FragCoord.xy*2.-uR)/uR.y;
+vec3 ro=uC,f=normalize(uL-uC),rr=normalize(cross(f,vec3(0,1,0))),up=cross(rr,f);
+vec3 rd=normalize(f*1.6+rr*uv.x+up*uv.y);
+float t=.5,id=0.;for(int i=0;i<200;i++){vec2 h=map(ro+rd*t);if(h.x<.02*t*.05||t>3000.){id=h.y;break;}t+=h.x;id=h.y;}
+float tw=rd.y<0.?-ro.y/rd.y:1e9;bool wat=tw<t;if(wat)t=tw;
+vec3 col;
+if(t>3000.&&!wat)col=sky(rd);else{
+vec3 p=ro+rd*t,n=wat?vec3(0,1,0):nor(p);vec3 alb;float em=0.;
+if(wat){vec2 g=vec2(fbm(p.xz*.08+uT*.3),fbm(p.xz*.08-uT*.3+9.))-.5;n=normalize(vec3(g.x,4.,g.y));
+vec3 rf=reflect(rd,n);float fr=.05+.95*pow(1.-max(dot(-rd,n),0.),5.);
+col=mix(vec3(.02,.08,.1),sky(rf),fr);}
+else{
+if(id<1.5){float sl=n.y;float fo=smoothstep(.45,.6,fbm(p.xz*.05));
+alb=mix(vec3(.38,.3,.25),vec3(.27,.24,.22),fbm(p.xz*.2+p.y*.1));
+vec3 gr=mix(vec3(.2,.3,.1),vec3(.05,.13,.06)*(.6+.8*ns(p.xz*1.3)),fo);
+alb=mix(alb,gr,smoothstep(.75,.88,sl));alb=mix(alb,vec3(.95),smoothstep(55.,75.,p.y+10.*ns(p.xz*.1))*smoothstep(.6,.8,sl));
+alb*=.85+.3*ns(p.xz*.7+p.y);}
+else if(id<2.5){alb=vec3(.7,.66,.6);}
+else if(id<3.5){alb=vec3(1,.7,.3);em=2.;}
+else if(id<4.5){alb=vec3(.55,.5,.55);em=step(.93,fract(p.y*.12))*1.5;}
+else if(id<5.5){alb=vec3(.12,.12,.15);em=step(.9,fract(p.y*.25+.1*sin(p.x*.2)))*1.;}
+else{alb=vec3(.72,.62,.5)*(.8+.3*ns(p.xz*.3+p.y));}
+float dif=max(dot(n,SUN),0.)*shd(p+n*.5);
+float amb=.5+.5*n.y;
+col=alb*(dif*vec3(1.6,1.2,.9)+amb*vec3(.25,.3,.45));
+col+=em*vec3(1.,.6,.25)*(.6+.4*sin(uT*2.+p.y*.05));}
+float fg=1.-exp(-t*.0011-max(0.,30.-p.y)*.002*min(t,600.)*.02);
+float s=max(dot(rd,SUN),0.);vec3 fc=mix(vec3(.6,.6,.7),vec3(1.,.75,.5),pow(s,4.));
+col=mix(col,fc,fg);}
+col=1.-exp(-col*1.4);col=pow(col,vec3(.9,.95,1.05));
+vec2 q=gl_FragCoord.xy/uR;col*=.4+.6*pow(16.*q.x*q.y*(1.-q.x)*(1.-q.y),.2);
+gl_FragColor=vec4(col,1);}`;
+function sh(t,s){const o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);if(!gl.getShaderParameter(o,gl.COMPILE_STATUS))console.log(gl.getShaderInfoLog(o));return o}
+const pr=gl.createProgram();gl.attachShader(pr,sh(gl.VERTEX_SHADER,VS));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,FS));gl.linkProgram(pr);gl.useProgram(pr);
+gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+const L=n=>gl.getUniformLocation(pr,n),uR=L('uR'),uT=L('uT'),uC=L('uC'),uL=L('uL');
+const K=[[0,110,260],[15,80,60],[0,64,-180],[0,62,-300],[-30,85,-420],[-60,120,-560],[20,160,-720],[90,190,-880],[140,140,-1010],[70,100,-1150],[0,70,-1300],[0,45,-1460],[0,40,-1620],[0,90,-1800],[0,170,-1950]];
+function cr(a,b,c,d,t){return .5*(2*b+(-a+c)*t+(2*a-5*b+4*c-d)*t*t+(-a+3*b-3*c+d)*t*t*t)}
+function path(u){u=Math.max(0,Math.min(.9999,u));const f=u*(K.length-1),i=Math.floor(f),t=f-i,g=j=>K[Math.max(0,Math.min(K.length-1,j))];
+return [0,1,2].map(k=>cr(g(i-1)[k],g(i)[k],g(i+1)[k],g(i+2)[k],t))}
+const T=[[1,7,'THE SILENT MONUMENTS','an expedition into the unnamed lands'],[9,14,'THE HALO GATE','a ring older than the river'],[17,22,'THE SPIRAL SPIRES','towers that turn to follow the sun'],[24,29,'THE HANGING CROWN','it has never touched the ground'],[31,36,'THE STEPPED THRONE',''],[37,43,'THE HALL OF FALLEN PILLARS','no one remembers who left']];
+const st=parseFloat(new URLSearchParams(location.search).get('t')||0),t0=performance.now()-st*1000;
+function fr(now){const tt=((now-t0)/1000)%DUR,u=tt/DUR;
+const c=path(u),l=path(u+.025);l[1]-=12;
+gl.viewport(0,0,cv.width,cv.height);gl.uniform2f(uR,cv.width,cv.height);gl.uniform1f(uT,tt);gl.uniform3fv(uC,c);gl.uniform3fv(uL,l);gl.drawArrays(gl.TRIANGLES,0,3);
+ov.clearRect(0,0,1280,720);
+const fd=Math.min(1,tt/1.5,(DUR-tt)/1.5);ov.fillStyle=`rgba(0,0,0,${1-fd})`;ov.fillRect(0,0,1280,720);
+ov.fillStyle='rgba(0,0,0,.9)';ov.fillRect(0,0,1280,50);ov.fillRect(0,670,1280,50);
+for(const [a,b,h,s] of T){if(tt>a&&tt<b){const al=Math.min(1,(tt-a)/1,(b-tt)/1);ov.globalAlpha=al;ov.textAlign='left';
+ov.fillStyle='#f4e6cf';ov.font='300 34px Georgia,serif';ov.fillText(h.split('').join(String.fromCharCode(8202)),80,600);
+ov.fillStyle='rgba(244,230,207,.75)';ov.font='italic 18px Georgia,serif';ov.fillText(s,82,632);
+ov.fillRect(80,566,60*al,1);ov.globalAlpha=1}}
+requestAnimationFrame(fr)}
+requestAnimationFrame(fr);
+</script></body></html>

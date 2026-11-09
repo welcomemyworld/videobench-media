@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>NOIR</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#stage{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:50% 50%}
+canvas{display:block;background:#000}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+const cvs=document.getElementById("c"),ctx=cvs.getContext("2d");
+window.DUR=16;
+const q=new URLSearchParams(location.search);
+const tOff=Math.max(0,parseFloat(q.get("t"))||0);
+const tStart=performance.now()-tOff*1000;
+function fit(){
+  const s=Math.min(innerWidth/1280,innerHeight/720);
+  document.getElementById("stage").style.transform="translate(-50%,-50%) scale("+s+")";
+}
+addEventListener("resize",fit);fit();
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const lerp=(a,b,t)=>a+(b-a)*t;
+function back(u){const c=1.55;return 1+(c+1)*Math.pow(u-1,3)+c*Math.pow(u-1,2);}
+function out3(u){u=clamp(u,0,1);return 1-Math.pow(1-u,3);}
+function win(t,a,b){return clamp((t-a)/(b-a),0,1);}
+const WORDS=["NOIR","SYSTEM","DARK","MODE","KINETIC","TYPE","SNAP","GRID","MOTION","CRAFT","PIXEL","RHYTHM","INTERFACE","120","BPM","LOOP"];
+const SUBS=["A DARK INTERFACE","A DARK INTERFACE","A DARK INTERFACE","A DARK INTERFACE","PUNCH EVERY BEAT","PUNCH EVERY BEAT","PUNCH EVERY BEAT","PUNCH EVERY BEAT","CAMERA SNAPS HARD","CAMERA SNAPS HARD","CAMERA SNAPS HARD","CAMERA SNAPS HARD","ONE CONTINUOUS TAKE","ONE CONTINUOUS TAKE","ONE CONTINUOUS TAKE","ONE CONTINUOUS TAKE"];
+const LIME=new Set([0,6,13,14,15]);
+const CAMS=[[0,0,1],[34,-18,1.07],[-40,16,1.12],[22,26,1.05],[-18,-30,1.09],[8,6,1.02],[46,-8,1.1],[-28,4,0.97]];
+function rr(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+function card(x,y,w,h,title,rows,pulse,alpha){
+  ctx.save();ctx.globalAlpha=alpha;
+  rr(x,y,w,h,14);
+  ctx.fillStyle="#0c0c0c";ctx.fill();
+  ctx.strokeStyle="rgba(255,255,255,.09)";ctx.lineWidth=1;ctx.stroke();
+  ctx.fillStyle="#D6FF3F";ctx.fillRect(x+16,y+16,18,3);
+  ctx.font="600 11px ui-monospace,monospace";
+  ctx.fillStyle="#8d8d88";ctx.textAlign="left";ctx.textBaseline="top";
+  ctx.fillText(title,x+40,y+12);
+  for(let i=0;i<rows.length;i++){
+    const yy=y+42+i*22;
+    ctx.fillStyle="#1a1a1a";rr(x+16,yy,w-32,8,4);ctx.fill();
+    const ww=(w-32)*rows[i]*(0.72+0.28*pulse);
+    ctx.fillStyle=i===0?"#D6FF3F":"#f2f2ee";
+    rr(x+16,yy,Math.max(6,ww),8,4);ctx.fill();
+  }
+  ctx.restore();
+}
+function draw(t){
+  const W=1280,H=720,beat=t*2,bi=Math.floor(beat),bf=beat-bi;
+  const pulse=Math.pow(1-bf,3);
+  const slot=Math.floor(beat/4)%8;
+  const prev=CAMS[(slot+7)%8],cur=CAMS[slot];
+  const sk=back(clamp((beat%4)/0.28,0,1));
+  const cx=lerp(prev[0],cur[0],sk),cy=lerp(prev[1],cur[1],sk),cz=lerp(prev[2],cur[2],sk);
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.fillStyle="#000";ctx.fillRect(0,0,W,H);
+  ctx.save();
+  ctx.translate(W/2+cx,H/2+cy);
+  ctx.scale(cz,cz);
+  ctx.translate(-W/2,-H/2);
+  ctx.strokeStyle="rgba(255,255,255,.045)";ctx.lineWidth=1;
+  const g=48,drift=(beat*6)%g;
+  for(let x=-g;x<=W+g;x+=g){ctx.beginPath();ctx.moveTo(x+drift*0.15,0);ctx.lineTo(x+drift*0.15,H);ctx.stroke();}
+  for(let y=-g;y<=H+g;y+=g){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+  ctx.strokeStyle="rgba(214,255,63,"+(0.05+pulse*0.08)+")";
+  ctx.strokeRect(48.5,48.5,1183,623);
+  const wi=Math.floor(t)%16;
+  const local=t-wi;
+  const enter=back(clamp(local/0.16,0,1));
+  const leave=clamp((local-0.78)/0.22,0,1);
+  const aWord=1-out3(leave);
+  const yLift=-46*out3(leave);
+  const nxt=(wi+1)%16;
+  const nIn=clamp((local-0.78)/0.22,0,1);
+  function hero(word,i,alpha,yy,sc){
+    if(alpha<=0.01)return;
+    ctx.save();ctx.globalAlpha=alpha;
+    ctx.translate(640,348+yy);ctx.scale(sc,sc);
+    ctx.textAlign="center";ctx.textBaseline="middle";
+    ctx.font="800 148px Arial,Helvetica,sans-serif";
+    ctx.fillStyle=LIME.has(i)?"#D6FF3F":"#f4f4f1";
+    ctx.fillText(word,0,8);
+    ctx.restore();
+  }
+  const subA=Math.min(out3(clamp(local/0.2,0,1)),1-out3(clamp((local-0.8)/0.2,0,1)));
+  ctx.globalAlpha=0.9;
+  ctx.font="600 13px ui-monospace,monospace";
+  ctx.fillStyle="#D6FF3F";ctx.textAlign="center";ctx.textBaseline="middle";
+  ctx.globalAlpha=subA;
+  ctx.fillText(SUBS[wi],640,248);
+  ctx.globalAlpha=1;
+  hero(WORDS[wi],wi,aWord,yLift,(0.86+0.14*enter)*(1+0.035*pulse));
+  if(nIn>0)hero(WORDS[nxt],nxt,out3(nIn),40*(1-out3(nIn)),0.9+0.1*out3(nIn));
+  const cards=[
+    [78,92,250,132,"TOKENS",[0.82,0.55,0.34]],
+    [952,96,246,132,"MOTION",[0.7,0.9,0.4]],
+    [78,500,268,128,"TYPE SCALE",[0.62,0.44,0.28]],
+    [930,488,262,140,"LAYERS",[0.5,0.76,0.88]]
+  ];
+  cards.forEach((c,i)=>{
+    const ph=((beat*0.5+i*0.7)%1);
+    const dx=Math.sin(beat*0.35+i)*10;
+    const dy=Math.cos(beat*0.28+i*1.3)*8;
+    const appear=out3(win(t,0.15+i*0.18,0.55+i*0.18));
+    card(c[0]+dx*(1-appear*0.2),c[1]+dy+(1-appear)*40,c[2],c[3],c[4],c[5],0.65+0.35*Math.pow(1-((beat+i)%1),2),appear);
+  });
+  ctx.globalAlpha=0.95;
+  ctx.fillStyle="#D6FF3F";
+  const ticks=32,tw=900,tx0=190,ty=78;
+  for(let i=0;i<ticks;i++){
+    const on=i===bi%32;
+    const h=on?16: (i%4===0?10:6);
+    ctx.globalAlpha=on?1:0.35;
+    ctx.fillStyle=on?"#D6FF3F":"#fff";
+    ctx.fillRect(tx0+i*(tw/ticks),ty-h,on?3:1,h);
+  }
+  ctx.globalAlpha=1;
+  ctx.font="600 12px ui-monospace,monospace";
+  ctx.fillStyle="#9a9a94";ctx.textAlign="left";ctx.textBaseline="middle";
+  ctx.fillText("NOIR  /  DESIGN SYSTEM",64,78);
+  ctx.textAlign="right";
+  ctx.fillStyle="#D6FF3F";
+  ctx.fillText("120 BPM",1216,78);
+  const mm=String(Math.floor(t/60)).padStart(2,"0");
+  const ss=String(Math.floor(t)%60).padStart(2,"0");
+  const fr=String(Math.floor((t%1)*24)).padStart(2,"0");
+  ctx.font="600 13px ui-monospace,monospace";
+  ctx.fillStyle="#f4f4f1";ctx.textAlign="left";
+  ctx.fillText(mm+":"+ss+":"+fr,64,662);
+  ctx.textAlign="right";ctx.fillStyle="#8d8d88";
+  ctx.fillText("BEAT  "+String((bi%32)+1).padStart(2,"0")+"  /  32",1216,662);
+  const px=64+((bi%32)+bf)*(1152/32);
+  ctx.fillStyle="#D6FF3F";
+  ctx.fillRect(64,684,1152,2);
+  ctx.globalAlpha=0.25;ctx.fillRect(64,684,1152,2);
+  ctx.globalAlpha=1;ctx.fillRect(64,684,clamp(px-64,0,1152),2);
+  ctx.beginPath();ctx.arc(clamp(px,64,1216),685,4+pulse*2,0,6.283);ctx.fill();
+  for(let i=0;i<8;i++){
+    const on=i===(bi%8);
+    ctx.beginPath();ctx.arc(64,160+i*42,on?5:3,0,6.283);
+    ctx.fillStyle=on?"#D6FF3F":"rgba(255,255,255,.25)";ctx.fill();
+  }
+  ctx.restore();
+  const vg=ctx.createRadialGradient(640,360,280,640,360,760);
+  vg.addColorStop(0,"rgba(0,0,0,0)");vg.addColorStop(1,"rgba(0,0,0,.55)");
+  ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);
+  ctx.globalAlpha=0.07+pulse*0.05;ctx.fillStyle="#D6FF3F";ctx.fillRect(0,0,W,H);ctx.globalAlpha=1;
+}
+function loop(now){
+  let t=((now-tStart)/1000)%window.DUR;
+  if(t<0)t+=window.DUR;
+  draw(t);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

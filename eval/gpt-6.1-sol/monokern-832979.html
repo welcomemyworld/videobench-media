@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CHROMA — Pure Motion</title>
+<style>
+*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#000}body{display:flex;align-items:center;justify-content:center}#stage{position:relative;width:1280px;height:720px;flex:none;transform-origin:center}canvas{display:block;width:1280px;height:720px}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="film" width="1280" height="720"></canvas></div>
+<script>
+"use strict";
+window.DUR=20;
+const W=1280,H=720,TAU=Math.PI*2;
+const stage=document.getElementById("stage"),canvas=document.getElementById("film"),ctx=canvas.getContext("2d");
+const buffers=[document.createElement("canvas"),document.createElement("canvas")];
+buffers.forEach(c=>{c.width=W;c.height=H});
+const contexts=buffers.map(c=>c.getContext("2d"));
+function fit(){stage.style.transform=`scale(${Math.min(innerWidth/W,innerHeight/H)})`}
+addEventListener("resize",fit);fit();
+const offset=Number(new URLSearchParams(location.search).get("t"))||0;
+let start;
+const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const mix=(a,b,t)=>a+(b-a)*t;
+const ease=x=>{x=clamp(x);return x*x*(3-2*x)};
+const out=x=>1-Math.pow(1-clamp(x),4);
+const fract=x=>x-Math.floor(x);
+const ink="#110e1d",paper="#f5f0db",acid="#dcff57",pink="#ff407e";
+function text(g,str,x,y,size,color=paper,weight=900,align="left"){
+ g.font=`${weight} ${size}px Arial, Helvetica, sans-serif`;g.fillStyle=color;g.textAlign=align;g.fillText(str,x,y);
+}
+function tracked(g,str,x,y,size,color,spacing=3,align="left"){
+ g.font=`600 ${size}px Arial, Helvetica, sans-serif`;
+ let width=0;for(const c of str)width+=g.measureText(c).width+spacing;
+ if(align==="right")x-=width;if(align==="center")x-=width/2;
+ g.fillStyle=color;for(const c of str){g.fillText(c,x,y);x+=g.measureText(c).width+spacing}
+}
+function line(g,x1,y1,x2,y2,color,width=1){
+ g.strokeStyle=color;g.lineWidth=width;g.beginPath();g.moveTo(x1,y1);g.lineTo(x2,y2);g.stroke();
+}
+function circle(g,x,y,r,color,width=1){
+ g.strokeStyle=color;g.lineWidth=width;g.beginPath();g.arc(x,y,r,0,TAU);g.stroke();
+}
+function bg(g,color){g.fillStyle=color;g.fillRect(0,0,W,H)}
+function glow(g,x,y,r,color){
+ const a=g.createRadialGradient(x,y,0,x,y,r);a.addColorStop(0,color);a.addColorStop(1,"transparent");
+ g.fillStyle=a;g.fillRect(x-r,y-r,r*2,r*2);
+}
+function star(g,x,y,r,t,color){
+ g.save();g.translate(x,y);g.rotate(t);g.fillStyle=color;g.beginPath();
+ for(let j=0;j<16;j++){let a=j*TAU/16,rr=j%2?r*.16:r;g.lineTo(Math.cos(a)*rr,Math.sin(a)*rr)}
+ g.closePath();g.fill();g.restore();
+}
+function revealText(g,str,x,y,size,color,p){
+ g.save();g.beginPath();g.rect(x-3,y-size-8,1100,size+24);g.clip();
+ text(g,str,x,y+(1-out(p))*(size+24),size,color);g.restore();
+}
+const grain=document.createElement("canvas");grain.width=128;grain.height=128;
+const ng=grain.getContext("2d"),ni=ng.createImageData(128,128);let seed=743;
+for(let i=0;i<ni.data.length;i+=4){seed=(seed*1664525+1013904223)>>>0;let v=seed>>>24;ni.data[i]=ni.data[i+1]=ni.data[i+2]=v;ni.data[i+3]=255}ng.putImageData(ni,0,0);
+const noise=ctx.createPattern(grain,"repeat");
+
+// A true, lit three-dimensional trefoil, built entirely from small ribbon facets.
+const S=168,R=24,mesh=[];
+function knotPoint(a){return [Math.sin(a)+2*Math.sin(2*a),Math.cos(a)-2*Math.cos(2*a),-Math.sin(3*a)*1.1]}
+function norm(v){let l=Math.hypot(...v);return v.map(x=>x/l)}
+function cross(a,b){return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]]}
+for(let i=0;i<S;i++){
+ let a=i*TAU/S,c=knotPoint(a),p=knotPoint(a+.001),T=norm(p.map((v,k)=>v-c[k]));
+ let N=norm(cross(T,[0,0,1])),B=cross(T,N),row=[];
+ for(let j=0;j<R;j++){
+  let b=j*TAU/R,r=.55+.045*Math.sin(a*6);
+  let n=N.map((v,k)=>v*Math.cos(b)+B[k]*Math.sin(b));
+  row.push({p:c.map((v,k)=>v+r*n[k]),n,a,b});
+ }mesh.push(row);
+}
+function rotate(v,ay,ax,az){
+ let [x,y,z]=v,c=Math.cos(ay),s=Math.sin(ay);
+ [x,z]=[x*c+z*s,-x*s+z*c];c=Math.cos(ax);s=Math.sin(ax);
+ [y,z]=[y*c-z*s,y*s+z*c];c=Math.cos(az);s=Math.sin(az);
+ return [x*c-y*s,x*s+y*c,z];
+}
+function sculpture(g,t,cx,cy,scale,variant=0){
+ const ay=t*.59+.4,ax=.65+Math.sin(t*.47)*.5,az=t*.16-.24,verts=[];
+ for(let i=0;i<S;i++){
+  let row=[];for(let j=0;j<R;j++){
+   const m=mesh[i][j],p=rotate(m.p,ay,ax,az),n=rotate(m.n,ay,ax,az),pers=9/(9-p[2]);
+   row.push({x:cx+p[0]*scale*pers,y:cy+p[1]*scale*pers,z:p[2],n});
+  }verts.push(row);
+ }
+ let faces=[];
+ for(let i=0;i<S;i++)for(let j=0;j<R;j++){
+  let a=verts[i][j],b=verts[(i+1)%S][j],c=verts[(i+1)%S][(j+1)%R],d=verts[i][(j+1)%R];
+  faces.push({a,b,c,d,z:(a.z+b.z+c.z+d.z)/4,i,j});
+ }
+ faces.sort((a,b)=>a.z-b.z);
+ g.lineJoin="round";g.lineWidth=.65;
+ for(const f of faces){
+  const {a,b,c,d,i,j}=f,n=a.n;
+  let light=clamp((n[0]*-.38+n[1]*-.58+n[2]*.72+1)*.5);
+  let shine=Math.pow(clamp(n[0]*-.22+n[1]*-.38+n[2]*.9),18);
+  let hue=(i/S*310+j/R*115+t*24+variant*60)%360;
+  let lum=22+light*34+shine*27;
+  let col=j%6===0?`hsl(${hue},50%,${8+light*15}%)`:`hsl(${hue},96%,${lum}%)`;
+  g.fillStyle=col;g.strokeStyle=col;g.beginPath();g.moveTo(a.x,a.y);g.lineTo(b.x,b.y);g.lineTo(c.x,c.y);g.lineTo(d.x,d.y);g.closePath();g.fill();g.stroke();
+ }
+}
+function orbit(g,cx,cy,rx,ry,t,col,width=1){
+ g.save();g.translate(cx,cy);g.rotate(t);g.strokeStyle=col;g.lineWidth=width;
+ g.beginPath();g.ellipse(0,0,rx,ry,0,0,TAU);g.stroke();
+ const x=Math.cos(t*2)*rx,y=Math.sin(t*2)*ry;
+ g.fillStyle=col;g.beginPath();g.arc(x,y,4,0,TAU);g.fill();g.restore();
+}
+function hero(g,s,t){
+ bg(g,ink);
+ glow(g,910,330,580,"#281655");glow(g,1020,590,340,"#491229");
+ // The micro-grid is deliberately quiet against the glossy object.
+ g.strokeStyle="#ffffff0a";g.lineWidth=1;
+ for(let x=40;x<W;x+=80)line(g,x,76,x,642,"#ffffff09");
+ for(let y=82;y<650;y+=80)line(g,40,y,1240,y,"#ffffff09");
+ const enter=out(s/1.15);
+ orbit(g,905,355,300,212,-.35+t*.08,"#eee6cc35");
+ orbit(g,905,355,346,140,.7-t*.11,"#b6ff6438");
+ sculpture(g,t,920+90*(1-enter),350,94+14*enter);
+ g.save();g.globalAlpha=enter;
+ tracked(g,"A STUDY IN SENSORY OVERLOAD",62,139,12,acid,2);
+ revealText(g,"ALTER",55,283,135,paper,s/.85);
+ revealText(g,"REALITY.",55,408,135,paper,(s-.18)/.85);
+ line(g,62,457,408,457,paper,1);
+ text(g,"Not just seen.",63,502,25,paper,400);
+ text(g,"Felt.",63,539,25,paper,400);
+ tracked(g,"FORM / FREQUENCY / FEELING",63,593,11,"#a69fae",1.7);
+ g.restore();
+ star(g,515,511,37,-t*.65,acid);
+ text(g,"01",1145,598,48,paper,400);
+}
+
+// An endlessly unfolding, lobed optical tunnel.
+function tunnel(g,s,t){
+ bg(g,"#150b31");
+ const cx=640+Math.sin(s*.8)*64,cy=352+Math.cos(s*.65)*35,N=31;
+ let rings=[];
+ for(let j=0;j<N;j++){
+  let travel=j+s*5.4,q=fract(travel/N);
+  rings.push({r:9*Math.pow(160,q),j:j-Math.floor(travel/N)*N});
+ }
+ rings.sort((a,b)=>b.r-a.r);
+ const colors=["#e1ff58","#171043","#f54c94","#5025e8","#fc8b44","#130d27","#85edcb","#f23b75"];
+ function point(a,r){
+  let k=1+.105*Math.sin(a*8+s*.9)+.045*Math.cos(a*16-s*1.5);
+  return [cx+Math.cos(a+s*.18)*r*k,cy+Math.sin(a+s*.18)*r*k*.83];
+ }
+ for(const ring of rings){
+  let idx=((ring.j%colors.length)+colors.length)%colors.length;
+  g.fillStyle=colors[idx];g.beginPath();
+  for(let k=0;k<=192;k++){let a=k*TAU/192,p=point(a,ring.r);g.lineTo(...p)}
+  g.closePath();g.fill();
+  g.strokeStyle="#fff2";g.lineWidth=1.3;g.stroke();
+ }
+ g.save();g.globalCompositeOperation="screen";g.globalAlpha=.22;
+ for(let k=0;k<16;k++){
+  let a=k*TAU/16;g.beginPath();
+  for(let r=12;r<1500;r*=1.045){
+   let p=point(a+Math.sin(Math.log(r)*2-s)*.05,r);g.lineTo(...p)
+  }g.strokeStyle=k%2?pink:paper;g.lineWidth=1;g.stroke();
+ }g.restore();
+ let vignette=g.createRadialGradient(cx,cy,90,cx,cy,820);
+ vignette.addColorStop(0,"transparent");vignette.addColorStop(1,"#090417a6");
+ g.fillStyle=vignette;g.fillRect(0,0,W,H);
+ g.save();g.globalAlpha=out(s/.5);
+ text(g,"DIVE",58,227,164,paper);
+ g.font="900 112px Arial, Helvetica, sans-serif";g.strokeStyle=paper;g.lineWidth=2;
+ g.textAlign="right";g.strokeText("DEEPER.",1218,600);
+ tracked(g,"FOLLOW THE FREQUENCY",65,265,12,paper,3);
+ g.restore();
+ star(g,cx,cy,21,-s*1.5,paper);
+ // Graphic reticles travel on the edge of the optical field.
+ for(let j=0;j<4;j++){
+  let a=j*TAU/4+s*.17,x=cx+Math.cos(a)*330,y=cy+Math.sin(a)*230;
+  line(g,x-9,y,x+9,y,paper);line(g,x,y-9,x,y+9,paper);
+ }
+}
+function sphere(g,x,y,r,t,phase){
+ g.save();
+ let shadow=g.createRadialGradient(x+15,y+r*.85,r*.1,x+15,y+r*.85,r*1.05);
+ shadow.addColorStop(0,"#16052d50");shadow.addColorStop(1,"transparent");
+ g.save();g.translate(0,r*.2);g.scale(1,.45);g.fillStyle=shadow;g.fillRect(x-r*1.2,(y-r)*2.22,r*2.5,r*4.7);g.restore();
+ g.beginPath();g.arc(x,y,r,0,TAU);g.clip();
+ g.fillStyle="#fb4387";g.fillRect(x-r,y-r,r*2,r*2);
+ const palettes=[["#e4ff53","#3f20dd","#ff508c","#f7974a"],["#42e4d1","#221038","#f97cda","#663fe9"],["#ff8a36","#eaff70","#f7327c","#241446"]];
+ const pal=palettes[phase%3];
+ g.save();g.translate(x,y);g.rotate(Math.sin(t*.6+phase)*.65);
+ for(let k=-24;k<=24;k++){
+  let yy=k*r/17+(t*35)%(r/17*4);
+  g.strokeStyle=pal[((k%4)+4)%4];g.lineWidth=r/17+1.2;g.beginPath();
+  for(let i=0;i<=80;i++){
+   let xx=mix(-r*1.5,r*1.5,i/80);
+   let bend=Math.sin(xx/r*1.8+t*1.3+phase)*r*.16+Math.sin(xx/r*3-yy/r*2+t)*r*.05;
+   g.lineTo(xx,yy+bend);
+  }g.stroke();
+ }g.restore();
+ let shade=g.createRadialGradient(x-r*.38,y-r*.45,r*.03,x+r*.18,y+r*.2,r*1.22);
+ shade.addColorStop(0,"#ffffff70");shade.addColorStop(.35,"#ffffff0a");shade.addColorStop(.67,"#0c042019");shade.addColorStop(1,"#080018db");
+ g.fillStyle=shade;g.fillRect(x-r,y-r,r*2,r*2);
+ let spec=g.createRadialGradient(x-r*.36,y-r*.5,0,x-r*.36,y-r*.5,r*.4);
+ spec.addColorStop(0,"#fff9");spec.addColorStop(.13,"#fff4");spec.addColorStop(1,"transparent");
+ g.fillStyle=spec;g.fillRect(x-r,y-r,r*2,r*2);g.restore();
+ circle(g,x,y,r,"#16062b33",1);
+}
+function tactile(g,s,t){
+ bg(g,paper);
+ for(let y=96;y<642;y+=34)line(g,40,y,1240,y,"#201a2610");
+ for(let x=40;x<=1240;x+=100)line(g,x,96,x,642,"#201a260a");
+ tracked(g,"TACTILE / ELASTIC / ELECTRIC",62,142,12,ink,2.5);
+ revealText(g,"FEEL",51,338,239,ink,s/.65);
+ const b=Math.sin(s*1.5);
+ sphere(g,980+Math.cos(s*.9)*65,274+b*70,190+Math.sin(s)*12,t,0);
+ sphere(g,715+Math.sin(s*.8)*110,545+Math.cos(s*1.5)*23,105,t+.4,1);
+ sphere(g,258+Math.sin(s*1.1)*95,490-Math.sin(s*.9)*55,71,t+1,2);
+ g.save();g.globalAlpha=out((s-.12)/.6);
+ text(g,"EVERYTHING.",56,570,126,ink);
+ g.restore();
+ line(g,63,610,344,610,ink);
+ tracked(g,"MOTION IS A STATE OF MIND.",63,635,11,ink,1.5);
+ g.save();g.translate(1139,585);g.rotate(-.16+Math.sin(s)*.12);
+ g.fillStyle=ink;g.fillRect(-68,-24,136,48);tracked(g,"FULL SPECTRUM",0,5,10,acid,1,"center");g.restore();
+ star(g,490,184,33,s*.8,ink);
+}
+function bloom(g,s,t){
+ bg(g,"#0b0819");
+ const cx=640,cy=348;
+ glow(g,cx,cy,640,"#471249");
+ // Nested twelve-fold contours breathe at different harmonics.
+ let layers=49;
+ for(let j=layers;j>=1;j--){
+  const f=j/layers;
+  let base=16+f*421;
+  let rot=s*.18+f*.5*Math.sin(s*.7);
+  let hue=(j*12.5+s*54+260)%360;
+  let col=j%5===0?"#10091f":`hsl(${hue},96%,${48+Math.sin(j*.65+s)*10}%)`;
+  g.fillStyle=col;g.beginPath();
+  for(let k=0;k<=240;k++){
+   let a=k*TAU/240;
+   let petals=Math.pow((1+Math.cos(a*12+s*.6+f*5))/2,2);
+   let r=base*(.78+.24*petals)+Math.sin(a*24-s*1.3+f*12)*base*.023;
+   let ang=a+rot;
+   g.lineTo(cx+Math.cos(ang)*r,cy+Math.sin(ang)*r*.91);
+  }
+  g.closePath();g.fill();g.lineWidth=1;g.strokeStyle="#ffffff38";g.stroke();
+ }
+ g.save();g.globalCompositeOperation="screen";
+ for(let j=0;j<12;j++){
+  let a=j*TAU/12+s*.18;
+  g.strokeStyle="#fce8ff44";g.lineWidth=.7;g.beginPath();
+  for(let k=0;k<90;k++){
+   let r=35+k*4,ang=a+Math.sin(r*.014-s)*.10;
+   g.lineTo(cx+Math.cos(ang)*r,cy+Math.sin(ang)*r*.91)
+  }g.stroke();
+ }g.restore();
+ star(g,cx,cy,33,-s*.8,paper);
+ g.save();g.translate(72,390);g.rotate(-Math.PI/2);tracked(g,"PRECISION MEETS INTUITION",0,0,11,paper,2.7,"center");g.restore();
+ g.save();g.translate(1208,390);g.rotate(Math.PI/2);tracked(g,"TWELVE-FOLD / INFINITE POSSIBILITIES",0,0,11,paper,2,"center");g.restore();
+ tracked(g,"CONTROLLED",640,142,18,paper,9,"center");
+ g.font="900 108px Arial, Helvetica, sans-serif";g.textAlign="center";g.lineWidth=1.5;g.strokeStyle=paper;
+ g.strokeText("CHAOS",640,616);
+ text(g,"CHAOS",640,616,108,paper,900,"center");
+ // Small orbital calibration details.
+ for(let j=0;j<4;j++){
+  let x=j%2?1140:140,y=j<2?164:545;
+  circle(g,x,y,15,"#fff7");line(g,x-5,y,x+5,y,paper);line(g,x,y-5,x,y+5,paper);
+ }
+}
+function finale(g,s,t){
+ bg(g,ink);
+ glow(g,920,340,590,"#361847");glow(g,660,640,450,"#141d5a");
+ // Moving waves give the final lock-up its own visual tempo.
+ for(let j=0;j<29;j++){
+  g.beginPath();g.strokeStyle=j%4===0?"#dcff5721":"#a066da16";g.lineWidth=1;
+  for(let k=0;k<=90;k++){
+   let x=k*W/90,y=100+j*19+Math.sin(k*.11+s*.7+j*.13)*29;
+   g.lineTo(x,y);
+  }g.stroke();
+ }
+ let settle=ease((s-2.1)/1.3);
+ const cx=mix(904,960,settle),cy=347;
+ orbit(g,cx,cy,343,200,s*.13-.5,"#fbf1dd30");
+ sculpture(g,t+.5,cx,cy,110+Math.sin(s*.8)*7,1);
+ const p=out(s/.6);
+ tracked(g,"THIS IS WHAT POSSIBILITY LOOKS LIKE.",62,143,12,acid,1.7);
+ revealText(g,"PURE",54,305,161,paper,p);
+ revealText(g,"MOTION.",54,454,151,paper,out((s-.15)/.7));
+ line(g,64,498,506,498,"#f5f0db70");
+ g.save();g.globalAlpha=out((s-.8)/.7);
+ text(g,"No boundaries. Just energy.",65,540,23,paper,400);
+ g.restore();
+ star(g,550,207,34,-s*.7,acid);
+ const q=out((s-2.15)/.7);
+ g.save();g.globalAlpha=q;
+ g.fillStyle=acid;g.fillRect(63,579,213,37);
+ tracked(g,"SEE DIFFERENT.",170,603,13,ink,2.3,"center");
+ tracked(g,"CHROMA / 001",305,602,12,paper,2);g.restore();
+}
+const scenes=[hero,tunnel,tactile,bloom,finale];
+const names=["ALTER REALITY","DIVE DEEPER","FEEL EVERYTHING","CONTROLLED CHAOS","PURE MOTION"];
+function hud(g,t,index){
+ const light=index!==2,col=light?paper:ink;
+ g.save();g.globalAlpha=.83;
+ line(g,40,42,1240,42,light?"#f5f0db45":"#110e1d45");
+ tracked(g,"CHROMA",42,30,13,col,4);
+ tracked(g,"EXPERIMENTAL MOTION / VOL. 001",212,30,10,col,1.7);
+ tracked(g,"AUDIO-VISUAL THINKING",1240,30,10,col,2,"right");
+ line(g,40,668,1240,668,light?"#f5f0db45":"#110e1d45");
+ tracked(g,`0${index+1} / ${names[index]}`,41,695,10,col,1.8);
+ tracked(g,"20 SECONDS. ZERO RESTRAINT.",1240,695,10,col,1.5,"right");
+ const x=496,width=288;
+ for(let j=0;j<5;j++){
+  g.fillStyle=light?"#ffffff25":"#110e1d25";g.fillRect(x+j*60,685,48,3);
+  const p=clamp((t-j*4)/4);
+  g.fillStyle=light?acid:ink;g.fillRect(x+j*60,685,48*p,3);
+ }
+ // Film-style corner brackets.
+ const corners=[[24,64,1,1],[1256,64,-1,1],[24,649,1,-1],[1256,649,-1,-1]];
+ for(const [x,y,a,b] of corners){line(g,x,y,x+10*a,y,col);line(g,x,y,x,y+10*b,col)}
+ g.restore();
+}
+function renderScene(g,index,s,t){
+ g.save();g.setTransform(1,0,0,1,0,0);g.globalAlpha=1;g.globalCompositeOperation="source-over";
+ scenes[index](g,Math.max(0,s),t);hud(g,((t%20)+20)%20,index);g.restore();
+}
+function frame(now){
+ if(start===undefined)start=now;
+ const t=((now-start)/1000+offset)%20,tt=(t+20)%20;
+ const index=Math.floor(tt/4),s=tt-index*4;
+ renderScene(contexts[0],index,s,tt);
+ ctx.globalAlpha=1;ctx.globalCompositeOperation="source-over";ctx.drawImage(buffers[0],0,0);
+ const transition=.36;
+ if(s>4-transition){
+  let q=ease((s-(4-transition))/transition),next=(index+1)%5;
+  renderScene(contexts[1],next,0,index===4?0:tt);
+  // A chromatic iris cuts through the frame instead of a generic dissolve.
+  const cx=index%2?960:320,cy=360,r=q*1430;
+  ctx.save();ctx.beginPath();ctx.arc(cx,cy,r,0,TAU);ctx.clip();
+  ctx.drawImage(buffers[1],0,0);ctx.restore();
+  if(q<.985){
+   circle(ctx,cx,cy,r,pink,8);circle(ctx,cx,cy,Math.max(0,r-11),acid,2);
+  }
+ }
+ ctx.save();ctx.globalAlpha=.035;ctx.fillStyle=noise;ctx.fillRect(0,0,W,H);ctx.restore();
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

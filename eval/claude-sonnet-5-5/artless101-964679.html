@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000;height:100%;overflow:hidden}#c{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:center;background:#000}</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+// No external Three.js: custom 3D projection on Canvas 2D (self-contained, no CDN).
+window.DUR=40;
+const cv=document.getElementById('c'),g=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.transform='translate(-50%,-50%) scale('+s+')'}
+fit();onresize=fit;
+const q=new URLSearchParams(location.search).get('t')||0;
+const st=performance.now()-q*1000;
+function rnd(i){const x=Math.sin(i*127.1)*43758.5453;return x-Math.floor(x)}
+function mix(a,b,t){return a+(b-a)*t}
+function cl(x,a,b){return Math.max(a,Math.min(b,x))}
+function ss(a,b,x){x=cl((x-a)/(b-a),0,1);return x*x*(3-2*x)}
+const W=1280,H=720;
+let cam={x:0,y:0,z:0,yaw:0,pit:0,f:900};
+function P(x,y,z){
+ let dx=x-cam.x,dy=y-cam.y,dz=z-cam.z;
+ let c=Math.cos(cam.yaw),s=Math.sin(cam.yaw);
+ let X=dx*c-dz*s,Z=dx*s+dz*c;
+ c=Math.cos(cam.pit);s=Math.sin(cam.pit);
+ let Y=dy*c-Z*s;Z=dy*s+Z*c;
+ if(Z<1)return null;
+ return [W/2+X/Z*cam.f,H/2-Y/Z*cam.f,Z];
+}
+function poly(pts,fill){
+ const p=pts.map(a=>P(a[0],a[1],a[2]));if(p.some(a=>!a))return;
+ g.beginPath();p.forEach((a,i)=>i?g.lineTo(a[0],a[1]):g.moveTo(a[0],a[1]));g.closePath();g.fillStyle=fill;g.fill();
+}
+function frame(now){
+ let t=((now-st)/1000)%DUR;
+ draw(t);requestAnimationFrame(frame);
+}
+function draw(t){
+ // timeline: 0-12 pad, countdown, ignition at 12, liftoff 14
+ const lt=t-14, alt=lt>0?Math.pow(lt,2.3)*1.6:0;
+ const dawn=ss(0,40,t);
+ // camera
+ const ang=t*0.04;
+ if(t<22){cam.x=Math.sin(ang*3-0.8)*230;cam.z=-Math.cos(ang*3-0.8)*230;cam.y=30+t*0.5+Math.min(alt*0.15,60)}
+ else{cam.x=-200;cam.z=-260;cam.y=60+alt*0.1}
+ const ty=t<22?40+alt*0.5:alt*0.9+20;
+ cam.yaw=Math.atan2(-cam.x,-cam.z)*-1;
+ // yaw so camera looks at origin
+ cam.yaw=Math.atan2(cam.x,-cam.z)*0+Math.atan2(-cam.x,-cam.z)*-1;
+ cam.yaw=-Math.atan2(-cam.x,-cam.z);
+ const dd=Math.hypot(cam.x,cam.z);
+ cam.pit=-Math.atan2(ty-cam.y,dd)*-1;cam.pit=-Math.atan2(ty-cam.y,dd);
+ cam.f=t<22?900:700;
+ // shake
+ const shake=lt>-2&&lt<10?(1-ss(-2,10,lt))*3+ (lt>-2?2:0)*(lt<4?1:0):0;
+ // sky
+ const hz=H/2+Math.tan(cam.pit)*cam.f;
+ let sg=g.createLinearGradient(0,0,0,hz);
+ const a=ss(0,30,t);
+ const m=(c1,c2)=>`rgb(${c1.map((v,i)=>mix(v,c2[i],a)|0)})`;
+ sg.addColorStop(0,m([8,14,40],[40,70,130]));
+ sg.addColorStop(0.6,m([40,40,80],[230,140,110]));
+ sg.addColorStop(1,m([90,60,90],[255,210,140]));
+ g.fillStyle=sg;g.fillRect(0,0,W,Math.max(hz,0)+1);
+ g.save();g.translate((Math.random()-.5)*shake,(Math.random()-.5)*shake);
+ // stars
+ g.fillStyle='#fff';g.globalAlpha=1-a;
+ for(let i=0;i<120;i++)g.fillRect(rnd(i)*W,rnd(i+9)*Math.max(hz,0)*0.8,1.5,1.5);
+ g.globalAlpha=1;
+ // sun
+ const sx=W*0.75,sy=hz-10-a*50;
+ let sgr=g.createRadialGradient(sx,sy,0,sx,sy,260);
+ sgr.addColorStop(0,'rgba(255,230,170,'+(0.4+a*0.5)+')');sgr.addColorStop(1,'rgba(255,150,80,0)');
+ g.fillStyle=sgr;g.fillRect(0,0,W,H);
+ // sea
+ let og=g.createLinearGradient(0,hz,0,H);
+ og.addColorStop(0,m([60,60,100],[240,170,130]));og.addColorStop(0.15,m([10,25,50],[40,90,120]));og.addColorStop(1,m([3,10,25],[10,40,65]));
+ g.fillStyle=og;g.fillRect(0,hz,W,H-hz+1);
+ // sun glints on water
+ for(let i=0;i<150;i++){
+  const y=hz+Math.pow(rnd(i),2)*(H-hz),w=(8+(y-hz)*0.3)*rnd(i+3);
+  const x=sx+(rnd(i+5)-.5)*(30+(y-hz)*1.2)+Math.sin(t*2+i)*6;
+  g.fillStyle=`rgba(255,220,170,${0.35*a*rnd(i+7)})`;g.fillRect(x-w/2,y,w,1.5);
+ }
+ // wave lines
+ g.strokeStyle='rgba(255,255,255,0.05)';
+ for(let i=0;i<40;i++){const z=20+i*i*2.5;const p=P(0,0,0);
+  const y=P(cam.x,0,cam.z+0)&&hz+ (H-hz)*Math.pow(i/40,1.8);
+  g.beginPath();for(let x=0;x<=W;x+=40)g.lineTo(x,y+Math.sin(x*0.02+t*1.5+i)*(1+i*0.1));g.stroke();}
+ // platform
+ const dk='#4a4f57';
+ poly([[-90,0,-90],[90,0,-90],[90,0,90],[-90,0,90]],'#2b3036');
+ poly([[-90,0,-90],[90,0,-90],[90,12,-90],[-90,12,-90]],'#3b4048');
+ poly([[-90,0,90],[90,0,90],[90,12,90],[-90,12,90]],'#3b4048');
+ poly([[-90,12,-90],[90,12,-90],[90,12,90],[-90,12,90]],dk);
+ // legs
+ for(const[lx,lz]of[[-70,-70],[70,-70],[-70,70],[70,70]])poly([[lx-5,-40,lz],[lx+5,-40,lz],[lx+5,0,lz],[lx-5,0,lz]],'#23272c');
+ // helideck marks
+ for(let i=-2;i<=2;i++)poly([[i*30-2,12.2,-60],[i*30+2,12.2,-60],[i*30+2,12.2,60],[i*30-2,12.2,60]],'rgba(255,200,60,.5)');
+ // tower
+ const tx=-35;
+ for(let k=0;k<12;k++){const y0=12+k*10;
+  poly([[tx-4,y0,-4],[tx+4,y0,-4],[tx+4,y0+2,-4],[tx-4,y0+2,-4]],'#8a4a3a');
+  poly([[tx-4,y0,4],[tx+4,y0,4],[tx+4,y0+2,4],[tx-4,y0+2,4]],'#a65a45');
+  poly([[tx-4,y0,-4],[tx-4,y0,4],[tx-4,y0+10,4],[tx-4,y0+10,-4]],'rgba(120,60,45,.6)');
+ }
+ // arms retract at lt 0
+ const arm=1-ss(-1,0.5,lt);
+ for(let k=3;k<12;k+=3)poly([[tx+4,12+k*10,-1],[tx+4+arm*20,12+k*10,-1],[tx+4+arm*20,12+k*10+2,-1],[tx+4,12+k*10+2,-1]],'#b8bcc2');
+ // lights
+ for(let k=0;k<12;k++){const p=P(tx,14+k*10,4);if(p&&((t*2|0)+k)%2==0){g.fillStyle='rgba(255,50,40,.9)';g.beginPath();g.arc(p[0],p[1],2,0,7);g.fill();}}
+ // rocket
+ const ry=12+alt, R=7;
+ const tilt=lt>6?Math.min((lt-6)*0.004,0.08):0;
+ const rx=Math.sin(tilt)*alt*0.0+ (lt>6?(lt-6)*(lt-6)*1.5:0);
+ const segs=[[0,70,R,'#e8e8ea'],[70,100,R,'#1d1f24'],[100,135,R,'#e8e8ea']];
+ function ring(y,r,n,sh){const o=[];for(let i=0;i<n;i++){const a=i/n*6.283;o.push([rx+Math.cos(a)*r,ry+y,Math.sin(a)*r])}return o}
+ const N=14;
+ const prof=[[0,R],[70,R],[70.1,R],[100,R],[135,R],[150,R*.75],[162,R*.4],[168,0.5]];
+ for(let i=0;i<prof.length-1;i++){
+  const A=ring(prof[i][0],prof[i][1],N),B=ring(prof[i+1][0],prof[i+1][1],N);
+  for(let j=0;j<N;j++){const j2=(j+1)%N;
+   const an=(j+.5)/N*6.283;
+   const lit=0.5+0.5*Math.cos(an-2.2);
+   const base=(prof[i][0]>=70&&prof[i][0]<100)?25:225;
+   const v=base*(0.35+lit*0.65)|0;
+   poly([A[j],A[j2],B[j2],B[j]],`rgb(${v},${v},${v+ (base>100?6:10)})`);
+  }
+ }
+ // fins
+ for(let f=0;f<4;f++){const a=f*1.571+0.78,c=Math.cos(a),s=Math.sin(a);
+  poly([[rx+c*R,ry+2,s*R],[rx+c*(R+9),ry-2,s*(R+9)],[rx+c*(R+9),ry+12,s*(R+9)],[rx+c*R,ry+30,s*R]],'#333840');}
+ // exhaust
+ if(lt>-2.5){
+  const pw=ss(-2.5,0,lt)*(lt>0?1:0.5+0.5*Math.random());
+  const fl=pw*(60+Math.random()*20)*(1+Math.min(lt,10)*.2);
+  const base=P(rx,ry,0),tip=P(rx,ry-fl,0);
+  if(base&&tip){
+   g.globalCompositeOperation='lighter';
+   const rw=R*cam.f/base[2]*1.6;
+   const gr=g.createLinearGradient(0,base[1],0,tip[1]);
+   gr.addColorStop(0,'rgba(255,255,230,1)');gr.addColorStop(0.3,'rgba(255,170,60,.8)');gr.addColorStop(1,'rgba(255,60,0,0)');
+   g.fillStyle=gr;g.beginPath();g.moveTo(base[0]-rw,base[1]);g.lineTo(tip[0],tip[1]);g.lineTo(base[0]+rw,base[1]);g.fill();
+   const gl=g.createRadialGradient(base[0],base[1],0,base[0],base[1],rw*8);
+   gl.addColorStop(0,'rgba(255,170,80,'+0.5*pw+')');gl.addColorStop(1,'rgba(255,100,0,0)');
+   g.fillStyle=gl;g.fillRect(0,0,W,H);
+   g.globalCompositeOperation='source-over';
+  }
+  // smoke
+  for(let i=0;i<160;i++){
+   const age=(t*0.4+rnd(i))%1, lifeStart=lt-age*8;
+   if(lifeStart<-2)continue;
+   const sy=Math.max(12,12+Math.pow(Math.max(lifeStart,0),2.3)*1.6)*1;
+   const sp=age*age*140+10, an=rnd(i+30)*6.283;
+   const p=P(rx*0+Math.cos(an)*sp*(lt<12?1:.4),Math.max(12,sy)+age*10*(1-age)+3,Math.sin(an)*sp*(lt<12?1:.4));
+   if(!p)continue;
+   const rr=(8+age*40)*cam.f/p[2]*1.2;
+   g.fillStyle=`rgba(${235-age*60|0},${215-age*60|0},${200-age*50|0},${0.28*(1-age)*pw})`;
+   g.beginPath();g.arc(p[0],p[1],rr,0,7);g.fill();
+  }
+ }
+ g.restore();
+ // atmosphere haze / vignette
+ const vg=g.createRadialGradient(W/2,H/2,300,W/2,H/2,780);
+ vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(0,0,0,.55)');
+ g.fillStyle=vg;g.fillRect(0,0,W,H);
+ // flash letterbox + HUD
+ g.fillStyle='#000';g.fillRect(0,0,W,50);g.fillRect(0,H-50,W,50);
+ g.fillStyle='#fff';g.font='20px monospace';g.textAlign='left';
+ let lab;
+ if(t<14){const c=Math.ceil(14-t);lab='T-'+String(c).padStart(2,'0')}else lab='T+'+(lt).toFixed(1)+'s';
+ g.fillText(lab,40,34);
+ g.textAlign='right';
+ g.fillText('ALT '+(alt*3.2|0)+' m   VEL '+(lt>0?(Math.pow(lt,1.3)*60|0):0)+' km/h',W-40,34);
+ g.textAlign='center';g.font='18px monospace';g.fillStyle='#ffd9a0';
+ const msg=t<5?'OCEAN PLATFORM ARIES — DAWN LAUNCH WINDOW':t<12?'FINAL COUNTDOWN — FUELING COMPLETE':t<14?'IGNITION SEQUENCE START':t<22?'LIFTOFF — TOWER CLEAR':t<32?'MAX Q — ASCENT NOMINAL':'STAGE BURN CONTINUES';
+ g.fillText(msg,W/2,H-18);
+ if(t>38){g.fillStyle='rgba(0,0,0,'+(t-38)/2+')';g.fillRect(0,0,W,H)}
+}
+requestAnimationFrame(frame);
+</script></body></html>

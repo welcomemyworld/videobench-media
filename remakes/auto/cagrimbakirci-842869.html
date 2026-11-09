@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>How Evolution Built the Eye</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+const W=1280,H=720,DUR=48;window.DUR=DUR;
+const cv=document.getElementById('c'),g=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/W,innerHeight/H);cv.style.width=W*s+'px';cv.style.height=H*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)*1000;const t0=performance.now()-off;
+// scene: a procedural world (sun, tree, figure) sampled to compute retina images
+function scene(x,y,T){ // x,y in [-1,1], returns brightness rgb
+  let r=0.08,gg=0.12,b=0.25+0.2*(1-y);
+  if(y>0.3){r=0.12;gg=0.3;b=0.1;}
+  const sx=0.5+0.15*Math.sin(T*0.5),sy=-0.5;
+  const d=Math.hypot(x-sx,y-sy);if(d<0.18){r=1;gg=0.9;b=0.5;}
+  // tree
+  if(Math.abs(x+0.5)<0.05&&y>-0.05&&y<0.35){r=0.35;gg=0.2;b=0.1;}
+  if(Math.hypot(x+0.5,y+0.15)<0.25){r=0.1;gg=0.5;b=0.15;}
+  // moving figure (predator)
+  const fx=-0.1+0.3*Math.sin(T*0.8);
+  if(Math.hypot(x-fx,y+0.05)<0.08||(Math.abs(x-fx)<0.06&&y>0&&y<0.3)){r=0.85;gg=0.3;b=0.2;}
+  return [r,gg,b];
+}
+// compute retina image given blur radius (aperture) and lens flag
+const RES=48;const img=g.createImageData(RES,RES);const tc=document.createElement('canvas');tc.width=tc.height=RES;const tg=tc.getContext('2d');
+function retina(mode,blur,T,cx,cy,size){
+  // mode0: flat patch - average light only
+  let avg=null;
+  if(mode===0){avg=[0,0,0];let n=0;for(let i=0;i<10;i++)for(let j=0;j<10;j++){const s=scene(i/4.5-1,j/4.5-1,T);avg[0]+=s[0];avg[1]+=s[1];avg[2]+=s[2];n++;}avg=avg.map(v=>v/n);}
+  const samples=mode===0?1:9;
+  for(let j=0;j<RES;j++)for(let i=0;i<RES;i++){
+    let u=(i/(RES-1))*2-1,v=(j/(RES-1))*2-1;let c=[0,0,0];
+    if(mode===0){const f=mode===0?(0.6+0.4*(1-(u+1)/2*0.3)):1;c=avg.map(a=>a*f);}
+    else{
+      // image is inverted through aperture
+      for(let k=0;k<samples;k++){const a=k*2.4,rr=blur*Math.sqrt(k/samples);
+        const s=scene(-u+rr*Math.cos(a),-v+rr*Math.sin(a),T);c[0]+=s[0];c[1]+=s[1];c[2]+=s[2];}
+      const dim=mode===2?Math.min(1,0.25+blur*1.5):1;c=c.map(x=>x/samples*dim);
+      if(mode===1){ // cup: directional sensitivity only - strongly blurred halves
+      }
+    }
+    const p=(j*RES+i)*4;img.data[p]=c[0]*255;img.data[p+1]=c[1]*255;img.data[p+2]=c[2]*255;img.data[p+3]=255;
+  }
+  tg.putImageData(img,0,0);
+  g.save();g.beginPath();g.arc(cx,cy,size/2,0,7);g.clip();g.imageSmoothingEnabled=true;
+  g.drawImage(tc,cx-size/2,cy-size/2,size,size);g.restore();
+  g.strokeStyle='#888';g.lineWidth=2;g.beginPath();g.arc(cx,cy,size/2,0,7);g.stroke();
+}
+const stages=[
+ {t:0,title:"How Evolution Built the Eye",sub:"Every retina image here is computed by tracing light from the scene",mode:0,blur:2,cup:0},
+ {t:6,title:"1. Light-sensitive patch",sub:"Flat cells sense only light vs. dark — no direction, no image",mode:0,blur:2,cup:0},
+ {t:13,title:"2. The cup",sub:"Folding inward reveals which way light comes from",mode:1,blur:0.9,cup:0.4},
+ {t:20,title:"3. The pinhole",sub:"A narrow opening forms an image — sharp but dim (Nautilus)",mode:2,blur:0.12,cup:0.9},
+ {t:28,title:"4. Sealed with fluid",sub:"Transparent cover protects the chamber; aperture stays small",mode:2,blur:0.08,cup:0.95},
+ {t:35,title:"5. The lens",sub:"A lens bends light: wide aperture AND sharp focus",mode:3,blur:0.015,cup:1},
+ {t:42,title:"Evolved independently 40+ times",sub:"Nature many-shotted the eye — one small improvement at a time",mode:3,blur:0.015,cup:1}];
+function lerp(a,b,k){return a+(b-a)*k}
+function ease(k){return k<0?0:k>1?1:k*k*(3-2*k)}
+function drawEye(cup,ap,lens,fluid,T){
+  const cx=400,cy=400,R=170;
+  // light rays from figure
+  const ang=Math.PI*cup*0.85; // half-angle of cup opening extent
+  g.save();
+  // rays
+  const fy=cy-60+20*Math.sin(T*0.8);
+  for(let i=-3;i<=3;i++){
+    const oy=cy+i*ap*R*0.3;
+    g.strokeStyle=`rgba(255,200,120,${0.25})`;g.lineWidth=1.5;g.beginPath();g.moveTo(40,fy+i*14);
+    g.lineTo(cx-R*Math.cos(ang*0)+(cup>0?R*(1-cup)*0.0:0),oy);
+    const tx=cx+R*0.95,ty=cy+(lens?60:60+i*(ap*80))-(fy-cy)*0.5;
+    g.lineTo(cx+R*Math.cos(Math.PI-ang)*-1>0?tx:tx,lens?cy+40:ty);g.stroke();
+  }
+  // retina cup arc
+  const half=Math.PI-ang*0.0;
+  const a0=Math.PI-(Math.PI-ang)*0, sweep=lerp(0.35,Math.PI-0.15-ap*0.6,cup);
+  if(cup<0.05){g.fillStyle='#c0405a';g.fillRect(cx+R*0.6,cy-130,24,260);}
+  else{
+    g.lineWidth=26;g.strokeStyle='#c0405a';g.beginPath();g.arc(cx,cy,R,-sweep,sweep);g.stroke();
+    g.lineWidth=8;g.strokeStyle='#5a1a2a';g.beginPath();g.arc(cx,cy,R+17,-sweep,sweep);g.stroke();
+  }
+  if(fluid>0){g.fillStyle=`rgba(120,180,255,${0.15*fluid})`;g.beginPath();g.arc(cx,cy,R-13,0,7);g.fill();
+    g.strokeStyle=`rgba(180,220,255,${0.5*fluid})`;g.lineWidth=3;g.beginPath();g.arc(cx,cy,R+5,Math.PI-(Math.PI-sweep),Math.PI+(Math.PI-sweep));g.stroke();}
+  if(lens>0){g.fillStyle=`rgba(200,230,255,${0.6*lens})`;g.beginPath();g.ellipse(cx-R+35,cy,22*lens,60,0,0,7);g.fill();}
+  g.restore();
+  g.fillStyle='#aaa';g.font='16px sans-serif';g.textAlign='center';g.fillText('cross-section',cx,cy+R+50);
+}
+function frame(){
+  const T=((performance.now()-t0)/1000)%DUR;
+  let si=0;for(let i=0;i<stages.length;i++)if(T>=stages[i].t)si=i;
+  const s=stages[si],p=stages[Math.max(0,si-1)];const k=ease((T-s.t)/1.5);
+  g.fillStyle='#05070d';g.fillRect(0,0,W,H);
+  const gr=g.createRadialGradient(640,360,50,640,360,800);gr.addColorStop(0,'rgba(40,60,100,0.25)');gr.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=gr;g.fillRect(0,0,W,H);
+  const cup=lerp(p.cup,s.cup,k),blur=lerp(p.blur,s.blur,k),mode=k>0.5?s.mode:p.mode;
+  drawEye(cup,blur,s.mode===3?k:0,si>=4?(si==4?k:1):0,T);
+  // world thumbnail
+  g.fillStyle='#ccc';g.font='16px sans-serif';g.textAlign='center';
+  retina(3,0.0,T,140,170,130);g.fillText('the world',140,255);
+  // retina image
+  retina(mode===3?2:mode,blur,T,1000,390,300);
+  g.fillText('computed retinal image',1000,570);
+  g.fillStyle='#8af';g.font='14px sans-serif';
+  const sharp=mode===0?0:Math.max(0,Math.min(100,100-blur*110)),bright=mode===0?100:mode===1?90:mode===2&&s.mode!==3?Math.round(Math.min(1,0.25+blur*1.5)*100):100;
+  g.fillText(`sharpness ${sharp.toFixed(0)}%   ·   brightness ${bright}%`,1000,595);
+  // titles
+  const fa=Math.min(1,(T-s.t)/0.8);g.globalAlpha=fa;
+  g.fillStyle='#fff';g.font='bold 40px sans-serif';g.textAlign='center';g.fillText(s.title,640,70);
+  g.fillStyle='#bcd';g.font='22px sans-serif';g.fillText(s.sub,640,108);g.globalAlpha=1;
+  // timeline
+  for(let i=1;i<6;i++){const x=340+i*100;g.fillStyle=i<=si?'#c0405a':'#333';g.beginPath();g.arc(x,670,8,0,7);g.fill();}
+  g.fillStyle='#333';g.fillRect(440,668,400,4);g.fillStyle='#c0405a';g.fillRect(440,668,Math.min(400,Math.max(0,(si-1+Math.min(1,(T-s.t)/7))*100)),4);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></body></html>

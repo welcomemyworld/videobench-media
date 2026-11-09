@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>8,144 Marbles</title>
+<style>
+html,body{margin:0;height:100%;background:#000;overflow:hidden}
+#wrap{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform:translate(-50%,-50%);transform-origin:center center}
+canvas{display:block;width:1280px;height:720px;background:#000}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+const canvas=document.getElementById("c"),ctx=canvas.getContext("2d",{alpha:false});
+const wrap=document.getElementById("wrap");
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);wrap.style.transform="translate(-50%,-50%) scale("+s+")";}
+addEventListener("resize",fit);fit();
+const RAW="India 1442|China 1425|United States 345|Indonesia 283|Pakistan 251|Nigeria 233|Brazil 212|Bangladesh 174|Russia 144|Ethiopia 132|Mexico 131|Japan 124|Philippines 116|Egypt 114|DR Congo 109|Vietnam 101|Iran 92|Turkey 87|Germany 85|Thailand 72|United Kingdom 69|Tanzania 69|France 67|South Africa 64|Italy 59|Kenya 56|Myanmar 55|Colombia 53|South Korea 52|Sudan 50|Uganda 50|Spain 48|Algeria 47|Argentina 46|Iraq 46|Afghanistan 43|Canada 40|Poland 38|Morocco 38|Ukraine 38|Angola 37|Uzbekistan 36|Malaysia 36|Mozambique 35|Ghana 34|Peru 34|Yemen 34|Madagascar 32|Côte d'Ivoire 31|Nepal 31|Cameroon 29|Australia 27|Niger 27|North Korea 26|Syria 24|Taiwan 23|Mali 23|Burkina Faso 23|Sri Lanka 22|Malawi 22|Zambia 21|Kazakhstan 21|Chile 20|Romania 19|Guatemala 18|Senegal 18|Chad 18|Somalia 18|Netherlands 18|Ecuador 18|Cambodia 17|Zimbabwe 17|Guinea 15|Benin 14|Rwanda 14|Burundi 14|Tunisia 12|Bolivia 12|Belgium 12|Haiti 12|Jordan 12|Czechia 11|South Sudan 11|Cuba 11|Dominican Rep. 11|Sweden 11|Honduras 11|Greece 10|Azerbaijan 10|Portugal 10|Hungary 10|Tajikistan 10|United Arab Emirates 10|Papua New Guinea 10|Belarus 9|Austria 9|Switzerland 9|Israel 9|Togo 9|Sierra Leone 9|Laos 8|Hong Kong 8|Serbia 7|Libya 7|Kyrgyzstan 7|Nicaragua 7|Paraguay 7|Turkmenistan 7|Bulgaria 7|El Salvador 6|Congo 6|Singapore 6|Denmark 6|Finland 6|Norway 6|Central African Rep. 6|Slovakia 5|Oman 5|Palestine 5|Costa Rica 5|Liberia 5|Ireland 5|New Zealand 5|Mauritania 5|Panama 4|Kuwait 4|Croatia 4|Georgia 4|Eritrea 4|Uruguay 3|Bosnia 3|Mongolia 3|Armenia 3|Jamaica 3|Albania 3|Lithuania 3|Qatar 3|Namibia 3|Gambia 3|Botswana 3|Puerto Rico 3|Gabon 2|Lesotho 2|Slovenia 2|Guinea-Bissau 2|Latvia 2|North Macedonia 2|Kosovo 2|Bahrain 2|Eq. Guinea 2|Trinidad & Tobago 2|Estonia 1|Timor-Leste 1|Mauritius 1|Cyprus 1|Eswatini 1|Djibouti 1|Fiji 1|Comoros 1|Guyana 1|Bhutan 1|Solomon Islands 1|Luxembourg 1|Montenegro 1|Suriname 1|Cabo Verde 1|Malta 1|Maldives 1|Macao 1";
+const PAL=["#e23b3b","#f0a020","#f2d23a","#8fd14a","#2fbf78","#3dcec4","#4aa3f0","#3d5bdb","#8b5cf6","#e25cae","#f07848","#d7c4a3"];
+const C=[];
+let sum=0;
+for(const part of RAW.split("|")){
+  const i=part.lastIndexOf(" ");
+  const n=+part.slice(i+1), name=part.slice(0,i);
+  let h=0; for(let k=0;k<name.length;k++) h=(h*33+name.charCodeAt(k))>>>0;
+  C.push({name,n,col:h%12,t0:0,t1:0,acc:0,spawned:0});
+  sum+=n;
+}
+let diff=8144-sum;
+if(diff>0){let h=0; const name="Other nations"; for(let k=0;k<name.length;k++) h=(h*33+name.charCodeAt(k))>>>0; C.push({name,n:diff,col:h%12,t0:0,t1:0,acc:0,spawned:0});}
+else {for(let i=C.length-1;i>=0&&diff<0;i--){const cut=Math.min(C[i].n,-diff); C[i].n-=cut; diff+=cut;}}
+let cursor=0.55;
+for(const c of C){
+  if(c.n<=0){c.t0=c.t1=cursor; continue;}
+  c.t0=cursor;
+  c.t1=cursor+Math.max(0.05,c.n/880);
+  cursor=c.t1+(c.n>=40?0.16:c.n>=12?0.04:0);
+}
+const DROP_END=cursor;
+window.DUR=Math.max(20,Math.min(48,DROP_END+9));
+const MAX=8200,R=3.15,FLOOR=692,LEFT=48,RIGHT=1232;
+const x=new Float32Array(MAX),y=new Float32Array(MAX),vx=new Float32Array(MAX),vy=new Float32Array(MAX);
+const rest=new Uint8Array(MAX),col=new Uint8Array(MAX),asleep=new Uint8Array(MAX);
+const GS=8,GW=160,GH=92,head=new Int32Array(GW*GH),next=new Int32Array(MAX);
+let N=0,ci=0,sim=0,last=0,seekLeft=0,label="",labelN=0,labelT=0,impacts;
+const tParam=parseFloat(new URLSearchParams(location.search).get("t"));
+if(tParam>0) seekLeft=tParam%window.DUR;
+let actx,master,voices=0;
+function audio(){
+  if(!actx){const AC=window.AudioContext||window.webkitAudioContext; if(!AC) return null; actx=new AC(); master=actx.createGain(); master.gain.value=0.55; master.connect(actx.destination);}
+  if(actx.state==="suspended") actx.resume();
+  return actx;
+}
+addEventListener("pointerdown",()=>audio());
+function clink(imp,px,hard){
+  if(seekLeft>0||imp<55) return;
+  const a=audio(); if(!a||voices>10) return;
+  voices++;
+  const t=a.currentTime, vol=Math.min(0.35,imp/2200)*(hard?1:0.7);
+  const o=a.createOscillator(), g=a.createGain(), p=a.createStereoPanner();
+  const f=hard?90+Math.min(imp*0.15,80):520+Math.min(imp*1.1,1700);
+  o.type=hard?"sine":"triangle";
+  o.frequency.setValueAtTime(f,t);
+  o.frequency.exponentialRampToValueAtTime(Math.max(40,f*0.45),t+0.06);
+  g.gain.setValueAtTime(vol,t);
+  g.gain.exponentialRampToValueAtTime(0.001,t+(hard?0.09:0.055));
+  p.pan.value=Math.max(-1,Math.min(1,(px/1280)*2-1));
+  o.connect(g); g.connect(p); p.connect(master);
+  o.start(t); o.stop(t+0.1);
+  o.onended=()=>{voices--;};
+}
+function reset(){
+  N=0; ci=0; sim=0; label=""; labelN=0; labelT=0;
+  for(const c of C){c.acc=0; c.spawned=0;}
+}
+function addMarble(c){
+  if(N>=MAX) return;
+  const i=N++;
+  const spout=640+Math.sin(sim*0.85)*340+Math.sin(sim*2.3)*40;
+  x[i]=spout+(Math.random()-0.5)*36;
+  y[i]=-8-Math.random()*16;
+  vx[i]=(Math.random()-0.5)*40;
+  vy[i]=30+Math.random()*70;
+  col[i]=c.col; asleep[i]=0; rest[i]=0;
+}
+function cellOf(px,py){
+  let cx=px/GS|0, cy=py/GS|0;
+  if(cx<0)cx=0; else if(cx>=GW)cx=GW-1;
+  if(cy<0)cy=0; else if(cy>=GH)cy=GH-1;
+  return cy*GW+cx;
+}
+function step(dt){
+  sim+=dt;
+  while(ci<C.length){
+    const c=C[ci];
+    if(sim<c.t0) break;
+    if(c.n>0){
+      const dur=Math.max(0.001,c.t1-c.t0);
+      c.acc+=(c.n/dur)*dt;
+      let guard=0;
+      while(c.acc>=1&&c.spawned<c.n&&guard++<40){c.acc-=1; c.spawned++; addMarble(c); label=c.name; labelN=c.n; labelT=sim;}
+    }
+    if(sim>=c.t1&&c.spawned>=c.n) ci++; else break;
+  }
+  const g=2100*dt;
+  for(let i=0;i<N;i++){
+    if(asleep[i]) continue;
+    vy[i]+=g; vx[i]*=0.999;
+    x[i]+=vx[i]*dt; y[i]+=vy[i]*dt;
+    if(x[i]<LEFT+R){x[i]=LEFT+R; if(vx[i]<0){impacts.push(Math.abs(vx[i]),x[i],1); vx[i]*=-0.28;}}
+    else if(x[i]>RIGHT-R){x[i]=RIGHT-R; if(vx[i]>0){impacts.push(Math.abs(vx[i]),x[i],1); vx[i]*=-0.28;}}
+    if(y[i]>FLOOR-R){y[i]=FLOOR-R; if(vy[i]>0){impacts.push(vy[i],x[i],1); vy[i]*=-0.22; vx[i]*=0.72;}}
+  }
+  for(let pass=0;pass<2;pass++){
+    head.fill(-1);
+    for(let i=0;i<N;i++){const c=cellOf(x[i],y[i]); next[i]=head[c]; head[c]=i;}
+    for(let i=0;i<N;i++){
+      const cx0=x[i]/GS|0, cy0=y[i]/GS|0;
+      for(let oy=-1;oy<=1;oy++) for(let ox=-1;ox<=1;ox++){
+        const gx=cx0+ox, gy=cy0+oy;
+        if(gx<0||gy<0||gx>=GW||gy>=GH) continue;
+        let j=head[gy*GW+gx];
+        while(j!==-1){
+          if(j>i){
+            const dx=x[j]-x[i], dy=y[j]-y[i], min=R*2;
+            const d2=dx*dx+dy*dy;
+            if(d2<min*min&&d2>0.0001){
+              const d=Math.sqrt(d2), nx=dx/d, ny=dy/d, overlap=min-d;
+              const si=asleep[i], sj=asleep[j];
+              if(!(si&&sj)){
+                const rv=(vx[j]-vx[i])*nx+(vy[j]-vy[i])*ny;
+                if(rv<0){
+                  const e=0.32, jimp=-(1+e)*rv*(si||sj?1:0.5);
+                  if(!si){vx[i]-=jimp*nx; vy[i]-=jimp*ny;}
+                  if(!sj){vx[j]+=jimp*nx; vy[j]+=jimp*ny;}
+                  if(pass===0) impacts.push(-rv,(x[i]+x[j])*0.5,0);
+                }
+                const corr=overlap*(si||sj?1:0.5);
+                if(!si){x[i]-=nx*corr*(sj?1:0.5); y[i]-=ny*corr*(sj?1:0.5);}
+                if(!sj){x[j]+=nx*corr*(si?1:0.5); y[j]+=ny*corr*(si?1:0.5);}
+                if(ny>0.45) rest[i]=1;
+                if(ny<-0.45) rest[j]=1;
+              }
+            }
+          }
+          j=next[j];
+        }
+      }
+    }
+  }
+  for(let i=0;i<N;i++){
+    if(asleep[i]) continue;
+    const sp=vx[i]*vx[i]+vy[i]*vy[i];
+    const supported=y[i]>FLOOR-R-1.2||rest[i];
+    if(supported&&sp<140) asleep[i]=1;
+    rest[i]=0;
+  }
+}
+function comma(n){return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g,",");}
+function frame(now){
+  requestAnimationFrame(frame);
+  if(!last) last=now;
+  let dt=Math.min(0.05,(now-last)/1000); last=now;
+  if(seekLeft>0){
+    let guard=0;
+    while(seekLeft>0&&guard++<8){const h=Math.min(1/60,seekLeft); impacts=[]; step(h); seekLeft-=h;}
+  }
+  impacts=[];
+  const sub=dt>1/90?2:1;
+  for(let s=0;s<sub;s++) step(dt/sub);
+  if(sim>=window.DUR) reset();
+  let best=-1,bx=0,bh=0, nBest=0;
+  for(let k=0;k<impacts.length;k+=3){
+    if(impacts[k]>best){best=impacts[k]; bx=impacts[k+1]; bh=impacts[k+2];}
+    if(impacts[k]>180) nBest++;
+  }
+  if(best>0) clink(best,bx,bh);
+  if(nBest>3 && best>0) clink(best*0.55,bx+40,0);
+  ctx.fillStyle="#07080d"; ctx.fillRect(0,0,1280,720);
+  const g=ctx.createRadialGradient(640,520,40,640,480,760);
+  g.addColorStop(0,"#161a28"); g.addColorStop(1,"#05060a");
+  ctx.fillStyle=g; ctx.fillRect(0,0,1280,720);
+  ctx.fillStyle="#12141c"; ctx.fillRect(LEFT-8,FLOOR,RIGHT-LEFT+16,18);
+  ctx.fillStyle="#2a3144"; ctx.fillRect(LEFT-8,FLOOR,RIGHT-LEFT+16,3);
+  for(let i=0;i<N;i++){
+    ctx.fillStyle=PAL[col[i]];
+    ctx.beginPath(); ctx.arc(x[i],y[i],R,0,6.2832); ctx.fill();
+  }
+  ctx.fillStyle="rgba(255,255,255,0.62)";
+  for(let i=0;i<N;i++){ if(asleep[i]&&(i&3)) continue; ctx.beginPath(); ctx.arc(x[i]-0.9,y[i]-1.05,1.15,0,6.2832); ctx.fill(); }
+  ctx.fillStyle="rgba(0,0,0,0.45)";
+  ctx.fillRect(0,0,1280,108);
+  ctx.fillStyle="#f4f1ea"; ctx.font="700 34px Georgia, serif"; ctx.fillText("A World of Marbles",36,46);
+  ctx.font="16px sans-serif"; ctx.fillStyle="#c8c2b4";
+  ctx.fillText("1 marble  =  1 million people    ·    2024 populations",36,74);
+  ctx.textAlign="right"; ctx.fillStyle="#fff"; ctx.font="700 28px sans-serif";
+  ctx.fillText(comma(N)+"  /  8,144",1244,48);
+  ctx.font="14px sans-serif"; ctx.fillStyle="#b7b1a4"; ctx.fillText("marbles dropped",1244,70);
+  ctx.textAlign="left";
+  const show=sim-labelT<Math.max(0.35,(C.find(c=>c.name===label)?.t1||0)-(C.find(c=>c.name===label)?.t0||0)+0.05);
+  if(label&&sim<DROP_END+0.4){
+    ctx.fillStyle="rgba(8,10,16,0.72)";
+    const tw=Math.min(900,ctx.measureText?0:0);
+    ctx.font="700 42px Georgia, serif";
+    const w=ctx.measureText(label).width;
+    ctx.fillRect(640-w/2-24,118,w+48,78);
+    ctx.textAlign="center"; ctx.fillStyle="#fff"; ctx.fillText(label,640,162);
+    ctx.font="18px sans-serif"; ctx.fillStyle="#e7d7a8";
+    ctx.fillText(comma(labelN)+" million",640,186);
+    ctx.textAlign="left";
+  }
+  if(sim>DROP_END+0.4){
+    const a=Math.min(1,(sim-DROP_END-0.4)/0.8);
+    ctx.globalAlpha=a; ctx.textAlign="center";
+    ctx.fillStyle="rgba(8,10,16,0.78)"; ctx.fillRect(300,118,680,92);
+    ctx.fillStyle="#fff"; ctx.font="700 32px Georgia, serif";
+    ctx.fillText("8.144 billion people",640,158);
+    ctx.font="18px sans-serif"; ctx.fillStyle="#e7d7a8";
+    ctx.fillText("Every clink is a collision. Every marble is a million lives.",640,188);
+    ctx.globalAlpha=1; ctx.textAlign="left";
+  }
+  const p=Math.min(1,N/8144);
+  ctx.fillStyle="#1c2030"; ctx.fillRect(48,706,1184,6);
+  ctx.fillStyle="#e7d7a8"; ctx.fillRect(48,706,1184*p,6);
+}
+reset();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Psychedelic Motion Showreel</title>
+<style>
+  body {
+    margin: 0; padding: 0; background: #000;
+    width: 100vw; height: 100vh;
+    display: flex; justify-content: center; align-items: center;
+    overflow: hidden;
+  }
+  #stage {
+    width: 1280px; height: 720px;
+    background: #000; position: relative;
+    box-shadow: 0 0 50px rgba(0,0,0,0.9);
+    transform-origin: center;
+  }
+  canvas { display: block; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="c" width="1280" height="720"></canvas>
+</div>
+<script>
+  window.DUR = 20;
+
+  const stage = document.getElementById('stage');
+  function resize() {
+    const s = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+    stage.style.transform = `scale(${s})`;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const W = 1280, H = 720;
+  const ctx = document.getElementById('c').getContext('2d', {alpha: false});
+
+  const urlParams = new URLSearchParams(window.location.search);
+  let tOffset = parseFloat(urlParams.get('t'));
+  if (isNaN(tOffset)) tOffset = 0;
+  let startTime = performance.now() - tOffset * 1000;
+
+  const ease = {
+    outExpo: x => x===1?1:1-Math.pow(2,-10*x),
+    outQuint: x => 1-Math.pow(1-x,5),
+    inOutCubic: x => x<0.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2,
+    outElastic: x => {
+      const c4=(2*Math.PI)/3;
+      return x===0?0:x===1?1:Math.pow(2,-10*x)*Math.sin((x*10-0.75)*c4)+1;
+    }
+  };
+
+  function inOutAlpha(t, inT, outT, fade=0.2) {
+    if(t < inT || t > outT) return 0;
+    return Math.max(0, Math.min(1, (t-inT)/fade, (outT-t)/fade));
+  }
+
+  function drawTxt(txt, x, y, size, color, ls=0, align='center', alpha=1, shadow=0, scol='#fff') {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.font = `900 ${size}px "Arial Black", Impact, sans-serif`;
+    ctx.letterSpacing = ls + 'px';
+    ctx.textAlign = align;
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = color;
+    if (shadow) { ctx.shadowBlur = shadow; ctx.shadowColor = scol; }
+    let cx = x;
+    if (align === 'center') cx += ls / 2;
+    ctx.fillText(txt, cx, y);
+    ctx.restore();
+  }
+
+  function bg(c1, c2) {
+    let g = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, 800);
+    g.addColorStop(0, c1);
+    g.addColorStop(1, c2);
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  function act1(t) {
+    bg('#100020', '#000000');
+    ctx.globalCompositeOperation = 'screen';
+    ctx.lineCap = 'round';
+    
+    for(let i=0; i<120; i++) {
+      let z = ((i * 12 - t * 800) % 1200 + 1200) % 1200 + 20;
+      let s = 500 / z;
+      ctx.beginPath();
+      for(let j=0; j<=36; j++) {
+        let a = j * Math.PI*2/36 + z*0.003 + t;
+        let r = 250 + Math.sin(a*4 + t*3)*50;
+        let x = W/2 + Math.cos(a)*r*s;
+        let y = H/2 + Math.sin(a)*r*s;
+        if(j===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      }
+      let hue = (t*60 + i*2) % 360;
+      ctx.strokeStyle = `hsla(${hue}, 100%, 65%, ${Math.min(1, 200/z)})`;
+      ctx.lineWidth = Math.max(0.5, 3*s);
+      ctx.stroke();
+    }
+    
+    for(let k=0; k<60; k++) {
+      let pz = ((k*23 - t*500)%1000 + 1000)%1000 + 10;
+      let ps = 500/pz;
+      let pa = k*1.3 + t;
+      let pr = 100 + (k%5)*60;
+      let px = W/2 + Math.cos(pa)*pr*ps;
+      let py = H/2 + Math.sin(pa)*pr*ps;
+      ctx.fillStyle = `rgba(255,255,255,${1-pz/1000})`;
+      ctx.beginPath(); ctx.arc(px,py, 2.5*ps, 0, 7); ctx.fill();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+
+    let a1 = inOutAlpha(t, 0, 1.3, 0.2);
+    if(a1 > 0) {
+      let p = Math.min(1, t/0.6);
+      let e = ease.outExpo(p);
+      let sz = 140 + (1-e)*260;
+      let ls = 10 + (1-e)*150;
+      drawTxt("MOTION", W/2, H/2, sz, '#fff', ls, 'center', a1);
+    }
+
+    let a2 = inOutAlpha(t, 1.1, 2.4, 0.2);
+    if(a2 > 0) {
+      let p = Math.min(1, (t-1.1)/0.6);
+      let e = ease.outQuint(p);
+      let ox = (1-e)*Math.sin(t*50)*50;
+      ctx.globalCompositeOperation = 'screen';
+      drawTxt("DESIGN", W/2 + ox, H/2, 120, '#0ff', 20, 'center', a2);
+      drawTxt("DESIGN", W/2 - ox, H/2, 120, '#f0f', 20, 'center', a2);
+      ctx.globalCompositeOperation = 'source-over';
+    }
+
+    let a3 = inOutAlpha(t, 2.2, 3.9, 0.3);
+    if(a3 > 0) {
+      let p = Math.min(1, (t-2.2)/0.8);
+      let e = ease.outExpo(p);
+      let sc = 0.2 + e*2.0;
+      ctx.save();
+      ctx.translate(W/2, H/2);
+      ctx.scale(sc, sc);
+      drawTxt("SHOWREEL", 0, 0, 100, '#fff', 30 + (1-e)*20, 'center', a3);
+      ctx.restore();
+    }
+  }
+
+  function act2(t) {
+    bg('#050011', '#000000');
+    ctx.globalCompositeOperation = 'lighter';
+    
+    let beat = Math.pow(1 - (t%0.5)/0.5, 3);
+    ctx.lineWidth = 2;
+    let colors = ['#ff0055', '#00ffcc', '#ffee00'];
+    let offsets = [[-8*beat, 0], [8*beat, 0], [0, 8*beat]];
+    
+    for(let c=0; c<3; c++) {
+      ctx.strokeStyle = colors[c];
+      let ox = offsets[c][0], oy = offsets[c][1];
+      for(let x=-100; x<=W+100; x+=40) {
+        ctx.beginPath();
+        for(let y=0; y<=H; y+=20) {
+          let dx = Math.sin(y*0.01 + t*4 + c*0.1)*60 + Math.cos(x*0.005 - t*3)*40;
+          let dy = Math.cos(x*0.01 + t*3)*40;
+          let px = x + dx + ox, py = y + dy + oy;
+          if(y===0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      }
+      for(let y=-100; y<=H+100; y+=40) {
+        ctx.beginPath();
+        for(let x=0; x<=W; x+=20) {
+          let dx = Math.sin(y*0.01 + t*4)*40;
+          let dy = Math.cos(x*0.01 + t*3 + c*0.1)*60 + Math.sin(y*0.005 - t*2)*40;
+          let px = x + dx + ox, py = y + dy + oy;
+          if(x===0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      }
+    }
+    
+    let r = 100 + beat*150;
+    let grd = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, r);
+    grd.addColorStop(0, 'rgba(255,255,255,0.8)');
+    grd.addColorStop(0.2, 'rgba(255,0,100,0.5)');
+    grd.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = grd;
+    ctx.beginPath(); ctx.arc(W/2, H/2, r, 0, Math.PI*2); ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+    
+    let a1 = inOutAlpha(t, 0.5, 2.6, 0.3);
+    if(a1 > 0) {
+      let p = Math.min(1, (t-0.5)/0.5);
+      let e = ease.outElastic(p);
+      ctx.save();
+      ctx.translate(W/2, H/2);
+      ctx.scale(e, e);
+      drawTxt("PSYCHEDELIC", 0, 0, 90, '#fff', 15, 'center', a1, 40, '#f0f');
+      ctx.restore();
+    }
+    
+    let a2 = inOutAlpha(t, 2.5, 3.9, 0.3);
+    if(a2 > 0) {
+      let p = Math.min(1, (t-2.5)/0.5);
+      let e = ease.outQuint(p);
+      for(let i=0; i<4; i++) {
+        ctx.save();
+        ctx.translate(W/2, H/2);
+        ctx.rotate(i * Math.PI/2 + t*0.5);
+        ctx.scale(1, i%2===0?1:-1);
+        drawTxt("HYPNOTIC", 0, -180*e, 50, '#0ff', 30, 'center', a2*0.7, 15, '#0ff');
+        ctx.restore();
+      }
+      drawTxt("HYPNOTIC", W/2, H/2, 80, '#fff', 10, 'center', a2, 20, '#000');
+    }
+  }
+
+  function act3(t) {
+    bg('#1a0a00', '#000000');
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+    
+    for(let i=0; i<60; i++) {
+      let z = (i - 30) * 15;
+      let rx = t*0.8 + i*0.06;
+      let ry = t*0.5 + i*0.04;
+      let r = 250 + Math.sin(i*0.2 + t*4)*80;
+      let hue = (i*5 + t*40) % 360;
+      
+      ctx.strokeStyle = `hsla(${hue}, 100%, 60%, 0.7)`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      for(let a=0; a<=Math.PI*2+0.1; a+=0.2) {
+        let px = Math.cos(a)*r;
+        let py = Math.sin(a)*r;
+        let pz = 0;
+        let y1 = py*Math.cos(rx) - pz*Math.sin(rx);
+        let z1 = py*Math.sin(rx) + pz*Math.cos(rx);
+        let x2 = px*Math.cos(ry) + z1*Math.sin(ry);
+        let z2 = -px*Math.sin(ry) + z1*Math.cos(ry);
+        let pers = 600 / (600 + z + z2);
+        let sx = W/2 + x2 * pers;
+        let sy = H/2 + y1 * pers;
+        if(a===0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+      }
+      ctx.stroke();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    
+    let at = inOutAlpha(t, 0, 4.0, 0.3);
+    if(at > 0) {
+      let p = Math.min(1, t/1.0);
+      let e = ease.outExpo(p);
+      let sz = 40 + e * 100;
+      let txtX = W/2 + Math.sin(t*1.5)*30;
+      let txtY = H/2 + Math.cos(t*1.5)*20;
+      let shake = Math.max(0, 1 - t*4) * 15;
+      let sx = Math.sin(t*150)*shake, sy = Math.cos(t*130)*shake;
+      
+      for(let i=10; i>0; i--) {
+        let ix = txtX + sx + Math.sin(t*2)*i*4;
+        let iy = txtY + sy + Math.cos(t*2)*i*4;
+        drawTxt("KINETIC", ix, iy, sz, `rgba(255, 100, 0, ${0.15/i})`, 10, 'center', at);
+      }
+      drawTxt("KINETIC", txtX + sx, txtY + sy, sz, '#fff', 10, 'center', at, 20, '#ffaa00');
+    }
+    
+    let as = inOutAlpha(t, 1.0, 4.0, 0.5);
+    if(as > 0) drawTxt("3D / SPATIAL / DYNAMICS", W/2, H/2 + 100, 20, '#fff', 15, 'center', as);
+  }
+
+  function act4(t) {
+    bg('#000a14', '#000000');
+    ctx.globalCompositeOperation = 'screen';
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    
+    ctx.save();
+    ctx.translate(W/2, H/2);
+    ctx.scale(1 + t*0.05, 1 + t*0.05);
+    ctx.translate(-W/2, -H/2);
+    
+    ctx.lineWidth = 1.5;
+    for(let i=0; i<250; i++) {
+      ctx.beginPath();
+      let hue = (200 + i*0.5 + t*30) % 360;
+      ctx.strokeStyle = `hsla(${hue}, 100%, 65%, 0.4)`;
+      for(let j=0; j<40; j++) {
+        let tt = t*1.5 + j*0.03 - i*0.015;
+        let x = W/2 + Math.sin(tt*1.2 + i*0.1)*500 + Math.cos(tt*0.5 - i*0.05)*200;
+        let y = H/2 + Math.cos(tt*1.1 + i*0.1)*350 + Math.sin(tt*0.6 + i*0.08)*150;
+        if(j===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      }
+      ctx.stroke();
+      let headT = t*1.5 - i*0.015;
+      let hx = W/2 + Math.sin(headT*1.2 + i*0.1)*500 + Math.cos(headT*0.5 - i*0.05)*200;
+      let hy = H/2 + Math.cos(headT*1.1 + i*0.1)*350 + Math.sin(headT*0.6 + i*0.08)*150;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(hx, hy, 2, 0, 7); ctx.fill();
+    }
+    ctx.restore();
+    ctx.globalCompositeOperation = 'source-over';
+    
+    let at = inOutAlpha(t, 0, 4.0, 0.3);
+    if(at > 0) {
+      ctx.save();
+      let e = ease.outQuint(Math.min(1, t/1.5));
+      ctx.translate(W/2, H/2);
+      ctx.rotate(Math.sin(t)*0.05);
+      ctx.scale(e, e);
+      ctx.globalAlpha = at;
+      ctx.font = '900 180px "Arial Black", Impact, sans-serif';
+      ctx.letterSpacing = '40px';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#0ff';
+      ctx.strokeText("FLOW", 20, 0);
+      ctx.shadowBlur = 20;
+      ctx.shadowColor = '#0ff';
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.lineWidth = 1;
+      ctx.strokeText("FLOW", 20, 0);
+      ctx.restore();
+    }
+    
+    let as = inOutAlpha(t, 2.0, 4.0, 0.5);
+    if(as > 0) drawTxt("ALGORITHMIC ELEGANCE", W/2, H/2 + 120, 16, '#fff', 20, 'center', as);
+  }
+
+  function act5(t) {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0,0,W,H);
+    
+    let beat = Math.pow(1 - (t%0.5)/0.5, 4);
+    
+    ctx.save();
+    ctx.translate(W/2, H/2);
+    
+    for(let i=0; i<100; i++) {
+      let a = (i/100) * Math.PI*2;
+      let r1 = 100 + Math.sin(t*10 + i)*50;
+      let r2 = r1 + 200 + beat*300;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a)*r1, Math.sin(a)*r1);
+      ctx.lineTo(Math.cos(a)*r2, Math.sin(a)*r2);
+      ctx.strokeStyle = `hsla(${t*200 + i*3}, 100%, 60%, ${0.2 + beat*0.5})`;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    
+    ctx.globalCompositeOperation = 'lighter';
+    for(let q=0; q<8; q++) {
+      ctx.save();
+      ctx.rotate(q * Math.PI/4 + t*0.5);
+      if(q%2===1) ctx.scale(1, -1);
+      let s = 1 + beat*0.2;
+      ctx.scale(s, s);
+      
+      ctx.beginPath();
+      ctx.moveTo(0,0);
+      ctx.lineTo(400 + beat*200, 100);
+      ctx.lineTo(300, 300);
+      ctx.closePath();
+      ctx.strokeStyle = `hsla(${t*100 + q*20}, 100%, 60%, 0.8)`;
+      ctx.lineWidth = 4;
+      ctx.stroke();
+      
+      for(let r=100; r<600; r+=100) {
+        ctx.beginPath();
+        ctx.arc(0,0, r + beat*50, 0, Math.PI/4);
+        ctx.strokeStyle = `hsla(${360 - t*100 + r}, 100%, 60%, 0.5)`;
+        ctx.stroke();
+      }
+      ctx.save();
+      ctx.translate(300, 0);
+      ctx.rotate(t*2 + q);
+      ctx.strokeStyle = '#fff';
+      ctx.strokeRect(-30, -30, 60, 60);
+      ctx.restore();
+      
+      ctx.restore();
+    }
+    ctx.restore();
+    ctx.globalCompositeOperation = 'source-over';
+    
+    if(t < 0.5) drawTxt("GO", W/2, H/2, 200+beat*50, '#fff', 0, 'center', 1, 30, '#f0f');
+    else if(t < 1.0) drawTxt("ALL", W/2, H/2, 200+beat*50, '#fff', 0, 'center', 1, 30, '#0ff');
+    else if(t < 1.5) drawTxt("OUT", W/2, H/2, 200+beat*50, '#fff', 0, 'center', 1, 30, '#ff0');
+    
+    if(t > 1.9 && t <= 2.2) {
+      let p = (t-1.9)/0.3;
+      ctx.fillStyle = `rgba(255,255,255,${p})`;
+      ctx.fillRect(0,0,W,H);
+    }
+    
+    if(t > 2.2) {
+      ctx.fillStyle = '#fff'; ctx.fillRect(0,0,W,H);
+      let pt = t - 2.2;
+      let e = ease.outExpo(Math.min(1, pt/1.0));
+      let a = inOutAlpha(t, 2.2, 3.9, 0.2);
+      
+      ctx.globalAlpha = a;
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(W/2 - 350*e, H/2 - 50);
+      ctx.lineTo(W/2 + 350*e, H/2 - 50);
+      ctx.moveTo(W/2 - 350*e, H/2 + 50);
+      ctx.lineTo(W/2 + 350*e, H/2 + 50);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      
+      drawTxt("MOTION DESIGNER", W/2, H/2, 56, '#000', 20 + (1-e)*40, 'center', a);
+      drawTxt("SHOWREEL // 2024", W/2, H/2 + 90, 16, '#000', 10, 'center', a * Math.min(1, pt*2));
+    }
+  }
+
+  function drawTransitions(t) {
+    if(t > 3.9 && t < 4.05) {
+      ctx.fillStyle = `rgba(255,255,255,${1 - (t-3.9)/0.15})`;
+      ctx.fillRect(0,0,W,H);
+    }
+    if(t > 7.8 && t < 8.0) {
+      if(Math.floor(t*40)%2===0) { ctx.fillStyle='#fff'; ctx.fillRect(0,0,W,H); }
+      else { ctx.fillStyle='#000'; ctx.fillRect(0,0,W,H); }
+    }
+    if(t > 11.7 && t < 12.0) {
+      let p = (t-11.7)/0.3;
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.rect(0,0,W,H);
+      ctx.arc(W/2, H/2, (1-p)*900, 0, Math.PI*2, true);
+      ctx.fill();
+    }
+    if(t > 15.9 && t < 16.05) {
+      ctx.fillStyle = `rgba(255,255,255,${1 - (t-15.9)/0.15})`;
+      ctx.fillRect(0,0,W,H);
+    }
+  }
+
+  function drawHUD(t) {
+    if(t > 16.0) return;
+    ctx.save();
+    ctx.font = '12px monospace';
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    let tc = `TC ${String(Math.floor(t/60)).padStart(2,'0')}:${String(Math.floor(t%60)).padStart(2,'0')}:${String(Math.floor((t%1)*60)).padStart(2,'0')}`;
+    ctx.fillText(tc, 40, 40);
+    ctx.textAlign = 'right';
+    ctx.fillText('REC // 1080P // 60FPS', W - 40, 40);
+    
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(W/2 - 10, H/2); ctx.lineTo(W/2 + 10, H/2);
+    ctx.moveTo(W/2, H/2 - 10); ctx.lineTo(W/2, H/2 + 10);
+    ctx.stroke();
+    
+    if(Math.floor(t*2)%2 === 0) {
+      ctx.fillStyle = '#f00';
+      ctx.beginPath(); ctx.arc(W - 200, 46, 4, 0, 7); ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawVignette(t) {
+    if (t > 18.2) return;
+    let g = ctx.createRadialGradient(W/2, H/2, 300, W/2, H/2, 800);
+    g.addColorStop(0, 'rgba(0,0,0,0)');
+    g.addColorStop(1, 'rgba(0,0,0,0.7)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,W,H);
+  }
+
+  function render(now) {
+    let t = ((now - startTime)/1000) % window.DUR;
+    if (t < 0) t += window.DUR;
+    
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0,0,W,H);
+    
+    if (t < 4) act1(t);
+    else if (t < 8) act2(t - 4);
+    else if (t < 12) act3(t - 8);
+    else if (t < 16) act4(t - 12);
+    else act5(t - 16);
+    
+    drawTransitions(t);
+    drawHUD(t);
+    drawVignette(t);
+    
+    requestAnimationFrame(render);
+  }
+  requestAnimationFrame(render);
+</script>
+</body>
+</html>

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Agentiq — Agentic Analytics</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#05060a}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=30;
+const C=document.getElementById('c'),X=C.getContext('2d'),W=1280,H=720;
+function fit(){const s=Math.min(innerWidth/W,innerHeight/H);C.style.width=W*s+'px';C.style.height=H*s+'px'}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),T0=performance.now()-(parseFloat(q.get('t'))||0)*1000;
+const BPM=120,BEAT=60/BPM;
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const eo=t=>1-Math.pow(1-cl(t),3), eio=t=>(t=cl(t),t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2);
+const back=t=>{t=cl(t);const c=1.7;return 1+(c+1)*Math.pow(t-1,3)+c*Math.pow(t-1,2)};
+const ACC='#7c5cff',AC2='#22e1c3',HOT='#ff4d8d';
+function R(n){let x=Math.sin(n*127.1)*43758.5;return x-Math.floor(x)}
+function txt(s,x,y,sz,col,al=1,wt=800,align='center'){X.save();X.globalAlpha=cl(al);X.fillStyle=col;X.font=`${wt} ${sz}px Inter,Helvetica,Arial,sans-serif`;X.textAlign=align;X.textBaseline='middle';X.fillText(s,x,y);X.restore()}
+function rr(x,y,w,h,r){X.beginPath();X.roundRect(x,y,w,h,r)}
+function wordIn(words,t,y,sz,stagger=.18){ // kinetic words
+  X.font=`800 ${sz}px Inter,Helvetica,Arial,sans-serif`;
+  const ws=words.map(w=>X.measureText(w[0]+' ').width),tot=ws.reduce((a,b)=>a+b,0);
+  let x=W/2-tot/2;
+  words.forEach((w,i)=>{const p=back((t-i*stagger)/.45);X.save();X.globalAlpha=cl((t-i*stagger)/.2);
+    X.translate(x+ws[i]/2,y+(1-p)*60);X.scale(.6+.4*p,.6+.4*p);txt(w[0],0,0,sz,w[1]||'#fff');X.restore();x+=ws[i]});
+}
+function bg(t,pulse){
+  const g=X.createRadialGradient(W/2,H/2,50,W/2,H/2,900);
+  g.addColorStop(0,'#14112a');g.addColorStop(1,'#030308');X.fillStyle=g;X.fillRect(0,0,W,H);
+  X.save();X.strokeStyle=`rgba(124,92,255,${.07+pulse*.08})`;X.lineWidth=1;
+  const o=(t*40)%60;
+  for(let x=-60+o;x<W;x+=60){X.beginPath();X.moveTo(x,0);X.lineTo(x,H);X.stroke()}
+  for(let y=-60+o;y<H;y+=60){X.beginPath();X.moveTo(0,y);X.lineTo(W,y);X.stroke()}
+  X.restore();
+  for(let i=0;i<40;i++){const px=(R(i)*W+t*20*(R(i+9)+.2))%W,py=(R(i+3)*H-t*15*R(i+5)+H*9)%H;
+    X.fillStyle=`rgba(34,225,195,${.15+.3*R(i+7)})`;X.fillRect(px,py,2,2)}
+}
+function scene1(t){ // 0-4
+  wordIn([['Your'],['data'],['has'],['questions.',AC2]],t,330,84);
+  const a=cl((t-1.8)/.4)*cl((4-t)/.3);
+  txt('Millions of rows. Zero answers.',W/2,430,30,'#9aa0b8',a,500);
+}
+function scene2(t){ // 4-9
+  const n=12;
+  for(let i=0;i<n;i++){const cx=170+(i%4)*313,cy=150+Math.floor(i/4)*190;
+    const ap=eo((t-i*.06)/.5),fall=eio((t-3.3-R(i)*.6)/.8);
+    X.save();X.globalAlpha=ap*(1-fall);X.translate(cx,cy+fall*500);X.rotate(fall*(R(i)-.5)*2);
+    rr(-130,-75,260,150,14);X.fillStyle='#10121e';X.fill();X.strokeStyle='#262a40';X.stroke();
+    for(let b=0;b<8;b++){const h=20+R(i*10+b)*80*(.7+.3*Math.sin(t*3+b+i));X.fillStyle=b%3?'#3a3f5c':ACC;X.fillRect(-110+b*28,55-h,18,h)}
+    X.restore()}
+  X.save();X.globalAlpha=cl((t-1)/.3)*cl((5-t)/.3);rr(W/2-430,300,860,120,20);X.fillStyle='rgba(5,6,10,.85)';X.fill();X.restore();
+  wordIn([['Dashboards'],["don't"],['answer.',HOT]],t-1,360,72);
+}
+const steps=['Querying warehouse · 4.2M rows','Segmenting cohorts by plan','Correlating with pricing change','Validating significance (p<0.01)'];
+function scene3(t){ // 9-16
+  const a=cl(t/.3)*cl((7-t)/.3);X.save();X.globalAlpha=a;
+  wordIn([['Meet'],['agentic',ACC],['analytics.',AC2]],t,90,56,.12);
+  // query box
+  const qs='Why did churn spike in March?',k=Math.floor(cl((t-.8)/1.4)*qs.length);
+  rr(140,170,1000,76,18);X.fillStyle='#0e1020';X.fill();X.strokeStyle=ACC;X.lineWidth=2;X.stroke();
+  txt('›',175,208,34,AC2,1,700,'left');
+  txt(qs.slice(0,k)+((t*2|0)%2&&k<qs.length?'|':''),215,208,32,'#fff',1,600,'left');
+  // agent network
+  const cx=380,cy=470;const nodes=[[0,0],[-150,-90],[150,-90],[-170,90],[170,90]];
+  nodes.forEach((n,i)=>{if(!i)return;const p=eo((t-2.2-i*.1)/.4);
+    X.strokeStyle=`rgba(124,92,255,${.6*p})`;X.lineWidth=2;X.beginPath();X.moveTo(cx,cy);X.lineTo(cx+n[0]*p,cy+n[1]*p);X.stroke();
+    const f=((t*1.2+i*.25)%1);X.fillStyle=AC2;X.beginPath();X.arc(cx+n[0]*f*p,cy+n[1]*f*p,4,0,7);X.fill()});
+  nodes.forEach((n,i)=>{const p=back((t-2-i*.1)/.4);const pul=1+.08*Math.sin(t*8+i);
+    X.fillStyle=i?'#1a1640':ACC;X.strokeStyle=i?ACC:'#fff';X.lineWidth=2;X.beginPath();X.arc(cx+n[0],cy+n[1],(i?26:42)*p*pul,0,7);X.fill();X.stroke()});
+  txt('AGENT',cx,cy,14,'#fff',cl((t-2.2)/.3),800);
+  // steps
+  steps.forEach((s,i)=>{const st=2.6+i*.9,p=eo((t-st)/.35),done=t>st+.8;
+    X.save();X.globalAlpha=p;X.translate((1-p)*40,0);
+    rr(640,345+i*70,500,52,12);X.fillStyle='#0e1020';X.fill();X.strokeStyle=done?AC2:'#2a2e48';X.stroke();
+    if(done)txt('✓',668,371+i*70,22,AC2,1,800);else{X.strokeStyle=ACC;X.lineWidth=3;X.beginPath();X.arc(668,371+i*70,9,t*8,t*8+4);X.stroke()}
+    txt(s,695,371+i*70,20,'#d6d9ea',1,500,'left');X.restore()});
+  X.restore();
+}
+function scene4(t){ // 16-23
+  const a=cl(t/.3)*cl((7-t)/.3);X.save();X.globalAlpha=a;
+  txt('Answer in 8 seconds.',W/2,80,48,'#fff',eo(t/.4));
+  const x0=120,y0=600,cw=640,chh=380;
+  X.strokeStyle='#2a2e48';X.lineWidth=1;for(let i=0;i<5;i++){X.beginPath();X.moveTo(x0,y0-i*95);X.lineTo(x0+cw,y0-i*95);X.stroke()}
+  const m=['Oct','Nov','Dec','Jan','Feb','Mar','Apr'],v=[.32,.3,.34,.31,.36,.82,.4];
+  const p=eio((t-.3)/1.6);
+  X.beginPath();v.forEach((y,i)=>{const px=x0+i*cw/6,py=y0-y*chh*p;i?X.lineTo(px,py):X.moveTo(px,py)});
+  X.strokeStyle=ACC;X.lineWidth=4;X.shadowColor=ACC;X.shadowBlur=20;X.stroke();X.shadowBlur=0;
+  m.forEach((s,i)=>txt(s,x0+i*cw/6,y0+28,16,'#8a90a8',1,600));
+  const hp=back((t-2)/.4);X.fillStyle=HOT;X.beginPath();X.arc(x0+5*cw/6,y0-.82*chh*p,10*hp+4*Math.sin(t*8)*hp,0,7);X.fill();
+  // insight card
+  const ip=back((t-2.4)/.5);X.save();X.translate(820+(1-ip)*200,200);X.globalAlpha=cl(ip);
+  rr(0,0,360,330,20);X.fillStyle='#11132a';X.fill();X.strokeStyle=AC2;X.lineWidth=2;X.stroke();
+  txt('INSIGHT',28,40,16,AC2,1,800,'left');
+  txt('Churn +2.6x in March',28,85,26,'#fff',1,800,'left');
+  ['Driven by Starter plan users','hit by the Mar 3 price change.','','Recommended action:','Grandfather 1,240 accounts','→ est. $410K ARR saved'].forEach((l,i)=>
+    txt(l,28,135+i*30,18,i>=3?(i==5?AC2:'#fff'):'#a9aec6',cl((t-3-i*.15)/.3),i>=3?700:500,'left'));
+  X.restore();X.restore();
+}
+function scene5(t){ // 23-30
+  if(t<3.2){const a=cl((3.2-t)/.3);X.save();X.globalAlpha=a;
+    [['10x','faster insights'],['0','SQL required'],['24/7','autonomous agents']].forEach((s,i)=>{
+      const p=back((t-i*.5)/.4),x=W/2+(i-1)*380;X.save();X.translate(x,360);X.scale(p,p);
+      txt(s[0],0,-20,96,i==1?AC2:i?HOT:ACC,cl(p),900);txt(s[1],0,60,24,'#c9cde0',cl(p),500);X.restore()});X.restore();return}
+  const u=t-3.2,p=back(u/.6);
+  X.save();X.translate(W/2,300);X.scale(p,p);X.rotate((1-cl(p))*.5);
+  for(let i=0;i<6;i++){const an=i*Math.PI/3+u;X.fillStyle=i%2?AC2:ACC;X.beginPath();X.arc(Math.cos(an)*44,Math.sin(an)*44,10,0,7);X.fill()}
+  X.strokeStyle='#fff';X.lineWidth=4;X.beginPath();X.arc(0,0,22,0,7);X.stroke();X.restore();
+  wordIn([['Agentiq']],u-.3,430,110,0);
+  txt('Analytics that thinks for itself.',W/2,520,30,'#b9bfd8',cl((u-.9)/.4),500);
+  txt('agentiq.ai  ·  Book a demo',W/2,600,22,AC2,cl((u-1.4)/.4),700);
+}
+const S=[[0,4,scene1],[4,9,scene2],[9,16,scene3],[16,23,scene4],[23,30,scene5]];
+function frame(){
+  const t=((performance.now()-T0)/1000)%DUR;
+  const bp=(t%BEAT)/BEAT,pulse=Math.pow(1-bp,4);
+  bg(t,pulse);
+  for(const[a,b,f]of S)if(t>=a&&t<b)f(t-a);
+  // scene flash + beat bar
+  for(const[a]of S){const d=t-a;if(d>=0&&d<.25){X.fillStyle=`rgba(255,255,255,${.25*(1-d/.25)})`;X.fillRect(0,0,W,H)}}
+  X.fillStyle=ACC;X.fillRect(0,H-4,W*t/DUR,4);
+  X.fillStyle=`rgba(34,225,195,${.4*pulse})`;X.fillRect(0,0,W,3);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></body></html>

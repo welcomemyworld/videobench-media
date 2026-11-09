@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>MENTIS — Launch Showreel</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  #stage {
+    width: 1280px;
+    height: 720px;
+    display: block;
+    box-shadow: 0 0 80px rgba(110, 86, 255, 0.25);
+  }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+(() => {
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const W = 1280, H = 720;
+  window.DUR = 15.0;
+
+  function fitStage() {
+    const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+    canvas.style.transform = `scale(${s})`;
+    canvas.style.transformOrigin = 'center center';
+  }
+  window.addEventListener('resize', fitStage);
+  fitStage();
+
+  const params = new URLSearchParams(location.search);
+  const timeOffset = parseFloat(params.get('t') || '0') || 0;
+
+  // Math & Easing helpers
+  const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const invLerp = (a, b, v) => clamp((v - a) / (b - a));
+  const easeOutCubic = t => 1 - Math.pow(1 - clamp(t), 3);
+  const easeOutExpo = t => (t >= 1 ? 1 : 1 - Math.pow(2, -10 * clamp(t)));
+  const easeInOutCubic = t => {
+    t = clamp(t);
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  };
+  const easeOutBack = t => {
+    t = clamp(t);
+    const c1 = 1.70158, c3 = c1 + 1;
+    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+  };
+
+  // Precomputed stars & neural nodes
+  const nodes = Array.from({ length: 64 }, (_, i) => {
+    const phi = Math.acos(1 - 2 * (i + 0.5) / 64);
+    const theta = Math.PI * (1 + Math.sqrt(5)) * i;
+    return {
+      x: Math.cos(theta) * Math.sin(phi),
+      y: Math.sin(theta) * Math.sin(phi),
+      z: Math.cos(phi),
+      size: 1.8 + (i % 4) * 0.9,
+      hue: i % 2 === 0 ? '#7C5CFF' : '#00E5FF'
+    };
+  });
+
+  const chaosCards = [
+    { title: 'Notes vocales • 08:42', tag: 'AUDIO', col: '#FF5E8E', ox: -470, oy: -230, rot: -0.28 },
+    { title: 'Lancement Produit Q4', tag: 'PROJET', col: '#7C5CFF', ox: 450, oy: -210, rot: 0.24 },
+    { title: 'Synthèse Réunion Client', tag: 'IA DOC', col: '#00E5FF', ox: -490, oy: 190, rot: 0.19 },
+    { title: 'Idée : Architecture Neurone', tag: ' CONCEPT', col: '#22F2A6', ox: 460, oy: 210, rot: -0.22 },
+    { title: 'Objectifs Hebdomadaires', tag: 'FOCUS', col: '#FFB84D', ox: -180, oy: -275, rot: -0.14 },
+    { title: 'Rappel : Design Review 15h', tag: 'AGENDA', col: '#A78BFA', ox: 220, oy: 265, rot: 0.15 }
+  ];
+
+  function roundRect(x, y, w, h, r) {
+    const rr = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + rr, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rr);
+    ctx.arcTo(x + w, y + h, x, y + h, rr);
+    ctx.arcTo(x, y + h, x, y, rr);
+    ctx.arcTo(x, y, x + w, y, rr);
+    ctx.closePath();
+  }
+
+  function drawMentisLogo(x, y, radius, t, glow = 1) {
+    ctx.save();
+    ctx.translate(x, y);
+    if (glow > 0) {
+      const g = ctx.createRadialGradient(0, 0, radius * 0.1, 0, 0, radius * 2.2);
+      g.addColorStop(0, `rgba(124,92,255,${0.55 * glow})`);
+      g.addColorStop(0.5, `rgba(0,229,255,${0.25 * glow})`);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(0, 0, radius * 2.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Outer squircle
+    const s = radius * 1.65;
+    roundRect(-s / 2, -s / 2, s, s, s * 0.28);
+    const bg = ctx.createLinearGradient(-s / 2, -s / 2, s / 2, s / 2);
+    bg.addColorStop(0, '#1B1438');
+    bg.addColorStop(0.5, '#0F1021');
+    bg.addColorStop(1, '#0A2233');
+    ctx.fillStyle = bg;
+    ctx.fill();
+    ctx.lineWidth = Math.max(1.5, radius * 0.05);
+    const strokeG = ctx.createLinearGradient(-s / 2, -s / 2, s / 2, s / 2);
+    strokeG.addColorStop(0, '#9B7BFF');
+    strokeG.addColorStop(1, '#00E5FF');
+    ctx.strokeStyle = strokeG;
+    ctx.stroke();
+
+    // Stylized M + Neural Spark waves
+    ctx.beginPath();
+    const r = radius * 0.48;
+    ctx.moveTo(-r, r * 0.75);
+    ctx.lineTo(-r * 0.55, -r * 0.75);
+    ctx.lineTo(0, r * 0.15);
+    ctx.lineTo(r * 0.55, -r * 0.75);
+    ctx.lineTo(r, r * 0.75);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = radius * 0.22;
+    const mg = ctx.createLinearGradient(-r, -r, r, r);
+    mg.addColorStop(0, '#FFFFFF');
+    mg.addColorStop(0.55, '#B79CFF');
+    mg.addColorStop(1, '#00E5FF');
+    ctx.strokeStyle = mg;
+    ctx.stroke();
+
+    // Orbiting spark dot
+    const ang = t * 3.2;
+    const ox = Math.cos(ang) * radius * 0.62;
+    const oy = Math.sin(ang * 2) * radius * 0.28 - radius * 0.1;
+    ctx.fillStyle = '#00E5FF';
+    ctx.beginPath();
+    ctx.arc(ox, oy, radius * 0.11, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawBackground(t) {
+    // Deep space dark gradient
+    const bg = ctx.createLinearGradient(0, 0, W, H);
+    bg.addColorStop(0, '#05050B');
+    bg.addColorStop(0.5, '#0A0B18');
+    bg.addColorStop(1, '#060D1A');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // Animated ambient aurora blobs
+    const blobs = [
+      { x: W * (0.28 + 0.15 * Math.sin(t * 0.7)), y: H * (0.35 + 0.12 * Math.cos(t * 0.5)), r: 440, c: 'rgba(124, 92, 255, 0.22)' },
+      { x: W * (0.72 + 0.14 * Math.cos(t * 0.6)), y: H * (0.62 + 0.14 * Math.sin(t * 0.8)), r: 480, c: 'rgba(0, 229, 255, 0.17)' },
+      { x: W * (0.5 + 0.2 * Math.sin(t * 0.9)), y: H * (0.2 + 0.1 * Math.sin(t * 0.4)), r: 360, c: 'rgba(255, 77, 157, 0.12)' }
+    ];
+    for (const b of blobs) {
+      const g = ctx.createRadialGradient(b.x, b.y, 10, b.x, b.y, b.r);
+      g.addColorStop(0, b.c);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    // Subtle perspective grid
+    ctx.save();
+    ctx.strokeStyle = 'rgba(155, 135, 255, 0.06)';
+    ctx.lineWidth = 1;
+    const step = 64;
+    const shift = (t * 32) % step;
+    for (let x = 0; x <= W; x += step) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, H);
+      ctx.stroke();
+    }
+    for (let y = shift; y <= H; y += step) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // SCENE 1 (0.0 -> 2.6s): Kinetic Intro & Neural Sphere
+  function renderScene1(t) {
+    const p = invLerp(0, 2.6, t);
+    ctx.save();
+    ctx.translate(W / 2, H / 2);
+
+    // 3D Neural Globe
+    const rotY = t * 1.4;
+    const rotX = 0.35 * Math.sin(t * 0.9);
+    const radius = lerp(420, 210, easeOutExpo(invLerp(0, 1.2, t))) * (1 + 0.15 * Math.pow(invLerp(2.1, 2.6, t), 3));
+
+    const projected = nodes.map(n => {
+      let x = n.x * Math.cos(rotY) - n.z * Math.sin(rotY);
+      let z = n.x * Math.sin(rotY) + n.z * Math.cos(rotY);
+      let y = n.y * Math.cos(rotX) - z * Math.sin(rotX);
+      z = n.y * Math.sin(rotX) + z * Math.cos(rotX);
+      const scale = 520 / (520 + z * radius);
+      return { sx: x * radius * scale, sy: y * radius * scale, z, scale, hue: n.hue, size: n.size };
+    });
+
+    // Synaptic connections
+    ctx.lineWidth = 1.2;
+    for (let i = 0; i < projected.length; i++) {
+      for (let j = i + 1; j < projected.length; j++) {
+        const a = projected[i], b = projected[j];
+        const dx = a.sx - b.sx, dy = a.sy - b.sy;
+        const d = Math.hypot(dx, dy);
+        if (d < 92) {
+          const alpha = (1 - d / 92) * 0.32;
+          ctx.strokeStyle = `rgba(140, 195, 255, ${alpha})`;
+          ctx.beginPath();
+          ctx.moveTo(a.sx, a.sy);
+          ctx.lineTo(b.sx, b.sy);
+          ctx.stroke();
+        }
+      }
+    }
+
+    for (const pt of projected) {
+      ctx.fillStyle = pt.hue;
+      ctx.globalAlpha = clamp(0.35 + (pt.z + 1) * 0.35, 0.15, 1);
+      ctx.beginPath();
+      ctx.arc(pt.sx, pt.sy, pt.size * pt.scale * 1.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Kinetic Stomp Typography
+    if (t < 1.15) {
+      const k1 = easeOutBack(invLerp(0.05, 0.45, t));
+      const k2 = easeOutBack(invLerp(0.45, 0.85, t));
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      ctx.save();
+      ctx.scale(lerp(0.6, 1, k1), lerp(0.6, 1, k1));
+      ctx.font = '800 78px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillText('VOTRE ESPRIT.', 0, -48);
+      ctx.restore();
+
+      if (t > 0.42) {
+        ctx.save();
+        ctx.scale(lerp(1.35, 1, k2), lerp(1.35, 1, k2));
+        ctx.font = '900 92px -apple-system, BlinkMacSystemFont, sans-serif';
+        const tg = ctx.createLinearGradient(-320, 0, 320, 0);
+        tg.addColorStop(0, '#9B7BFF');
+        tg.addColorStop(0.5, '#00E5FF');
+        tg.addColorStop(1, '#22F2A6');
+        ctx.fillStyle = tg;
+        ctx.fillText('SURVOLTÉ.', 0, 56);
+        ctx.restore();
+      }
+    } else {
+      // Reveal MENTIS brand lockup
+      const rev = easeOutExpo(invLerp(1.15, 1.85, t));
+      const exit = easeInOutCubic(invLerp(2.2, 2.6, t));
+      const sc = lerp(0.75, 1.0, rev) * lerp(1, 1.8, exit);
+      ctx.globalAlpha = 1 - exit;
+      ctx.scale(sc, sc);
+
+      drawMentisLogo(0, -68, 56, t, 1.2);
+
+      ctx.textAlign = 'center';
+      ctx.font = '900 104px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillText('MENTIS', 0, 74);
+
+      ctx.font = '600 22px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.fillStyle = '#00E5FF';
+      ctx.fillText('L’ESPACE COGNITIF PROPULSÉ PAR L’IA', 0, 134);
+    }
+
+    ctx.restore();
+  }
+
+  // SCENE 2 (2.4 -> 5.6s): Chaos to Clarity (Command Bar & Auto-Structure)
+  function renderScene2(t) {
+    const enter = easeOutCubic(invLerp(2.4, 2.9, t));
+    const snap = easeInOutCubic(invLerp(3.35, 4.35, t));
+    const exit = easeInOutCubic(invLerp(5.15, 5.6, t));
+
+    ctx.save();
+    ctx.globalAlpha = enter * (1 - exit);
+    ctx.translate(W / 2, H / 2 - exit * 120);
+
+    // Top Header
+    ctx.textAlign = 'center';
+    ctx.font = '700 16px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillStyle = '#00E5FF';
+    ctx.fillText('CAPTURE INSTANTANÉE • ⌘K', 0, -295);
+
+    ctx.font = '800 46px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillStyle = '#FFFFFF';
+    const headline = snap < 0.5 ? 'Du chaos de vos pensées...' : '...à une clarté absolue.';
+    ctx.fillText(headline, 0, -245);
+
+    // Floating Chaos Cards -> Structured Grid
+    chaosCards.forEach((c, idx) => {
+      const col = idx % 3;
+      const row = Math.floor(idx / 3);
+      const gx = (col - 1) * 320;
+      const gy = row * 128 + 38;
+
+      const wobbleX = Math.sin(t * 2.5 + idx) * 18 * (1 - snap);
+      const wobbleY = Math.cos(t * 2.1 + idx) * 14 * (1 - snap);
+      const x = lerp(c.ox + wobbleX, gx, snap);
+      const y = lerp(c.oy + wobbleY, gy, snap);
+      const rot = lerp(c.rot + Math.sin(t * 1.8 + idx) * 0.06, 0, snap);
+
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(rot);
+
+      const cw = 292, ch = 104;
+      roundRect(-cw / 2, -ch / 2, cw, ch, 18);
+      ctx.fillStyle = snap > 0.5 ? 'rgba(20, 23, 44, 0.88)' : 'rgba(26, 22, 50, 0.78)';
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = snap > 0.6 ? 'rgba(0, 229, 255, 0.45)' : 'rgba(155, 123, 255, 0.35)';
+      ctx.stroke();
+
+      // Tag pill
+      roundRect(-cw / 2 + 18, -ch / 2 + 16, 84, 24, 12);
+      ctx.fillStyle = c.col;
+      ctx.globalAlpha *= 0.22;
+      ctx.fill();
+      ctx.globalAlpha = enter * (1 - exit);
+
+      ctx.textAlign = 'left';
+      ctx.font = '700 11px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.fillStyle = c.col;
+      ctx.fillText(c.tag, -cw / 2 + 30, -ch / 2 + 32);
+
+      // Status checkmark when organized
+      if (snap > 0.4) {
+        const ca = invLerp(0.4, 0.9, snap);
+        ctx.fillStyle = `rgba(34, 242, 166, ${ca})`;
+        ctx.font = '700 13px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText('✓ Structuré', cw / 2 - 18, -ch / 2 + 32);
+      }
+
+      ctx.textAlign = 'left';
+      ctx.font = '700 17px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillText(c.title, -cw / 2 + 18, 14);
+
+      // Animated progress bar inside card
+      roundRect(-cw / 2 + 18, 28, cw - 36, 6, 3);
+      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      ctx.fill();
+      roundRect(-cw / 2 + 18, 28, (cw - 36) * lerp(0.3, 1.0, snap), 6, 3);
+      ctx.fillStyle = c.col;
+      ctx.fill();
+
+      ctx.restore();
+    });
+
+    // Center Command Bar (Mentis Spotlight)
+    const barY = lerp(10, -125, snap);
+    const barW = 680, barH = 68;
+    ctx.save();
+    ctx.translate(0, barY);
+
+    // Glow behind command bar
+    const g = ctx.createRadialGradient(0, 0, 20, 0, 0, 360);
+    g.addColorStop(0, 'rgba(124, 92, 255, 0.42)');
+    g.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(-380, -90, 760, 180);
+
+    roundRect(-barW / 2, -barH / 2, barW, barH, 20);
+    ctx.fillStyle = '#121328';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    const bs = ctx.createLinearGradient(-barW / 2, 0, barW / 2, 0);
+    bs.addColorStop(0, '#7C5CFF');
+    bs.addColorStop(0.5, '#00E5FF');
+    bs.addColorStop(1, '#22F2A6');
+    ctx.strokeStyle = bs;
+    ctx.stroke();
+
+    drawMentisLogo(-barW / 2 + 38, 0, 16, t, 0);
+
+    const cmdText = 'Organiser mes idées et préparer le lancement...';
+    const typedLen = Math.floor(invLerp(2.55, 3.35, t) * cmdText.length);
+    ctx.textAlign = 'left';
+    ctx.font = '600 20px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillText(cmdText.slice(0, typedLen), -barW / 2 + 72, 7);
+
+    // Shortcut badge
+    roundRect(barW / 2 - 118, -18, 98, 36, 10);
+    ctx.fillStyle = snap > 0.2 ? '#22F2A6' : '#7C5CFF';
+    ctx.fill();
+    ctx.textAlign = 'center';
+    ctx.font = '800 13px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillStyle = snap > 0.2 ? '#06121E' : '#FFFFFF';
+    ctx.fillText(snap > 0.2 ? 'IA ACTIVE' : 'ENTRÉE ↵', barW / 2 - 69, 5);
+
+    ctx.restore();
+    ctx.restore();
+  }
+
+  // SCENE 3 (5.3 -> 8.7s): 3D Perspective App Interface Showcase
+  function renderScene3(t) {
+    const enter = easeOutCubic(invLerp(5.3, 5.9, t));
+    const exit = easeInOutCubic(invLerp(8.2, 8.7, t));
+    const localT = t - 5.3;
+
+    ctx.save();
+    ctx.globalAlpha = enter * (1 - exit);
+    ctx.translate(W / 2, H / 2 + 18);
+
+    // Floating Section Title
+    ctx.textAlign = 'center';
+    ctx.font = '800 40px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillText('Un second cerveau qui travaille en temps réel.', 0, -305);
+
+    // Faux-3D perspective tilt via transform matrix
+    const tilt = Math.sin(localT * 1.1) * 0.04;
+    const sc = lerp(0.86, 1.0, enter) * lerp(1.0, 0.9, exit);
+    ctx.scale(sc, sc);
+    ctx.transform(1, tilt * 0.35, -0.08 + tilt * 0.5, 0.94, 0, 18);
+
+    const winW = 1020, winH = 520;
+    // Drop shadow & neon halo
+    ctx.shadowColor = 'rgba(0, 229, 255, 0.28)';
+    ctx.shadowBlur = 50;
+    roundRect(-winW / 2, -winH / 2, winW, winH, 24);
+    ctx.fillStyle = '#0D0F22';
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(155, 123, 255, 0.45)';
+    ctx.stroke();
+
+    // Window Top Bar
+    roundRect(-winW / 2, -winH / 2, winW, 48, 24);
+    ctx.fillStyle = 'rgba(255,255,255,0.04)';
+    ctx.fill();
+    ['#FF5F56', '#FFBD2E', '#27C93F'].forEach((c, i) => {
+      ctx.fillStyle = c;
+      ctx.beginPath();
+      ctx.arc(-winW / 2 + 28 + i * 22, -winH / 2 + 24, 6, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.textAlign = 'center';
+    ctx.font = '600 13px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.fillText('mentis.app — Espace Synaptique • Projet Orion', 0, -winH / 2 + 29);
+
+    // Left Sidebar
+    const sideX = -winW / 2 + 22, sideY = -winH / 2 + 68;
+    roundRect(sideX, sideY, 210, winH - 90, 16);
+    ctx.fillStyle = 'rgba(255,255,255,0.03)';
+    ctx.fill();
+
+    const navItems = ['⚡ Flux Cognitif', '🧠 Graphe Neuronal', '🎙️ Notes Vocales IA', '🎯 Focus Profond', '📅 Calendrier Auto'];
+    navItems.forEach((item, i) => {
+      const iy = sideY + 20 + i * 48;
+      if (i === 1) {
+        roundRect(sideX + 10, iy - 6, 190, 38, 10);
+        ctx.fillStyle = 'rgba(124, 92, 255, 0.32)';
+        ctx.fill();
+      }
+      ctx.textAlign = 'left';
+      ctx.font = i === 1 ? '700 14px sans-serif' : '500 14px sans-serif';
+      ctx.fillStyle = i === 1 ? '#FFFFFF' : 'rgba(255,255,255,0.6)';
+      ctx.fillText(item, sideX + 22, iy + 18);
+    });
+
+    // Center Live Neural Mindmap Canvas
+    const mapX = -winW / 2 + 252, mapY = -winH / 2 + 68, mapW = 470, mapH = winH - 90;
+    roundRect(mapX, mapY, mapW, mapH, 16);
+    ctx.fillStyle = '#080917';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+    ctx.stroke();
+
+    const cx = mapX + mapW / 2, cy = mapY + mapH / 2;
+    const hubs = [
+      { dx: -140, dy: -105, label: 'Vision 2025', col: '#00E5FF' },
+      { dx: 145, dy: -95, label: 'Design Système', col: '#FF5E8E' },
+      { dx: -135, dy: 110, label: 'Croissance +240%', col: '#22F2A6' },
+      { dx: 140, dy: 105, label: 'Synthèse Client', col: '#FFB84D' }
+    ];
+
+    const pulse = easeOutCubic(invLerp(6.0, 7.4, t));
+    hubs.forEach((h, i) => {
+      const hx = cx + h.dx * pulse;
+      const hy = cy + h.dy * pulse;
+      ctx.strokeStyle = h.col;
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.quadraticCurveTo(cx + h.dx * 0.5, cy, hx, hy);
+      ctx.stroke();
+
+      // Traveling data packet
+      const pk = (localT * 0.9 + i * 0.25) % 1;
+      const px = lerp(cx, hx, pk);
+      const py = lerp(cy, hy, pk);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.arc(px, py, 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      roundRect(hx - 68, hy - 20, 136, 40, 12);
+      ctx.fillStyle = '#151833';
+      ctx.fill();
+      ctx.strokeStyle = h.col;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      ctx.textAlign = 'center';
+      ctx.font = '700 13px sans-serif';
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillText(h.label, hx, hy + 5);
+    });
+
+    // Center Hub Node
+    drawMentisLogo(cx, cy, 28, t, 0.9);
+
+    // Right AI Copilot Panel
+    const rpX = mapX + mapW + 20, rpY = mapY, rpW = 248, rpH = mapH;
+    roundRect(rpX, rpY, rpW, rpH, 16);
+    ctx.fillStyle = 'rgba(255,255,255,0.03)';
+    ctx.fill();
+
+    ctx.textAlign = 'left';
+    ctx.font = '800 14px sans-serif';
+    ctx.fillStyle = '#00E5FF';
+    ctx.fillText('COPILOTE MENTIS IA', rpX + 20, rpY + 34);
+
+    // Voice Waveform
+    for (let i = 0; i < 22; i++) {
+      const bh = 8 + Math.abs(Math.sin(t * 7 + i * 0.55)) * 28;
+      roundRect(rpX + 20 + i * 9.5, rpY + 75 - bh / 2, 5, bh, 2.5);
+      ctx.fillStyle = i % 2 === 0 ? '#7C5CFF' : '#00E5FF';
+      ctx.fill();
+    }
+
+    // AI Summary lines
+    const lines = [
+      '• 4 idées reliées automatiquement',
+      '• Feuille de route générée',
+      '• Temps économisé : 3h 40m',
+      '• Score de clarté : 99.4%'
+    ];
+    lines.forEach((ln, i) => {
+      const la = easeOutCubic(invLerp(5.8 + i * 0.25, 6.3 + i * 0.25, t));
+      ctx.globalAlpha = enter * (1 - exit) * la;
+      ctx.font = '600 13px sans-serif';
+      ctx.fillStyle = '#E2E8F0';
+      ctx.fillText(ln, rpX + 20, rpY + 135 + i * 34);
+    });
+    ctx.globalAlpha = enter * (1 - exit);
+
+    // CTA Button inside right panel
+    const clicked = t > 7.15;
+    const btnScale = clicked ? lerp(0.92, 1.04, easeOutBack(invLerp(7.15, 7.5, t))) : 1;
+    ctx.save();
+    ctx.translate(rpX + rpW / 2, rpY + rpH - 48);
+    ctx.scale(btnScale, btnScale);
+    roundRect(-104, -22, 208, 44, 12);
+    ctx.fillStyle = clicked ? '#22F2A6' : '#7C5CFF';
+    ctx.fill();
+    ctx.textAlign = 'center';
+    ctx.font = '800 14px sans-serif';
+    ctx.fillStyle = clicked ? '#05131E' : '#FFFFFF';
+    ctx.fillText(clicked ? '✓ PLAN SYNCHRONISÉ' : '✨ GÉNÉRER LE PLAN', 0, 5);
+    ctx.restore();
+
+    // Animated Cursor moving to click the button
+    const curP = easeInOutCubic(invLerp(6.1, 7.15, t));
+    const curX = lerp(0, rpX + rpW / 2 + 24, curP);
+    const curY = lerp(120, rpY + rpH - 40, curP);
+    ctx.save();
+    ctx.translate(curX, curY);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, 22);
+    ctx.lineTo(6, 17);
+    ctx.lineTo(14, 24);
+    ctx.lineTo(18, 20);
+    ctx.lineTo(10, 13);
+    ctx.lineTo(18, 12);
+    ctx.closePath();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fill();
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.restore();
+  }
+
+  // SCENE 4 (8.5 -> 11.9s): Bento Grid Power Features
+  function renderScene4(t) {
+    const enter = easeOutCubic(invLerp(8.5, 9.0, t));
+    const exit = easeInOutCubic(invLerp(11.4, 11.9, t));
+
+    ctx.save();
+    ctx.globalAlpha = enter * (1 - exit);
+    ctx.translate(W / 2, H / 2);
+
+    ctx.textAlign = 'center';
+    ctx.font = '900 44px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillText('Conçu pour l’hyper-performance.', 0, -280);
+
+    const cards = [
+      {
+        x: -285, y: -78, w: 540, h: 215,
+        num: '01 • MÉMOIRE INFINIE',
+        title: 'Retrouvez tout en 12 millisecondes',
+        sub: 'Recherche sémantique instantanée dans vos notes, PDF et réunions.',
+        accent: '#00E5FF', delay: 8.6
+      },
+      {
+        x: 285, y: -78, w: 540, h: 215,
+        num: '02 • VITESSE ÉCLAIR',
+        title: '10× plus rapide que vos outils actuels',
+        sub: 'Zéro latence. Architecture locale & synchronisation cloud chiffrée.',
+        accent: '#22F2A6', delay: 8.8
+      },
+      {
+        x: -285, y: 165, w: 540, h: 215,
+        num: '03 • SYNTHÈSE VOCALE IA',
+        title: 'Parlez. Mentis structure tout.',
+        sub: 'Transcription neuronale en français avec détection automatique d’actions.',
+        accent: '#FF5E8E', delay: 9.0
+      },
+      {
+        x: 285, y: 165, w: 540, h: 215,
+        num: '04 • FOCUS ABSOLU',
+        title: 'Flux de travail sans distraction',
+        sub: 'Priorisation prédictive qui s’adapte à votre niveau d’énergie.',
+        accent: '#9B7BFF', delay: 9.2
+      }
+    ];
+
+    cards.forEach((c, i) => {
+      const cp = easeOutBack(invLerp(c.delay, c.delay + 0.55, t));
+      ctx.save();
+      ctx.translate(c.x, c.y + (1 - cp) * 50);
+      ctx.scale(lerp(0.88, 1, cp), lerp(0.88, 1, cp));
+
+      roundRect(-c.w / 2, -c.h / 2, c.w, c.h, 22);
+      ctx.fillStyle = 'rgba(17, 19, 38, 0.9)';
+      ctx.fill();
+      ctx.lineWidth = 1.8;
+      ctx.strokeStyle = c.accent;
+      ctx.globalAlpha *= 0.65;
+      ctx.stroke();
+      ctx.globalAlpha = enter * (1 - exit);
+
+      ctx.textAlign = 'left';
+      ctx.font = '800 13px sans-serif';
+      ctx.fillStyle = c.accent;
+      ctx.fillText(c.num, -c.w / 2 + 28, -c.h / 2 + 38);
+
+      ctx.font = '800 24px sans-serif';
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillText(c.title, -c.w / 2 + 28, -c.h / 2 + 76);
+
+      ctx.font = '500 14px sans-serif';
+      ctx.fillStyle = 'rgba(255,255,255,0.68)';
+      ctx.fillText(c.sub, -c.w / 2 + 28, -c.h / 2 + 106);
+
+      // Unique dynamic graphic per Bento card
+      if (i === 0) {
+        // Animated search pulse bar
+        roundRect(-c.w / 2 + 28, 28, c.w - 56, 44, 12);
+        ctx.fillStyle = 'rgba(0, 229, 255, 0.12)';
+        ctx.fill();
+        ctx.font = '700 15px monospace';
+        ctx.fillStyle = '#00E5FF';
+        ctx.fillText('🔍 "Contrat Stratégie IA" → 14 résultats (0.012s)', -c.w / 2 + 44, 55);
+      } else if (i === 1) {
+        // Speed comparison bars
+        const b1 = easeOutCubic(invLerp(9.0, 10.2, t)) * 340;
+        roundRect(-c.w / 2 + 28, 26, b1, 18, 9);
+        ctx.fillStyle = '#22F2A6';
+        ctx.fill();
+        ctx.font = '800 13px sans-serif';
+        ctx.fillText('MENTIS • 120 FPS', -c.w / 2 + 38 + b1, 40);
+
+        roundRect(-c.w / 2 + 28, 54, 95, 14, 7);
+        ctx.fillStyle = 'rgba(255,255,255,0.2)';
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.fillText('Autres apps', -c.w / 2 + 135, 66);
+      } else if (i === 2) {
+        // Live Equalizer
+        for (let k = 0; k < 32; k++) {
+          const h = 10 + Math.abs(Math.sin(t * 8 + k * 0.4)) * 34;
+          roundRect(-c.w / 2 + 28 + k * 15, 52 - h / 2, 8, h, 4);
+          ctx.fillStyle = k % 2 === 0 ? '#FF5E8E' : '#FFB84D';
+          ctx.fill();
+        }
+      } else if (i === 3) {
+        // Circular Ring Gauge + Metric
+        const gx = c.w / 2 - 75, gy = 38;
+        ctx.lineWidth = 8;
+        ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+        ctx.beginPath();
+        ctx.arc(gx, gy, 34, 0, Math.PI * 2);
+        ctx.stroke();
+
+        const pct = easeOutCubic(invLerp(9.3, 10.8, t));
+        ctx.strokeStyle = '#9B7BFF';
+        ctx.beginPath();
+        ctx.arc(gx, gy, 34, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * 0.98 * pct);
+        ctx.stroke();
+
+        ctx.textAlign = 'center';
+        ctx.font = '800 16px sans-serif';
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillText(`${Math.round(pct * 98)}%`, gx, gy + 6);
+
+        ctx.textAlign = 'left';
+        ctx.font = '700 16px sans-serif';
+        ctx.fillStyle = '#22F2A6';
+        ctx.fillText('État de Flow maximal atteint', -c.w / 2 + 28, 54);
+      }
+
+      ctx.restore();
+    });
+
+    ctx.restore();
+  }
+
+  // SCENE 5 (11.6 -> 15.0s): Grand Finale & Packshot
+  function renderScene5(t) {
+    const enter = easeOutExpo(invLerp(11.6, 12.4, t));
+    const loopFade = invLerp(14.55, 15.0, t);
+
+    ctx.save();
+    ctx.globalAlpha = enter * (1 - loopFade);
+    ctx.translate(W / 2, H / 2);
+
+    // Expanding shockwave rings
+    for (let r = 0; r < 3; r++) {
+      const rp = ((t - 11.6 + r * 0.7) % 2.4) / 2.4;
+      ctx.strokeStyle = `rgba(0, 229, 255, ${(1 - rp) * 0.28})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, -105, 60 + rp * 340, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    const scaleIn = lerp(0.7, 1.0, enter);
+    ctx.scale(scaleIn, scaleIn);
+
+    // Central Glowing Mentis Icon
+    drawMentisLogo(0, -125, 64, t, 1.5);
+
+    // Brand Title
+    ctx.textAlign = 'center';
+    ctx.font = '900 96px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillText('MENTIS', 0, 25);
+
+    // French Hero Tagline
+    ctx.font = '700 30px -apple-system, BlinkMacSystemFont, sans-serif';
+    const tg = ctx.createLinearGradient(-350, 0, 350, 0);
+    tg.addColorStop(0, '#B79CFF');
+    tg.addColorStop(0.5, '#00E5FF');
+    tg.addColorStop(1, '#22F2A6');
+    ctx.fillStyle = tg;
+    ctx.fillText('L’intelligence qui pense avec vous.', 0, 78);
+
+    // CTA Pill Button
+    const pulse = 1 + Math.sin(t * 5) * 0.025;
+    ctx.save();
+    ctx.translate(0, 158);
+    ctx.scale(pulse, pulse);
+
+    roundRect(-245, -32, 490, 64, 32);
+    const btnG = ctx.createLinearGradient(-245, -32, 245, 32);
+    btnG.addColorStop(0, '#7C5CFF');
+    btnG.addColorStop(1, '#00E5FF');
+    ctx.fillStyle = btnG;
+    ctx.fill();
+
+    ctx.font = '800 20px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillText('TÉLÉCHARGER GRATUITEMENT  →', 0, 7);
+    ctx.restore();
+
+    // Platform availability footer
+    ctx.font = '600 15px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.65)';
+    ctx.fillText('Disponible maintenant sur macOS • iOS • Web  |  mentis.app', 0, 248);
+
+    ctx.restore();
+  }
+
+  // Top HUD / Showreel Progress Bar
+  function renderHUD(t) {
+    ctx.save();
+    // Top-left subtle brand watermark
+    ctx.font = '700 13px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.textAlign = 'left';
+    ctx.fillText('MENTIS AI  //  SHOWREEL OFFICIEL', 36, 36);
+
+    // Top-right French status pill
+    ctx.textAlign = 'right';
+    ctx.fillStyle = 'rgba(0, 229, 255, 0.75)';
+    ctx.fillText('● MOTEUR NEURONAL v3.0', W - 36, 36);
+
+    // Bottom timeline progress bar
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.fillRect(0, H - 4, W, 4);
+    const g = ctx.createLinearGradient(0, 0, W, 0);
+    g.addColorStop(0, '#7C5CFF');
+    g.addColorStop(0.5, '#00E5FF');
+    g.addColorStop(1, '#22F2A6');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, H - 4, W * (t / window.DUR), 4);
+    ctx.restore();
+  }
+
+  function frame(now) {
+    const t = ((now / 1000) + timeOffset) % window.DUR;
+
+    drawBackground(t);
+
+    if (t < 2.6) renderScene1(t);
+    if (t >= 2.4 && t < 5.6) renderScene2(t);
+    if (t >= 5.3 && t < 8.7) renderScene3(t);
+    if (t >= 8.5 && t < 11.9) renderScene4(t);
+    if (t >= 11.6) renderScene5(t);
+
+    renderHUD(t);
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

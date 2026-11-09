@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+// The prompt asks for 5 s, but DUR must be at least 15 s: the 5 s animation plays, then holds.
+window.DUR=15;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const off=parseFloat(new URLSearchParams(location.search).get('t'))||0;
+const t0=performance.now()-off*1000;
+const eio=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+const cl=v=>Math.max(0,Math.min(1,v));
+const seg=(t,a,b)=>cl((t-a)/(b-a));
+const TXT="I'm a motion designer, what should my next career be?";
+function rr(X,Y,w,h,r){x.beginPath();x.roundRect(X,Y,w,h,r);}
+function frame(){
+let t=((performance.now()-t0)/1000)%DUR;
+const W=1280,H=720,cx=640,cy=360;
+const g=x.createRadialGradient(cx,cy,0,cx,cy,800);g.addColorStop(0,'#1d2333');g.addColorStop(1,'#07080c');
+x.fillStyle=g;x.fillRect(0,0,W,H);
+// Bounce phase 0-1.6s: dot enters from left, bounces with decreasing arcs into center
+let dx,dy,r=14;
+if(t<1.6){
+ const p=eio(seg(t,0,1.6));dx=-40+(cx+40)*p;
+ const hops=[[0,.45,330],[.45,.8,160],[.8,1.05,60],[1.05,1.25,18]];
+ dy=cy;
+ for(const[a,b,h]of hops){if(t>=a&&t<b){const u=(t-a)/(b-a);dy=cy-h*4*u*(1-u);}}
+ if(t<.0001)dy=cy;
+ // squash on landing
+ let sq=0;for(const[a]of hops){const d=t-a;if(a>0&&d>=0&&d<.08)sq=Math.sin(d/.08*Math.PI)*.35*(1-a);}
+ x.save();x.translate(dx,dy);x.scale(1+sq,1-sq);
+ x.shadowColor='rgba(120,170,255,.6)';x.shadowBlur=25;x.fillStyle='#fff';
+ x.beginPath();x.arc(0,0,r,0,7);x.fill();x.restore();
+ // shadow on floor
+ x.fillStyle='rgba(0,0,0,.35)';x.beginPath();x.ellipse(dx,cy+r+6,r*(1-(cy-dy)/500),4,0,0,7);x.fill();
+}else{
+ // expand 1.6-2.6s
+ const e=eio(seg(t,1.6,2.6)),e2=eio(seg(t,1.6,2.2));
+ const bw=28+(860-28)*e,bh=28+(76-28)*e2;
+ const pulse=t<1.75?Math.sin(seg(t,1.6,1.75)*Math.PI)*6:0;
+ x.save();x.shadowColor='rgba(80,140,255,.35)';x.shadowBlur=40*e+20;x.shadowOffsetY=10*e;
+ x.fillStyle='#fff';rr(cx-bw/2-pulse,cy-bh/2-pulse,bw+pulse*2,bh+pulse*2,bh/2+pulse);x.fill();x.restore();
+ const a=eio(seg(t,2.3,2.7));
+ x.globalAlpha=a;
+ // magnifier icon
+ const ix=cx-bw/2+44,iy=cy;
+ x.strokeStyle='#6b7280';x.lineWidth=3;x.beginPath();x.arc(ix-3,iy-3,10,0,7);x.stroke();
+ x.beginPath();x.moveTo(ix+5,iy+5);x.lineTo(ix+13,iy+13);x.stroke();
+ // typed text 2.7-4.6s
+ const n=Math.floor(TXT.length*seg(t,2.7,4.6));
+ const s=TXT.slice(0,n);
+ x.font='500 26px Helvetica,Arial,sans-serif';x.fillStyle='#1f2430';x.textBaseline='middle';
+ const tx=ix+32;x.fillText(s,tx,cy+1);
+ if(n===0){x.fillStyle='#a0a6b2';x.fillText('Search',tx,cy+1);}
+ // caret
+ const tw=n?x.measureText(s).width:0;
+ if(n<TXT.length||Math.floor(t*2)%2===0){x.fillStyle='#3b82f6';x.fillRect(tx+tw+3,cy-15,2.5,30);}
+ // button glow at end
+ const b=eio(seg(t,4.6,5));
+ if(b>0){x.globalAlpha=b;x.fillStyle='#3b82f6';x.beginPath();x.arc(cx+bw/2-38,cy,22,0,7);x.fill();
+ x.strokeStyle='#fff';x.lineWidth=3;x.beginPath();x.moveTo(cx+bw/2-46,cy);x.lineTo(cx+bw/2-30,cy);x.lineTo(cx+bw/2-37,cy-7);x.moveTo(cx+bw/2-30,cy);x.lineTo(cx+bw/2-37,cy+7);x.stroke();}
+ x.globalAlpha=1;
+}
+requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

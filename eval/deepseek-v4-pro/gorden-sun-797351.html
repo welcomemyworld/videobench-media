@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+body{margin:0;background:#000;display:flex;justify-content:center;align-items:center;height:100vh;overflow:hidden}
+#stage{position:relative;width:1280px;height:720px}
+canvas{position:absolute;top:0;left:0;width:100%;height:100%}
+</style></head><body><div id="stage"><canvas id="gl" width="1280" height="720"></canvas><canvas id="ov" width="1280" height="720"></canvas></div>
+<script>
+const gl=document.getElementById('gl').getContext('webgl',{preserveDrawingBuffer:true});
+const ov=document.getElementById('ov'),ctx=ov.getContext('2d');
+const DUR=24;window.DUR=DUR;
+const params=new URLSearchParams(location.search);let tOff=parseFloat(params.get('t')||'0');if(isNaN(tOff))tOff=0;
+const S=Math.sin,C=Math.cos,T=Math.tan;
+function m4p(f,a,n,f2){let t=1/T(f/2),r=[];r[0]=t/a;r[5]=t;r[10]=(f2+n)/(n-f2);r[11]=-1;r[14]=2*f2*n/(n-f2);return r}
+function m4l(e,c,u){let z=[e[0]-c[0],e[1]-c[1],e[2]-c[2]],zl=Math.hypot(...z);z=z.map(v=>v/zl);let x=[u[1]*z[2]-u[2]*z[1],u[2]*z[0]-u[0]*z[2],u[0]*z[1]-u[1]*z[0]],xl=Math.hypot(...x);x=x.map(v=>v/xl);let y=[z[1]*x[2]-z[2]*x[1],z[2]*x[0]-z[0]*x[2],z[0]*x[1]-z[1]*x[0]];return[x[0],y[0],z[0],0,x[1],y[1],z[1],0,x[2],y[2],z[2],0,-(x[0]*e[0]+x[1]*e[1]+x[2]*e[2]),-(y[0]*e[0]+y[1]*e[1]+y[2]*e[2]),-(z[0]*e[0]+z[1]*e[1]+z[2]*e[2]),1]}
+function m4m(a,b){let r=new Array(16);for(let i=0;i<4;i++)for(let j=0;j<4;j++){let s=0;for(let k=0;k<4;k++)s+=a[k*4+j]*b[i*4+k];r[i*4+j]=s}return r}
+function m4t(x,y,z){return[1,0,0,0,0,1,0,0,0,0,1,0,x,y,z,1]}
+function m4ry(a){let c=C(a),s=S(a);return[c,0,-s,0,0,1,0,0,s,0,c,0,0,0,0,1]}
+function m4s(x,y,z){return[x,0,0,0,0,y,0,0,0,0,z,0,0,0,0,1]}
+function m4i(a){let r=new Array(16),d=1/(a[0]*(a[5]*a[10]-a[6]*a[9])-a[1]*(a[4]*a[10]-a[6]*a[8])+a[2]*(a[4]*a[9]-a[5]*a[8]));r[0]=(a[5]*a[10]-a[6]*a[9])*d;r[1]=-(a[1]*a[10]-a[2]*a[9])*d;r[2]=(a[1]*a[6]-a[2]*a[5])*d;r[3]=0;r[4]=-(a[4]*a[10]-a[6]*a[8])*d;r[5]=(a[0]*a[10]-a[2]*a[8])*d;r[6]=-(a[0]*a[6]-a[2]*a[4])*d;r[7]=0;r[8]=(a[4]*a[9]-a[5]*a[8])*d;r[9]=-(a[0]*a[9]-a[1]*a[8])*d;r[10]=(a[0]*a[5]-a[1]*a[4])*d;r[11]=0;r[12]=0;r[13]=0;r[14]=0;r[15]=1;return r}
+let geo={};
+function box(){let v=[],n=[],idx=[];const fs=[[1,0,0],[ -1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];for(let f=0;f<6;f++){let nx=fs[f][0],ny=fs[f][1],nz=fs[f][2];let c=[[-0.5,-0.5,-0.5],[0.5,-0.5,-0.5],[0.5,0.5,-0.5],[-0.5,0.5,-0.5]];if(f===0)c=[[0.5,-0.5,-0.5],[0.5,0.5,-0.5],[0.5,0.5,0.5],[0.5,-0.5,0.5]];if(f===1)c=[[-0.5,-0.5,0.5],[-0.5,0.5,0.5],[-0.5,0.5,-0.5],[-0.5,-0.5,-0.5]];if(f===2)c=[[-0.5,0.5,-0.5],[0.5,0.5,-0.5],[0.5,0.5,0.5],[-0.5,0.5,0.5]];if(f===3)c=[[-0.5,-0.5,0.5],[0.5,-0.5,0.5],[0.5,-0.5,-0.5],[-0.5,-0.5,-0.5]];if(f===4)c=[[-0.5,-0.5,0.5],[0.5,-0.5,0.5],[0.5,0.5,0.5],[-0.5,0.5,0.5]];if(f===5)c=[[-0.5,-0.5,-0.5],[0.5,-0.5,-0.5],[0.5,0.5,-0.5],[-0.5,0.5,-0.5]];let off=v.length/3;for(let i=0;i<4;i++){v.push(c[i][0],c[i][1],c[i][2]);n.push(nx,ny,nz)}idx.push(off,off+1,off+2,off,off+2,off+3)}return{v:F32(v),n:F32(n),i:U16(idx),cnt:idx.length}}
+function sphere(seg=16,ring=12){let v=[],n=[],idx=[];for(let j=0;j<=ring;j++){let th=j/ring*Math.PI,st=Math.sin(th),ct=Math.cos(th);for(let i=0;i<=seg;i++){let ph=i/seg*2*Math.PI,sp=Math.sin(ph),cp=Math.cos(ph);let x=st*cp,y=ct,z=st*sp;v.push(x,y,z);n.push(x,y,z)}}for(let j=0;j<ring;j++)for(let i=0;i<=seg;i++){let a=j*(seg+1)+i,b=(j+1)*(seg+1)+i,c=a+1,d=b+1;idx.push(a,b,c,a,c,d)}return{v:F32(v),n:F32(n),i:U16(idx),cnt:idx.length}}
+function cyl(rad=0.5,h=1,seg=16){let v=[],n=[],idx=[];for(let i=0;i<=seg;i++){let ph=i/seg*2*Math.PI,x=rad*Math.cos(ph),z=rad*Math.sin(ph);v.push(x,h/2,z);n.push(x/rad,0,z/rad);v.push(x,-h/2,z);n.push(x/rad,0,z/rad)}let side=v.length/3;for(let i=0;i<seg;i++){let a=i*2,b=i*2+1,c=(i+1)*2,d=(i+1)*2+1;idx.push(a,b,c,a,c,d)}let topOff=v.length/3;for(let i=0;i<=seg;i++){let ph=i/seg*2*Math.PI;v.push(rad*Math.cos(ph),h/2,rad*Math.sin(ph));n.push(0,1,0)}let topC=v.length/3;v.push(0,h/2,0);n.push(0,1,0);for(let i=0;i<seg;i++){idx.push(topC,topOff+i,topOff+i+1)}let botOff=v.length/3;for(let i=0;i<=seg;i++){let ph=i/seg*2*Math.PI;v.push(rad*Math.cos(ph),-h/2,rad*Math.sin(ph));n.push(0,-1,0)}let botC=v.length/3;v.push(0,-h/2,0);n.push(0,-1,0);for(let i=0;i<seg;i++){idx.push(botC,botOff+i+1,botOff+i)}return{v:F32(v),n:F32(n),i:U16(idx),cnt:idx.length}}
+function plane(w=20,h=20){let v=[-w/2,0,-h/2,w/2,0,-h/2,w/2,0,h/2,-w/2,0,h/2],n=[0,1,0,0,1,0,0,1,0,0,1,0],idx=[0,1,2,0,2,3];return{v:F32(v),n:F32(n),i:U16(idx),cnt:6}}
+function F32(a){return new Float32Array(a)}function U16(a){return new Uint16Array(a)}
+geo.box=box();geo.sphere=sphere();geo.cyl=cyl();geo.plane=plane();
+const vs=gl.createShader(gl.VERTEX_SHADER),fs=gl.createShader(gl.FRAGMENT_SHADER);
+gl.shaderSource(vs,`attribute vec3 aP,aN;uniform mat4 uM,uV,uP;varying vec3 vN,vW;void main(){vec4 w=uM*vec4(aP,1.);vW=w.xyz;vN=mat3(uM)*aN;gl_Position=uP*uV*w;}`);
+gl.shaderSource(fs,`precision mediump float;varying vec3 vN,vW;uniform vec3 uC,uLD,uLC,uA,uE;uniform float uEm;void main(){vec3 N=normalize(vN),L=normalize(-uLD);float d=max(dot(N,L),0.);vec3 R=reflect(-L,N),V=normalize(uE-vW);float s=pow(max(dot(V,R),0.),16.)*.5;vec3 col=uC*(uA+uLC*d)+uLC*s+uC*uEm*1.5;gl_FragColor=vec4(col,1.);}`);
+gl.compileShader(vs);gl.compileShader(fs);
+const prog=gl.createProgram();gl.attachShader(prog,vs);gl.attachShader(prog,fs);gl.linkProgram(prog);gl.useProgram(prog);
+const buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+const ibuf=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ibuf);
+const loc={aP:gl.getAttribLocation(prog,'aP'),aN:gl.getAttribLocation(prog,'aN'),uM:gl.getUniformLocation(prog,'uM'),uV:gl.getUniformLocation(prog,'uV'),uP:gl.getUniformLocation(prog,'uP'),uC:gl.getUniformLocation(prog,'uC'),uLD:gl.getUniformLocation(prog,'uLD'),uLC:gl.getUniformLocation(prog,'uLC'),uA:gl.getUniformLocation(prog,'uA'),uE:gl.getUniformLocation(prog,'uE'),uEm:gl.getUniformLocation(prog,'uEm')};
+gl.enable(gl.DEPTH_TEST);gl.enable(gl.CULL_FACE);gl.cullFace(gl.BACK);
+function drawObj(o){let g=geo[o.geo];gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.bufferData(gl.ARRAY_BUFFER,g.v,gl.STATIC_DRAW);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ibuf);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,g.i,gl.STATIC_DRAW);let model=m4m(m4t(o.pos[0],o.pos[1],o.pos[2]),m4m(m4ry(o.rotY||0),m4s(o.scale[0],o.scale[1],o.scale[2])));gl.uniformMatrix4fv(loc.uM,false,new Float32Array(model));gl.uniform3fv(loc.uC,new Float32Array(o.color));gl.uniform1f(loc.uEm,o.emissive||0);gl.enableVertexAttribArray(loc.aP);gl.vertexAttribPointer(loc.aP,3,gl.FLOAT,false,0,0);gl.enableVertexAttribArray(loc.aN);gl.vertexAttribPointer(loc.aN,3,gl.FLOAT,false,0,0);gl.drawElements(gl.TRIANGLES,g.cnt,gl.UNSIGNED_SHORT,0);}
+let scenes=[],ball={pos:[0,6,0],vel:[0,0,0],r:0.5,onGround:false,bounceCount:0};
+function addObj(arr,geo,color,pos,scale,rotY=0,emBase=0.2){arr.push({geo,color,pos,scale,rotY,emissive:emBase,base:emBase,emDecay:0.92})}
+function buildScenes(){
+scenes=[];
+// Scene 0 Moonlight
+let objs=[];addObj(objs,'plane',[0.1,0.1,0.3],[0,0,0],[20,1,20]);addObj(objs,'box',[0.5,0.5,0.7],[-4,1,-4],[2,2,2]);addObj(objs,'box',[0.5,0.5,0.7],[4,1,-4],[2,2,2]);addObj(objs,'box',[0.5,0.5,0.7],[-4,1,4],[2,2,2]);addObj(objs,'box',[0.5,0.5,0.7],[4,1,4],[2,2,2]);addObj(objs,'cyl',[0.7,0.7,0.9],[-3,2,-3],[0.6,4,0.6]);addObj(objs,'cyl',[0.7,0.7,0.9],[3,2,-3],[0.6,4,0.6]);addObj(objs,'cyl',[0.7,0.7,0.9],[-3,2,3],[0.6,4,0.6]);addObj(objs,'cyl',[0.7,0.7,0.9],[3,2,3],[0.6,4,0.6]);addObj(objs,'box',[0.8,0.8,0.9],[0,0.5,0],[3,1,3]);scenes.push({objs,cam:{eye:[0,4,10],center:[0,1,0]},bpm:60,melody:[[64,1],[62,1],[60,1],[62,1],[64,1],[64,1],[60,2]],lightDir:[0.3,1,0.2],ambient:[0.2,0.2,0.4],bg:[0.05,0.05,0.1],ballStart:[0,6,0]});
+// Scene 1 Canon
+objs=[];addObj(objs,'plane',[0.3,0.5,0.3],[0,0,0],[20,1,20]);for(let i=0;i<5;i++){addObj(objs,'box',[0.4,0.6,0.4],[-3+i*1.5,0.5+i*0.3,0],[1.2,0.5+i*0.3,1.2])}addObj(objs,'sphere',[0.9,0.5,0.5],[3,2,2],[1.5,1.5,1.5]);addObj(objs,'sphere',[0.5,0.9,0.5],[-3,2,-2],[1.5,1.5,1.5]);addObj(objs,'cyl',[0.6,0.4,0.2],[0,1.5,-4],[0.8,3,0.8]);addObj(objs,'cyl',[0.6,0.4,0.2],[2,1.5,4],[0.8,3,0.8]);scenes.push({objs,cam:{eye:[0,5,12],center:[0,2,0]},bpm:72,melody:[[76,1],[74,1],[72,1],[74,1],[76,1],[76,1],[74,1],[72,1],[74,1],[76,1],[79,1],[78,1],[76,1],[74,2]],lightDir:[0,1,0],ambient:[0.3,0.3,0.2],bg:[0.3,0.4,0.3],ballStart:[0,7,0]});
+// Scene 2 Ode to Joy
+objs=[];addObj(objs,'plane',[0.2,0.2,0.5],[0,0,0],[20,1,20]);for(let i=0;i<8;i++){let x=-4+i*1.2;addObj(objs,'box',[Math.random()*0.8+0.2,Math.random()*0.8+0.2,Math.random()*0.8+0.2],[x,0.5+Math.random()*0.5,Math.random()*4-2],[0.8,1+Math.random()*0.5,0.8])}addObj(objs,'box',[0.9,0.6,0.2],[0,1.5,0],[4,1,2]);addObj(objs,'box',[0.2,0.6,0.9],[-3,2,3],[2,1,4]);addObj(objs,'sphere',[0.8,0.8,0.1],[3,2,-3],[1.8,1.8,1.8]);scenes.push({objs,cam:{eye:[0,4,12],center:[0,2,0]},bpm:120,melody:[[64,1],[64,1],[65,1],[67,1],[67,1],[65,1],[64,1],[62,1],[60,1],[60,1],[62,1],[64,2],[64,1],[62,1],[62,2]],lightDir:[0.5,1,0.5],ambient:[0.4,0.4,0.5],bg:[0.2,0.2,0.4],ballStart:[0,8,0]});
+}
+buildScenes();
+let audioCtx=null;function initAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)()}
+function playNote(midi,time,dur,type='triangle'){if(!audioCtx)return;let f=440*Math.pow(2,(midi-69)/12);let o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type=type;o.frequency.value=f;g.gain.setValueAtTime(0,time);g.gain.linearRampToValueAtTime(0.2,time+0.01);g.gain.exponentialRampToValueAtTime(0.001,time+dur);o.connect(g);g.connect(audioCtx.destination);o.start(time);o.stop(time+dur)}
+let nextNoteIdx=0,nextNoteTime=0,currentSceneIdx=-1,sceneStartTime=0;
+function scheduleAudio(cur,tSec){let si=Math.floor((tSec%DUR)/8)%scenes.length;if(si!==currentSceneIdx){currentSceneIdx=si;sceneStartTime=Math.floor((tSec%DUR)/8)*8;nextNoteIdx=0;nextNoteTime=sceneStartTime}let sc=scenes[currentSceneIdx];let beatDur=60/sc.bpm;while(nextNoteTime<cur+0.3){if(nextNoteIdx>=sc.melody.length)nextNoteTime=sceneStartTime+sc.melody.length*beatDur;else{let [midi,beats]=sc.melody[nextNoteIdx];let noteStart=nextNoteTime;let noteDur=beats*beatDur*0.8;playNote(midi,noteStart,noteDur);nextNoteIdx++;nextNoteTime+=beats*beatDur}if(nextNoteIdx>=sc.melody.length&&nextNoteTime<cur)nextNoteTime=sceneStartTime}}
+function beatIndexAt(tSec){let si=Math.floor((tSec%DUR)/8)%scenes.length;let sc=scenes[si];let local=(tSec-sceneStartTime)%(sc.melody.reduce((s,m)=>s+m[1],0)/sc.bpm*60);let beatDur=60/sc.bpm;return Math.floor(local/beatDur)}
+let lastBeat=-1;
+function updatePhys(dt,tSec){let sc=scenes[currentSceneIdx];ball.vel[1]-=9.8*dt;ball.pos[0]+=ball.vel[0]*dt;ball.pos[1]+=ball.vel[1]*dt;ball.pos[2]+=ball.vel[2]*dt;
+if(ball.pos[1]-ball.r<0){ball.pos[1]=ball.r;if(Math.abs(ball.vel[1])>0.5){ball.vel[1]=-ball.vel[1]*0.7;ctx2dTxt('BOING!',ball.pos)}else ball.vel[1]=0;ball.vel[0]*=0.95;ball.vel[2]*=0.95;ball.onGround=true}else ball.onGround=false;
+for(let o of sc.objs){if(o.geo==='plane')continue;let hx=o.scale[0]/2,hy=o.scale[1]/2,hz=o.scale[2]/2;let ox=o.pos[0],oy=o.pos[1],oz=o.pos[2];let cx=Math.max(ox-hx,Math.min(ball.pos[0],ox+hx));let cy=Math.max(oy-hy,Math.min(ball.pos[1],oy+hy));let cz=Math.max(oz-hz,Math.min(ball.pos[2],oz+hz));let dx=ball.pos[0]-cx,dy=ball.pos[1]-cy,dz=ball.pos[2]-cz;let dist=Math.hypot(dx,dy,dz);if(dist<ball.r&&dist>1e-6){let nx=dx/dist,ny=dy/dist,nz=dz/dist;ball.pos[0]=cx+nx*ball.r;ball.pos[1]=cy+ny*ball.r;ball.pos[2]=cz+nz*ball.r;let vn=ball.vel[0]*nx+ball.vel[1]*ny+ball.vel[2]*nz;if(vn<0){ball.vel[0]-=1.7*vn*nx;ball.vel[1]-=1.7*vn*ny;ball.vel[2]-=1.7*vn*nz;if(Math.abs(vn)>3)ctx2dTxt('OUCH!',ball.pos);else if(Math.abs(vn)>1.5)ctx2dTxt('Wheee!',ball.pos);ball.bounceCount++}}}
+}
+function ctx2dTxt(txt,pos3){let cam=scenes[currentSceneIdx].cam;let eye=cam.eye,center=cam.center;let view=m4l(eye,center,[0,1,0]);let proj=m4p(45*Math.PI/180,1280/720,0.1,100);let mv=m4m(view,m4t(pos3[0],pos3[1],pos3[2]));let p=m4m(proj,mv);let w=p[3]*pos3[0]+p[7]*pos3[1]+p[11]*pos3[2]+p[15];if(w<=0)return;let sx=(p[0]*pos3[0]+p[4]*pos3[1]+p[8]*pos3[2]+p[12])/w*640+640;let sy=-(p[1]*pos3[0]+p[5]*pos3[1]+p[9]*pos3[2]+p[13])/w*360+360;ctx.fillStyle='rgba(255,255,0,0.9)';ctx.font='bold 40px sans-serif';ctx.textAlign='center';ctx.fillText(txt,sx,sy)}
+let lastTime=0;function frame(ts){let tSec=ts/1000+tOff;let cur=tSec%DUR;let si=Math.floor(cur/8)%scenes.length;if(si!==currentSceneIdx){currentSceneIdx=si;sceneStartTime=Math.floor(cur/8)*8;nextNoteIdx=0;nextNoteTime=sceneStartTime;ball.pos=[...scenes[si].ballStart];ball.vel=[2+Math.random()*2,0,2+Math.random()*2];ball.bounceCount=0}let sc=scenes[currentSceneIdx];let dt=Math.min((ts-lastTime)/1000,0.05)||0.016;lastTime=ts;
+scheduleAudio(cur);
+updatePhys(dt,cur);
+let bi=Math.floor(((cur-sceneStartTime)%(sc.melody.reduce((s,m)=>s+m[1],0)/sc.bpm*60))/(60/sc.bpm));if(bi!==lastBeat){lastBeat=bi;for(let o of sc.objs)o.emissive=1.5}
+for(let o of sc.objs)o.emissive=o.base+(o.emissive-o.base)*o.emDecay;
+gl.viewport(0,0,1280,720);gl.clearColor(sc.bg[0],sc.bg[1],sc.bg[2],1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+let proj=m4p(45*Math.PI/180,1280/720,0.1,100);let view=m4l(sc.cam.eye,sc.cam.center,[0,1,0]);gl.uniformMatrix4fv(loc.uV,false,new Float32Array(view));gl.uniformMatrix4fv(loc.uP,false,new Float32Array(proj));gl.uniform3fv(loc.uLD,new Float32Array(sc.lightDir));gl.uniform3fv(loc.uLC,new Float32Array([1,1,1]));gl.uniform3fv(loc.uA,new Float32Array(sc.ambient));gl.uniform3fv(loc.uE,new Float32Array(sc.cam.eye));
+for(let o of sc.objs)drawObj(o);
+let ballObj={geo:'sphere',color:[1,0.9,0.2],pos:ball.pos,scale:[ball.r,ball.r,ball.r],emissive:0.5};drawObj(ballObj);
+ctx.clearRect(0,0,1280,720);ctx.fillStyle='rgba(255,255,255,0.8)';ctx.font='24px sans-serif';ctx.textAlign='left';ctx.fillText(sc.bpm+' BPM',20,30);ctx.fillText('Scene '+(si+1),20,60);
+requestAnimationFrame(frame)}
+document.addEventListener('click',initAudio);
+initAudio();
+requestAnimationFrame(frame);
+</script></body></html>

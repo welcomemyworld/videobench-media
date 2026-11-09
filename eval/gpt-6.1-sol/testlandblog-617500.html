@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wie funktioniert eine Dampfmaschine?</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000}body{display:grid;place-items:center}canvas{display:block;width:min(100vw,177.7778vh);height:min(56.25vw,100vh)}
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+window.DUR=54;
+const canvas=document.getElementById('stage'),c=canvas.getContext('2d');
+const W=1280,H=720,TAU=Math.PI*2;
+const C={bg:'#090e18',white:'#e6edf7',muted:'#8896af',grid:'#182235',steam:'#ffb85f',water:'#58c5ed',gold:'#f5dc87',steel:'#b0bdcf',green:'#85dfbd'};
+const start=performance.now(),raw=Number(new URLSearchParams(location.search).get('t')||0),offset=Number.isFinite(raw)?raw:0;
+const bounds=[0,7,16,26,35,45,54];
+const heads=[
+['Wie wird Dampf zu Bewegung?','Eine doppelt wirkende Dampfmaschine — anschaulich und vereinfacht.'],
+['1. Wärme erzeugt Dampf','Der Kessel verwandelt zugeführte Wärme in Druck.'],
+['2. Druck bewegt den Kolben','Entscheidend ist der Druckunterschied zwischen beiden Seiten.'],
+['3. Aus Hin und Her wird Drehung','Kolbenstange, Pleuel und Kurbel übersetzen die Bewegung.'],
+['4. Das Ventil gibt den Takt vor','Dampfzufuhr und Auslass wechseln ihre Seiten.'],
+['5. Die Energiekette','Wärme → Druckarbeit → mechanische Bewegung']
+];
+const captions=[
+[0,3.5,'Feuer erhitzt Wasser. Dampf drückt auf einen Kolben.','Eine Kurbel macht daraus eine Drehbewegung.'],
+[3.5,7,'Die Maschine läuft immer wieder durch denselben Zyklus.','Wir folgen der Energie — vom Feuer bis zum Schwungrad.'],
+[7,11.5,'Im geschlossenen Kessel siedet Wasser und bildet Dampf.','Die Wärmezufuhr hält den Dampfdruck aufrecht.'],
+[11.5,16,'Der Dampf strömt durch eine Leitung zum Ventil.','Orange steht für Frischdampf unter hohem Druck.'],
+[16,21,'Eine Kolbenseite erhält Frischdampf, die andere öffnet zum Auslass.','Der Druckunterschied erzeugt eine Kraft auf den Kolben.'],
+[21,26,'Wenn das Ventil umschaltet, wechseln die Seiten.','So leistet der Dampf in beiden Bewegungsrichtungen Arbeit.'],
+[26,30.5,'Die Kolbenstange verschiebt das geführte Gelenk.','Das Pleuel verbindet dieses Gelenk mit dem Kurbelzapfen.'],
+[30.5,35,'Die Kurbel dreht das Schwungrad. Es speichert Bewegungsenergie','und trägt die Maschine über die Umkehrpunkte hinweg.'],
+[35,40,'Die Kurbelbewegung steuert auch das Ventil.','Nahe den Umkehrpunkten werden Einlass und Auslass vertauscht.'],
+[40,45,'Frischdampf hinein, verbrauchter Dampf hinaus — dann umgekehrt.','Hier ist die Ventilsteuerung als einfaches Schaltschema dargestellt.'],
+[45,49.5,'Die Maschine wandelt einen Teil der zugeführten Wärme in Arbeit um.','Das Schwungrad kann damit zum Beispiel eine Fabrikmaschine antreiben.'],
+[49.5,54,'Nicht die gesamte Wärme wird zu Arbeit: Abwärme und Reibung bleiben.','Der abgeführte Dampf kann in einem Kondensator wieder zu Wasser werden.']
+];
+function clamp(x,a=0,b=1){return Math.max(a,Math.min(b,x))}
+function smooth(x){x=clamp(x);return x*x*(3-2*x)}
+function text(s,x,y,size=20,col=C.white,align='left',weight=400){
+ c.fillStyle=col;c.font=`${weight} ${size}px system-ui,-apple-system,"Segoe UI",sans-serif`;c.textAlign=align;c.textBaseline='alphabetic';c.fillText(s,x,y);
+}
+function line(points,col,width=2,dash=[]){
+ c.beginPath();c.moveTo(...points[0]);for(let i=1;i<points.length;i++)c.lineTo(...points[i]);
+ c.strokeStyle=col;c.lineWidth=width;c.lineCap='round';c.lineJoin='round';c.setLineDash(dash);c.stroke();c.setLineDash([]);
+}
+function rect(x,y,w,h,r=10,fill=null,stroke=null,lw=1){
+ c.beginPath();c.roundRect(x,y,w,h,r);if(fill){c.fillStyle=fill;c.fill()}if(stroke){c.strokeStyle=stroke;c.lineWidth=lw;c.stroke()}
+}
+function circle(x,y,r,fill,stroke=null,lw=1){
+ c.beginPath();c.arc(x,y,r,0,TAU);if(fill){c.fillStyle=fill;c.fill()}if(stroke){c.strokeStyle=stroke;c.lineWidth=lw;c.stroke()}
+}
+function arrow(x,y,x2,y2,col,width=3,head=9){
+ line([[x,y],[x2,y2]],col,width);const a=Math.atan2(y2-y,x2-x);
+ line([[x2-head*Math.cos(a-.48),y2-head*Math.sin(a-.48)],[x2,y2],[x2-head*Math.cos(a+.48),y2-head*Math.sin(a+.48)]],col,width);
+}
+function pipe(points,col,t,forward=true){
+ line(points,'#263349',13);line(points,col,3);
+ let lengths=[],total=0;
+ for(let i=1;i<points.length;i++){const d=Math.hypot(points[i][0]-points[i-1][0],points[i][1]-points[i-1][1]);lengths.push(d);total+=d}
+ for(let n=0;n<Math.ceil(total/47);n++){
+  let d=((n*47+t*65*(forward?1:-1))%total+total)%total,idx=0;
+  while(idx<lengths.length-1&&d>lengths[idx])d-=lengths[idx++];
+  const a=points[idx],b=points[idx+1],f=d/lengths[idx],u=(b[0]-a[0])/lengths[idx],v=(b[1]-a[1])/lengths[idx];
+  const x=a[0]+(b[0]-a[0])*f,y=a[1]+(b[1]-a[1])*f;
+  circle(x,y,2.8,col);line([[x-u*9*(forward?1:-1),y-v*9*(forward?1:-1)],[x,y]],col,2);
+ }
+}
+function glow(fn,col,blur=15){c.save();c.shadowColor=col;c.shadowBlur=blur;fn();c.restore()}
+function alpha(a,fn){c.save();c.globalAlpha*=a;fn();c.restore()}
+function tag(s,x,y,col=C.muted){text(s,x,y,15,col,'center',500)}
+function boiler(t,focus){
+ const x=100,y=312,w=160,h=175;
+ glow(()=>rect(x,y,w,h,22,'#111d2c',focus?C.steam:'#60718b',2),focus?C.steam:'#23314a',focus?16:0);
+ c.save();c.beginPath();c.roundRect(x+4,y+4,w-8,h-8,18);c.clip();
+ const g=c.createLinearGradient(0,395,0,483);g.addColorStop(0,'#194965');g.addColorStop(1,'#0e293e');c.fillStyle=g;c.fillRect(x,405,w,90);
+ c.beginPath();c.moveTo(x,409);for(let u=0;u<=w;u+=4)c.lineTo(x+u,409+3*Math.sin(u*.06+t*3));c.lineTo(x+w,y+h);c.lineTo(x,y+h);c.closePath();c.fillStyle='#225775';c.fill();
+ for(let i=0;i<21;i++){
+  const p=(t*.26+i*.183)%1,xx=112+(i*37%132)+Math.sin(t*2+i)*3,yy=474-p*62;
+  circle(xx,yy,1.5+3*p,null,'#59c6e788',1);
+ }
+ for(let i=0;i<18;i++){
+  const p=(t*.18+i*.117)%1,xx=112+(i*43%133),yy=398-p*65;
+  alpha(.16+.25*Math.sin(p*Math.PI),()=>circle(xx+Math.sin(t+i)*5,yy,2.5,C.steam));
+ }
+ c.restore();
+ line([[115,408],[245,408]],C.water,1);
+ text('Wasser',180,452,17,C.water,'center');text('Dampf',180,365,17,C.steam,'center');
+ rect(145,297,70,15,4,'#334159',C.steel,1);
+ circle(180,292,22,'#101b2a',C.steel,2);
+ for(let i=0;i<5;i++){let a=Math.PI+(i/4)*Math.PI;line([[180+14*Math.cos(a),292+14*Math.sin(a)],[180+17*Math.cos(a),292+17*Math.sin(a)]],C.muted,1)}
+ const a=3.8+.08*Math.sin(t);line([[180,292],[180+15*Math.cos(a),292+15*Math.sin(a)]],C.steam,2);circle(180,292,3,C.steam);
+ rect(105,487,150,43,6,'#221a19','#61422e',1);
+ for(let i=0;i<9;i++){
+  let xx=119+i*15,hh=19+9*Math.sin(t*5+i*1.9);
+  c.beginPath();c.moveTo(xx-7,523);c.quadraticCurveTo(xx-8,512,xx+2,523-hh);c.quadraticCurveTo(xx+1,511,xx+7,523);c.closePath();c.fillStyle=i%2?'#ffb75b':'#ef7950';c.fill();
+ }
+ tag('Kessel',180,553,C.white);
+ arrow(77,521,77,469,C.steam,2,7);text('Wärme',62,502,14,C.steam,'right');
+}
+function flywheel(t,focus){
+ const x=1040,y=370,r=110,theta=-t*TAU/4.8;
+ glow(()=>circle(x,y,r,null,focus?C.gold:'#64748e',6),C.gold,focus?12:0);
+ circle(x,y,r-10,null,'#34445b',2);
+ for(let i=0;i<8;i++){const a=theta+i*TAU/8;line([[x+24*Math.cos(a),y+24*Math.sin(a)],[x+96*Math.cos(a),y+96*Math.sin(a)]],'#34465f',10)}
+ circle(x,y,26,'#182538',C.steel,2);
+ c.save();c.setLineDash([3,8]);circle(x,y,75,null,'#60718b',1);c.restore();
+ line([[x,y],[x+75*Math.cos(theta),y+75*Math.sin(theta)]],C.gold,8);
+ circle(x,y,8,C.gold,'#101724',2);
+ rect(991,486,98,17,3,'#1e2d43');line([[1018,489],[1030,398]],'#596c86',5);line([[1062,489],[1050,398]],'#596c86',5);
+ tag('Schwungrad',1040,548,C.white);
+ if(focus){
+  const a=theta+.6;c.beginPath();c.arc(x,y,125,a,a-1,true);c.strokeStyle=C.gold;c.lineWidth=2;c.stroke();
+  let e=a-1,xx=x+125*Math.cos(e),yy=y+125*Math.sin(e);
+  arrow(xx-8*Math.sin(e),yy+8*Math.cos(e),xx,yy,C.gold,2,7);
+ }
+}
+function engine(t,section){
+ const theta=-t*TAU/4.8,cx=1040+75*Math.cos(theta),cy=370+75*Math.sin(theta);
+ const cross=cx-Math.sqrt(220*220-(cy-370)*(cy-370)),p=cross-240;
+ const left=Math.sin(theta)>=0,lc=left?C.steam:C.water,rc=left?C.water:C.steam;
+ // Valve train: a schematic kinematic connection.
+ if(section===4){
+  alpha(.65,()=>{line([[1040,370],[1127,457],[1127,516],[780,516],[780,234],[649,234]],C.gold,1.7,[5,6]);circle(1040+15*Math.cos(theta),370+15*Math.sin(theta),4,C.gold);text('gekoppelte Steuerung',942,510,13,C.gold,'center')});
+ }
+ alpha(section===4?.4:1,()=>boiler(t,section===1));
+ pipe([[205,315],[205,186],[565,186],[565,209]],C.steam,t);
+ tag('Frischdampf',371,174,C.steam);
+ pipe([[615,209],[615,165],[845,165]],C.water,t);
+ arrow(845,165,866,165,C.water,2,7);
+ for(let i=0;i<8;i++){let q=(t*.35+i*.131)%1;alpha((1-q)*.5,()=>circle(874+q*69,165-9*Math.sin(q*3+i),3+q*9,C.water))}
+ text('Auslass',945,170,15,C.water);
+ text('Ventil',590,140,18,section===4?C.gold:C.white,'center',500);
+ glow(()=>rect(536,209,108,47,8,'#101c2b',section===4?C.gold:'#657690',2),C.gold,section===4?14:0);
+ if(left){
+  line([[565,211],[552,227],[565,254]],C.steam,4);
+  line([[615,254],[628,227],[615,211]],C.water,4);
+ }else{
+  line([[565,211],[565,220],[615,244],[615,254]],C.steam,4);
+  line([[565,254],[565,243],[615,220],[615,211]],C.water,3);
+ }
+ for(const [xx,yy,col] of [[565,209,C.steam],[615,209,C.water],[565,255,lc],[615,255,rc]])circle(xx,yy,4,'#132035',col,2);
+ pipe([[565,255],[565,275],[455,275],[455,315]],lc,t,left);
+ pipe([[615,255],[615,285],[710,285],[710,315]],rc,t,!left);
+ // Cylinder and chambers
+ rect(430,313,304,114,9,'#101927',section===2?C.white:'#778aa5',2);
+ c.save();c.beginPath();c.rect(438,321,288,98);c.clip();
+ const lg=c.createLinearGradient(438,0,p,0);lg.addColorStop(0,left?'#ffb85f35':'#58c5ed13');lg.addColorStop(1,left?'#ffb85f60':'#58c5ed23');
+ c.fillStyle=lg;c.fillRect(438,321,p-447,98);
+ const rg=c.createLinearGradient(p,0,726,0);rg.addColorStop(0,left?'#58c5ed23':'#ffb85f60');rg.addColorStop(1,left?'#58c5ed13':'#ffb85f35');
+ c.fillStyle=rg;c.fillRect(p+9,321,726-p-9,98);
+ for(let i=0;i<28;i++){
+  const isleft=i<14,a=isleft?441:p+14,b=isleft?p-14:722,q=((t*.16+i*.177)%1);
+  if(b>a){let xx=a+(b-a)*q,yy=333+(i*29%72);circle(xx,yy,1.7,isleft?lc:rc)}
+ }
+ c.restore();
+ rect(p-9,319,18,102,2,'#a7b7cf',C.white,1.5);
+ line([[p-5,324],[p-5,416]],'#e9f0ff',2);line([[p+6,324],[p+6,416]],'#526882',2);
+ line([[p+10,370],[cross,370]],'#314056',15);line([[p+10,370],[cross,370]],C.steel,6);
+ line([[752,392],[900,392]],'#435471',3);line([[752,348],[900,348]],'#435471',3);
+ rect(cross-14,351,28,38,4,'#3c516c',C.steel,1.5);
+ alpha(section===1?.55:1,()=>flywheel(t,section===3));
+ line([[cross,370],[cx,cy]],'#182538',17);line([[cross,370],[cx,cy]],section===3?C.gold:C.steel,9);
+ circle(cross,370,6,'#101827',C.white,2);circle(cx,cy,8,'#142035',C.gold,2);
+ if(section===2||section===4){
+  const ax=left?451:718,bx=left?p-24:p+24;
+  if(Math.abs(ax-bx)>32)arrow(ax,371,bx,371,C.steam,4,11);
+  tag(left?'p hoch':'p niedrig',(438+p-9)/2,345,lc);
+  tag(left?'p niedrig':'p hoch',(p+9+726)/2,345,rc);
+ }
+ tag('Zylinder',578,454,C.white);
+ if(section===2||section===4){
+  text(left?'Dampf links → Kolben nach rechts':'Dampf rechts → Kolben nach links',579,489,17,C.steam,'center',500);
+ }else{
+  tag('Kolben',p,297,C.white);
+  tag('Kolbenstange',775,418,C.muted);
+ }
+ if(section===3){
+  tag('Pleuel',(cross+cx)/2,Math.max(370,cy)+34,C.gold);
+  line([[1110,261],[1087,305]],C.gold,1);
+  text('Kurbel',1115,255,16,C.gold);
+ }
+ return {p,left,cross};
+}
+function energy(t){
+ const items=[['WÄRME',C.steam],['DAMPFDRUCK',C.steam],['KOLBENARBEIT',C.green],['DREHUNG',C.gold]];
+ const x0=311,y=535;
+ items.forEach(([s,col],i)=>{
+  const x=x0+i*189;rect(x,y,166,31,7,'#111f2f',col+'88');
+  text(s,x+83,y+21,12,col,'center',600);
+  if(i<3)arrow(x+171,y+16,x+183,y+16,C.muted,1.5,5);
+ });
+}
+function draw(t){
+ let section=0;while(section<5&&t>=bounds[section+1])section++;
+ c.fillStyle=C.bg;c.fillRect(0,0,W,H);
+ c.save();c.globalAlpha=.47;
+ for(let x=40;x<W;x+=40)line([[x,130],[x,570]],C.grid,.7);
+ for(let y=130;y<570;y+=40)line([[35,y],[1245,y]],C.grid,.7);
+ c.restore();
+ const g=c.createRadialGradient(660,350,50,660,350,680);g.addColorStop(0,'#132a411b');g.addColorStop(1,'#00000000');c.fillStyle=g;c.fillRect(0,0,W,H);
+ text('DIE PHYSIK DAHINTER',52,34,12,C.water,'left',650);
+ const titleOpacity=smooth((t-bounds[section])/.45);
+ alpha(titleOpacity,()=>{
+  text(heads[section][0],52,80,35,C.white,'left',600);
+  text(heads[section][1],54,111,18,C.muted);
+ });
+ text(String(section+1).padStart(2,'0')+' / 06',1226,48,17,C.muted,'right',500);
+ line([[54,128],[1226,128]],'#243045',1);
+ engine(t,section);
+ if(section===2){
+  rect(870,184,328,61,9,'#111d2c','#34445b');
+  text('F = (p links − p rechts) · A',1034,210,22,C.white,'center',500);
+  text('Druckunterschied × Kolbenfläche',1034,233,13,C.muted,'center');
+ }
+ if(section===1){
+  rect(297,470,350,72,10,'#121e2b','#4b3b2b');
+  text('Wärmezufuhr → Dampfdruck',472,497,20,C.steam,'center',500);
+  text('Der Kessel ist ein Druckbehälter.',472,523,15,C.muted,'center');
+ }
+ if(section===0){
+  text('WÄRME',317,537,14,C.steam,'center',600);
+  arrow(354,531,414,531,C.muted,2,7);
+  text('DRUCK',464,537,14,C.steam,'center',600);
+  arrow(503,531,564,531,C.muted,2,7);
+  text('BEWEGUNG',635,537,14,C.gold,'center',600);
+ }
+ if(section===5)energy(t);
+ if(section===4)text('Ventil und Leitungen: funktional vereinfacht',55,565,12,C.muted);
+ else text('Orange: Frischdampf     Blau: abgeführter Dampf',55,565,12,C.muted);
+ let cap=captions.find(a=>t>=a[0]&&t<a[1])||captions[0];
+ const ca=smooth((t-cap[0])/.35);
+ rect(52,586,1176,73,12,'#111a29','#29364b',1);
+ alpha(ca,()=>{
+  rect(69,603,3,37,1,section===3?C.gold:C.water);
+  text(cap[2],94,614,21,C.white,'left',450);
+  text(cap[3],94,643,18,C.muted);
+ });
+ const labs=['Überblick','Kessel','Kolben','Kurbel','Ventil','Energie'];
+ const x0=62,x1=1218,yy=680;
+ line([[x0,yy],[x1,yy]],'#29364c',3);
+ line([[x0,yy],[x0+(x1-x0)*(t/window.DUR),yy]],C.water,3);
+ for(let i=0;i<6;i++){
+  const x=x0+(x1-x0)*bounds[i]/54;
+  circle(x,yy,4,i<=section?C.water:'#485670');
+  text(labs[i],x,705,11,i===section?C.white:C.muted,i===0?'left':'center',i===section?600:400);
+ }
+ text('54 s',1218,705,11,C.muted,'right');
+ const fade=Math.min(smooth(t/.6),smooth((window.DUR-t)/.7));
+ if(fade<1){c.fillStyle=`rgba(0,0,0,${1-fade})`;c.fillRect(0,0,W,H)}
+}
+function frame(){
+ const t=((performance.now()-start)/1000+offset)%window.DUR;
+ draw((t+window.DUR)%window.DUR);
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

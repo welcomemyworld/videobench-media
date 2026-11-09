@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000;height:100%;overflow:hidden}canvas{position:absolute;left:50%;top:50%;transform-origin:0 0}</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+const c=document.getElementById('c'),x=c.getContext('2d');window.DUR=15;
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.transform`translate(0,0)`;c.style.transform='scale('+s+') translate(-50%,-50%)';c.style.transformOrigin='0 0';c.style.left='50%';c.style.top='50%';c.style.marginLeft='0'}
+fit();onresize=fit;
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t'))||0,st=performance.now();
+const E=t=>t<0?0:t>1?1:1-Math.pow(1-t,4),B=t=>{t=Math.max(0,Math.min(1,t));const s=1.70158;return 1+(s+1)*Math.pow(t-1,3)+s*Math.pow(t-1,2)};
+const cols=['#ff3d71','#ffb300','#00e5a8','#3d8bff','#b04dff'];
+function rr(a,b,w,h,r){x.beginPath();x.roundRect(a,b,w,h,r)}
+function txt(s,px,py,sz,col,al,a){x.globalAlpha=a==null?1:a;x.fillStyle=col;x.font='800 '+sz+'px Helvetica,Arial,sans-serif';x.textAlign=al||'center';x.textBaseline='middle';x.fillText(s,px,py);x.globalAlpha=1}
+function bg(t){const g=x.createLinearGradient(0,0,1280,720);const h=t*20;g.addColorStop(0,`hsl(${230+h%40},60%,8%)`);g.addColorStop(1,`hsl(${290+h%40},60%,14%)`);x.fillStyle=g;x.fillRect(0,0,1280,720);
+for(let i=0;i<40;i++){const px=(i*197+t*20*(1+i%3))%1380-50,py=(i*83)%720;x.fillStyle='rgba(255,255,255,.07)';x.beginPath();x.arc(px,py,2+i%4,0,7);x.fill()}}
+// scenes: 0-3 title, 3-6.5 features, 6.5-10 stats, 10-13 cards, 13-15 outro
+function title(t){const l='Your Product';const w=['YOUR','PRODUCT'];
+for(let r=0;r<5;r++){const p=E((t-r*.08)/1);x.save();x.translate(640,360);x.rotate(-.2+p*.2+r*.0);x.globalAlpha=(1-p)*.8;x.strokeStyle=cols[r];x.lineWidth=3;x.beginPath();x.arc(0,0,60+p*500+r*30,0,7);x.stroke();x.restore()}
+x.globalAlpha=1;
+w.forEach((s,i)=>{const p=B((t-.3-i*.25)/.8);x.save();x.translate(640,300+i*130);x.scale(p,p);txt(s,0,0,i?130:90,i?'#fff':cols[1]);x.restore()});
+const p=E((t-1.5)/1);rr(440,500,400*p,6,3);x.fillStyle=cols[0];x.fill();
+txt('Designed to be experienced',640,550,26,'#cfd3ff',null,E((t-1.8)/.8))}
+function feats(t){const f=['FAST','SIMPLE','BEAUTIFUL'];txt('WHY IT MATTERS',640,90,28,'#9aa0ff',null,E(t/.6));
+f.forEach((s,i)=>{const p=B((t-.2-i*.3)/.8);const cx=240+i*400,cy=360+Math.sin(t*2+i)*10;x.save();x.translate(cx,cy);x.scale(p,p);rr(-170,-170,340,340,36);x.fillStyle='rgba(255,255,255,.07)';x.fill();x.strokeStyle=cols[i];x.lineWidth=3;x.stroke();
+x.save();x.rotate(t*(i+1)*.6);x.strokeStyle=cols[i];x.lineWidth=8;x.beginPath();if(i==0){x.moveTo(-40,-40);x.lineTo(40,0);x.lineTo(-40,40);x.closePath()}else if(i==1){x.arc(0,0,45,0,5)}else{for(let k=0;k<6;k++){x.lineTo(Math.cos(k*1.047)*50,Math.sin(k*1.047)*50)}x.closePath()}x.stroke();x.restore();
+txt(s,0,110,36,'#fff');x.restore()})}
+function stats(t){const v=[98,3,24],l=['% SATISFACTION','X FASTER','/7 SUPPORT'];
+v.forEach((n,i)=>{const p=E((t-i*.35)/1.5),cy=150+i*200;const sl=E((t-i*.35)/.6);x.save();x.translate((1-sl)*-900,0);
+rr(140,cy-70,1000,140,30);x.fillStyle='rgba(255,255,255,.07)';x.fill();rr(140,cy-70,1000*p*.9+100*sl,140,30);x.globalAlpha=.25;x.fillStyle=cols[i+1];x.fill();x.globalAlpha=1;
+txt(Math.round(n*p)+'',200,cy,100,cols[i+1],'left');const wd=x.measureText(Math.round(n*p)+'').width;txt(l[i],220+wd+10,cy+14,40,'#fff','left');x.restore()})}
+function cards(t){txt('BUILT FOR YOU',640,90,30,'#9aa0ff');
+for(let i=0;i<12;i++){const p=B((t-i*.05)/.7),gx=i%4,gy=(i/4|0);x.save();x.translate(250+gx*260,230+gy*180);x.scale(p,p);x.rotate((1-p)*1.5);rr(-100,-70,200,140,24);x.fillStyle=cols[i%5];x.globalAlpha=.85;x.fill();x.globalAlpha=1;
+x.fillStyle='rgba(255,255,255,.8)';x.beginPath();x.arc(0,-10+Math.sin(t*3+i)*8,22,0,7);x.fill();rr(-50,35,100,10,5);x.fill();x.restore()}}
+function outro(t){for(let i=0;i<60;i++){const a=i*.1047,r=E(t/1.2)*(200+i%5*60);x.fillStyle=cols[i%5];x.globalAlpha=1-t/2.2;x.beginPath();x.arc(640+Math.cos(a)*r,360+Math.sin(a)*r,6,0,7);x.fill()}x.globalAlpha=1;
+const p=B(t/.8);x.save();x.translate(640,330);x.scale(p,p);txt('Try it today',0,0,100,'#fff');x.restore();txt('Your Product — made to stand out',640,430,30,'#cfd3ff',null,E((t-.6)/.6))}
+function frame(now){let t=((now-st)/1000+off)%15;bg(t);
+const S=[[0,3,title],[3,6.5,feats],[6.5,10,stats],[10,13,cards],[13,15,outro]];
+for(const[a,b,f]of S){if(t>=a&&t<b){let al=Math.min(1,(t-a)/.3,(b-t)/.3);if(a==0)al=Math.min(1,(b-t)/.3);x.globalAlpha=Math.max(0,al);f(t-a);x.globalAlpha=1}}
+x.fillStyle=cols[3];x.fillRect(0,714,1280*t/15,6);requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

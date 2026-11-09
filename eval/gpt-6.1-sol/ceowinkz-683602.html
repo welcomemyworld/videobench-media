@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Winkz Enterprises — Your Next Wholesale Partner</title>
+<style>
+*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;background:#000;overflow:hidden}body{display:flex;align-items:center;justify-content:center}canvas{display:block;width:min(100vw,177.777778vh);height:min(100vh,56.25vw)}
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720" aria-label="A fifteen-second animated pitch for Winkz Enterprises, an Amazon wholesale company."></canvas>
+<script>
+window.DUR=15;
+const canvas=document.getElementById('stage'),c=canvas.getContext('2d');
+const W=1280,H=720,INK='#111318',BLUE='#304bff',LIME='#d4ff45',CREAM='#f4f1e8';
+const offset=Number(new URLSearchParams(location.search).get('t'))||0;
+let start;
+const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const ease=x=>1-Math.pow(1-clamp(x),3);
+const pop=x=>{x=clamp(x);return 1+2.3*Math.pow(x-1,3)+1.3*Math.pow(x-1,2)};
+const mix=(a,b,x)=>a+(b-a)*x;
+const rand=n=>{let x=Math.sin(n*127.1+311.7)*43758.5453;return x-Math.floor(x)};
+function rect(x,y,w,h,col){c.fillStyle=col;c.fillRect(x,y,w,h)}
+function round(x,y,w,h,r,col,stroke){c.beginPath();c.roundRect(x,y,w,h,r);if(col){c.fillStyle=col;c.fill()}if(stroke){c.strokeStyle=stroke;c.lineWidth=1;c.stroke()}}
+function line(x,y,X,Y,col,width=1){c.strokeStyle=col;c.lineWidth=width;c.beginPath();c.moveTo(x,y);c.lineTo(X,Y);c.stroke()}
+function text(s,x,y,size=24,col=CREAM,weight=700,align='left'){c.fillStyle=col;c.font=`${weight} ${size}px Arial,Helvetica,sans-serif`;c.textAlign=align;c.fillText(s,x,y)}
+function spaced(s,x,y,size,gap,col){c.fillStyle=col;c.font=`700 ${size}px Arial,Helvetica,sans-serif`;c.textAlign='left';for(const ch of s){c.fillText(ch,x,y);x+=c.measureText(ch).width+gap}}
+function reveal(p,delay,fn,shift=32){let k=ease((p-delay)/.46);c.save();c.globalAlpha*=k;c.translate(0,(1-k)*shift);fn(k);c.restore()}
+function arrow(x,y,len,col,w=3){line(x,y,x+len,y,col,w);line(x+len-10,y-7,x+len,y,col,w);line(x+len-10,y+7,x+len,y,col,w)}
+function logo(x,y,size,col){c.save();c.translate(x,y);c.strokeStyle=col;c.lineWidth=size*.1;c.lineJoin='round';c.lineCap='round';c.beginPath();c.moveTo(0,0);c.lineTo(size*.21,size*.62);c.lineTo(size*.43,size*.17);c.lineTo(size*.65,size*.62);c.lineTo(size*.87,0);c.stroke();line(size*.81,size*.51,size*.94,size*.51,col,size*.075);c.restore()}
+function grid(col,t){c.save();c.globalAlpha=.07;c.strokeStyle=col;c.lineWidth=1;for(let x=-100;x<1400;x+=80){line(x+(t*9)%80,0,x+(t*9)%80,720,col)}for(let y=0;y<720;y+=80)line(0,y,1280,y,col);c.restore()}
+function particles(t,col){c.save();for(let i=0;i<45;i++){let x=rand(i+9)*1280,y=(rand(i+90)*800-t*(8+rand(i)*20)+1600)%800;c.globalAlpha=.08+rand(i+37)*.18;rect(x,y,2,2,col)}c.restore()}
+function header(col,p,tag){reveal(p,0,()=>{logo(70,38,33,col);spaced('WINKZ ENTERPRISES',116,58,14,1.6,col);c.globalAlpha*=.65;text('AMAZON WHOLESALE',1208,55,12,col,700,'right');line(70,84,1210,84,col,1)},0)}
+function footer(index,col,p){c.save();c.globalAlpha=.7;text('BRAND GROWTH. BUILT TOGETHER.',70,667,11,col,700);text(String(index+1).padStart(2,'0')+' / 05',1210,667,12,col,700,'right');for(let i=0;i<5;i++){rect(810+i*64,659,52,3,col);if(i>index){c.save();c.globalAlpha=.75;rect(810+i*64,659,52,3,index===1?CREAM:index===2?BLUE:index===4?LIME:INK);c.restore()}}c.restore()}
+function cube(x,y,s,t,col=BLUE,label='W',rot=0){
+ c.save();c.translate(x,y);c.rotate(rot);
+ const a=s*.56,b=s*.26,h=s*.82;
+ c.shadowColor='rgba(0,0,0,.2)';c.shadowBlur=28;c.shadowOffsetY=24;
+ c.beginPath();c.moveTo(0,-h/2-b);c.lineTo(a,-h/2);c.lineTo(0,-h/2+b);c.lineTo(-a,-h/2);c.closePath();c.fillStyle=col;c.fill();
+ c.shadowColor='transparent';
+ c.beginPath();c.moveTo(-a,-h/2);c.lineTo(0,-h/2+b);c.lineTo(0,h/2+b);c.lineTo(-a,h/2);c.closePath();c.fillStyle=col;c.fill();c.fillStyle='rgba(0,0,0,.15)';c.fill();
+ c.beginPath();c.moveTo(a,-h/2);c.lineTo(0,-h/2+b);c.lineTo(0,h/2+b);c.lineTo(a,h/2);c.closePath();c.fillStyle=col;c.fill();c.fillStyle='rgba(255,255,255,.17)';c.fill();
+ line(-a,-h/2,0,-h/2+b,'rgba(255,255,255,.5)',1.3);line(a,-h/2,0,-h/2+b,'rgba(255,255,255,.5)',1.3);line(0,-h/2+b,0,h/2+b,'rgba(255,255,255,.35)',1.3);
+ c.save();c.transform(1,.46,0,1,-a*.81,-h*.13);if(label==='W')logo(0,0,s*.34,CREAM);else text(label,0,s*.13,s*.16,CREAM,800);c.restore();
+ c.save();c.transform(1,-.46,0,1,a*.16,h*.12);for(let i=0;i<12;i++)rect(i*s*.019,0,(i%3?1.5:3),s*.11,'rgba(255,255,255,.65)');c.restore();
+ c.beginPath();c.moveTo(-a*.18,-h/2-b*.82);c.lineTo(a*.82,-h/2+b*.18);c.lineWidth=s*.085;c.strokeStyle='rgba(255,255,255,.23)';c.stroke();
+ c.restore();
+}
+function orbit(x,y,rx,ry,t,col){c.save();c.translate(x,y);c.rotate(-.38);c.strokeStyle=col;c.lineWidth=1;c.globalAlpha=.28;c.beginPath();c.ellipse(0,0,rx,ry,0,0,Math.PI*2);c.stroke();c.globalAlpha=1;for(let i=0;i<3;i++){let a=t*.8+i*2.094;c.beginPath();c.arc(Math.cos(a)*rx,Math.sin(a)*ry,4,0,Math.PI*2);c.fillStyle=col;c.fill()}c.restore()}
+function tick(x,y,col,size=20){c.lineWidth=3;c.strokeStyle=col;c.beginPath();c.moveTo(x,y+size*.48);c.lineTo(x+size*.3,y+size*.78);c.lineTo(x+size,y);c.stroke()}
+function scene0(p,t){
+ rect(0,0,W,H,INK);grid(CREAM,t);particles(t,LIME);
+ const g=c.createRadialGradient(1010,320,20,1010,320,470);g.addColorStop(0,'rgba(48,75,255,.35)');g.addColorStop(1,'rgba(48,75,255,0)');rect(0,0,W,H,g);
+ header(CREAM,p);
+ reveal(p,.08,()=>{round(70,130,271,32,16,'#23272b');spaced('YOUR NEXT WHOLESALE PARTNER',85,151,10,1,LIME)});
+ reveal(p,.15,()=>{text('WINKZ',61,325,164,CREAM,900)},70);
+ reveal(p,.3,()=>{spaced('ENTERPRISES',74,377,38,8,CREAM)});
+ reveal(p,.48,()=>{text('Your brand deserves',74,463,31,CREAM,400);text('a stronger Amazon presence.',74,505,31,CREAM,700)});
+ reveal(p,.72,()=>{round(74,550,254,48,24,LIME);text('LET’S MAKE IT HAPPEN',95,580,14,INK,800);arrow(287,574,20,INK,2)});
+ reveal(p,.12,k=>{
+  c.save();c.translate(959,344);c.scale(.75+k*.25,.75+k*.25);c.translate(-959,-344);
+  orbit(959,344,258,139,t,LIME);orbit(959,344,290,231,-t*.65,BLUE);
+  cube(960,337+Math.sin(t*2)*9,242,t,BLUE,'W',Math.sin(t*.8)*.035);
+  cube(1139,458+Math.sin(t*2+1)*8,76,t,LIME,'W',-.1);
+  cube(777,233+Math.sin(t*2+2)*10,66,t,'#696cff','W',.09);
+  round(841,536,238,42,21,'#20252c','#434953');text('BRAND × WHOLESALE × AMAZON',960,562,10,CREAM,700,'center');
+  c.restore();
+ },0);
+ footer(0,CREAM,p);
+}
+function scene1(p,t){
+ rect(0,0,W,H,CREAM);grid(INK,t);
+ c.save();c.globalAlpha=.06;c.fillStyle=BLUE;c.beginPath();c.arc(1050,360,350,0,7);c.fill();c.restore();
+ header(INK,p);
+ reveal(p,.02,()=>{spaced('A PARTNER. NOT JUST A SELLER.',74,145,12,2,BLUE)});
+ reveal(p,.13,()=>text('WE BUY.',66,261,100,INK,900),70);
+ reveal(p,.26,()=>text('YOU GROW.',66,366,100,BLUE,900),70);
+ reveal(p,.44,()=>{text('Wholesale purchasing.',74,427,29,INK,700);text('A focused route to Amazon customers.',74,467,23,'#54565b',400)});
+ reveal(p,.14,k=>{
+  let by=350+(1-k)*90;
+  c.save();c.globalAlpha=.12;c.beginPath();c.ellipse(976,493,204,27,0,0,7);c.fillStyle=INK;c.fill();c.restore();
+  cube(863,by+56+Math.sin(t*2)*6,146,t,'#b0b5ff','W',-.035);
+  cube(1087,by+50+Math.sin(t*2+1)*6,146,t,INK,'W',.035);
+  cube(978,by-41+Math.sin(t*2+2)*8,193,t,BLUE,'W',0);
+  round(833,149,280,42,21,INK);text('YOUR PRODUCTS. MORE POSSIBILITY.',973,175,11,CREAM,700,'center');
+  for(let j=0;j<3;j++){let phase=(t*.65+j*.33)%1;let yy=493-phase*85;c.globalAlpha=(1-phase)*.5;arrow(967,yy,20,BLUE,2)}c.globalAlpha=1;
+ });
+ const labels=[['01','BUY WHOLESALE'],['02','BUILD THE CHANNEL'],['03','REACH CUSTOMERS']];
+ labels.forEach((a,i)=>reveal(p,.62+i*.1,()=>{let x=74+i*380;round(x,545,358,64,10,i===1?BLUE:'#e7e4da');text(a[0],x+20,585,17,i===1?LIME:BLUE,800);text(a[1],x+63,585,16,i===1?CREAM:INK,800);if(i<2)arrow(x+333,577,10,i===1?CREAM:BLUE,2)}));
+ footer(1,INK,p);
+}
+function shield(x,y,s,t){
+ c.save();c.translate(x,y);
+ let glow=c.createRadialGradient(0,0,10,0,0,s);glow.addColorStop(0,'rgba(212,255,69,.2)');glow.addColorStop(1,'rgba(212,255,69,0)');rect(-s,-s,s*2,s*2,glow);
+ c.beginPath();c.moveTo(0,-s*.66);c.lineTo(s*.51,-s*.43);c.lineTo(s*.45,s*.1);c.quadraticCurveTo(s*.32,s*.52,0,s*.68);c.quadraticCurveTo(-s*.32,s*.52,-s*.45,s*.1);c.lineTo(-s*.51,-s*.43);c.closePath();c.fillStyle=INK;c.fill();c.strokeStyle=LIME;c.lineWidth=3;c.stroke();
+ c.save();c.clip();for(let i=0;i<13;i++)line(-s,(i-6)*22,s,(i-6)*22,'rgba(212,255,69,.09)',1);let y=((t*.5)%1)*s*1.6-s*.8;rect(-s,y,s*2,3,'rgba(212,255,69,.5)');c.restore();
+ logo(-48,-32,108,LIME);
+ round(-88,69,176,31,15,LIME);text('BRAND FIRST',0,90,12,INK,800,'center');
+ c.restore();
+}
+function scene2(p,t){
+ rect(0,0,W,H,BLUE);grid(CREAM,t);particles(t,CREAM);header(CREAM,p);
+ reveal(p,.06,()=>spaced('GROWTH SHOULD RESPECT YOUR BRAND.',74,147,12,1.7,LIME));
+ reveal(p,.13,()=>text('YOUR BRAND.',68,249,82,CREAM,900),60);
+ reveal(p,.25,()=>text('FRONT & CENTER.',68,337,76,CREAM,900),60);
+ reveal(p,.44,()=>text('Representation that respects what you’ve built.',74,391,24,CREAM,400));
+ reveal(p,.12,k=>{c.save();c.translate(1003,278);c.scale(pop(k),pop(k));shield(0,0,170,t);c.restore()},0);
+ const cards=[
+ ['BRAND-FIRST','Your identity. Our focus.'],
+ ['AUTHENTIC STOCK','Products sourced wholesale.'],
+ ['CLEAR ALIGNMENT','A shared marketplace strategy.']
+ ];
+ cards.forEach((a,i)=>reveal(p,.58+i*.12,()=>{let x=74+i*380;round(x,458,358,147,14,'rgba(17,19,24,.24)','rgba(255,255,255,.17)');round(x+20,477,32,32,16,LIME);tick(x+28,485,INK,15);text(a[0],x+20,544,22,CREAM,800);text(a[1],x+20,577,17,'#dce1ff',400)}));
+ footer(2,CREAM,p);
+}
+function icon(type,x,y,col,t){
+ c.save();c.translate(x,y);c.strokeStyle=col;c.lineWidth=2.5;c.lineJoin='round';
+ if(type===0){c.strokeRect(0,0,30,26);line(0,8,30,8,col,2);line(15,0,15,8,col,2);tick(8,12,col,13)}
+ if(type===1){for(let i=0;i<3;i++)line(0,i*10,30,i*10,col,2);for(let i=0;i<3;i++){round(6+i*8,i*10-3,6,6,2,col)}}
+ if(type===2){c.strokeRect(0,4,22,18);c.beginPath();c.moveTo(22,10);c.lineTo(30,10);c.lineTo(36,17);c.lineTo(36,25);c.lineTo(0,25);c.stroke();for(let xx of [8,28]){c.beginPath();c.arc(xx,27,4,0,7);c.fillStyle=col;c.fill()}}
+ if(type===3){c.strokeRect(0,0,32,25);for(let i=0;i<3;i++)rect(5+i*8,19-(i+1)*4,5,(i+1)*4,col);line(9,32,23,32,col,2);line(16,25,16,32,col,2)}
+ c.restore();
+}
+function dashboard(p,t){
+ c.save();c.translate(897,167+Math.sin(t*1.8)*5);
+ round(0,0,307,221,16,'#20252c','#464c56');round(0,0,307,33,16,'#2a303a');rect(0,18,307,15,'#2a303a');
+ for(let i=0;i<3;i++){c.beginPath();c.arc(15+i*13,16,3,0,7);c.fillStyle=i===0?LIME:'#6b7280';c.fill()}
+ text('MARKETPLACE OPERATIONS',292,21,9,CREAM,700,'right');
+ round(17,49,86,113,8,'#333b48');cube(60,105,47,t,BLUE);
+ rect(118,54,158,6,CREAM);rect(118,69,112,4,'#727e8e');rect(118,80,137,4,'#727e8e');
+ for(let i=0;i<5;i++){let h=15+Math.sin(t*2+i)*4+i*9;round(120+i*30,157-h,19,h,3,i===4?LIME:BLUE)}
+ line(118,160,276,160,'#4b5360',1);
+ round(17,178,273,26,6,'#303842');tick(29,184,LIME,12);text('INVENTORY • FULFILLMENT • LISTINGS',51,195,9,CREAM,700);
+ c.restore();
+}
+function scene3(p,t){
+ rect(0,0,W,H,INK);grid(CREAM,t);particles(t,BLUE);header(CREAM,p);
+ reveal(p,.04,()=>spaced('THE DETAILS DRIVE THE DIFFERENCE.',74,145,12,1.8,LIME));
+ reveal(p,.12,()=>text('FROM PURCHASE',68,247,74,CREAM,900),55);
+ reveal(p,.26,()=>text('TO MARKETPLACE.',68,329,74,CREAM,900),55);
+ reveal(p,.44,()=>text('We connect the operational dots.',74,384,26,'#b7bec9',400));
+ reveal(p,.12,()=>dashboard(p,t));
+ const cards=[['SOURCE','Wholesale purchasing.'],['PREPARE','Inventory readiness.'],['FULFILL','Move products forward.'],['MANAGE','Marketplace care.']];
+ reveal(p,.4,()=>{
+ line(100,454,1180,454,'#3a434f',2);
+ for(let i=0;i<7;i++){let xx=100+((t*.32+i/7)%1)*1080;c.shadowColor=LIME;c.shadowBlur=12;c.beginPath();c.arc(xx,454,4,0,7);c.fillStyle=LIME;c.fill();c.shadowBlur=0}
+ });
+ cards.forEach((a,i)=>reveal(p,.51+i*.1,()=>{
+ let x=74+i*288;round(x,473,264,132,12,'#1e232b','#343c49');icon(i,x+20,490,i%2?LIME:'#8d9cff',t);text('0'+(i+1),x+244,515,13,'#788294',700,'right');text(a[0],x+20,555,21,CREAM,800);text(a[1],x+20,583,16,'#aeb8c7',400);line(x+132,454,x+132,473,LIME,2);
+ }));
+ footer(3,CREAM,p);
+}
+function scene4(p,t){
+ rect(0,0,W,H,LIME);
+ c.save();c.globalAlpha=.07;c.strokeStyle=INK;c.lineWidth=1.5;for(let i=0;i<7;i++){c.beginPath();c.arc(1110,380,130+i*67,0,7);c.stroke()}c.restore();particles(t,INK);
+ header(INK,p);
+ reveal(p,.04,()=>spaced('YOUR BRAND × WINKZ ENTERPRISES',74,148,14,1.7,INK));
+ reveal(p,.12,()=>text('LET’S GROW',65,280,111,INK,900),70);
+ reveal(p,.26,()=>text('ON AMAZON.',65,397,111,INK,900),70);
+ reveal(p,.43,()=>{text('Open a wholesale partnership',74,466,29,INK,400);text('with Winkz Enterprises.',74,505,29,INK,700)});
+ reveal(p,.58,k=>{
+  round(74,544,580,64,32,INK);text('LET’S TALK PARTNERSHIP',103,584,21,LIME,800);arrow(587,576,36,LIME,3);
+ });
+ reveal(p,.14,k=>{
+  c.save();c.translate(1015,361);c.scale(.65+.35*k,.65+.35*k);c.rotate(Math.sin(t)*.035);
+  round(-149,-156,298,312,28,INK);
+  logo(-91,-98,211,LIME);
+  spaced('WINKZ',-91,77,31,6,CREAM);spaced('ENTERPRISES',-89,105,12,3,CREAM);
+  line(-89,122,91,122,'#414937',1);
+  text('YOUR NEXT PARTNER',0,143,10,LIME,700,'center');
+  c.restore();
+  round(906,551,218,39,19,'rgba(17,19,24,.08)');text('LET’S BUILD WHAT’S NEXT.',1015,576,11,INK,800,'center');
+ });
+ footer(4,INK,p);
+}
+const scenes=[scene0,scene1,scene2,scene3,scene4],bounds=[0,2.8,5.8,8.8,11.8,15];
+function render(t){
+ c.setTransform(1,0,0,1,0,0);c.globalAlpha=1;c.shadowBlur=0;c.textBaseline='alphabetic';c.lineCap='butt';
+ let index=0;for(let i=1;i<5;i++)if(t>=bounds[i])index=i;
+ const p=t-bounds[index];
+ scenes[index](p,t);
+ // A fast, full-frame diagonal wipe gives every chapter a deliberate cut.
+ if(index>0&&p<.27){
+  const k=clamp(p/.27),x=mix(-290,1720,k);
+  c.save();c.transform(1,0,-.3,1,0,0);
+  rect(x-370,0,210,720,index===4?INK:LIME);
+  rect(x-153,0,100,720,index===2?INK:BLUE);
+  rect(x-45,0,18,720,CREAM);
+  c.restore();
+ }
+ // Subtle frame grain, generated entirely in the drawing space.
+ c.save();for(let i=0;i<165;i++){c.globalAlpha=.018+rand(i+3)*.015;rect(rand(i+20)*1280,rand(i+400)*720,1.4,1.4,index===1||index===4?INK:CREAM)}c.restore();
+ // A slim, unobtrusive fifteen-second progress rail.
+ let color=index===1||index===4?INK:LIME;
+ c.save();c.globalAlpha=.2;rect(0,715,1280,5,color);c.globalAlpha=.8;rect(0,715,1280*t/15,5,color);c.restore();
+ // Clean breathing room at the loop seam.
+ if(t<.13){rect(0,0,W,H,`rgba(0,0,0,${1-ease(t/.13)})`)}
+ if(t>14.8){rect(0,0,W,H,`rgba(0,0,0,${ease((t-14.8)/.2)})`)}
+}
+function frame(now){
+ if(start===undefined)start=now;
+ const t=((now-start)/1000+offset)%window.DUR;
+ render((t+window.DUR)%window.DUR);
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

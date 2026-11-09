@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>タイル広告</title>
+<style>
+  html, body { margin: 0; padding: 0; background: #000; width: 100%; height: 100%; overflow: hidden; }
+  canvas { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 100vw; height: 56.25vw; max-height: 100vh; max-width: 177.78vh; background: #000; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+// ==================== 初期化 ====================
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl', { preserveDrawingBuffer: true, antialias: true });
+if (!gl) throw new Error('WebGL not supported');
+window.DUR = 30;
+const urlParams = new URLSearchParams(location.search);
+const startOffset = parseFloat(urlParams.get('t') || '0') || 0;
+
+// ==================== シェーダー ====================
+const vs = `
+attribute vec2 aPos;
+attribute vec4 aColor;
+attribute vec3 aTranslate;
+attribute vec2 aRot;
+attribute float aScale;
+uniform mat4 uVP;
+varying vec4 vColor;
+varying vec2 vLocal;
+void main(){
+  float cx = cos(aRot.x), sx = sin(aRot.x);
+  float cz = cos(aRot.y), sz = sin(aRot.y);
+  vec3 p = vec3(aPos * aScale, 0.0);
+  // Z軸回転
+  p = vec3(p.x*cz - p.y*sz, p.x*sz + p.y*cz, p.z);
+  // X軸回転（フリップ用）
+  p = vec3(p.x, p.y*cx - p.z*sx, p.y*sx + p.z*cx);
+  p += aTranslate;
+  gl_Position = uVP * vec4(p, 1.0);
+  vColor = aColor;
+  vLocal = aPos;
+}
+`;
+const fs = `
+precision mediump float;
+varying vec4 vColor;
+varying vec2 vLocal;
+void main(){
+  float edge = max(abs(vLocal.x), abs(vLocal.y));
+  float bevel = 1.0 - 0.35 * smoothstep(0.42, 0.5, edge);
+  gl_FragColor = vec4(vColor.rgb * bevel, vColor.a);
+}
+`;
+function compileShader(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+const prog = gl.createProgram();
+gl.attachShader(prog, compileShader(gl.VERTEX_SHADER, vs));
+gl.attachShader(prog, compileShader(gl.FRAGMENT_SHADER, fs));
+gl.linkProgram(prog);
+if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error('LINK');
+gl.useProgram(prog);
+const uVP = gl.getUniformLocation(prog, 'uVP');
+
+// ==================== インスタンシング拡張 ====================
+const ext = gl.getExtension('ANGLE_instanced_arrays');
+if (!ext) throw new Error('ANGLE_instanced_arrays not supported');
+
+// quadメッシュ
+const quadVertices = new Float32Array([-0.5,-0.5, 0.5,-0.5, -0.5,0.5, 0.5,0.5]);
+const quadIndex = new Uint16Array([0,1,2, 2,1,3]);
+const quadBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+gl.bufferData(gl.ARRAY_BUFFER, quadVertices, gl.STATIC_DRAW);
+const indexBuf = gl.createBuffer();
+gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuf);
+gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, quadIndex, gl.STATIC_DRAW);
+
+// インスタンスバッファ
+const gridW = 320, gridH = 180;
+const numTiles = gridW * gridH;
+const floatsPerInstance = 10; // color4 + translate3 + rot2 + scale1
+const instanceData = new Float32Array(numTiles * floatsPerInstance);
+const instanceBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuf);
+gl.bufferData(gl.ARRAY_BUFFER, instanceData.byteLength, gl.DYNAMIC_DRAW);
+
+// attributes
+const aPosLoc = gl.getAttribLocation(prog, 'aPos');
+const aColorLoc = gl.getAttribLocation(prog, 'aColor');
+const aTranslateLoc = gl.getAttribLocation(prog, 'aTranslate');
+const aRotLoc = gl.getAttribLocation(prog, 'aRot');
+const aScaleLoc = gl.getAttribLocation(prog, 'aScale');
+
+const stride = floatsPerInstance * 4;
+// static per-vertex: aPos
+gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+gl.enableVertexAttribArray(aPosLoc);
+gl.vertexAttribPointer(aPosLoc, 2, gl.FLOAT, false, 0, 0);
+// per-instance
+gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuf);
+let offset = 0;
+gl.enableVertexAttribArray(aColorLoc);
+gl.vertexAttribPointer(aColorLoc, 4, gl.FLOAT, false, stride, offset);
+ext.vertexAttribDivisorANGLE(aColorLoc, 1);
+offset += 4*4;
+gl.enableVertexAttribArray(aTranslateLoc);
+gl.vertexAttribPointer(aTranslateLoc, 3, gl.FLOAT, false, stride, offset);
+ext.vertexAttribDivisorANGLE(aTranslateLoc, 1);
+offset += 3*4;
+gl.enableVertexAttribArray(aRotLoc);
+gl.vertexAttribPointer(aRotLoc, 2, gl.FLOAT, false, stride, offset);
+ext.vertexAttribDivisorANGLE(aRotLoc, 1);
+offset += 2*4;
+gl.enableVertexAttribArray(aScaleLoc);
+gl.vertexAttribPointer(aScaleLoc, 1, gl.FLOAT, false, stride, offset);
+ext.vertexAttribDivisorANGLE(aScaleLoc, 1);
+
+// ==================== ターゲット画像生成 ====================
+const offBase = document.createElement('canvas');
+offBase.width = gridW; offBase.height = gridH;
+const ctxBase = offBase.getContext('2d');
+const offText = document.createElement('canvas');
+offText.width = gridW; offText.height = gridH;
+const ctxText = offText.getContext('2d');
+
+function drawBase(ctx){
+  // 背景（漆喰の白っぽい）
+  ctx.fillStyle = '#e8e2d8';
+  ctx.fillRect(0,0,gridW,gridH);
+  // 薄いテクスチャノイズ（手動でまだら）
+  for(let i=0;i<2000;i++){
+    ctx.fillStyle = `rgba(0,0,0,${Math.random()*0.03})`;
+    ctx.fillRect(Math.random()*gridW, Math.random()*gridH, 1,1);
+  }
+  // 笑顔の女性の顔（ピクセルアート風）
+  const cx = 160, cy = 70, rx = 55, ry = 65;
+  // 髪
+  ctx.fillStyle = '#3a2a1a';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy-10, rx+8, ry+8, 0, Math.PI, 2*Math.PI);
+  ctx.fill();
+  // 顔
+  ctx.fillStyle = '#f5c6a0';
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI*2);
+  ctx.fill();
+  // 頬
+  ctx.fillStyle = '#f0a0a0';
+  ctx.globalAlpha = 0.5;
+  ctx.beginPath(); ctx.ellipse(cx-30, cy+20, 8, 6, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx+30, cy+20, 8, 6, 0, 0, Math.PI*2); ctx.fill();
+  ctx.globalAlpha = 1;
+  // 目
+  ctx.fillStyle = '#1a1a1a';
+  ctx.beginPath(); ctx.ellipse(cx-18, cy-5, 6, 8, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(cx+18, cy-5, 6, 8, 0, 0, Math.PI*2); ctx.fill();
+  // 白目
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(cx-18, cy-9, 3, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+18, cy-9, 3, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#1a1a1a';
+  ctx.beginPath(); ctx.arc(cx-18, cy-7, 1.5, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx+18, cy-7, 1.5, 0, Math.PI*2); ctx.fill();
+  // 鼻
+  ctx.fillStyle = '#dba';
+  ctx.beginPath(); ctx.ellipse(cx, cy+10, 3, 4, 0, 0, Math.PI*2); ctx.fill();
+  // 口（笑顔）
+  ctx.strokeStyle = '#c44';
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(cx, cy+22, 18, 0.2, Math.PI-0.2); ctx.stroke();
+}
+function drawTextOverlay(ctx){
+  // ボタン
+  ctx.fillStyle = '#ff6b6b';
+  const bx = 100, by = 140, bw = 120, bh = 24;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(bx, by, bw, bh, 6);
+  else ctx.rect(bx, by, bw, bh);
+  ctx.fill();
+  ctx.strokeStyle = '#e05555'; ctx.lineWidth = 2;
+  ctx.stroke();
+  // ボタン文字
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 13px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('無料体験はこちら', bx+bw/2, by+bh/2);
+  // ロゴテキスト
+  ctx.fillStyle = '#333';
+  ctx.font = 'bold 15px sans-serif';
+  ctx.fillText('TILE STUDIO', 160, 30);
+  // 小さなキャッチコピー
+  ctx.fillStyle = '#555';
+  ctx.font = '10px sans-serif';
+  ctx.fillText('毎日を彩るタイルアート', 160, 125);
+}
+drawBase(ctxBase);
+drawBase(ctxText);
+drawTextOverlay(ctxText);
+
+const baseData = ctxBase.getImageData(0,0,gridW,gridH).data;
+const textData = ctxText.getImageData(0,0,gridW,gridH).data;
+const buttonRect = { x:100, y:140, w:120, h:24 };
+
+// ==================== タイルデータ生成 ====================
+const tileData = [];
+const startX = 160 - 18; // 左目
+const startZ = 70 - 5;
+let maxR = 0;
+for (let z = 0; z < gridH; z++) {
+  for (let x = 0; x < gridW; x++) {
+    const idx = (z * gridW + x) * 4;
+    const baseR = baseData[idx] / 255, baseG = baseData[idx+1] / 255, baseB = baseData[idx+2] / 255;
+    const textR = textData[idx] / 255, textG = textData[idx+1] / 255, textB = textData[idx+2] / 255;
+    const isText = Math.abs(baseR-textR) + Math.abs(baseG-textG) + Math.abs(baseB-textB) > 0.1;
+    const isButton = x >= buttonRect.x && x < buttonRect.x + buttonRect.w && z >= buttonRect.y && z < buttonRect.y + buttonRect.h;
+    const dx = x - startX, dz = z - startZ;
+    const r = Math.sqrt(dx*dx + dz*dz);
+    if (r > maxR) maxR = r;
+    const angle = Math.atan2(dz, dx);
+    let placementTime;
+    if (r < 30) {
+      placementTime = 3 + (r / 30) * 7 + (angle / (2*Math.PI)) * 0.6;
+    } else {
+      placementTime = 10 + ((r - 30) / (maxR - 30)) * 11;
+    }
+    const flipStartTime = isText ? 24 + (x / gridW) * 2 : 999;
+    const startY = 2 + Math.random() * 3;
+    const startRotX = (Math.random() - 0.5) * 0.8;
+    const startRotZ = (Math.random() - 0.5) * 0.8;
+    tileData.push({
+      x, z,
+      baseColor: [baseR, baseG, baseB, 1],
+      textColor: [textR, textG, textB, 1],
+      isText, isButton,
+      placementTime, flipStartTime,
+      startY, startRotX, startRotZ,
+      endY: 0, endRotX: 0, endRotZ: 0,
+      scale: 0.98 + Math.random() * 0.04,
+    });
+  }
+}
+
+// ==================== カメラ ====================
+function perspective(fov, aspect, near, far) {
+  const f = 1.0 / Math.tan(fov/2);
+  return [f/aspect,0,0,0, 0,f,0,0, 0,0,(far+near)/(near-far),-1, 0,0,(2*far*near)/(near-far),0];
+}
+function lookAt(eyex,eyey,eyez, cx,cy,cz, ux=0,uy=1,uz=0) {
+  let zx = eyex-cx, zy = eyey-cy, zz = eyez-cz;
+  let len = Math.hypot(zx,zy,zz); zx/=len; zy/=len; zz/=len;
+  let xx = uy*zz - uz*zy, xy = uz*zx - ux*zz, xz = ux*zy - uy*zx;
+  len = Math.hypot(xx,xy,xz); xx/=len; xy/=len; xz/=len;
+  let yx = zy*xz - zz*xy, yy = zz*xx - zx*xz, yz = zx*xy - zy*xx;
+  return [
+    xx, yx, zx, 0,
+    xy, yy, zy, 0,
+    xz, yz, zz, 0,
+    -(xx*eyex + xy*eyey + xz*eyez), -(yx*eyex + yy*eyey + yz*eyez), -(zx*eyex + zy*eyey + zz*eyez), 1
+  ];
+}
+function mat4Mul(a,b){
+  const r = new Array(16).fill(0);
+  for(let i=0;i<4;i++) for(let j=0;j<4;j++) for(let k=0;k<4;k++) r[j*4+i] += a[k*4+i] * b[j*4+k];
+  return r;
+}
+function getCamera(t){
+  // キーフレーム: t=0,3,10,21,24,26,30
+  const keys = [
+    {t:0,  pos:[startX, 0.8, startZ+8], look:[startX, 0, startZ]},
+    {t:3,  pos:[startX, 3, startZ+15], look:[startX, 0, startZ]},
+    {t:10, pos:[gridW/2, 20, gridH/2+60], look:[gridW/2, 0, gridH/2]},
+    {t:21, pos:[gridW/2, 120, gridH/2+120], look:[gridW/2, 0, gridH/2]},
+    {t:24, pos:[gridW/2+8, 160, gridH/2+140], look:[gridW/2, 0, gridH/2]},
+    {t:26, pos:[gridW/2+5, 180, gridH/2+150], look:[gridW/2, 0, gridH/2]},
+    {t:30, pos:[gridW/2+5, 180, gridH/2+150], look:[gridW/2, 0, gridH/2]}
+  ];
+  let i = 0;
+  while (i < keys.length-1 && t > keys[i+1].t) i++;
+  if (i >= keys.length-1) return keys[keys.length-1];
+  const k0 = keys[i], k1 = keys[i+1];
+  const tt = (t - k0.t) / (k1.t - k0.t);
+  const e = tt < 0.5 ? 2*tt*tt : 1 - Math.pow(-2*tt+2,2)/2; // easeInOutQuad
+  const pos = k0.pos.map((v,j)=>v+(k1.pos[j]-v)*e);
+  const look = k0.look.map((v,j)=>v+(k1.look[j]-v)*e);
+  return {pos, look};
+}
+
+// ==================== イージング ====================
+function easeOutBounce(x){
+  const n1 = 7.5625, d1 = 2.75;
+  if (x < 1/d1) return n1*x*x;
+  else if (x < 2/d1) return n1*(x-=1.5/d1)*x + 0.75;
+  else if (x < 2.5/d1) return n1*(x-=2.25/d1)*x + 0.9375;
+  else return n1*(x-=2.625/d1)*x + 0.984375;
+}
+function easeOutCubic(x){ return 1 - Math.pow(1-x,3); }
+function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+function lerp(a,b,t){ return a + (b-a)*t; }
+function smoothstep(a,b,x){ const t = clamp((x-a)/(b-a),0,1); return t*t*(3-2*t); }
+
+// ==================== カーソル描画 ====================
+const cursorProg = (()=>{
+  const csvs = `attribute vec2 aPos; uniform mat4 uVP; uniform vec2 uPos; uniform float uScale; void main(){ gl_Position = uVP * vec4(aPos*uScale + uPos, 0.0, 1.0); }`;
+  const csfs = `precision mediump float; void main(){ gl_FragColor = vec4(1,1,1,1); }`;
+  const p = gl.createProgram();
+  gl.attachShader(p, compileShader(gl.VERTEX_SHADER, csvs));
+  gl.attachShader(p, compileShader(gl.FRAGMENT_SHADER, csfs));
+  gl.linkProgram(p);
+  return {prog:p, uVP:gl.getUniformLocation(p,'uVP'), uPos:gl.getUniformLocation(p,'uPos'), uScale:gl.getUniformLocation(p,'uScale')};
+})();
+const cursorVertices = new Float32Array([0,0, -6,-12, 6,-12, 0,0, 6,-12, 18,-6]); // 三角カーソル
+const cursorBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, cursorBuf);
+gl.bufferData(gl.ARRAY_BUFFER, cursorVertices, gl.STATIC_DRAW);
+
+// ==================== レンダリング ====================
+let uVPMat = new Float32Array(16);
+function render(t){
+  t = startOffset + t % DUR;
+  // カメラ
+  const cam = getCamera(t);
+  const aspect = canvas.width / canvas.height;
+  const proj = perspective(60 * Math.PI/180, aspect, 0.1, 1000);
+  const view = lookAt(cam.pos[0], cam.pos[1], cam.pos[2], cam.look[0], cam.look[1], cam.look[2]);
+  const vp = mat4Mul(proj, view);
+  for(let i=0;i<16;i++) uVPMat[i] = vp[i];
+  gl.uniformMatrix4fv(uVP, false, uVPMat);
+
+  // インスタンスデータ更新
+  const btnCenter = { x: buttonRect.x + buttonRect.w/2, z: buttonRect.y + buttonRect.h/2 };
+  const clickTime = 28.0;
+  for (let i = 0; i < numTiles; i++) {
+    const td = tileData[i];
+    const base = td.baseColor, text = td.textColor;
+    let y = td.endY, rx = 0, rz = 0, col = base;
+    const pPlace = td.placementTime;
+    if (t < pPlace) {
+      // 落ちる前
+      const progress = 0;
+      y = td.startY;
+      rx = td.startRotX; rz = td.startRotZ;
+    } else if (t < pPlace + 0.6) {
+      const p = clamp((t - pPlace) / 0.6, 0, 1);
+      const ep = easeOutBounce(p);
+      y = lerp(td.startY, 0, ep);
+      rx = lerp(td.startRotX, 0, easeOutCubic(p));
+      rz = lerp(td.startRotZ, 0, easeOutCubic(p));
+    } else {
+      y = 0; rx = 0; rz = 0;
+    }
+    // テキストのフリップ
+    if (td.isText && t >= td.flipStartTime) {
+      const fp = clamp((t - td.flipStartTime) / 0.15, 0, 1);
+      const frx = fp * Math.PI;
+      rx = frx;
+      const cf = smoothstep(0.4, 0.6, fp);
+      col = [lerp(base[0], text[0], cf), lerp(base[1], text[1], cf), lerp(base[2], text[2], cf), 1];
+    }
+    // ボタンクリックで沈む
+    if (td.isButton && t > clickTime) {
+      const dp = clamp((t - clickTime) / 0.3, 0, 1);
+      y -= 0.25 * easeOutCubic(dp);
+    }
+    const idx = i * 10;
+    instanceData[idx+0] = col[0];
+    instanceData[idx+1] = col[1];
+    instanceData[idx+2] = col[2];
+    instanceData[idx+3] = col[3];
+    instanceData[idx+4] = td.x;
+    instanceData[idx+5] = y;
+    instanceData[idx+6] = td.z;
+    instanceData[idx+7] = rx;
+    instanceData[idx+8] = rz;
+    instanceData[idx+9] = td.scale;
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, instanceData);
+  gl.clearColor(0.05,0.05,0.05,1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+  gl.drawElementsInstancedANGLE(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0, numTiles);
+
+  // カーソル描画（26〜30秒）
+  if (t > 26) {
+    const cp = cursorProg;
+    gl.useProgram(cp.prog);
+    let cursorX, cursorZ, cursorScale = 1.0;
+    if (t < 27.5) {
+      const p = (t - 26) / 1.5;
+      cursorX = gridW/2 + 120 - p * 60;
+      cursorZ = gridH/2 + 100 - p * 40;
+    } else if (t < clickTime) {
+      const p = (t - 27.5) / 0.5;
+      cursorX = btnCenter.x + (gridW/2 + 60 - btnCenter.x) * (1-p);
+      cursorZ = btnCenter.z + (gridH/2 + 60 - btnCenter.z) * (1-p);
+      cursorScale = 1.0 - p * 0.2;
+    } else {
+      const p = clamp((t - clickTime) / 0.2, 0, 1);
+      cursorX = btnCenter.x;
+      cursorZ = btnCenter.z;
+      cursorScale = 0.8 - p * 0.2;
+    }
+    const uPosArr = [cursorX, cursorZ];
+    gl.uniformMatrix4fv(cp.uVP, false, uVPMat);
+    gl.uniform2fv(cp.uPos, uPosArr);
+    gl.uniform1f(cp.uScale, cursorScale);
+    gl.bindBuffer(gl.ARRAY_BUFFER, cursorBuf);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    gl.useProgram(prog);
+    // attributesを再設定
+    gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+    gl.enableVertexAttribArray(aPosLoc);
+    gl.vertexAttribPointer(aPosLoc, 2, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, instanceBuf);
+    let off2 = 0;
+    gl.enableVertexAttribArray(aColorLoc); gl.vertexAttribPointer(aColorLoc,4,gl.FLOAT,false,stride,off2); ext.vertexAttribDivisorANGLE(aColorLoc,1); off2+=16;
+    gl.enableVertexAttribArray(aTranslateLoc); gl.vertexAttribPointer(aTranslateLoc,3,gl.FLOAT,false,stride,off2); ext.vertexAttribDivisorANGLE(aTranslateLoc,1); off2+=12;
+    gl.enableVertexAttribArray(aRotLoc); gl.vertexAttribPointer(aRotLoc,2,gl.FLOAT,false,stride,off2); ext.vertexAttribDivisorANGLE(aRotLoc,1); off2+=8;
+    gl.enableVertexAttribArray(aScaleLoc); gl.vertexAttribPointer(aScaleLoc,1,gl.FLOAT,false,stride,off2); ext.vertexAttribDivisorANGLE(aScaleLoc,1);
+  }
+}
+
+// ==================== アニメーションループ ====================
+let startTime = performance.now();
+function loop(now){
+  const t = (now - startTime) / 1000;
+  render(t);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

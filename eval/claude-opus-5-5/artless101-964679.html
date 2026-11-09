@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Dawn Ocean Launch</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=32;
+const c=document.getElementById('c'),x=c.getContext('2d'),W=1280,H=720;
+function fit(){const s=Math.min(innerWidth/W,innerHeight/H);c.style.width=W*s+'px';c.style.height=H*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const t0=parseFloat(q.get('t')||0)||0;const start=performance.now();
+const TL=12,DECK=470;
+function hash(n){const s=Math.sin(n*127.1+311.7)*43758.5453;return s-Math.floor(s);}
+function alt(t){if(t<TL)return 0;const d=t-TL;return 9*d*d+d*d*d*1.2;}
+function rx(t){const h=alt(t);return 640+Math.pow(h/2000,1.6)*260;}
+function tilt(t){const h=alt(t);return Math.min(0.5,Math.pow(h/2000,1.3)*0.35);}
+function camOf(t){return Math.max(0,alt(t)-250);}
+function lerp(a,b,k){return a+(b-a)*k;}
+function mix(c1,c2,k){return 'rgb('+c1.map((v,i)=>Math.round(lerp(v,c2[i],k))).join(',')+')';}
+function stars(cam,k){x.fillStyle='#fff';for(let i=0;i<160;i++){const sx=hash(i)*W,sy=((hash(i+9)*1400-cam*0.05)%1400+1400)%1400-700;x.globalAlpha=k*hash(i+3)*0.9;x.fillRect(sx,sy,1.5,1.5);}x.globalAlpha=1;}
+function frame(){
+let t=((performance.now()-start)/1000+t0)%DUR;
+const cam=camOf(t),h=alt(t);
+const dawn=Math.min(1,t/DUR*1.3);
+const hz=400+Math.min(cam*0.12,400);
+const shake=(t>TL-2&&t<TL+8)?(Math.sin(t*80)*2+Math.sin(t*53)*2)*Math.max(0,1-Math.abs(t-TL-1)/7):0;
+x.save();x.translate(shake*0.6,shake);
+// sky: gets darker as cam climbs (altitude)
+const up=Math.min(1,cam/6000);
+let g=x.createLinearGradient(0,hz-700,0,hz);
+g.addColorStop(0,mix([20,24,60],[2,3,12],up));
+g.addColorStop(0.55,mix(mix([90,60,110],[150,90,120],dawn).match(/\d+/g).map(Number),[10,15,40],up));
+g.addColorStop(0.85,mix([240,130,80],[255,170,110],dawn));
+g.addColorStop(1,'#ffd9a0');
+x.fillStyle='#02030c';x.fillRect(-20,-20,W+40,H+40);x.fillStyle=g;x.fillRect(-20,hz-700,W+40,700);
+stars(cam,Math.max(0,0.5-dawn)+up);
+// sun
+const sy=hz+30-dawn*70,sxp=880;
+let sg=x.createRadialGradient(sxp,sy,0,sxp,sy,260);sg.addColorStop(0,'rgba(255,240,200,1)');sg.addColorStop(0.08,'rgba(255,210,140,0.9)');sg.addColorStop(0.3,'rgba(255,150,80,0.25)');sg.addColorStop(1,'rgba(255,120,60,0)');
+x.fillStyle=sg;x.fillRect(sxp-260,sy-260,520,520);
+// clouds
+for(let i=0;i<9;i++){const cy=hz-40-hash(i)*160+cam*0.35,cx=((hash(i+5)*1600+t*6*(0.5+hash(i)))%1700)-200;x.fillStyle='rgba(255,'+(140+i*8)+',140,0.18)';x.beginPath();x.ellipse(cx,cy,140+hash(i+2)*120,8+hash(i+1)*8,0,0,7);x.fill();}
+// ocean
+if(hz<H){let og=x.createLinearGradient(0,hz,0,H);og.addColorStop(0,'#c98a78');og.addColorStop(0.15,'#4a3a5c');og.addColorStop(1,'#0b1424');x.fillStyle=og;x.fillRect(-20,hz,W+40,H-hz+20);
+for(let r=0;r<70;r++){const d=r/70,y=hz+Math.pow(d,2)*(H-hz+40);for(let k=0;k<26;k++){const wx=(hash(r*31+k)*W+Math.sin(t*0.6+r)*20*d);const dist=Math.abs(wx-sxp)/W;const a=Math.max(0,0.7-dist*2.2)*(0.4+0.6*Math.sin(t*2+r*3+k));if(a<=0)continue;x.fillStyle='rgba(255,200,140,'+a.toFixed(2)+')';x.fillRect(wx,y,6+d*40,1+d*2);}}
+// rocket glow on water
+if(t>TL-1.5){const gk=Math.min(1,(t-TL+1.5)/1.5)*Math.max(0,1-(t-TL)/14);let rg=x.createRadialGradient(640,DECK+cam+40,0,640,DECK+cam+40,400);rg.addColorStop(0,'rgba(255,170,80,'+0.6*gk+')');rg.addColorStop(1,'rgba(255,120,40,0)');x.fillStyle=rg;x.fillRect(240,hz,800,H);}}
+// platform
+const py=DECK+cam;
+if(py<H+300){x.fillStyle='#1a1d26';for(const lx of[470,540,740,810]){x.fillRect(lx,py,14,90);}
+x.fillStyle='#2a2e3a';x.fillRect(420,py,440,18);x.fillStyle='#3d4250';x.fillRect(420,py,440,4);
+x.fillStyle='rgba(255,200,140,0.15)';x.fillRect(420,py+4,440,2);
+// tower
+x.strokeStyle='#2c303c';x.lineWidth=3;x.fillStyle='#232733';x.fillRect(560,py-230,16,230);
+for(let i=0;i<12;i++){x.beginPath();x.moveTo(560,py-i*19);x.lineTo(576,py-i*19-19);x.stroke();}
+const armOut=Math.min(1,Math.max(0,(t-TL+3)/2));x.fillRect(576,py-170,lerp(44,10,armOut),6);
+for(let i=0;i<3;i++){const blink=Math.sin(t*4+i)>0.6;x.fillStyle=blink?'#ff3030':'#401010';x.fillRect(566,py-230+i*70,4,4);}
+// water reflection of platform
+x.fillStyle='rgba(10,15,30,0.5)';x.fillRect(420,py+90,440,10);}
+// exhaust trail (deterministic)
+if(t>TL-0.3){const N=Math.floor((t-TL+0.3)*60);
+for(let i=Math.max(0,N-700);i<N;i++){const te=TL-0.3+i/60,age=t-te;if(age>12)continue;
+const ex=rx(te),eh=alt(te),ey=DECK-eh-(te<TL?0:0);const ground=eh<60;
+const spread=ground?(hash(i)-0.5)*2*(60+age*120):(hash(i)-0.5)*(10+age*25);
+const px=ex+spread+age*8,pyy=ey+cam+(ground?-age*12*hash(i+3):age*10);
+const r=6+age*(ground?28:9)*(0.6+hash(i+1)*0.6);const a=Math.max(0,0.5*(1-age/12));
+if(pyy+r<0||pyy-r>H)continue;
+const hot=Math.max(0,1-age*1.2);
+x.fillStyle='rgba('+Math.round(lerp(200,255,hot))+','+Math.round(lerp(180,170,hot))+','+Math.round(lerp(175,90,hot))+','+a.toFixed(3)+')';
+x.beginPath();x.arc(px,pyy,r,0,7);x.fill();}}
+// pre-ignition vapor
+if(t<TL){for(let i=0;i<20;i++){const a=(t*0.5+hash(i))%1;x.fillStyle='rgba(230,230,240,'+(0.15*(1-a))+')';x.beginPath();x.arc(620+hash(i+4)*40+a*30,DECK-120-a*60,6+a*14,0,7);x.fill();}}
+// rocket
+const rX=rx(t),rY=DECK-h+cam,sc=t<26?1:1/(1+(t-26)*0.4);
+const sep=t>26;
+x.save();x.translate(rX,rY);x.rotate(tilt(t));x.scale(sc,sc);
+if(t>TL-1.2){const fl=1+0.15*Math.sin(t*90)+0.1*hash(Math.floor(t*60));const L=(t<TL?(t-TL+1.2)*60:90+Math.min(h,800)*0.15)*fl*(sep&&t<26.8?0.1:1);
+let fg=x.createLinearGradient(0,0,0,L);fg.addColorStop(0,'rgba(255,255,230,1)');fg.addColorStop(0.3,'rgba(255,190,80,0.9)');fg.addColorStop(1,'rgba(255,90,20,0)');
+x.fillStyle=fg;x.beginPath();x.moveTo(-12,0);x.quadraticCurveTo(-20*fl,L*0.4,0,L);x.quadraticCurveTo(20*fl,L*0.4,12,0);x.fill();
+let hg=x.createRadialGradient(0,10,0,0,10,120);hg.addColorStop(0,'rgba(255,220,150,0.6)');hg.addColorStop(1,'rgba(255,150,50,0)');x.fillStyle=hg;x.fillRect(-120,-110,240,240);}
+let bg=x.createLinearGradient(-14,0,14,0);bg.addColorStop(0,'#8a8d96');bg.addColorStop(0.35,'#f4f1ec');bg.addColorStop(0.7,'#ffd8b0');bg.addColorStop(1,'#6c6f78');
+x.fillStyle=bg;if(!sep){x.fillRect(-14,-120,28,120);x.fillStyle='#222';x.fillRect(-14,-80,28,5);
+x.fillStyle='#30333c';x.beginPath();x.moveTo(-14,-24);x.lineTo(-26,4);x.lineTo(-14,0);x.moveTo(14,-24);x.lineTo(26,4);x.lineTo(14,0);x.fill();}
+else{const d=(t-26)*60;x.save();x.translate(0,d);x.rotate((t-26)*0.6);x.globalAlpha=Math.max(0,1-(t-26)/4);x.fillRect(-14,-120,28,120);x.restore();x.globalAlpha=1;}
+x.fillStyle=bg;x.fillRect(-12,-185,24,62);x.beginPath();x.moveTo(-12,-185);x.quadraticCurveTo(-10,-215,0,-232);x.quadraticCurveTo(10,-215,12,-185);x.fill();
+x.fillStyle='#1d2030';x.fillRect(-12,-125,24,4);
+x.restore();
+x.restore();
+// HUD
+x.fillStyle='rgba(0,0,0,0.35)';x.fillRect(40,40,300,80);x.fillStyle='#fff';x.font='bold 30px sans-serif';
+const T=t-TL;x.fillText((T<0?'T-':'T+')+Math.abs(T).toFixed(1)+'s',58,82);
+x.font='15px sans-serif';x.fillStyle='#ffcf9a';x.fillText('ALT '+(h*0.012).toFixed(1)+' km   VEL '+(Math.max(0,T)*(18+T*3.6)*0.012*60).toFixed(0)+' km/h',58,106);
+let cap='';if(t<4)cap='OCEAN PLATFORM ALPHA — DAWN';else if(t<TL-1)cap='FINAL COUNTDOWN';else if(t<TL)cap='IGNITION';else if(t<17)cap='LIFTOFF';else if(t<22)cap='MAX-Q';else if(t<26)cap='PITCH PROGRAM';else if(t<29)cap='MECO · STAGE SEPARATION';else cap='ORBIT INSERTION';
+x.font='bold 26px sans-serif';x.textAlign='center';x.fillStyle='rgba(255,255,255,0.92)';x.fillText(cap,640,670);x.textAlign='left';
+if(t<1||t>DUR-1){x.fillStyle='rgba(0,0,0,'+(t<1?1-t:t-DUR+1)+')';x.fillRect(0,0,W,H);}
+requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

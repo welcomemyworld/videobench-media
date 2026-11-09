@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>10xColleges Launch</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: #000;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #stage {
+    width: 100vw;
+    max-width: 177.78vh;
+    height: 56.25vw;
+    max-height: 100vh;
+    background: #080c10;
+    box-shadow: 0 0 50px rgba(0, 240, 255, 0.05);
+  }
+  canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="c" width="1280" height="720"></canvas>
+</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+const params = new URLSearchParams(window.location.search);
+let tOffset = parseFloat(params.get('t'));
+if (isNaN(tOffset)) tOffset = 0;
+
+const DUR = 20.0;
+window.DUR = DUR;
+let startTime = performance.now() - tOffset * 1000;
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+function clamp(t) { return Math.max(0, Math.min(1, t)); }
+function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
+function easeInOut(t) { return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t; }
+function map(val, inMin, inMax, outMin, outMax) {
+  return outMin + (clamp((val - inMin) / (inMax - inMin)) * (outMax - outMin));
+}
+function noise(seed) {
+  let x = Math.sin(seed) * 10000;
+  return x - Math.floor(x);
+}
+
+function drawGrid(t) {
+  ctx.strokeStyle = 'rgba(0, 240, 255, 0.04)';
+  ctx.lineWidth = 1;
+  let offset = (t * 15) % 40;
+  ctx.beginPath();
+  for(let x = offset; x < 1280; x += 40) { ctx.moveTo(x, 0); ctx.lineTo(x, 720); }
+  for(let y = offset; y < 720; y += 40) { ctx.moveTo(0, y); ctx.lineTo(1280, y); }
+  ctx.stroke();
+}
+
+function drawAmbientOrbs(t) {
+  ctx.globalCompositeOperation = 'screen';
+  for(let i=0; i<3; i++) {
+    let ox = 640 + Math.sin(t * 0.2 + i*2) * 400;
+    let oy = 360 + Math.cos(t * 0.3 + i*3) * 200;
+    let r = 350;
+    let grad = ctx.createRadialGradient(ox, oy, 0, ox, oy, r);
+    let color = i===0 ? '0, 240, 255' : (i===1 ? '189, 0, 255' : '74, 246, 38');
+    grad.addColorStop(0, `rgba(${color}, 0.06)`);
+    grad.addColorStop(1, `rgba(${color}, 0)`);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(ox, oy, r, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+function drawVignette() {
+  let grad = ctx.createRadialGradient(640, 360, 300, 640, 360, 800);
+  grad.addColorStop(0, 'rgba(0,0,0,0)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.85)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 1280, 720);
+}
+
+function drawScanlines(t) {
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.12)';
+  for(let y = 0; y < 720; y += 4) ctx.fillRect(0, y, 1280, 1);
+  
+  let glitchSeed = Math.floor(t * 20);
+  if (noise(glitchSeed) > 0.92) {
+    ctx.fillStyle = `rgba(0, 240, 255, ${noise(glitchSeed+1)*0.15})`;
+    ctx.fillRect(0, noise(glitchSeed+2)*720, 1280, 2 + noise(glitchSeed+3)*4);
+  }
+}
+
+function drawScene1(t) {
+  const lines = [
+    "> boot --init render_sequence",
+    "> Nothing was screen-recorded.",
+    "> All 7,867 frames were drawn by code,",
+    "> so making a change means editing a script.",
+    "> Executing render sequence..."
+  ];
+  const startTimes = [0.2, 1.0, 2.0, 3.0, 3.8];
+  const cps = 50;
+
+  ctx.font = '22px monospace';
+  ctx.textAlign = 'left';
+
+  for (let i = 0; i < lines.length; i++) {
+    let lt = t - startTimes[i];
+    if (lt > 0) {
+      const chars = Math.min(lines[i].length, Math.floor(lt * cps));
+      let str = lines[i].substring(0, chars);
+      let color = i === lines.length - 1 ? '#00f0ff' : '#4af626';
+      
+      ctx.fillStyle = color;
+      ctx.shadowBlur = 8;
+      ctx.shadowColor = color;
+      ctx.fillText(str, 160, 220 + i * 60);
+      ctx.shadowBlur = 0;
+
+      if (chars < lines[i].length && Math.floor(t * 3) % 2 === 0) {
+        ctx.fillRect(160 + ctx.measureText(str).width + 6, 202 + i * 60, 10, 22);
+      }
+    }
+  }
+  
+  if (t > 4.2) {
+    let a = map(t, 4.2, 4.5, 0, 1);
+    ctx.fillStyle = `rgba(255, 255, 255, ${a})`;
+    ctx.fillRect(0, 0, 1280, 720);
+    let seed = Math.floor(t * 60);
+    for(let i=0; i<15; i++) {
+       ctx.fillStyle = `rgba(0, 240, 255, ${1-a})`;
+       ctx.fillRect(noise(seed+i)*1280, noise(seed+i*2)*720, noise(seed+i*3)*400, noise(seed+i*4)*30);
+    }
+  }
+}
+
+function drawScene2(lt) {
+  let nodes = [];
+  ctx.save();
+  ctx.translate(640, 360);
+  let rot = lt * 0.2;
+  
+  for(let i=0; i<40; i++) {
+    let a = i * 2.399 + rot;
+    let r = 100 + (i * 37) % 450;
+    let nx = Math.cos(a) * r * 1.2;
+    let ny = Math.sin(a) * r * 0.6;
+    nodes.push({x: nx, y: ny, prog: easeOut(clamp((lt - 0.2 - i*0.02) * 2))});
+  }
+  
+  ctx.lineWidth = 1;
+  for(let i=0; i<nodes.length; i++) {
+    for(let j=i+1; j<nodes.length; j++) {
+      let dx = nodes[i].x - nodes[j].x;
+      let dy = nodes[i].y - nodes[j].y;
+      let dist = Math.sqrt(dx*dx + dy*dy);
+      if(dist < 180) {
+        let p = Math.min(nodes[i].prog, nodes[j].prog);
+        ctx.strokeStyle = `rgba(0, 240, 255, ${p * (1 - dist/180) * 0.5})`;
+        ctx.beginPath();
+        ctx.moveTo(nodes[i].x * p, nodes[i].y * p);
+        ctx.lineTo(nodes[j].x * p, nodes[j].y * p);
+        ctx.stroke();
+      }
+    }
+  }
+  
+  for(let i=0; i<nodes.length; i++) {
+    let n = nodes[i];
+    if(n.prog > 0) {
+      ctx.fillStyle = i%4===0 ? '#bd00ff' : '#00f0ff';
+      ctx.shadowBlur = 10;
+      ctx.shadowColor = ctx.fillStyle;
+      ctx.beginPath();
+      ctx.arc(n.x * n.prog, n.y * n.prog, i%4===0 ? 4 : 2, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+  ctx.shadowBlur = 0;
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(640, 360);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 110px sans-serif';
+  
+  let drawProg = easeInOut(clamp((lt - 0.5) / 2.0));
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#ffffff';
+  ctx.shadowBlur = 20;
+  ctx.shadowColor = '#00f0ff';
+  
+  ctx.setLineDash([10000, 10000]);
+  ctx.lineDashOffset = 10000 - drawProg * 10000;
+  ctx.strokeText("10xColleges", 0, 0);
+  ctx.setLineDash([]);
+  
+  if (lt > 2.0) {
+    let fillAlpha = map(lt, 2.0, 3.0, 0, 1);
+    ctx.fillStyle = `rgba(255, 255, 255, ${fillAlpha})`;
+    ctx.fillText("10xColleges", 0, 0);
+    ctx.shadowBlur = 40;
+    ctx.shadowColor = '#ffffff';
+    ctx.fillText("10xColleges", 0, 0);
+  }
+  ctx.restore();
+
+  if(lt > 1.0) {
+    ctx.font = '14px monospace';
+    let snippets = [
+      "const frames = 7867;", "for(let i=0; i<frames; i++) {", "  ctx.beginPath();",
+      "  drawNodeGraph(i);", "  render(frame);", "}", "// Edit script -> Recompile",
+      "function scale(n) { return n * 10; }", "window.requestAnimationFrame(loop);"
+    ];
+    for(let i=0; i<9; i++) {
+      let speed = 20 + noise(i)*20;
+      let px = 80 + (i*211) % 1120;
+      let py = 770 - ((lt * speed + i*100) % 850);
+      let alpha = map(py, 0, 100, 0, 0.4) * map(py, 620, 720, 0.4, 0);
+      ctx.fillStyle = `rgba(0, 240, 255, ${alpha})`;
+      ctx.fillText(snippets[i], px, py);
+    }
+  }
+
+  if(lt > 4.2) {
+    let a = map(lt, 4.2, 4.5, 0, 1);
+    ctx.fillStyle = `rgba(255, 255, 255, ${a})`;
+    ctx.fillRect(0, 0, 1280, 720);
+  }
+}
+
+function drawBarChart(x, y, w, h, t) {
+  if(t < 0) return;
+  let p = easeOut(clamp(t / 1.5));
+  
+  ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+  ctx.beginPath(); ctx.moveTo(x+20, y+h-30); ctx.lineTo(x+w-20, y+h-30); ctx.stroke();
+
+  for(let i=0; i<10; i++) {
+    let val = Math.pow(1.4, i);
+    let maxVal = Math.pow(1.4, 9);
+    let barH = (val / maxVal) * 130 * p;
+    let bx = x + 40 + i * 45;
+    let by = y + h - 30 - barH;
+    
+    ctx.fillStyle = i === 9 ? '#bd00ff' : '#00f0ff';
+    ctx.fillRect(bx, by, 25, barH);
+  }
+  
+  if(p > 0.8) {
+    ctx.fillStyle = `rgba(255, 255, 255, ${(p-0.8)*5})`;
+    ctx.font = 'bold 30px sans-serif';
+    ctx.fillText("10x", x + w - 120, y + 80);
+    ctx.font = '14px monospace';
+    ctx.fillText("GROWTH", x + w - 115, y + 100);
+  }
+}
+
+function drawNodeGraph(x, y, w, h, t) {
+  if(t < 0) return;
+  let p = easeOut(clamp(t / 2.0));
+  let cx = x + w/2;
+  let cy = y + h/2 + 25;
+  
+  ctx.strokeStyle = `rgba(0, 240, 255, ${p * 0.4})`;
+  ctx.lineWidth = 1;
+  
+  for(let i=0; i<30; i++) {
+    let seed = i * 13.37;
+    let a = noise(seed) * Math.PI * 2 + t * 0.2;
+    let r = 30 + noise(seed+1) * 60;
+    let nx = cx + Math.cos(a)*r * 1.5;
+    let ny = cy + Math.sin(a)*r;
+    
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(lerp(cx, nx, p), lerp(cy, ny, p));
+    ctx.stroke();
+    
+    if(i > 0 && i % 3 === 0) {
+      let pa = noise((i-1)*13.37) * Math.PI * 2 + t * 0.2;
+      let pr = 30 + noise((i-1)*13.37+1) * 60;
+      let px = cx + Math.cos(pa)*pr * 1.5;
+      let py = cy + Math.sin(pa)*pr;
+      ctx.beginPath();
+      ctx.moveTo(lerp(cx, px, p), lerp(cy, py, p));
+      ctx.lineTo(lerp(cx, nx, p), lerp(cy, ny, p));
+      ctx.stroke();
+    }
+    
+    ctx.fillStyle = '#bd00ff';
+    ctx.beginPath();
+    ctx.arc(lerp(cx, nx, p), lerp(cy, ny, p), 3, 0, Math.PI*2);
+    ctx.fill();
+  }
+  
+  ctx.fillStyle = '#fff';
+  ctx.shadowBlur = 10;
+  ctx.shadowColor = '#00f0ff';
+  ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI*2); ctx.fill();
+  ctx.shadowBlur = 0;
+}
+
+function drawLineChart(x, y, w, h, t) {
+  if(t < 0) return;
+  let p = easeOut(clamp(t / 2.0));
+  
+  ctx.strokeStyle = '#4af626';
+  ctx.lineWidth = 3;
+  ctx.shadowBlur = 10;
+  ctx.shadowColor = '#4af626';
+  
+  ctx.beginPath();
+  let maxI = Math.floor(100 * p);
+  for(let i=0; i<=maxI; i++) {
+    let px = x + 40 + i * (w-80)/100;
+    let amp = 20 + (i/100) * 30;
+    let py = y + h/2 + 20 + Math.sin(i*0.1 + t*2)*amp + Math.sin(i*0.3)*5 + (noise(i)-0.5)*10;
+    if(i===0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  
+  if(p > 0.5) {
+    ctx.fillStyle = `rgba(255,255,255,${(p-0.5)*2})`;
+    ctx.font = '12px monospace';
+    ctx.fillText(`> Rendering frame ${Math.floor(7867 * p)} / 7867`, x + w - 250, y + 40);
+    ctx.fillText(`> requestAnimationFrame(loop)`, x + w - 250, y + 60);
+    ctx.fillText(`> ctx.stroke()`, x + w - 250, y + 80);
+  }
+}
+
+function drawScene3(lt) {
+  let logoProg = easeInOut(clamp(lt / 1.0));
+  let logoScale = lerp(1, 0.3, logoProg);
+  let logoX = lerp(640, 150, logoProg);
+  let logoY = lerp(360, 80, logoProg);
+  
+  ctx.save();
+  ctx.translate(logoX, logoY);
+  ctx.scale(logoScale, logoScale);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 100px sans-serif';
+  ctx.fillStyle = '#ffffff';
+  ctx.shadowBlur = 15;
+  ctx.shadowColor = '#00f0ff';
+  ctx.fillText("10xColleges", 0, 0);
+  ctx.restore();
+
+  let cardProg = easeOut(clamp((lt - 0.5) / 1.5));
+  if(cardProg > 0) {
+    ctx.shadowBlur = 0;
+    const cards = [
+      {x: 100, y: 180, w: 500, h: 240, title: "ADMISSIONS GROWTH"},
+      {x: 680, y: 180, w: 500, h: 240, title: "ALUMNI NETWORK"},
+      {x: 100, y: 450, w: 1080, h: 200, title: "ENGAGEMENT METRICS"}
+    ];
+
+    cards.forEach((c, i) => {
+      let cp = easeOut(clamp((lt - 0.5 - i*0.2) / 1.0));
+      if(cp <= 0) return;
+      
+      ctx.fillStyle = `rgba(10, 15, 25, ${cp * 0.8})`;
+      ctx.fillRect(c.x, c.y, c.w * cp, c.h);
+      
+      ctx.strokeStyle = `rgba(0, 240, 255, ${cp})`;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(c.x, c.y, c.w, c.h);
+      ctx.fillStyle = `rgba(255, 255, 255, ${cp * 0.1})`;
+      ctx.fillRect(c.x, c.y, c.w, 1);
+      
+      ctx.fillStyle = `rgba(255,255,255,${cp})`;
+      ctx.font = '16px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText(c.title, c.x + 20, c.y + 30);
+      
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(c.x, c.y, c.w, c.h);
+      ctx.clip();
+      if (i === 0) drawBarChart(c.x, c.y, c.w, c.h, lt - 1.0);
+      if (i === 1) drawNodeGraph(c.x, c.y, c.w, c.h, lt - 1.2);
+      if (i === 2) drawLineChart(c.x, c.y, c.w, c.h, lt - 1.4);
+      ctx.restore();
+    });
+  }
+
+  if(lt > 5.7) {
+    let a = map(lt, 5.7, 6.0, 0, 1);
+    ctx.fillStyle = `rgba(255, 255, 255, ${a})`;
+    ctx.fillRect(0, 0, 1280, 720);
+  }
+}
+
+function drawScene4(lt) {
+  let logoProg = easeOut(clamp(lt / 1.5));
+  let logoScale = lerp(0.8, 1.0, logoProg);
+  let alpha = logoProg;
+  let pulse = 1 + Math.sin(lt * 4) * 0.01;
+
+  ctx.save();
+  ctx.translate(640, 320);
+  ctx.scale(logoScale * pulse, logoScale * pulse);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = 'bold 120px sans-serif';
+  
+  ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+  ctx.shadowBlur = 40;
+  ctx.shadowColor = '#00f0ff';
+  ctx.fillText("10xColleges", 0, 0);
+  
+  ctx.shadowBlur = 20;
+  ctx.shadowColor = '#ffffff';
+  ctx.fillText("10xColleges", 0, 0);
+  ctx.restore();
+
+  if(lt > 0.8) {
+    let a = easeOut(clamp((lt - 0.8) / 0.8));
+    ctx.textAlign = 'center';
+    ctx.shadowBlur = 0;
+    
+    ctx.fillStyle = `rgba(0, 240, 255, ${a})`;
+    ctx.font = '24px monospace';
+    ctx.fillText("100% Programmatic. Infinite Scalability.", 640, 460);
+
+    ctx.fillStyle = `rgba(255, 255, 255, ${a * 0.6})`;
+    ctx.font = '16px monospace';
+    ctx.fillText("Edit script -> Run -> 7,867 frames.", 630, 510);
+    
+    if(Math.floor(lt*2)%2===0) {
+      ctx.fillRect(815, 498, 8, 16);
+    }
+  }
+
+  if(lt > 4.0) {
+    let endA = clamp((lt - 4.0) / 1.0);
+    ctx.fillStyle = `rgba(8, 12, 16, ${endA})`;
+    ctx.fillRect(0, 0, 1280, 720);
+  }
+}
+
+function draw(t) {
+  ctx.fillStyle = '#080c10';
+  ctx.fillRect(0, 0, 1280, 720);
+
+  drawGrid(t);
+  drawAmbientOrbs(t);
+
+  if (t < 4.5) drawScene1(t);
+  else if (t < 9.0) drawScene2(t - 4.5);
+  else if (t < 15.0) drawScene3(t - 9.0);
+  else drawScene4(t - 15.0);
+
+  drawVignette();
+  drawScanlines(t);
+}
+
+function loop(now) {
+  let t = (now - startTime) / 1000;
+  if (t < 0) t = 0;
+  t = t % DUR;
+  draw(t);
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

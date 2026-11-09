@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>PayBox</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#s{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+canvas{display:block}
+</style></head><body><div id="s"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+window.DUR=15;
+const c=document.getElementById('c'),x=c.getContext('2d'),S=document.getElementById('s');
+function fit(){const k=Math.min(innerWidth/1280,innerHeight/720);S.style.transform=`scale(${k}) translate(-50%,-50%)`;S.style.transformOrigin='0 0';S.style.left='50%';S.style.top='50%';S.style.transform=`translate(-50%,-50%) scale(${k})`;S.style.transformOrigin='50% 50%';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),T0=parseFloat(q.get('t')||0);let st=null;
+const cl=v=>v<0?0:v>1?1:v,eo=v=>1-Math.pow(1-cl(v),3),eb=v=>{v=cl(v);const a=1.70158;return 1+(a+1)*Math.pow(v-1,3)+a*Math.pow(v-1,2)};
+const ei=v=>{v=cl(v);return v<.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2};
+const G1='#00C2A8',G2='#2D5BFF',Y='#FFD23F';
+function rr(X,Y_,w,h,r){x.beginPath();x.roundRect(X,Y_,w,h,r);}
+// box icon
+function box(cx,cy,s,open,rot){
+ x.save();x.translate(cx,cy);x.rotate(rot);x.scale(s,s);
+ const g=x.createLinearGradient(-60,-60,60,60);g.addColorStop(0,G1);g.addColorStop(1,G2);
+ x.fillStyle=g;rr(-60,-40,120,100,18);x.fill();
+ // coin dropping in
+ x.save();x.translate(0,-60-open*0);x.restore();
+ // lid
+ x.save();x.translate(-60,-40);x.rotate(-open*0.9);
+ x.fillStyle='#fff';rr(-4,-26,128,26,12);x.fill();x.restore();
+ // P slot
+ x.fillStyle='rgba(255,255,255,.95)';x.font='bold 64px Arial';x.textAlign='center';x.textBaseline='middle';x.fillText('P',0,14);
+ x.restore();
+}
+function coin(cx,cy,r,a){x.save();x.translate(cx,cy);x.scale(Math.cos(a),1);x.fillStyle=Y;x.beginPath();x.arc(0,0,r,0,7);x.fill();
+ x.strokeStyle='#E0A800';x.lineWidth=r*.12;x.stroke();x.fillStyle='#B07800';x.font=`bold ${r*1.1}px Arial`;x.textAlign='center';x.textBaseline='middle';x.fillText('$',0,2);x.restore();}
+function frame(n){
+ if(st===null)st=n;let t=((n-st)/1000+T0)%DUR;
+ // bg
+ const b=x.createRadialGradient(640,360,50,640,360,800);b.addColorStop(0,'#141a3a');b.addColorStop(1,'#05060f');
+ x.fillStyle=b;x.fillRect(0,0,1280,720);
+ // sweeping stripes intro 0-1.6
+ for(let i=0;i<6;i++){const p=ei((t-i*.08)/1.2);const p2=ei((t-1-i*.06)/.8);
+  x.fillStyle=[G1,G2,Y,G1,G2,'#fff'][i];x.globalAlpha=.9;
+  const w=1600*(p-p2);x.save();x.translate(640,360);x.rotate(-.35);x.fillRect(-800+1600*p2,-360+i*120-360,w,110);x.restore();}
+ x.globalAlpha=1;
+ // pulse rings
+ for(let i=0;i<3;i++){const p=(t-2-i*.25);if(p>0&&p<1.5){x.strokeStyle=`rgba(0,194,168,${1-p/1.5})`;x.lineWidth=4;x.beginPath();x.arc(640,330,40+p*300,0,7);x.stroke();}}
+ // particles
+ for(let i=0;i<60;i++){const a=i*2.4,sp=(i%7+3)*60,p=t-2.1;if(p>0&&p<1.4){const d=sp*eo(p/1.4);x.fillStyle=i%3?G1:Y;x.globalAlpha=1-p/1.4;x.beginPath();x.arc(640+Math.cos(a)*d,330+Math.sin(a)*d,3+i%3,0,7);x.fill();}}
+ x.globalAlpha=1;
+ // box entrance
+ const bs=eb((t-1.6)/.7);const lift=eo((t-6.5)/1);
+ const bx=640-lift*260,by=330+lift*30,sc=bs*(1-lift*.2);
+ const open=t<3?0:t<3.4?eo((t-3)/.4):t<5?1:1-eo((t-5)/.4);
+ // coins drop 3.4-5
+ for(let i=0;i<3;i++){const p=(t-3.4-i*.35)/.6;if(p>0&&p<1){coin(bx,by-300+300*p*p,26*sc,t*8+i);}}
+ if(sc>0.01)box(bx,by,sc,open,(1-bs)*-.6+Math.sin(t*2)*.03*(t>5.5?1:0));
+ // squash on coin land
+ // wordmark
+ const w=eo((t-6.8)/.8);
+ if(w>0){x.save();x.beginPath();x.rect(560,200,700,300);x.clip();
+  x.font='bold 130px Arial';x.textBaseline='middle';x.textAlign='left';
+  x.fillStyle='#fff';x.fillText('Pay',560+(1-w)*-300,340);
+  const tw=x.measureText('Pay').width;const g=x.createLinearGradient(560,0,1000,0);g.addColorStop(0,G1);g.addColorStop(1,G2);
+  x.fillStyle=g;x.fillText('Box',560+tw+(1-w)*-300,340);x.restore();}
+ const tg=eo((t-8)/.7);
+ if(tg>0){x.globalAlpha=tg;x.fillStyle='#cfd6ff';x.font='32px Arial';x.textAlign='center';
+  x.fillText('Pay smarter. Store safer.',640,560+(1-tg)*30);
+  x.fillStyle=Y;x.fillRect(640-120*tg,600,240*tg,4);x.globalAlpha=1;}
+ // shine on wordmark
+ const sh=(t-9.2)/.8;if(sh>0&&sh<1){x.save();x.globalCompositeOperation='overlay';x.fillStyle='rgba(255,255,255,.7)';x.translate(400+sh*900,0);x.rotate(.3);x.fillRect(0,-200,60,1000);x.restore();}
+ // outro fade
+ const f=cl((t-13.8)/1.2);if(f>0){x.fillStyle=`rgba(0,0,0,${f})`;x.fillRect(0,0,1280,720);}
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></body></html>

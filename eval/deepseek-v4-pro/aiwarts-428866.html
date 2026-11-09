@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Remotion 4.0.528 — 技术栈演示</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; background: #000; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; background: #0a0a14; border-radius: 0; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+(() => {
+  'use strict';
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const W = 1280, H = 720;
+  const DUR = 26;
+
+  // Parse ?t= offset
+  const urlParams = new URLSearchParams(window.location.search);
+  let startOffset = parseFloat(urlParams.get('t') || '0') || 0;
+  window.DUR = DUR;
+
+  // Resize canvas to fit window while maintaining 16:9
+  function resizeCanvas() {
+    const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+    canvas.style.width = (W * scale) + 'px';
+    canvas.style.height = (H * scale) + 'px';
+  }
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+
+  // === UTILITIES ===
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const easeInOutCubic = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+  const easeOutBack = t => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); };
+  const easeInOutQuad = t => t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+  const smoothstep = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+
+  function drawRoundRect(ctx, x, y, w, h, r, fill, stroke, lw) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw || 1; ctx.stroke(); }
+  }
+
+  function drawGlowText(ctx, text, x, y, size, color, glowColor, align = 'center', fontFamily = 'PingFang SC, Microsoft YaHei, system-ui, sans-serif') {
+    ctx.save();
+    ctx.shadowColor = glowColor;
+    ctx.shadowBlur = 24;
+    ctx.fillStyle = color;
+    ctx.font = `bold ${size}px ${fontFamily}`;
+    ctx.textAlign = align;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x, y);
+    ctx.restore();
+  }
+
+  function drawText(ctx, text, x, y, size, color, align = 'left', fontFamily = 'PingFang SC, Microsoft YaHei, system-ui, sans-serif', weight = 'normal') {
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.font = `${weight} ${size}px ${fontFamily}`;
+    ctx.textAlign = align;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x, y);
+    ctx.restore();
+  }
+
+  // === PARTICLES ===
+  const particles = [];
+  for (let i = 0; i < 32; i++) {
+    particles.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      size: 1 + Math.random() * 2.5,
+      speedY: 5 + Math.random() * 15,
+      speedX: (Math.random() - 0.5) * 6,
+      phase: Math.random() * Math.PI * 2,
+      twinkleSpeed: 0.5 + Math.random() * 2,
+      drift: Math.random() * 0.5
+    });
+  }
+
+  function drawParticles(ctx, time) {
+    for (const p of particles) {
+      const py = (p.y - time * p.speedY) % H;
+      const px = (p.x + time * p.speedX + Math.sin(time * p.drift + p.phase) * 20) % W;
+      if (py < 0) p.y = py + H;
+      if (px < 0) p.x = px + W;
+      const alpha = 0.25 + 0.35 * Math.sin(time * p.twinkleSpeed + p.phase);
+      ctx.fillStyle = `rgba(140, 180, 220, ${alpha})`;
+      ctx.beginPath();
+      ctx.arc(((px % W) + W) % W, ((py % H) + H) % H, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // === GRID BACKGROUND ===
+  function drawGrid(ctx, time) {
+    const gridColor = 'rgba(30, 30, 55, 0.5)';
+    ctx.strokeStyle = gridColor;
+    ctx.lineWidth = 0.5;
+    const startY = (time * 8) % 40;
+    for (let y = -40 + startY; y < H + 40; y += 40) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
+      ctx.stroke();
+    }
+    for (let x = 0; x < W; x += 40) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, H);
+      ctx.stroke();
+    }
+    // Vignette
+    const grad = ctx.createRadialGradient(W / 2, H / 2, H * 0.4, W / 2, H / 2, H * 0.9);
+    grad.addColorStop(0, 'rgba(10,10,20,0)');
+    grad.addColorStop(1, 'rgba(5,5,12,0.6)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // === CODE EDITOR DATA ===
+  const codeLines = [
+    { text: '// App.tsx — Remotion 组件', color: '#5c6370', mono: true },
+    { text: 'import { useCurrentFrame } from "remotion";', color: '#c678dd', mono: true },
+    { text: '', color: '#abb2bf', mono: true },
+    { text: 'export const MyVideo = () => {', color: '#c678dd', mono: true },
+    { text: '  const frame = useCurrentFrame();', color: '#abb2bf', mono: true },
+    { text: '  const opacity = Math.min(1, frame / 45);', color: '#abb2bf', mono: true },
+    { text: '  const scale = 1 + frame * 0.01;', color: '#abb2bf', mono: true },
+    { text: '', color: '#abb2bf', mono: true },
+    { text: '  return (', color: '#c678dd', mono: true },
+    { text: '    <div style={{ opacity, transform: `scale(${scale})` }}>', color: '#e06c75', mono: true },
+    { text: '      <h1>Remotion 4.0.528</h1>', color: '#e06c75', mono: true },
+    { text: '      <p>Frame {frame}</p>', color: '#e06c75', mono: true },
+    { text: '    </div>', color: '#e06c75', mono: true },
+    { text: '  );', color: '#abb2bf', mono: true },
+    { text: '};', color: '#c678dd', mono: true },
+  ];
+  const totalCodeChars = codeLines.reduce((s, l) => s + l.text.length + 1, 0);
+
+  function getCodeTypingProgress(time) {
+    const start = 2.0, end = 7.5;
+    return clamp((time - start) / (end - start), 0, 1);
+  }
+
+  function getCodeRevealInfo(time) {
+    const prog = easeInOutCubic(getCodeTypingProgress(time));
+    const revealed = Math.floor(prog * totalCodeChars);
+    return { prog, revealed };
+  }
+
+  // === WAVEFORM ===
+  function waveformY(x, time, freqOffset = 0, amp = 1) {
+    return Math.sin(x * 0.025 + time * 2.8 + freqOffset) * 22 * amp +
+           Math.sin(x * 0.055 + time * 2.1 + freqOffset * 1.7) * 14 * amp +
+           Math.sin(x * 0.013 + time * 1.5 + freqOffset * 0.5) * 9 * amp +
+           Math.sin(x * 0.09 + time * 3.5 + freqOffset * 2.3) * 5 * amp;
+  }
+
+  // === PIPELINE ELEMENTS ===
+  const pipelineNodes = [
+    { id: 'remotion', label: 'Remotion 4.0.528', sub: 'React 画面渲染', x: 300, y: 360, w: 200, h: 80, color: '#00d4ff', icon: '⚛' },
+    { id: 'python', label: 'Python', sub: '配乐生成', x: 630, y: 300, w: 170, h: 70, color: '#ff6b35', icon: '♪' },
+    { id: 'ffmpeg', label: 'ffmpeg', sub: '视频合成', x: 900, y: 360, w: 180, h: 80, color: '#a855f7', icon: '▶' },
+  ];
+
+  // === FFMPEG COMMAND ===
+  const ffmpegCmd = 'ffmpeg -i frames.mp4 -i music.wav -c:v libx264 -c:a aac -pix_fmt yuv420p output.mp4';
+  const ffmpegCmdTotal = ffmpegCmd.length;
+
+  function getFfmpegProgress(time) {
+    const start = 13.5, end = 19.5;
+    return clamp((time - start) / (end - start), 0, 1);
+  }
+
+  function getRenderProgress(time) {
+    const start = 15.5, end = 21.0;
+    return easeInOutCubic(clamp((time - start) / (end - start), 0, 1));
+  }
+
+  function getFinalShowcaseAlpha(time) {
+    return smoothstep(19.0, 22.0, time) * (1 - smoothstep(24.0, 25.5, time));
+  }
+
+  function getTitleAlpha(time) {
+    const inA = smoothstep(0.2, 1.8, time);
+    const outA = 1 - smoothstep(22.5, 24.5, time);
+    return inA * outA;
+  }
+
+  function getCodePanelAlpha(time) {
+    const inA = smoothstep(1.2, 2.8, time);
+    const outA = 1 - smoothstep(20.0, 23.0, time);
+    return inA * outA;
+  }
+
+  function getWaveformAlpha(time) {
+    const inA = smoothstep(5.0, 7.0, time);
+    const outA = 1 - smoothstep(20.0, 22.5, time);
+    return inA * outA;
+  }
+
+  function getPipelineAlpha(time) {
+    const inA = smoothstep(8.0, 10.5, time);
+    const outA = 1 - smoothstep(22.0, 24.0, time);
+    return inA * outA;
+  }
+
+  function getFfmpegPanelAlpha(time) {
+    const inA = smoothstep(12.0, 14.0, time);
+    const outA = 1 - smoothstep(22.5, 24.0, time);
+    return inA * outA;
+  }
+
+  // === DRAW FUNCTION: TITLE ===
+  function drawTitle(ctx, time, alpha) {
+    if (alpha <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    // Main title
+    drawGlowText(ctx, 'Remotion 4.0.528', W / 2, 68, 52, '#ffffff', 'rgba(0,212,255,0.55)');
+    // Subtitle
+    const subAlpha = smoothstep(1.5, 2.5, time) * alpha;
+    if (subAlpha > 0) {
+      ctx.globalAlpha = subAlpha;
+      drawGlowText(ctx, 'React · Python · ffmpeg 技术栈', W / 2, 118, 20, '#c0c0e0', 'rgba(168,85,247,0.35)');
+    }
+    // Version badge
+    const badgeAlpha = smoothstep(2.0, 3.0, time) * alpha;
+    if (badgeAlpha > 0) {
+      ctx.globalAlpha = badgeAlpha;
+      drawRoundRect(ctx, W / 2 - 80, 145, 160, 32, 16, 'rgba(0,212,255,0.12)', 'rgba(0,212,255,0.5)', 1.5);
+      drawText(ctx, 'v4.0.528', W / 2, 161, 15, '#00d4ff', 'center');
+    }
+    ctx.restore();
+  }
+
+  // === DRAW FUNCTION: CODE EDITOR ===
+  function drawCodeEditor(ctx, time, alpha) {
+    if (alpha <= 0) return;
+    const panelX = 55, panelY = 195, panelW = 560, panelH = 400;
+    const slideIn = easeOutCubic(clamp((time - 1.0) / 1.8, 0, 1));
+    const currentX = lerp(-panelW - 50, panelX, slideIn);
+    
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    
+    // Panel background
+    drawRoundRect(ctx, currentX, panelY, panelW, panelH, 12, 'rgba(16,16,28,0.92)', 'rgba(0,212,255,0.25)', 1.5);
+    // Title bar
+    drawRoundRect(ctx, currentX, panelY, panelW, 38, 12, 'rgba(24,24,40,1)', 'rgba(0,212,255,0.15)', 1);
+    // Traffic lights
+    ctx.fillStyle = '#ff5f57'; ctx.beginPath(); ctx.arc(currentX + 24, panelY + 19, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#febc2e'; ctx.beginPath(); ctx.arc(currentX + 44, panelY + 19, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#28c840'; ctx.beginPath(); ctx.arc(currentX + 64, panelY + 19, 6, 0, Math.PI * 2); ctx.fill();
+    drawText(ctx, 'App.tsx', currentX + panelW / 2, panelY + 19, 14, '#8888a0', 'center', 'SF Mono, Consolas, monospace');
+    
+    // Code area
+    const { prog, revealed } = getCodeRevealInfo(time);
+    const lineHeight = 24;
+    const codeStartY = panelY + 56;
+    const codeStartX = currentX + 42;
+    let charCount = 0;
+    const cursorLine = Math.floor(revealed / (Math.max(1, totalCodeChars / codeLines.length)));
+    
+    for (let i = 0; i < codeLines.length; i++) {
+      const line = codeLines[i];
+      const lineY = codeStartY + i * lineHeight;
+      // Line number
+      ctx.fillStyle = '#3a3a4e';
+      ctx.font = '12px SF Mono, Consolas, monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText(String(i + 1), currentX + 28, lineY);
+      
+      // Draw line text with typing
+      const lineChars = line.text.length + 1; // +1 for newline
+      const lineStart = charCount;
+      const lineEnd = charCount + lineChars;
+      const charsInLine = clamp(revealed - lineStart, 0, lineChars);
+      
+      if (charsInLine > 0) {
+        const displayText = line.text.substring(0, charsInLine);
+        ctx.fillStyle = line.color || '#abb2bf';
+        ctx.font = '14px SF Mono, Consolas, monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(displayText, codeStartX, lineY);
+      }
+      
+      // Cursor on current line
+      if (revealed > lineStart && revealed <= lineEnd && i === cursorLine && prog < 1) {
+        const cursorX = codeStartX + (revealed - lineStart) * 8.2;
+        const blink = Math.sin(time * 5) > -0.2;
+        if (blink && prog < 1) {
+          ctx.fillStyle = '#00d4ff';
+          ctx.fillRect(cursorX, lineY - 9, 2, 18);
+        }
+      }
+      
+      charCount = lineEnd;
+    }
+    
+    // Frame preview thumbnails below code
+    const previewAlpha = smoothstep(4.5, 6.0, time) * alpha;
+    if (previewAlpha > 0 && alpha > 0) {
+      ctx.globalAlpha = previewAlpha;
+      const previewY = panelY + panelH - 60;
+      const previewLabels = ['#0', '#15', '#30', '#45'];
+      for (let i = 0; i < 4; i++) {
+        const px = currentX + 30 + i * 130;
+        const pw = 115, ph = 42;
+        const frameNum = i * 15;
+        const opacityVal = Math.min(1, frameNum / 45);
+        const scaleVal = 1 + frameNum * 0.01;
+        // Thumbnail background
+        const tg = ctx.createLinearGradient(px, previewY, px + pw, previewY + ph);
+        tg.addColorStop(0, `rgba(26,26,46,${opacityVal})`);
+        tg.addColorStop(1, `rgba(22,33,62,${opacityVal})`);
+        drawRoundRect(ctx, px, previewY, pw, ph, 6, tg, 'rgba(0,212,255,0.3)', 1);
+        // Scale indicator
+        const innerScale = Math.min(1, (0.3 + frameNum * 0.015));
+        const innerW = pw * innerScale, innerH = ph * innerScale;
+        const innerX = px + (pw - innerW) / 2, innerY = previewY + (ph - innerH) / 2;
+        const ig = ctx.createLinearGradient(innerX, innerY, innerX + innerW, innerY + innerH);
+        ig.addColorStop(0, `rgba(0,212,255,${0.25 * opacityVal})`);
+        ig.addColorStop(1, `rgba(168,85,247,${0.3 * opacityVal})`);
+        drawRoundRect(ctx, innerX, innerY, innerW, innerH, 4, ig, null, 0);
+        drawText(ctx, `F${frameNum}`, px + pw / 2, previewY + ph / 2, 10, `rgba(255,255,255,${0.7 * opacityVal})`, 'center', 'SF Mono, Consolas, monospace');
+        // Label below
+        drawText(ctx, previewLabels[i], px + pw / 2, previewY + ph + 14, 9, '#666680', 'center', 'SF Mono, Consolas, monospace');
+      }
+    }
+    
+    ctx.restore();
+  }
+
+  // === DRAW FUNCTION: WAVEFORM (Python Audio) ===
+  function drawWaveform(ctx, time, alpha) {
+    if (alpha <= 0) return;
+    const panelX = 670, panelY = 200, panelW = 555, panelH = 200;
+    const slideIn = easeOutCubic(clamp((time - 4.5) / 2.0, 0, 1));
+    const currentY = lerp(-panelH - 50, panelY, slideIn);
+    
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    
+    // Panel
+    drawRoundRect(ctx, panelX, currentY, panelW, panelH, 12, 'rgba(16,16,28,0.92)', 'rgba(255,107,53,0.3)', 1.5);
+    // Title
+    drawRoundRect(ctx, panelX, currentY, panelW, 36, 12, 'rgba(24,24,40,1)', 'rgba(255,107,53,0.2)', 1);
+    drawText(ctx, '♪ Python 配乐生成', panelX + 20, currentY + 18, 14, '#ff6b35', 'left', 'PingFang SC, Microsoft YaHei, sans-serif');
+    drawText(ctx, 'audio.py', panelX + panelW - 20, currentY + 18, 12, '#555568', 'right', 'SF Mono, Consolas, monospace');
+    
+    // Waveform area
+    const waveY = currentY + 60;
+    const waveH = 100;
+    const waveCenterY = waveY + waveH / 2;
+    const waveStartX = panelX + 30;
+    const waveEndX = panelX + panelW - 30;
+    const waveW = waveEndX - waveStartX;
+    
+    // Background lines
+    ctx.strokeStyle = 'rgba(255,107,53,0.08)';
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i < 5; i++) {
+      const ly = waveY + i * (waveH / 4);
+      ctx.beginPath();
+      ctx.moveTo(waveStartX, ly);
+      ctx.lineTo(waveEndX, ly);
+      ctx.stroke();
+    }
+    
+    // Main waveform
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(waveStartX, waveY, waveW, waveH);
+    ctx.clip();
+    
+    // Waveform lines
+    for (let layer = 0; layer < 3; layer++) {
+      const layerAlpha = 0.9 - layer * 0.25;
+      const layerAmp = 1.0 - layer * 0.25;
+      ctx.strokeStyle = `rgba(255,107,53,${layerAlpha})`;
+      ctx.lineWidth = layer === 0 ? 2.5 : layer === 1 ? 1.8 : 1.2;
+      ctx.beginPath();
+      for (let x = 0; x <= waveW; x += 2) {
+        const wx = waveStartX + x;
+        const wy = waveCenterY + waveformY(x, time, layer * 1.3, layerAmp);
+        if (x === 0) ctx.moveTo(wx, wy);
+        else ctx.lineTo(wx, wy);
+      }
+      ctx.stroke();
+    }
+    
+    // Glow overlay on waveform
+    ctx.shadowColor = 'rgba(255,107,53,0.4)';
+    ctx.shadowBlur = 15;
+    ctx.strokeStyle = 'rgba(255,107,53,0.7)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let x = 0; x <= waveW; x += 3) {
+      const wx = waveStartX + x;
+      const wy = waveCenterY + waveformY(x, time, 0, 1.0);
+      if (x === 0) ctx.moveTo(wx, wy);
+      else ctx.lineTo(wx, wy);
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+    
+    // Playhead
+    const playheadProgress = ((time * 0.7) % 1);
+    const phX = waveStartX + playheadProgress * waveW;
+    ctx.strokeStyle = 'rgba(255,180,140,0.8)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(phX, waveY + 8);
+    ctx.lineTo(phX, waveY + waveH - 8);
+    ctx.stroke();
+    ctx.fillStyle = '#ff6b35';
+    ctx.beginPath();
+    ctx.arc(phX, waveY + 10, 5, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Frequency labels
+    drawText(ctx, '20Hz', waveStartX, currentY + panelH - 18, 9, '#555568', 'left', 'SF Mono, Consolas, monospace');
+    drawText(ctx, '2kHz', waveEndX, currentY + panelH - 18, 9, '#555568', 'right', 'SF Mono, Consolas, monospace');
+    
+    // Duration
+    drawText(ctx, '00:03.5', panelX + panelW / 2, currentY + panelH - 18, 9, '#666', 'center', 'SF Mono, Consolas, monospace');
+    
+    ctx.restore();
+  }
+
+  // === DRAW FUNCTION: PIPELINE ===
+  function drawPipeline(ctx, time, alpha) {
+    if (alpha <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    
+    const nodeR = {
+      remotion: { x: 200, y: 330, w: 220, h: 85, color: '#00d4ff' },
+      python: { x: 520, y: 275, w: 190, h: 75, color: '#ff6b35' },
+      ffmpeg: { x: 860, y: 330, w: 200, h: 85, color: '#a855f7' },
+      output: { x: 1100, y: 330, w: 140, h: 85, color: '#4ade80' }
+    };
+    
+    const labelMap = {
+      remotion: { title: 'Remotion', sub: 'React 画面渲染', icon: '⚛' },
+      python: { title: 'Python', sub: '配乐生成', icon: '♪' },
+      ffmpeg: { title: 'ffmpeg', sub: '视频合成', icon: '▶' },
+      output: { title: '成片', sub: 'Final.mp4', icon: '✓' }
+    };
+    
+    // Draw arrows first
+    const arrowAlpha = smoothstep(9.0, 11.0, time);
+    ctx.globalAlpha = alpha * arrowAlpha;
+    
+    // Arrow from Remotion to ffmpeg
+    drawFlowArrow(ctx, nodeR.remotion.x + nodeR.remotion.w, nodeR.remotion.y + nodeR.remotion.h / 2,
+                   nodeR.ffmpeg.x, nodeR.ffmpeg.y + nodeR.ffmpeg.h / 2, time, '#00d4ff');
+    
+    // Arrow from Python to ffmpeg  
+    drawFlowArrow(ctx, nodeR.python.x + nodeR.python.w / 2, nodeR.python.y + nodeR.python.h,
+                   nodeR.ffmpeg.x + nodeR.ffmpeg.w / 2, nodeR.ffmpeg.y + nodeR.ffmpeg.h / 2, time, '#ff6b35');
+    
+    // Arrow from ffmpeg to output
+    drawFlowArrow(ctx, nodeR.ffmpeg.x + nodeR.ffmpeg.w, nodeR.ffmpeg.y + nodeR.ffmpeg.h / 2,
+                   nodeR.output.x, nodeR.output.y + nodeR.output.h / 2, time, '#a855f7');
+    
+    ctx.globalAlpha = alpha;
+    
+    // Draw nodes
+    const nodeKeys = ['remotion', 'python', 'ffmpeg', 'output'];
+    for (const key of nodeKeys) {
+      const nr = nodeR[key];
+      const lm = labelMap[key];
+      const nodeAlpha = smoothstep(8.5, 10.5, time);
+      ctx.globalAlpha = alpha * nodeAlpha;
+      
+      // Node background
+      const bgGrad = ctx.createLinearGradient(nr.x, nr.y, nr.x, nr.y + nr.h);
+      bgGrad.addColorStop(0, `rgba(20,20,35,0.95)`);
+      bgGrad.addColorStop(1, `rgba(12,12,22,0.95)`);
+      drawRoundRect(ctx, nr.x, nr.y, nr.w, nr.h, 10, bgGrad, nr.color + '66', 2);
+      
+      // Icon circle
+      ctx.fillStyle = nr.color + '22';
+      ctx.beginPath();
+      ctx.arc(nr.x + 28, nr.y + nr.h / 2, 18, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = nr.color + '88';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      drawText(ctx, lm.icon, nr.x + 28, nr.y + nr.h / 2, 16, nr.color, 'center');
+      
+      // Title
+      drawText(ctx, lm.title, nr.x + 55, nr.y + nr.h / 2 - 10, 15, '#ffffff', 'left', 'PingFang SC, Microsoft YaHei, sans-serif', 'bold');
+      drawText(ctx, lm.sub, nr.x + 55, nr.y + nr.h / 2 + 12, 11, '#8888a0', 'left');
+      
+      // Version badge for Remotion
+      if (key === 'remotion') {
+        drawText(ctx, '4.0.528', nr.x + nr.w - 18, nr.y + 20, 10, 'rgba(0,212,255,0.8)', 'right', 'SF Mono, Consolas, monospace');
+      }
+    }
+    
+    ctx.globalAlpha = alpha;
+    ctx.restore();
+  }
+
+  function drawFlowArrow(ctx, x1, y1, x2, y2, time, color) {
+    const dx = x2 - x1, dy = y2 - y1;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const nx = dx / dist, ny = dy / dist;
+    
+    // Line
+    ctx.strokeStyle = color + '66';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.lineDashOffset = -time * 30;
+    ctx.beginPath();
+    ctx.moveTo(x1 + nx * 15, y1 + ny * 15);
+    ctx.lineTo(x2 - nx * 20, y2 - ny * 20);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    
+    // Arrowhead
+    const headSize = 10;
+    const angle = Math.atan2(dy, dx);
+    ctx.fillStyle = color + 'aa';
+    ctx.beginPath();
+    ctx.moveTo(x2 - nx * 5, y2 - ny * 5);
+    ctx.lineTo(x2 - nx * 20 - Math.cos(angle - 0.45) * headSize, y2 - ny * 20 - Math.sin(angle - 0.45) * headSize);
+    ctx.lineTo(x2 - nx * 20 - Math.cos(angle + 0.45) * headSize, y2 - ny * 20 - Math.sin(angle + 0.45) * headSize);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Flowing dots
+    const dotCount = 3;
+    for (let i = 0; i < dotCount; i++) {
+      const progress = ((time * 0.6 + i / dotCount) % 1);
+      const dotX = x1 + nx * 15 + (dx - 35) * progress;
+      const dotY = y1 + ny * 15 + (dy - 35) * progress;
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.7;
+      ctx.beginPath();
+      ctx.arc(dotX, dotY, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // === DRAW FUNCTION: FFMPEG PANEL ===
+  function drawFfmpegPanel(ctx, time, alpha) {
+    if (alpha <= 0) return;
+    const panelX = 200, panelY = 480, panelW = 880, panelH = 110;
+    const slideIn = easeOutCubic(clamp((time - 11.5) / 2.0, 0, 1));
+    const currentY = lerp(H + 200, panelY, slideIn);
+    
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    
+    // Panel background (terminal style)
+    drawRoundRect(ctx, panelX, currentY, panelW, panelH, 10, 'rgba(8,8,16,0.95)', 'rgba(168,85,247,0.3)', 1.5);
+    // Terminal title bar
+    drawRoundRect(ctx, panelX, currentY, panelW, 30, 10, 'rgba(18,18,30,1)', 'rgba(168,85,247,0.15)', 1);
+    drawText(ctx, 'Terminal — ffmpeg 合成', panelX + 20, currentY + 15, 12, '#8888a0', 'left', 'SF Mono, Consolas, monospace');
+    
+    // Command text (typed)
+    const cmdProg = easeInOutCubic(getFfmpegProgress(time));
+    const cmdChars = Math.floor(cmdProg * ffmpegCmdTotal);
+    const cmdDisplay = ffmpegCmd.substring(0, cmdChars);
+    drawText(ctx, '$ ' + cmdDisplay, panelX + 25, currentY + 52, 13, '#a855f7', 'left', 'SF Mono, Consolas, monospace');
+    
+    // Blinking cursor
+    if (cmdProg < 1) {
+      const blink = Math.sin(time * 6) > -0.2;
+      if (blink) {
+        const cursorX = panelX + 25 + (cmdDisplay.length + 2) * 7.8;
+        ctx.fillStyle = '#a855f7';
+        ctx.fillRect(cursorX, currentY + 44, 2, 16);
+      }
+    }
+    
+    // Progress bar
+    const prog = getRenderProgress(time);
+    const barX = panelX + 25, barW = panelW - 50, barY = currentY + 72, barH = 14;
+    drawRoundRect(ctx, barX, barY, barW, barH, 7, 'rgba(40,40,60,0.8)', 'rgba(168,85,247,0.3)', 1);
+    if (prog > 0) {
+      const fillGrad = ctx.createLinearGradient(barX, barY, barX + barW, barY);
+      fillGrad.addColorStop(0, '#a855f7');
+      fillGrad.addColorStop(1, '#00d4ff');
+      drawRoundRect(ctx, barX + 1, barY + 1, (barW - 2) * prog, barH - 2, 6, fillGrad, null, 0);
+    }
+    // Percentage
+    const pctText = Math.floor(prog * 100) + '%';
+    drawText(ctx, pctText, panelX + panelW - 35, currentY + 48, 14, '#ffffff', 'right', 'SF Mono, Consolas, monospace', 'bold');
+    
+    ctx.restore();
+  }
+
+  // === DRAW FUNCTION: FINAL SHOWCASE ===
+  function drawFinalShowcase(ctx, time, alpha) {
+    if (alpha <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    
+    const videoX = 340, videoY = 200, videoW = 600, videoH = 340;
+    
+    // Video player frame
+    drawRoundRect(ctx, videoX - 4, videoY - 40, videoW + 8, videoH + 80, 16, 'rgba(0,0,0,0.7)', 'rgba(74,222,128,0.4)', 2);
+    
+    // Video content
+    const contentProg = ((time - 19) / 3.5) % 1;
+    const frameNum = Math.floor(contentProg * 45);
+    const vidOpacity = Math.min(1, frameNum / 45);
+    const vidScale = 1 + frameNum * 0.01;
+    
+    // Video background with gradient
+    const vg = ctx.createLinearGradient(videoX, videoY, videoX + videoW, videoY + videoH);
+    vg.addColorStop(0, `rgba(26,26,46,${vidOpacity})`);
+    vg.addColorStop(0.5, `rgba(10,10,20,${vidOpacity})`);
+    vg.addColorStop(1, `rgba(22,33,62,${vidOpacity})`);
+    drawRoundRect(ctx, videoX, videoY, videoW, videoH, 8, vg, null, 0);
+    
+    // Inner content
+    const innerW = videoW * vidScale, innerH = videoH * vidScale;
+    const innerX = videoX + (videoW - innerW) / 2, innerY = videoY + (videoH - innerH) / 2;
+    const ig = ctx.createLinearGradient(innerX, innerY, innerX + innerW, innerY + innerH);
+    ig.addColorStop(0, `rgba(0,212,255,${0.3 * vidOpacity})`);
+    ig.addColorStop(0.5, `rgba(168,85,247,${0.25 * vidOpacity})`);
+    ig.addColorStop(1, `rgba(255,107,53,${0.2 * vidOpacity})`);
+    drawRoundRect(ctx, innerX, innerY, innerW, innerH, 6, ig, null, 0);
+    
+    // Text inside video
+    drawText(ctx, 'Remotion 4.0.528', videoX + videoW / 2, videoY + videoH / 2 - 20, 24, `rgba(255,255,255,${vidOpacity})`, 'center', 'PingFang SC, Microsoft YaHei, sans-serif', 'bold');
+    drawText(ctx, `Frame ${frameNum} / 45`, videoX + videoW / 2, videoY + videoH / 2 + 20, 14, `rgba(180,180,220,${vidOpacity})`, 'center', 'SF Mono, Consolas, monospace');
+    
+    // Audio waveform overlay at bottom of video
+    const waveY2 = videoY + videoH - 40;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(videoX, waveY2, videoW, 30);
+    ctx.clip();
+    ctx.strokeStyle = 'rgba(255,107,53,0.7)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let x = 0; x <= videoW; x += 3) {
+      const wx = videoX + x;
+      const wy = waveY2 + 15 + waveformY(x, time * 1.5, 0, 0.6);
+      if (x === 0) ctx.moveTo(wx, wy);
+      else ctx.lineTo(wx, wy);
+    }
+    ctx.stroke();
+    ctx.restore();
+    
+    // Play button
+    ctx.fillStyle = 'rgba(74,222,128,0.9)';
+    ctx.beginPath();
+    ctx.arc(videoX + videoW / 2, videoY + videoH / 2 + 55, 22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.moveTo(videoX + videoW / 2 - 6, videoY + videoH / 2 + 48);
+    ctx.lineTo(videoX + videoW / 2 + 10, videoY + videoH / 2 + 55);
+    ctx.lineTo(videoX + videoW / 2 - 6, videoY + videoH / 2 + 62);
+    ctx.closePath();
+    ctx.fill();
+    
+    // "合成完成" text
+    drawGlowText(ctx, '✓ 合成完成', W / 2, videoY + videoH + 60, 22, '#4ade80', 'rgba(74,222,128,0.5)');
+    
+    // Tech stack summary
+    const summaryAlpha = smoothstep(20.5, 22.0, time);
+    if (summaryAlpha > 0) {
+      ctx.globalAlpha = alpha * summaryAlpha;
+      drawText(ctx, 'React · Remotion · Python · ffmpeg', W / 2, videoY + videoH + 100, 14, '#8888a0', 'center');
+    }
+    
+    ctx.restore();
+  }
+
+  // === DRAW FUNCTION: TIMELINE ===
+  function drawTimeline(ctx, time, alpha) {
+    if (alpha <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    
+    const tlX = 80, tlY = 610, tlW = 1120, tlH = 80;
+    
+    // Timeline panel
+    drawRoundRect(ctx, tlX, tlY, tlW, tlH, 10, 'rgba(12,12,22,0.9)', 'rgba(60,60,90,0.3)', 1);
+    
+    // Frame ticks
+    for (let i = 0; i <= 45; i++) {
+      const tickX = tlX + 20 + (tlW - 40) * (i / 45);
+      const tickH = i % 5 === 0 ? 12 : 6;
+      ctx.strokeStyle = 'rgba(120,120,160,0.5)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(tickX, tlY + 28 - tickH);
+      ctx.lineTo(tickX, tlY + 28);
+      ctx.stroke();
+    }
+    
+    // Frame thumbnails (small markers)
+    for (let i = 0; i < 8; i++) {
+      const frameIdx = i * 6;
+      const tx = tlX + 18 + (tlW - 36) * (frameIdx / 45);
+      const ty = tlY + 36;
+      const tw = 110, th = 28;
+      const frameOpacity = Math.min(1, frameIdx / 45);
+      const tg = ctx.createLinearGradient(tx, ty, tx + tw, ty + th);
+      tg.addColorStop(0, `rgba(0,212,255,${0.15 * frameOpacity})`);
+      tg.addColorStop(1, `rgba(168,85,247,${0.2 * frameOpacity})`);
+      drawRoundRect(ctx, tx, ty, tw, th, 4, tg, 'rgba(60,60,90,0.4)', 0.5);
+      drawText(ctx, `F${frameIdx}`, tx + tw / 2, ty + th / 2, 9, `rgba(200,200,230,${0.6 * frameOpacity})`, 'center', 'SF Mono, Consolas, monospace');
+    }
+    
+    // Playhead
+    const playheadProg = (time % DUR) / DUR;
+    const phX = tlX + 20 + (tlW - 40) * playheadProg;
+    ctx.strokeStyle = '#00d4ff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(phX, tlY + 8);
+    ctx.lineTo(phX, tlY + tlH - 10);
+    ctx.stroke();
+    ctx.fillStyle = '#00d4ff';
+    ctx.beginPath();
+    ctx.arc(phX, tlY + 12, 5, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Time labels
+    drawText(ctx, '0:00', tlX + 10, tlY + tlH - 10, 9, '#555568', 'left', 'SF Mono, Consolas, monospace');
+    drawText(ctx, `0:${String(Math.floor(DUR)).padStart(2, '0')}`, tlX + tlW - 10, tlY + tlH - 10, 9, '#555568', 'right', 'SF Mono, Consolas, monospace');
+    
+    // Section markers
+    const sections = [
+      { t: 0, label: '标题', color: '#ffffff' },
+      { t: 2, label: 'React 代码', color: '#00d4ff' },
+      { t: 6, label: 'Python 配乐', color: '#ff6b35' },
+      { t: 10, label: '管线连接', color: '#a855f7' },
+      { t: 14, label: 'ffmpeg 合成', color: '#a855f7' },
+      { t: 19, label: '成片输出', color: '#4ade80' },
+    ];
+    
+    for (const sec of sections) {
+      const sx = tlX + 20 + (tlW - 40) * (sec.t / DUR);
+      ctx.fillStyle = sec.color + '88';
+      ctx.font = '8px SF Mono, Consolas, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(sec.label, sx, tlY + 56);
+      ctx.fillStyle = sec.color + '44';
+      ctx.beginPath();
+      ctx.arc(sx, tlY + 30, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    
+    ctx.restore();
+  }
+
+  // === DRAW FUNCTION: STATUS INDICATOR ===
+  function drawStatusIndicator(ctx, time, alpha) {
+    if (alpha <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.8;
+    
+    const statusX = W - 28, statusY = 30;
+    const isRendering = time > 13 && time < 21;
+    const isDone = time > 20;
+    const statusColor = isRendering ? '#febc2e' : isDone ? '#4ade80' : '#00d4ff';
+    const statusText = isRendering ? '渲染中...' : isDone ? '已完成' : '就绪';
+    
+    ctx.fillStyle = statusColor;
+    ctx.beginPath();
+    ctx.arc(statusX - 55, statusY, 4, 0, Math.PI * 2);
+    ctx.fill();
+    drawText(ctx, statusText, statusX - 42, statusY, 11, statusColor, 'left');
+    ctx.restore();
+  }
+
+  // === MAIN DRAW LOOP ===
+  function drawFrame(time) {
+    const t = time % DUR;
+    
+    // Clear background
+    ctx.fillStyle = '#0a0a14';
+    ctx.fillRect(0, 0, W, H);
+    
+    // Draw background grid
+    drawGrid(ctx, t);
+    
+    // Draw particles
+    drawParticles(ctx, t);
+    
+    // Get alphas
+    const titleAlpha = getTitleAlpha(t);
+    const codePanelAlpha = getCodePanelAlpha(t);
+    const waveformAlpha = getWaveformAlpha(t);
+    const pipelineAlpha = getPipelineAlpha(t);
+    const ffmpegPanelAlpha = getFfmpegPanelAlpha(t);
+    const finalShowcaseAlpha = getFinalShowcaseAlpha(t);
+    
+    // Draw status indicator
+    drawStatusIndicator(ctx, t, Math.max(titleAlpha, codePanelAlpha));
+    
+    // Draw title
+    drawTitle(ctx, t, titleAlpha);
+    
+    // Draw pipeline (behind panels for depth)
+    drawPipeline(ctx, t, pipelineAlpha);
+    
+    // Draw code editor
+    drawCodeEditor(ctx, t, codePanelAlpha);
+    
+    // Draw waveform
+    drawWaveform(ctx, t, waveformAlpha);
+    
+    // Draw ffmpeg panel
+    drawFfmpegPanel(ctx, t, ffmpegPanelAlpha);
+    
+    // Draw final showcase (on top when active)
+    drawFinalShowcase(ctx, t, finalShowcaseAlpha);
+    
+    // Draw timeline
+    const timelineAlpha = smoothstep(0.5, 1.5, t) * (1 - smoothstep(24.0, 25.0, t));
+    drawTimeline(ctx, t, timelineAlpha);
+    
+    // Subtle scanline effect
+    ctx.fillStyle = 'rgba(0,0,0,0.03)';
+    for (let y = 0; y < H; y += 2) {
+      ctx.fillRect(0, y, W, 1);
+    }
+  }
+
+  // === ANIMATION LOOP ===
+  let startTime = performance.now();
+  
+  function animate(now) {
+    const elapsed = (now - startTime) / 1000 + startOffset;
+    drawFrame(elapsed);
+    requestAnimationFrame(animate);
+  }
+  
+  requestAnimationFrame(animate);
+})();
+</script>
+</body>
+</html>

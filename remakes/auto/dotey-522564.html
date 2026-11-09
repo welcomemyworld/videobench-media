@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>什么是 Transformer</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=72;
+const C=document.getElementById('c'),X=C.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);C.style.width=1280*s+'px';C.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),T0=performance.now()-(parseFloat(q.get('t'))||0)*1000;
+const F='"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif';
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),ease=v=>{v=cl(v);return v<.5?2*v*v:1-Math.pow(-2*v+2,2)/2};
+function txt(s,x,y,sz,col,al='center',w='normal'){X.font=w+' '+sz+'px '+F;X.fillStyle=col;X.textAlign=al;X.textBaseline='middle';X.fillText(s,x,y);}
+function rr(x,y,w,h,r,fill,stroke){X.beginPath();X.roundRect(x,y,w,h,r);if(fill){X.fillStyle=fill;X.fill();}if(stroke){X.strokeStyle=stroke;X.lineWidth=2;X.stroke();}}
+const HUE=[200,30,330,130,270,50,0];
+const W=['小猫','追','老鼠','因为','它','饿','了'];
+function tokens(lt,y,hl){const n=W.length,sp=150,x0=640-sp*(n-1)/2;const P=[];
+ W.forEach((w,i)=>{const a=ease((lt-i*.15)/.5),x=x0+i*sp;P.push([x,y]);X.globalAlpha*=1;const g=X.globalAlpha;X.globalAlpha=g*a;
+ rr(x-55,y-28+(1-a)*20,110,56,12,hl===i?'hsla('+HUE[i]+',80%,55%,.9)':'hsla('+HUE[i]+',70%,50%,.25)','hsl('+HUE[i]+',80%,65%)');
+ txt(w,x,y+(1-a)*20,26,'#fff','center','bold');X.globalAlpha=g;});return P;}
+function caption(s,lt,y=650){const a=ease(lt/.6);X.globalAlpha*=a;txt(s,640,y,26,'#dfe8ff');X.globalAlpha/=a||1;}
+function head(n,s,lt){const a=ease(lt/.6);const g=X.globalAlpha;X.globalAlpha=g*a;txt(n,80,60,20,'#6cf','left','bold');txt(s,80,95,38,'#fff','left','bold');X.globalAlpha=g;}
+// stars
+const ST=[];for(let i=0;i<160;i++)ST.push([Math.random()*1280,Math.random()*720,Math.random()*1.5+.3,Math.random()*6]);
+const S=[
+[0,7,(t)=>{ // title
+ const a=ease(t/1.5);for(let i=0;i<30;i++){const ang=i/30*6.283+t*.3,r=180+40*Math.sin(t*2+i);X.strokeStyle='hsla('+(i*12+t*30)+',80%,60%,'+.25*a+')';X.lineWidth=1.5;X.beginPath();X.moveTo(640,330);X.lineTo(640+Math.cos(ang)*r*a,330+Math.sin(ang)*r*a);X.stroke();X.beginPath();X.arc(640+Math.cos(ang)*r*a,330+Math.sin(ang)*r*a,4,0,7);X.fillStyle='hsl('+(i*12)+',80%,65%)';X.fill();}
+ X.globalAlpha*=a;txt('什么是 Transformer？',640,320,64,'#fff','center','bold');txt('ChatGPT 背后的大脑 · 高中生也能看懂',640,400,26,'#9cf');
+ if(t>3.5)caption('一切从一个简单的游戏开始：猜下一个词',t-3.5,560);}],
+[7,15,(t)=>{head('第 1 步','语言模型的本质：接龙',t);
+ const P=tokens(t,300);const show=W.slice(0,5);
+ if(t>2.5){const a=ease((t-2.5));X.globalAlpha=a;rr(P[5][0]-60,P[5][1]-34,120*2+30,68,14,null,'#ff0');
+ const c=[['饿',.62],['累',.15],['快',.09],['困',.07]];c.forEach((v,i)=>{const w=v[1]*500*ease((t-3)/1);rr(400,420+i*42,w,30,6,'hsl('+(60-i*15)+',90%,55%)');txt(v[0],380,435+i*42,24,'#fff','right');txt((v[1]*100).toFixed(0)+'%',410+w,435+i*42,20,'#ff8','left');});}
+ caption('模型读入“小猫追老鼠，因为它”，给每个可能的下一个词打出概率',t-1);}],
+[15,24,(t)=>{head('第 2 步','词嵌入：把词变成数字向量',t);
+ const pts=[[-.6,.5],[.1,-.3],[-.3,.7],[.5,.2],[-.5,.35],[.6,-.5],[.3,.6]];
+ const cx=880,cy=370;X.strokeStyle='#345';X.lineWidth=1;for(let i=-4;i<=4;i++){X.beginPath();X.moveTo(cx+i*55,cy-220);X.lineTo(cx+i*55,cy+220);X.stroke();X.beginPath();X.moveTo(cx-220,cy+i*55);X.lineTo(cx+220,cy+i*55);X.stroke();}
+ W.forEach((w,i)=>{const a=ease((t-.5-i*.3)/.8),x=cx+pts[i][0]*220*a,y=cy-pts[i][1]*220*a;X.strokeStyle='hsl('+HUE[i]+',80%,65%)';X.lineWidth=3;X.beginPath();X.moveTo(cx,cy);X.lineTo(x,y);X.stroke();X.globalAlpha=a;txt(w,x+8,y-14,22,'hsl('+HUE[i]+',80%,75%)','left','bold');
+ txt(w+' → ['+pts[i][0].toFixed(1)+', '+pts[i][1].toFixed(1)+', …]',120,180+i*52,24,'hsl('+HUE[i]+',80%,75%)','left');X.globalAlpha=1;});
+ caption('意思相近的词（小猫、它）方向也相近。真实模型里每个词有成百上千维',t-3);}],
+[24,33,(t)=>{head('第 3 步','注意力：每个词都在“看”别的词',t);
+ const P=tokens(t,420,4);const wt=[.55,.05,.12,.04,.1,.1,.04];
+ for(let i=0;i<7;i++){if(i==4)continue;const a=ease((t-1.2-i*.1)/.8),[x,y]=P[i],[x4,y4]=P[4];X.strokeStyle='rgba(255,220,80,'+wt[i]*1.6*a+')';X.lineWidth=2+wt[i]*30;X.beginPath();X.moveTo(x4,y4-30);X.quadraticCurveTo((x+x4)/2,y-60-Math.abs(x-x4)*.5,x,y-30);X.stroke();
+ X.globalAlpha=a;txt((wt[i]*100|0)+'%',x,y+50,20,'#ff8');X.globalAlpha=1;}
+ caption('“它”指的是谁？注意力把 55% 的目光投向“小猫”，于是“它”吸收了小猫的含义',t-2.5,620);}],
+[33,44,(t)=>{head('第 4 步','Query · Key · Value：像在图书馆找书',t);
+ const items=[['Query 查询','我在找什么？','它：找“能饿的主语”',200],['Key 键','我有什么标签？','小猫：“我是动物主语”',30],['Value 值','我真正的内容','小猫的语义信息',130]];
+ items.forEach((v,i)=>{const a=ease((t-.5-i*.6)/.7),x=230+i*410;X.globalAlpha=a;rr(x-170,160,340,170,16,'hsla('+v[3]+',60%,30%,.5)','hsl('+v[3]+',80%,60%)');txt(v[0],x,200,30,'#fff','center','bold');txt(v[1],x,250,22,'#cde');txt(v[2],x,290,20,'hsl('+v[3]+',90%,75%)');X.globalAlpha=1;});
+ if(t>3){const a=ease(t-3);X.globalAlpha=a;txt('每个词向量 x 乘三个可学习的矩阵：  q = x·Wq   k = x·Wk   v = x·Wv',640,390,24,'#fff');
+ txt('点积（相似度）： q · k = q₁k₁ + q₂k₂ + … + q_dk_d',640,445,26,'#ff8');
+ const ang=t*.8;const ox=640,oy=560;X.lineWidth=4;X.strokeStyle='hsl(200,80%,60%)';X.beginPath();X.moveTo(ox,oy);X.lineTo(ox+90,oy-30);X.stroke();X.strokeStyle='hsl(30,80%,60%)';X.beginPath();X.moveTo(ox,oy);X.lineTo(ox+Math.cos(ang)*90,oy-Math.sin(ang)*90);X.stroke();
+ const d=Math.cos(ang-Math.atan2(30,90));txt('方向越一致，点积越大 → '+d.toFixed(2),ox+130,oy-20,22,d>0?'#8f8':'#f88','left');X.globalAlpha=1;}}],
+[44,54,(t)=>{head('第 5 步','Softmax：把分数变成概率',t);
+ const s=[2.1,.3,.8,.2,.9,.7,.1],e=s.map(Math.exp),Z=e.reduce((a,b)=>a+b),p=e.map(v=>v/Z),k=ease((t-3)/1.5);
+ s.forEach((v,i)=>{const x=200+i*80,h=((1-k)*v/2.2+k*p[i]/.5)*260*ease((t-.5)/.8);rr(x,470-h,56,h,6,'hsl('+HUE[i]+',75%,58%)');txt(W[i],x+28,500,20,'#fff');txt(k<.5?v.toFixed(1):(p[i]*100).toFixed(0)+'%',x+28,455-h,18,'#ff8');});
+ txt(k<.5?'原始分数 q·k':'概率（总和 = 100%）',480,180,24,'#9cf');
+ const a=ease((t-1)/1);X.globalAlpha=a;rr(790,190,440,290,16,'rgba(40,60,100,.5)','#6cf');
+ txt('softmax(sᵢ) = eˢⁱ / Σ eˢʲ',1010,240,28,'#fff','center','bold');txt('· 指数 e^s：放大差距、保证为正',810,300,20,'#cde','left');txt('· 除以总和：所有概率加起来 = 1',810,340,20,'#cde','left');
+ txt('完整公式：',810,395,20,'#ff8','left');txt('Attention = softmax(QKᵀ/√d)·V',1010,440,24,'#ff8','center','bold');X.globalAlpha=1;
+ caption('除以 √d 是为了防止维度大时分数过大、概率过于“极端”',t-5,620);}],
+[54,62,(t)=>{head('第 6 步','注意力矩阵 & 多头注意力',t);
+ const cs=50,x0=150,y0=180;for(let i=0;i<7;i++){txt(W[i],x0-35,y0+i*cs+cs/2,18,'#cde');txt(W[i],x0+i*cs+cs/2,y0-18,18,'#cde');for(let j=0;j<7;j++){let v=j>i?0:Math.pow(Math.sin(i*7.1+j*3.3)*.5+.5,2)*.5+(i==j?.4:0);if(i==4&&j==0)v=1;if(i==5&&j==0)v=.8;
+ const a=ease((t-.3-(i+j)*.06)/.5);X.fillStyle='hsla(45,100%,'+(10+v*55)+'%,'+a+')';X.fillRect(x0+j*cs+1,y0+i*cs+1,cs-2,cs-2);}}
+ txt('右上为空：只许看前面的词（不能偷看答案）',x0+175,y0+380,18,'#9cf');
+ const hs=[['头 1：谁是主语？',45],['头 2：语法搭配',200],['头 3：因果关系',330],['头 4：相邻词',130]];
+ hs.forEach((h,i)=>{const a=ease((t-2-i*.4)/.6);X.globalAlpha=a;rr(720,190+i*85,460,66,12,'hsla('+h[1]+',60%,30%,.5)','hsl('+h[1]+',80%,60%)');txt(h[0],750,223+i*85,24,'#fff','left');
+ for(let k=0;k<7;k++){X.fillStyle='hsla('+h[1]+',90%,60%,'+(.2+.8*Math.abs(Math.sin(k*(i+2)+t)))+')';X.fillRect(1000+k*22,212+i*85,16,22);}X.globalAlpha=1;});
+ caption('多个“头”同时从不同角度看句子，最后把结果拼接起来',t-4);}],
+[62,72,(t)=>{head('第 7 步','整体结构：搭积木',t);
+ const B=[['输入词 → 嵌入向量',200],['+ 位置编码（正弦波，告诉模型词序）',270],['多头自注意力',30],['残差相加 & 归一化',180],['前馈网络（每个词各自“思考”）',120],['残差相加 & 归一化',180],['输出：下一个词的概率',60]];
+ B.forEach((b,i)=>{const a=ease((t-i*.35)/.6),y=640-i*78;X.globalAlpha=a;rr(130,y-28,520,56,12,'hsla('+b[1]+',60%,28%,.7)','hsl('+b[1]+',80%,60%)');txt(b[0],390,y,22,'#fff');if(i)txt('↑',390,y+39,20,'#789');X.globalAlpha=1;});
+ X.globalAlpha=ease(t-2.5);X.strokeStyle='#ff0';X.setLineDash([8,6]);X.strokeRect(110,180,560,320);X.setLineDash([]);txt('× N 层（GPT-3 有 96 层）',690,340,24,'#ff8','left','bold');X.globalAlpha=1;
+ if(t>4){const a=ease(t-4);X.globalAlpha=a;for(let f=0;f<4;f++){X.strokeStyle='hsl('+(f*60+180)+',80%,60%)';X.lineWidth=2;X.beginPath();for(let x=0;x<380;x+=4){const y=610-f*40+Math.sin(x/(8*Math.pow(2.3,f))+t)*14;x?X.lineTo(860+x,y):X.moveTo(860,y);}X.stroke();}
+ txt('PE(pos) = sin(pos/10000^(2i/d))',1050,450,20,'#9cf');
+ txt('2017 · 《Attention Is All You Need》',1040,200,22,'#fff','center','bold');txt('一层层“看”与“想”，再接龙一个词',1040,250,22,'#cde');txt('重复千万次，就成了 ChatGPT',1040,290,26,'#ff8','center','bold');X.globalAlpha=1;}}]
+];
+function frame(){const T=((performance.now()-T0)/1000)%DUR;
+ X.globalAlpha=1;const g=X.createRadialGradient(640,360,50,640,360,800);g.addColorStop(0,'#0b1430');g.addColorStop(1,'#000');X.fillStyle=g;X.fillRect(0,0,1280,720);
+ ST.forEach(s=>{X.fillStyle='rgba(180,210,255,'+(.3+.3*Math.sin(T+s[3]))+')';X.fillRect(s[0],s[1],s[2],s[2]);});
+ for(const [a,b,f] of S){if(T>=a&&T<b){const lt=T-a;X.save();X.globalAlpha=cl(Math.min(lt/.5,(b-T)/.5));f(lt);X.restore();}}
+ X.fillStyle='#6cf';X.fillRect(0,716,1280*T/DUR,4);
+ requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

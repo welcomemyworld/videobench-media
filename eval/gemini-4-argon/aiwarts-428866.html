@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Opus 5.5 全自动 AI 视频生成流水线</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: "PingFang SC", "Microsoft YaHei", "Helvetica Neue", monospace, sans-serif;
+  }
+  #stage {
+    width: 1280px;
+    height: 720px;
+    position: relative;
+    box-shadow: 0 0 50px rgba(0, 240, 255, 0.15);
+    background: #06080e;
+  }
+  canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="c" width="1280" height="720"></canvas>
+</div>
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const W = 1280, H = 720;
+
+  window.DUR = 24; // 24 seconds loop
+  const params = new URLSearchParams(window.location.search);
+  const timeOffset = parseFloat(params.get('t')) || 0;
+
+  // Math & Easing Helpers
+  const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+  const prog = (t, s, e) => clamp((t - s) / (e - s), 0, 1);
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const easeOutCubic = x => 1 - Math.pow(1 - x, 3);
+  const easeInOutCubic = x => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+  const easeOutBack = x => {
+    const c1 = 1.70158, c3 = c1 + 1;
+    return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
+  };
+
+  // Colors
+  const COL = {
+    bg: '#06080f',
+    grid: 'rgba(30, 50, 90, 0.25)',
+    cyan: '#00f2fe',
+    blue: '#4facfe',
+    purple: '#b224ef',
+    gold: '#ffca28',
+    green: '#00e676',
+    red: '#ff3366',
+    darkPanel: 'rgba(12, 18, 32, 0.88)',
+    border: 'rgba(80, 140, 255, 0.35)',
+    text: '#e6f1ff',
+    dim: '#6c809a'
+  };
+
+  // Particles
+  const particles = Array.from({ length: 65 }, (_, i) => ({
+    x: (Math.sin(i * 78.233) * 0.5 + 0.5) * W,
+    y: (Math.cos(i * 45.164) * 0.5 + 0.5) * H,
+    r: (i % 3) + 1,
+    vx: ((i % 5) - 2) * 8,
+    vy: -12 - (i % 4) * 6,
+    c: i % 3 === 0 ? COL.cyan : (i % 3 === 1 ? COL.purple : COL.gold)
+  }));
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function drawPanel(x, y, w, h, title, accent = COL.cyan, alpha = 1) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    // Shadow glow
+    ctx.shadowColor = accent;
+    ctx.shadowBlur = 18;
+    ctx.fillStyle = COL.darkPanel;
+    roundRect(x, y, w, h, 10);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Border
+    ctx.strokeStyle = accent;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Header bar
+    ctx.fillStyle = 'rgba(255,255,255,0.04)';
+    roundRect(x, y, w, 34, 10);
+    ctx.fill();
+
+    // Window dots
+    const dots = ['#ff5f56', '#ffbd2e', '#27c93f'];
+    dots.forEach((d, idx) => {
+      ctx.fillStyle = d;
+      ctx.beginPath();
+      ctx.arc(x + 18 + idx * 16, y + 17, 5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // Title
+    ctx.fillStyle = COL.text;
+    ctx.font = 'bold 14px monospace, "PingFang SC"';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(title, x + 72, y + 17);
+    ctx.restore();
+  }
+
+  function drawBackground(t) {
+    ctx.fillStyle = COL.bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // Perspective moving grid
+    ctx.save();
+    ctx.strokeStyle = COL.grid;
+    ctx.lineWidth = 1;
+    const step = 48;
+    const ox = (t * 18) % step;
+    const oy = (t * 12) % step;
+    for (let x = ox; x < W; x += step) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    }
+    for (let y = oy; y < H; y += step) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+
+    // Radial vignette
+    const grad = ctx.createRadialGradient(W/2, H/2, 150, W/2, H/2, 750);
+    grad.addColorStop(0, 'rgba(6,8,15,0)');
+    grad.addColorStop(1, 'rgba(3,4,8,0.88)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Floating particles
+    particles.forEach(p => {
+      const px = (p.x + p.vx * t + W * 10) % W;
+      const py = (p.y + p.vy * t + H * 10) % H;
+      ctx.fillStyle = p.c;
+      ctx.globalAlpha = 0.35 + 0.25 * Math.sin(t * 3 + p.x);
+      ctx.beginPath();
+      ctx.arc(px, py, p.r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.restore();
+  }
+
+  function drawTopHUD(t) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(10, 16, 28, 0.85)';
+    ctx.fillRect(0, 0, W, 42);
+    ctx.strokeStyle = 'rgba(0, 242, 254, 0.25)';
+    ctx.beginPath(); ctx.moveTo(0, 42); ctx.lineTo(W, 42); ctx.stroke();
+
+    // Status pill
+    ctx.fillStyle = COL.purple;
+    roundRect(18, 9, 128, 24, 12);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 12px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('OPUS 5.5 ENGINE', 82, 21);
+
+    // Scene indicator
+    const stages = [
+      { name: '01. 架构与技术栈自举', s: 0, e: 5.5 },
+      { name: '02. Remotion 4.0.528 画面工程', s: 5.5, e: 12.0 },
+      { name: '03. Python 算法配乐合成', s: 12.0, e: 17.5 },
+      { name: '04. FFmpeg 音画混流成片', s: 17.5, e: 24.0 }
+    ];
+
+    let sx = 175;
+    stages.forEach((st) => {
+      const active = t >= st.s && t < st.e;
+      const done = t >= st.e;
+      ctx.fillStyle = active ? COL.cyan : (done ? COL.green : COL.dim);
+      ctx.font = active ? 'bold 13px "PingFang SC"' : '13px "PingFang SC"';
+      ctx.textAlign = 'left';
+      ctx.fillText((done ? '✓ ' : (active ? '▶ ' : '○ ')) + st.name, sx, 21);
+      if (active) {
+        ctx.fillStyle = COL.cyan;
+        ctx.fillRect(sx, 39, 195, 3);
+      }
+      sx += 245;
+    });
+
+    // Timecode
+    ctx.fillStyle = COL.gold;
+    ctx.font = 'bold 13px monospace';
+    ctx.textAlign = 'right';
+    const frame = Math.floor((t % 1) * 60).toString().padStart(2, '0');
+    const sec = Math.floor(t).toString().padStart(2, '0');
+    ctx.fillText(`TC 00:00:${sec}:${frame}`, W - 20, 21);
+    ctx.restore();
+  }
+
+  // ==================== SCENE 1: OPUS 5.5 TECH STACK ====================
+  function drawScene1(t) {
+    const exitP = prog(t, 4.8, 5.5);
+    const alpha = 1 - easeInOutCubic(exitP);
+    if (alpha <= 0) return;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    if (exitP > 0) {
+      ctx.translate(0, -exitP * 60);
+    }
+
+    // Main title banner
+    const titleP = easeOutCubic(prog(t, 0.1, 0.9));
+    ctx.textAlign = 'center';
+    ctx.fillStyle = COL.cyan;
+    ctx.font = 'bold 18px monospace';
+    ctx.fillText('AUTONOMOUS FULL-STACK PIPELINE SPECIFIED BY AI', W / 2, 85);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = COL.cyan;
+    ctx.shadowBlur = 15;
+    ctx.font = 'bold 38px "PingFang SC"';
+    ctx.fillText('“所有技术栈也都让 Opus 5.5 自己列出来！”', W / 2, 130);
+    ctx.shadowBlur = 0;
+
+    // Central Opus 5.5 Core Node
+    const cx = W / 2, cy = 305;
+    const corePop = easeOutBack(prog(t, 0.2, 1.0));
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(corePop, corePop);
+
+    // Outer rotating rings
+    ctx.strokeStyle = COL.purple;
+    ctx.lineWidth = 2;
+    ctx.save();
+    ctx.rotate(t * 0.8);
+    ctx.setLineDash([14, 10]);
+    ctx.beginPath(); ctx.arc(0, 0, 82, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+
+    ctx.strokeStyle = COL.cyan;
+    ctx.save();
+    ctx.rotate(-t * 1.1);
+    ctx.setLineDash([25, 15]);
+    ctx.beginPath(); ctx.arc(0, 0, 68, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+
+    // Glowing Hexagon Core
+    const grad = ctx.createRadialGradient(0, 0, 5, 0, 0, 60);
+    grad.addColorStop(0, '#ffffff');
+    grad.addColorStop(0.4, COL.purple);
+    grad.addColorStop(1, 'rgba(178, 36, 239, 0.1)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = (i * Math.PI) / 3 + t * 0.4;
+      const r = 56;
+      i === 0 ? ctx.moveTo(Math.cos(a)*r, Math.sin(a)*r) : ctx.lineTo(Math.cos(a)*r, Math.sin(a)*r);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 20px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Opus 5.5', 0, -6);
+    ctx.font = '11px "PingFang SC"';
+    ctx.fillStyle = COL.cyan;
+    ctx.fillText('架构总指挥', 0, 14);
+    ctx.restore();
+
+    // 3 Stack Cards arranged around/below
+    const cards = [
+      {
+        x: 90, y: 425, w: 330, h: 215,
+        title: '🎬 画面工程 (Visuals)',
+        color: COL.cyan,
+        delay: 1.0,
+        items: [
+          '• Remotion 4.0.528 核心驱动',
+          '• React 18 函数式组件构建画面',
+          '• TypeScript 严格类型帧控制',
+          '• useCurrentFrame() 精确同步'
+        ]
+      },
+      {
+        x: 475, y: 425, w: 330, h: 215,
+        title: '🎵 算法配乐 (Audio)',
+        color: COL.gold,
+        delay: 1.8,
+        items: [
+          '• Python 3.11 音频信号合成',
+          '• NumPy / SciPy 波形矩阵运算',
+          '• 程序化节拍与和弦包络生成',
+          '• 导出无损 48kHz WAV 音轨'
+        ]
+      },
+      {
+        x: 860, y: 425, w: 330, h: 215,
+        title: '⚡ 混流成片 (Synthesis)',
+        color: COL.green,
+        delay: 2.6,
+        items: [
+          '• Remotion 渲染管线自动调度',
+          '• 内置 FFmpeg 音画多轨合成',
+          '• H.264 / AAC 硬件加速编码',
+          '• 1080p 60fps 最终成片输出'
+        ]
+      }
+    ];
+
+    cards.forEach((c) => {
+      const cp = easeOutBack(prog(t, c.delay, c.delay + 0.7));
+      if (cp <= 0) return;
+
+      // Connection beam from Opus Core to Card
+      const tx = c.x + c.w / 2, ty = c.y;
+      ctx.save();
+      ctx.strokeStyle = c.color;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([8, 6]);
+      ctx.lineDashOffset = -t * 40;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy + 68);
+      ctx.bezierCurveTo(cx, cy + 110, tx, ty - 50, tx, ty);
+      ctx.stroke();
+      ctx.restore();
+
+      // Card Panel
+      ctx.save();
+      ctx.translate(c.x + c.w/2, c.y + c.h/2);
+      ctx.scale(cp, cp);
+      ctx.translate(-(c.x + c.w/2), -(c.y + c.h/2));
+
+      drawPanel(c.x, c.y, c.w, c.h, c.title, c.color, 1);
+
+      ctx.font = '15px "PingFang SC"';
+      ctx.textAlign = 'left';
+      c.items.forEach((item, idx) => {
+        const ip = prog(t, c.delay + 0.3 + idx * 0.15, c.delay + 0.6 + idx * 0.15);
+        ctx.globalAlpha = ip;
+        ctx.fillStyle = idx === 0 ? c.color : COL.text;
+        ctx.font = idx === 0 ? 'bold 15px "PingFang SC"' : '14px "PingFang SC"';
+        ctx.fillText(item, c.x + 22, c.y + 68 + idx * 36);
+      });
+      ctx.restore();
+    });
+
+    ctx.restore();
+  }
+
+  // ==================== SCENE 2: REMOTION 4.0.528 + REACT ====================
+  function drawScene2(t) {
+    if (t < 5.0 || t > 12.5) return;
+    const enterP = easeOutCubic(prog(t, 5.2, 6.0));
+    const exitP = easeInOutCubic(prog(t, 11.5, 12.2));
+    const alpha = enterP * (1 - exitP);
+    if (alpha <= 0) return;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    // Section Banner
+    ctx.fillStyle = COL.cyan;
+    ctx.font = 'bold 28px "PingFang SC"';
+    ctx.textAlign = 'left';
+    ctx.fillText('画面：影片工程是 Remotion 4.0.528 — 用 React 写视频', 60, 88);
+    ctx.fillStyle = COL.dim;
+    ctx.font = '15px monospace';
+    ctx.fillText('package.json -> "remotion": "4.0.528", "react": "^18.2.0" | Frame-Perfect Declarative Rendering', 60, 115);
+
+    // Left Window: VS Code React / Remotion Code Editor
+    const lx = 60, ly = 135, lw = 560, lh = 520;
+    drawPanel(lx, ly, lw, lh, 'src/VideoComposition.tsx — Remotion 4.0.528', COL.cyan, alpha);
+
+    const codeLines = [
+      { c: COL.purple, txt: "import React from 'react';" },
+      { c: COL.purple, txt: "import { AbsoluteFill, useCurrentFrame," },
+      { c: COL.purple, txt: "         interpolate, spring, Audio } from 'remotion';" },
+      { c: COL.dim,    txt: "// Remotion 4.0.528 声明式 React 画面工程" },
+      { c: COL.blue,   txt: "export const OpusVideo: React.FC = () => {" },
+      { c: COL.text,   txt: "  const frame = useCurrentFrame();" },
+      { c: COL.text,   txt: "  const scale = spring({ frame, fps: 60 });" },
+      { c: COL.text,   txt: "  const glow = interpolate(frame, [0, 180], [0, 1]);" },
+      { c: COL.text,   txt: "" },
+      { c: COL.blue,   txt: "  return (" },
+      { c: COL.cyan,   txt: "    <AbsoluteFill style={{ background: '#050811' }}>" },
+      { c: COL.gold,   txt: "      <OpusVisualizer scale={scale} glow={glow} />" },
+      { c: COL.green,  txt: "      <Audio src={staticFile('python_ost.wav')} />" },
+      { c: COL.cyan,   txt: "    </AbsoluteFill>" },
+      { c: COL.blue,   txt: "  );" },
+      { c: COL.blue,   txt: "};" }
+    ];
+
+    const typeProgress = prog(t, 5.8, 9.2);
+    const totalChars = codeLines.reduce((acc, l) => acc + l.txt.length, 0);
+    let charsLeft = Math.floor(totalChars * typeProgress);
+
+    ctx.font = '14px monospace';
+    ctx.textAlign = 'left';
+    codeLines.forEach((line, idx) => {
+      const y = ly + 62 + idx * 26;
+      // Line numbers
+      ctx.fillStyle = 'rgba(120,150,190,0.4)';
+      ctx.fillText((idx + 1).toString().padStart(2, '0'), lx + 18, y);
+
+      if (charsLeft > 0) {
+        const str = line.txt.slice(0, charsLeft);
+        ctx.fillStyle = line.c;
+        ctx.fillText(str, lx + 52, y);
+        charsLeft -= line.txt.length;
+      }
+    });
+
+    // Live Remotion Version Badge inside editor
+    ctx.fillStyle = 'rgba(0, 242, 254, 0.12)';
+    roundRect(lx + 24, ly + lh - 64, lw - 48, 44, 6);
+    ctx.fill();
+    ctx.strokeStyle = COL.cyan;
+    ctx.stroke();
+    ctx.fillStyle = COL.cyan;
+    ctx.font = 'bold 14px monospace';
+    const simFrame = Math.floor(prog(t, 5.5, 11.8) * 360);
+    ctx.fillText(`⚡ Remotion v4.0.528  |  useCurrentFrame(): ${simFrame}f  |  60 FPS`, lx + 40, ly + lh - 42);
+
+    // Right Window: Remotion Studio Canvas Preview
+    const rx = 655, ry = 135, rw = 565, rh = 365;
+    drawPanel(rx, ry, rw, rh, 'Remotion Studio — Live React Canvas Preview', COL.blue, alpha);
+
+    // Render animated React scene inside preview
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(rx + 2, ry + 35, rw - 4, rh - 37);
+    ctx.clip();
+
+    const pcx = rx + rw / 2, pcy = ry + 35 + (rh - 35) / 2;
+    // React Atom Orbitals rendered as visual subject
+    ctx.translate(pcx, pcy);
+    for (let i = 0; i < 3; i++) {
+      ctx.save();
+      ctx.rotate((i * Math.PI) / 3 + t * 0.9);
+      ctx.strokeStyle = COL.cyan;
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = COL.cyan;
+      ctx.shadowBlur = 12;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 130, 46, 0, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Electron dot
+      const ea = t * 3.5 + i * 2;
+      const ex = Math.cos(ea) * 130, ey = Math.sin(ea) * 46;
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(ex, ey, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+    ctx.fillStyle = COL.cyan;
+    ctx.beginPath(); ctx.arc(0, 0, 16, 0, Math.PI * 2); ctx.fill();
+
+    // Floating React Component Bounding Boxes
+    ctx.strokeStyle = COL.gold;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.strokeRect(-165, -105, 330, 210);
+    ctx.fillStyle = COL.gold;
+    ctx.font = '12px monospace';
+    ctx.fillText('<OpusVisualizer scale={1.00} />', -160, -112);
+    ctx.restore();
+
+    // Bottom Right: Multi-track Timeline
+    const tx = 655, ty = 520, tw = 565, th = 135;
+    drawPanel(tx, ty, tw, th, 'Timeline Sequence (React Component Tracks)', COL.purple, alpha);
+
+    const tracks = [
+      { name: '<BackgroundGrid />', col: COL.blue, s: 0, w: 410 },
+      { name: '<OpusVisualizer />', col: COL.cyan, s: 35, w: 375 },
+      { name: '<SubtitleOverlay />', col: COL.purple, s: 70, w: 340 }
+    ];
+    tracks.forEach((tr, i) => {
+      const by = ty + 46 + i * 27;
+      ctx.fillStyle = COL.dim;
+      ctx.font = '12px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText(tr.name, tx + 16, by + 11);
+
+      ctx.fillStyle = tr.col;
+      ctx.globalAlpha = alpha * 0.75;
+      roundRect(tx + 145 + tr.s, by, tr.w - tr.s, 18, 4);
+      ctx.fill();
+      ctx.globalAlpha = alpha;
+    });
+
+    // Playhead scrubbing
+    const playX = tx + 145 + prog(t, 5.5, 11.8) * 395;
+    ctx.strokeStyle = COL.red;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(playX, ty + 36);
+    ctx.lineTo(playX, ty + th - 6);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  // ==================== SCENE 3: PYTHON ALGORITHMIC MUSIC ====================
+  function drawScene3(t) {
+    if (t < 11.5 || t > 18.2) return;
+    const enterP = easeOutCubic(prog(t, 11.7, 12.5));
+    const exitP = easeInOutCubic(prog(t, 17.2, 17.9));
+    const alpha = enterP * (1 - exitP);
+    if (alpha <= 0) return;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    // Banner
+    ctx.fillStyle = COL.gold;
+    ctx.font = 'bold 28px "PingFang SC"';
+    ctx.textAlign = 'left';
+    ctx.fillText('配乐：Python 负责算法作曲与声学合成', 60, 88);
+    ctx.fillStyle = COL.dim;
+    ctx.font = '15px monospace';
+    ctx.fillText('synth_bgm.py -> NumPy / SciPy DSP Waveform Generation -> 48kHz Stereo WAV', 60, 115);
+
+    // Left Window: Python Code
+    const lx = 60, ly = 135, lw = 510, lh = 520;
+    drawPanel(lx, ly, lw, lh, 'audio/synth_bgm.py — Python 3.11', COL.gold, alpha);
+
+    const pyLines = [
+      { c: COL.purple, txt: "import numpy as np" },
+      { c: COL.purple, txt: "from scipy.io import wavfile" },
+      { c: COL.dim,    txt: "# Opus 5.5 自动编写的 Python 合成器配乐脚本" },
+      { c: COL.gold,   txt: "SR = 48000  # 采样率 48kHz" },
+      { c: COL.text,   txt: "t = np.linspace(0, 24.0, int(SR * 24.0))" },
+      { c: COL.text,   txt: "" },
+      { c: COL.blue,   txt: "def synth_chord(freqs, t):" },
+      { c: COL.text,   txt: "    wave = sum(np.sin(2 * np.pi * f * t) for f in freqs)" },
+      { c: COL.text,   txt: "    env = np.exp(-2.5 * (t % 0.5))  # ADSR 包络" },
+      { c: COL.text,   txt: "    return wave * env * 0.3" },
+      { c: COL.text,   txt: "" },
+      { c: COL.green,  txt: "# 生成主旋律、低音 Bass 与鼓点脉冲" },
+      { c: COL.text,   txt: "lead = synth_chord([220.0, 277.18, 329.63], t)" },
+      { c: COL.text,   txt: "sub  = np.sin(2 * np.pi * 55.0 * t) * 0.4" },
+      { c: COL.text,   txt: "mix  = np.tanh(lead + sub)  # 软削波温暖饱和" },
+      { c: COL.gold,   txt: "wavfile.write('python_ost.wav', SR, mix.astype(np.float32))" }
+    ];
+
+    const pyProg = prog(t, 12.1, 15.2);
+    const totalChars = pyLines.reduce((a, b) => a + b.txt.length, 0);
+    let charsLeft = Math.floor(totalChars * pyProg);
+
+    ctx.font = '13.5px monospace';
+    pyLines.forEach((line, idx) => {
+      const y = ly + 62 + idx * 26;
+      ctx.fillStyle = 'rgba(120,150,190,0.4)';
+      ctx.fillText((idx + 1).toString().padStart(2, '0'), lx + 16, y);
+      if (charsLeft > 0) {
+        ctx.fillStyle = line.c;
+        ctx.fillText(line.txt.slice(0, charsLeft), lx + 48, y);
+        charsLeft -= line.txt.length;
+      }
+    });
+
+    // Status box inside Python window
+    ctx.fillStyle = 'rgba(255, 202, 40, 0.12)';
+    roundRect(lx + 22, ly + lh - 64, lw - 44, 44, 6);
+    ctx.fill();
+    ctx.strokeStyle = COL.gold;
+    ctx.stroke();
+    ctx.fillStyle = COL.gold;
+    ctx.font = 'bold 14px monospace';
+    ctx.fillText('🐍 Output: python_ost.wav (48,000 Hz, 32-bit Float)', lx + 38, ly + lh - 42);
+
+    // Right Window: Real-time Oscilloscope & Spectrum Analyzer
+    const rx = 600, ry = 135, rw = 620, rh = 520;
+    drawPanel(rx, ry, rw, rh, 'Python DSP 实时声学示波器 & 频谱矩阵', COL.green, alpha);
+
+    // 1. Oscilloscope Sine/FM Wave
+    ctx.save();
+    ctx.strokeStyle = COL.cyan;
+    ctx.lineWidth = 2.5;
+    ctx.shadowColor = COL.cyan;
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    const waveY = ry + 135;
+    for (let i = 0; i <= 560; i += 4) {
+      const wx = rx + 30 + i;
+      const phase = t * 10 + i * 0.035;
+      const amp = Math.sin(phase) * 35 * Math.cos(i * 0.01 - t * 3) + Math.sin(phase * 2.5) * 14;
+      i === 0 ? ctx.moveTo(wx, waveY + amp) : ctx.lineTo(wx, waveY + amp);
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.fillStyle = COL.text;
+    ctx.font = '13px monospace';
+    ctx.fillText('Oscilloscope: Master Waveform mix = np.tanh(lead + sub)', rx + 30, ry + 68);
+
+    // 2. 32-Band FFT Spectrum Bars
+    ctx.fillText('FFT Spectrum Analyzer (20Hz - 20kHz)', rx + 30, ry + 235);
+    const numBars = 32;
+    const barW = 13;
+    const gap = 4.5;
+    for (let i = 0; i < numBars; i++) {
+      const bx = rx + 30 + i * (barW + gap);
+      const n = Math.abs(Math.sin(t * 6 + i * 0.45) * Math.cos(t * 3.2 - i * 0.2));
+      const bh = 25 + n * 135;
+      const by = ry + 405 - bh;
+
+      const grad = ctx.createLinearGradient(0, by, 0, ry + 405);
+      grad.addColorStop(0, COL.gold);
+      grad.addColorStop(0.5, COL.green);
+      grad.addColorStop(1, COL.cyan);
+      ctx.fillStyle = grad;
+      roundRect(bx, by, barW, bh, 3);
+      ctx.fill();
+    }
+
+    // 3. Piano Roll / Sequencer Notes at Bottom
+    ctx.fillStyle = COL.text;
+    ctx.fillText('MIDI Algorithmic Sequencer (Opus 5.5 Harmony Generator)', rx + 30, ry + 440);
+    for (let i = 0; i < 14; i++) {
+      const nx = rx + 30 + ((i * 45 - (t * 90) % 45 + 600) % 550);
+      const ny = ry + 460 + (i % 4) * 16;
+      const active = Math.abs(nx - (rx + 180)) < 28;
+      ctx.fillStyle = active ? COL.gold : 'rgba(0, 230, 118, 0.45)';
+      roundRect(nx, ny, 34, 11, 3);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  // ==================== SCENE 4: REMOTION + FFMPEG FINAL SYNTHESIS ====================
+  function drawScene4(t) {
+    if (t < 17.2) return;
+    const enterP = easeOutCubic(prog(t, 17.4, 18.2));
+    ctx.save();
+    ctx.globalAlpha = enterP;
+
+    // Header
+    ctx.fillStyle = COL.green;
+    ctx.font = 'bold 28px "PingFang SC"';
+    ctx.textAlign = 'center';
+    ctx.fillText('最后由 Remotion 调 FFmpeg 合成最终 1080p 成片', W / 2, 84);
+
+    // Left Input Node: Remotion Video Stream
+    const lBox = { x: 80, y: 135, w: 300, h: 125 };
+    drawPanel(lBox.x, lBox.y, lBox.w, lBox.h, '1. 画面流 (Video Stream)', COL.cyan, enterP);
+    ctx.fillStyle = COL.text;
+    ctx.font = 'bold 16px "PingFang SC"';
+    ctx.textAlign = 'left';
+    ctx.fillText('Remotion 4.0.528 (React)', lBox.x + 20, lBox.y + 65);
+    ctx.fillStyle = COL.dim;
+    ctx.font = '13px monospace';
+    ctx.fillText('frames/0000.png .. 1440.png', lBox.x + 20, lBox.y + 92);
+    ctx.fillText('1920x1080 @ 60fps RGB', lBox.x + 20, lBox.y + 110);
+
+    // Right Input Node: Python Audio Stream
+    const rBox = { x: 900, y: 135, w: 300, h: 125 };
+    drawPanel(rBox.x, rBox.y, rBox.w, rBox.h, '2. 配乐流 (Audio Stream)', COL.gold, enterP);
+    ctx.fillStyle = COL.text;
+    ctx.font = 'bold 16px "PingFang SC"';
+    ctx.fillText('Python 3.11 + NumPy', rBox.x + 20, rBox.y + 65);
+    ctx.fillStyle = COL.dim;
+    ctx.font = '13px monospace';
+    ctx.fillText('python_ost.wav', rBox.x + 20, rBox.y + 92);
+    ctx.fillText('48kHz Stereo 32-bit PCM', rBox.x + 20, rBox.y + 110);
+
+    // Center Merger Node: FFmpeg Engine invoked by Remotion
+    const cBox = { x: 450, y: 125, w: 380, h: 145 };
+    drawPanel(cBox.x, cBox.y, cBox.w, cBox.h, '3. 音画混流器 (Remotion -> FFmpeg)', COL.green, enterP);
+
+    // Animated Data Streams flowing from Left & Right into Center FFmpeg
+    ctx.save();
+    ctx.lineWidth = 3;
+    ctx.setLineDash([10, 8]);
+    ctx.lineDashOffset = -t * 60;
+
+    ctx.strokeStyle = COL.cyan;
+    ctx.beginPath();
+    ctx.moveTo(lBox.x + lBox.w, lBox.y + 62);
+    ctx.lineTo(cBox.x, cBox.y + 72);
+    ctx.stroke();
+
+    ctx.strokeStyle = COL.gold;
+    ctx.beginPath();
+    ctx.moveTo(rBox.x, rBox.y + 62);
+    ctx.lineTo(cBox.x + cBox.w, cBox.y + 72);
+    ctx.stroke();
+    ctx.restore();
+
+    // Terminal command inside FFmpeg box
+    ctx.fillStyle = COL.green;
+    ctx.font = 'bold 13px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('$ npx remotion render OpusVideo out.mp4', cBox.x + 18, cBox.y + 60);
+    ctx.fillStyle = COL.text;
+    ctx.font = '12px monospace';
+    ctx.fillText('> Spawning ffmpeg -i frames/%04d.png \\', cBox.x + 18, cBox.y + 84);
+    ctx.fillText('  -i python_ost.wav -c:v libx264 -c:a aac', cBox.x + 18, cBox.y + 102);
+
+    // Progress bar
+    const renderProg = prog(t, 18.0, 20.5);
+    ctx.fillStyle = 'rgba(255,255,255,0.1)';
+    roundRect(cBox.x + 18, cBox.y + 115, cBox.w - 36, 16, 8);
+    ctx.fill();
+    ctx.fillStyle = COL.green;
+    roundRect(cBox.x + 18, cBox.y + 115, (cBox.w - 36) * renderProg, 16, 8);
+    ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(`ENCODING ${Math.floor(renderProg * 100)}%`, cBox.x + cBox.w / 2, cBox.y + 123);
+
+    // Bottom Master Output Showcase Player
+    const mBox = { x: 180, y: 310, w: 920, h: 365 };
+    drawPanel(mBox.x, mBox.y, mBox.w, mBox.h, '🎉 最终合成成片 — final_opus55_master.mp4 (1080p 60fps)', COL.purple, enterP);
+
+    // Arrow from FFmpeg to Master Output
+    ctx.strokeStyle = COL.green;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(W / 2, cBox.y + cBox.h);
+    ctx.lineTo(W / 2, mBox.y);
+    ctx.stroke();
+
+    // Inside Master Player: Synchronized Visuals + Audio + Tech Stack Summary Badges
+    const inX = mBox.x + 25, inY = mBox.y + 52, inW = mBox.w - 50, inH = mBox.h - 75;
+    ctx.fillStyle = '#04060c';
+    roundRect(inX, inY, inW, inH, 8);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(178, 36, 239, 0.4)';
+    ctx.stroke();
+
+    // Animated celebratory geometry + waveform inside final video frame
+    const vcx = inX + 210, vcy = inY + inH / 2;
+    ctx.save();
+    ctx.translate(vcx, vcy);
+    for (let k = 0; k < 4; k++) {
+      ctx.save();
+      ctx.rotate(t * (0.6 + k * 0.2) * (k % 2 === 0 ? 1 : -1));
+      ctx.strokeStyle = k % 2 === 0 ? COL.cyan : COL.purple;
+      ctx.lineWidth = 2;
+      const s = 42 + k * 20;
+      ctx.strokeRect(-s / 2, -s / 2, s, s);
+      ctx.restore();
+    }
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 16px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('OPUS 5.5', 0, 0);
+    ctx.restore();
+
+    // Right side of final player: Complete Stack Checklist
+    const listX = inX + 400;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 22px "PingFang SC"';
+    ctx.fillText('Opus 5.5 全栈自举成片工作流达成', listX, inY + 48);
+
+    const summary = [
+      { badge: 'AI 架构师', text: 'Opus 5.5 自主钦定全套工具链与代码实现', col: COL.purple },
+      { badge: '画面引擎', text: 'Remotion 4.0.528 + React 18 声明式帧渲染', col: COL.cyan },
+      { badge: '算法配乐', text: 'Python + NumPy/SciPy 合成 48kHz 动态音轨', col: COL.gold },
+      { badge: '终极合成', text: 'Remotion 自动调用 FFmpeg 音画混流输出 MP4', col: COL.green }
+    ];
+
+    summary.forEach((row, idx) => {
+      const ry = inY + 92 + idx * 46;
+      ctx.fillStyle = row.col;
+      roundRect(listX, ry - 14, 92, 26, 5);
+      ctx.fill();
+
+      ctx.fillStyle = '#000';
+      ctx.font = 'bold 13px "PingFang SC"';
+      ctx.textAlign = 'center';
+      ctx.fillText(row.badge, listX + 46, ry);
+
+      ctx.fillStyle = COL.text;
+      ctx.font = '15px "PingFang SC"';
+      ctx.textAlign = 'left';
+      ctx.fillText(row.text, listX + 108, ry);
+    });
+
+    ctx.restore();
+  }
+
+  // Main Animation Loop
+  let startTime = null;
+  function tick(now) {
+    if (startTime === null) startTime = now;
+    const elapsed = (now - startTime) / 1000 + timeOffset;
+    const t = elapsed % window.DUR;
+
+    drawBackground(t);
+    drawTopHUD(t);
+
+    drawScene1(t);
+    drawScene2(t);
+    drawScene3(t);
+    drawScene4(t);
+
+    requestAnimationFrame(tick);
+  }
+
+  // Responsive scaling to fit window while keeping 1280x720 coordinate space
+  function resize() {
+    const stage = document.getElementById('stage');
+    const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+    stage.style.transform = `scale(${scale})`;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  requestAnimationFrame(tick);
+})();
+</script>
+</body>
+</html>

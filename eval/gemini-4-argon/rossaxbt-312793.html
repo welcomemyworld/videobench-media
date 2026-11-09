@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Continuous Morph</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  #stage {
+    width: 1280px; height: 720px;
+    max-width: 100vw; max-height: 100vh;
+    aspect-ratio: 16 / 9;
+    box-shadow: 0 0 40px rgba(0,0,0,0.8);
+    background: #f3f3f0;
+  }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+window.DUR = 22.0;
+const canvas = document.getElementById('stage');
+const ctx = canvas.getContext('2d');
+const W = 1280, H = 720, CX = W / 2, CY = H / 2;
+
+const urlParams = new URLSearchParams(window.location.search);
+const startT = parseFloat(urlParams.get('t')) || 0;
+
+// Cubic-bezier(.45, 0, .15, 1) solver
+function sampleCurveX(t) { return ((0.9 * t - 1.8) * t + 1.35) * t; }
+function sampleCurveDerivativeX(t) { return (2.7 * t - 3.6) * t + 1.35; }
+function sampleCurveY(t) { return (-2.0 * t + 3.0) * t * t; }
+function ease(x) {
+  if (x <= 0) return 0;
+  if (x >= 1) return 1;
+  let t2 = x;
+  for (let i = 0; i < 6; i++) {
+    let x2 = sampleCurveX(t2) - x;
+    if (Math.abs(x2) < 1e-5) break;
+    let d2 = sampleCurveDerivativeX(t2);
+    if (Math.abs(d2) < 1e-5) break;
+    t2 = t2 - x2 / d2;
+  }
+  return sampleCurveY(t2);
+}
+
+const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+const prog = (t, t0, d) => ease(clamp((t - t0) / d));
+const lerp = (a, b, t) => a + (b - a) * t;
+function lerpCol(c1, c2, t) {
+  return `rgb(${Math.round(lerp(c1[0], c2[0], t))},${Math.round(lerp(c1[1], c2[1], t))},${Math.round(lerp(c1[2], c2[2], t))})`;
+}
+
+// Pre-render atmospheric album covers
+function createCover(type) {
+  const c = document.createElement('canvas');
+  c.width = 400; c.height = 400;
+  const x = c.getContext('2d');
+  if (type === 1) {
+    let g = x.createLinearGradient(0, 0, 0, 400);
+    g.addColorStop(0, '#091926'); g.addColorStop(0.5, '#1b4958'); g.addColorStop(1, '#081016');
+    x.fillStyle = g; x.fillRect(0, 0, 400, 400);
+    // Glowing moon/sun mist
+    let rg = x.createRadialGradient(200, 150, 10, 200, 150, 160);
+    rg.addColorStop(0, 'rgba(180,235,245,0.85)');
+    rg.addColorStop(0.4, 'rgba(60,150,175,0.3)');
+    rg.addColorStop(1, 'rgba(15,40,55,0)');
+    x.fillStyle = rg; x.fillRect(0, 0, 400, 400);
+    // Atmospheric mountains
+    for (let l = 0; l < 4; l++) {
+      x.fillStyle = `rgba(6, 16, 22, ${0.4 + l * 0.2})`;
+      x.beginPath(); x.moveTo(0, 400);
+      for (let i = 0; i <= 400; i += 8) {
+        let h = 230 + l * 38 + Math.sin(i * 0.015 + l * 2) * 28 + Math.cos(i * 0.04 - l) * 14;
+        x.lineTo(i, h);
+      }
+      x.lineTo(400, 400); x.fill();
+    }
+    x.fillStyle = 'rgba(255,255,255,0.6)';
+    x.font = '600 13px sans-serif';
+    x.letterSpacing = '3px';
+    x.fillText('MIXKIT // 110 BPM', 28, 42);
+  } else {
+    let g = x.createLinearGradient(0, 0, 400, 400);
+    g.addColorStop(0, '#230a1e'); g.addColorStop(0.55, '#681c3c'); g.addColorStop(1, '#d45b3e');
+    x.fillStyle = g; x.fillRect(0, 0, 400, 400);
+    let rg = x.createRadialGradient(270, 250, 15, 270, 250, 180);
+    rg.addColorStop(0, 'rgba(255,190,130,0.85)');
+    rg.addColorStop(0.5, 'rgba(220,75,75,0.35)');
+    rg.addColorStop(1, 'rgba(35,10,30,0)');
+    x.fillStyle = rg; x.fillRect(0, 0, 400, 400);
+    for (let l = 0; l < 4; l++) {
+      x.fillStyle = `rgba(22, 6, 16, ${0.35 + l * 0.2})`;
+      x.beginPath(); x.moveTo(0, 400);
+      for (let i = 0; i <= 400; i += 8) {
+        let h = 245 + l * 34 + Math.cos(i * 0.018 + l * 1.7) * 24;
+        x.lineTo(i, h);
+      }
+      x.lineTo(400, 400); x.fill();
+    }
+    x.fillStyle = 'rgba(255,235,220,0.65)';
+    x.font = '600 13px sans-serif';
+    x.fillText('ATMOSPHERE // II', 28, 42);
+  }
+  return c;
+}
+const cover1 = createCover(1);
+const cover2 = createCover(2);
+
+function drawShadow(lift = 1, alpha = 1) {
+  ctx.shadowColor = `rgba(0, 0, 0, ${0.18 * alpha})`;
+  ctx.shadowBlur = 24 * lift;
+  ctx.shadowOffsetY = 10 * lift;
+}
+function clearShadow() {
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  r = Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2);
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, Math.max(0, r));
+}
+
+// Gooey metaball bridge between two circles
+function drawGooBridge(x1, y1, r1, x2, y2, r2, maxDist) {
+  const d = Math.hypot(x2 - x1, y2 - y1);
+  if (d > maxDist || d <= Math.abs(r1 - r2) || r1 < 1 || r2 < 1) return;
+  const u = clamp(1 - d / maxDist);
+  const spread = 0.55 * u;
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  const a1 = angle + Math.PI * 0.5 * (1 - spread * 0.3);
+  const a2 = angle - Math.PI * 0.5 * (1 - spread * 0.3);
+  const b1 = angle + Math.PI - Math.PI * 0.5 * (1 - spread * 0.3);
+  const b2 = angle + Math.PI + Math.PI * 0.5 * (1 - spread * 0.3);
+
+  const p1x = x1 + Math.cos(a1) * r1, p1y = y1 + Math.sin(a1) * r1;
+  const p2x = x1 + Math.cos(a2) * r1, p2y = y1 + Math.sin(a2) * r1;
+  const p3x = x2 + Math.cos(b1) * r2, p3y = y2 + Math.sin(b1) * r2;
+  const p4x = x2 + Math.cos(b2) * r2, p4y = y2 + Math.sin(b2) * r2;
+
+  const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+  const nx = -Math.sin(angle), ny = Math.cos(angle);
+  const waist = lerp(0, Math.min(r1, r2) * 0.75, u * u);
+  const c1x = mx + nx * waist, c1y = my + ny * waist;
+  const c2x = mx - nx * waist, c2y = my - ny * waist;
+
+  ctx.beginPath();
+  ctx.moveTo(p1x, p1y);
+  ctx.quadraticCurveTo(c1x, c1y, p3x, p3y);
+  ctx.lineTo(p4x, p4y);
+  ctx.quadraticCurveTo(c2x, c2y, p2x, p2y);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawHeart(x, y, s, fillProgress) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(s, s);
+  ctx.beginPath();
+  ctx.moveTo(0, 6);
+  ctx.bezierCurveTo(-10, -4, -12, -12, -6, -12);
+  ctx.bezierCurveTo(-2, -12, 0, -8, 0, -6);
+  ctx.bezierCurveTo(0, -8, 2, -12, 6, -12);
+  ctx.bezierCurveTo(12, -12, 10, -4, 0, 6);
+  ctx.closePath();
+  if (fillProgress > 0) {
+    ctx.fillStyle = '#1ed760';
+    ctx.fill();
+  }
+  ctx.strokeStyle = fillProgress > 0.5 ? '#1ed760' : 'rgba(255,255,255,0.6)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Real macOS cursor in screen space
+function drawMacCursor(x, y, press = 0) {
+  ctx.save();
+  ctx.translate(x, y);
+  const s = 1 - press * 0.14;
+  ctx.scale(s, s);
+  ctx.shadowColor = 'rgba(0,0,0,0.35)';
+  ctx.shadowBlur = 7;
+  ctx.shadowOffsetY = 3;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(0, 21);
+  ctx.lineTo(4.8, 16.4);
+  ctx.lineTo(8.2, 24.2);
+  ctx.lineTo(11.3, 22.8);
+  ctx.lineTo(7.9, 15.0);
+  ctx.lineTo(14.5, 15.0);
+  ctx.closePath();
+  ctx.fillStyle = '#fff';
+  ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.lineWidth = 1.3;
+  ctx.strokeStyle = '#000';
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawLightStage(alpha = 1) {
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const g = ctx.createRadialGradient(CX, CY, 60, CX, CY, 750);
+  g.addColorStop(0, '#f3f3f0');
+  g.addColorStop(1, '#e3e3de');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+}
+
+// Chart curve helper (local to knob origin at (0,0) when chart forms)
+function chartCurveY(x, flattenProg) {
+  // x goes from -460 to 0. At x=0, y=0.
+  const u = clamp((x + 460) / 460);
+  const expY = (1 - Math.pow(u, 2.6)) * 210 + Math.sin(u * Math.PI * 3) * 12 * (1 - u);
+  return expY * flattenProg;
+}
+
+function render(t) {
+  ctx.clearRect(0, 0, W, H);
+
+  // Base light stage
+  drawLightStage(1);
+
+  // Camera state
+  let camScale = 1, camX = CX, camY = CY;
+  if (t < 2.2) {
+    camScale = lerp(1.0, 1.32, prog(t, 0.3, 0.8));
+  } else if (t < 6.0) {
+    camScale = lerp(1.32, 1.0, prog(t, 2.2, 0.8));
+    camScale = lerp(camScale, 1.35, prog(t, 4.4, 0.8));
+  } else if (t < 11.4) {
+    camScale = lerp(1.35, 1.55, prog(t, 6.0, 0.8));
+    // Pull back on drop to reveal full Now Playing screen
+    const pDrop = prog(t, 7.0, 0.8);
+    camScale = lerp(camScale, 1.0, pDrop);
+    camY = lerp(CY, CY + 125, pDrop);
+  } else if (t < 15.8) {
+    // Glide toward volume slider, then follow rubber-banding knob sideways onto dark dotted canvas
+    const pZoomVol = prog(t, 11.4, 0.8);
+    camScale = lerp(1.0, 1.65, pZoomVol);
+    camX = lerp(CX, CX + 135, pZoomVol);
+    camY = lerp(CY + 125, CY + 235, pZoomVol);
+
+    const pPanCanvas = prog(t, 12.2, 1.6);
+    camScale = lerp(camScale, 1.08, pPanCanvas);
+    camX = lerp(camX, CX + 900, pPanCanvas);
+    camY = lerp(camY, CY + 85, pPanCanvas);
+  } else if (t < 17.0) {
+    // Dive into final green point
+    const pDive = prog(t, 15.8, 0.8);
+    const z = Math.pow(36, pDive);
+    camScale = 1.08 * z;
+    camX = lerp(CX + 900, CX + 1120, pDive);
+    camY = lerp(CY + 85, CY - 5, pDive);
+  }
+
+  ctx.save();
+  ctx.translate(CX, CY);
+  ctx.scale(camScale, camScale);
+  ctx.translate(-camX, -camY);
+
+  // =========================================================================
+  // SCENE 1 & 2: GENERATE -> GOOEY DOTS -> CHAT BUBBLES (0.0s - 6.0s)
+  // =========================================================================
+  if (t < 6.1) {
+    const pSpin = prog(t, 0.3, 0.8);
+    const pCheck = prog(t, 1.2, 0.8);
+    const pSplit = prog(t, 2.2, 0.8);
+    const pBubbles = prog(t, 2.7, 0.8);
+    const pMerge = prog(t, 4.4, 0.8);
+
+    const lift = 1 + 0.6 * Math.sin(pSpin * Math.PI) + 0.5 * pBubbles * (1 - pMerge);
+
+    // Pill / Spinner / Check / Center Dot
+    if (t < 2.5) {
+      const w = lerp(164, 52, pSpin);
+      const h = 52;
+      const r = 26;
+      ctx.save();
+      drawShadow(lift, 1 - pSplit * 0.5);
+      ctx.fillStyle = '#0d0d0d';
+      roundRect(ctx, CX - w / 2, CY - h / 2, w, h, r);
+      ctx.fill();
+      clearShadow();
+
+      // "Generate" label dissolves during second half of glide
+      const txtAlpha = clamp(1 - prog(t, 0.3, 0.45));
+      if (txtAlpha > 0) {
+        ctx.fillStyle = `rgba(255,255,255,${txtAlpha})`;
+        ctx.font = '500 17px -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('Generate', CX + 8, CY + 1);
+        // Sparkle icon on left
+        ctx.beginPath();
+        ctx.arc(CX - 48, CY, 4, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(30,215,96,${txtAlpha})`;
+        ctx.fill();
+      }
+
+      // Spinner arc -> Checkmark
+      if (pSpin > 0.25) {
+        const spinAlpha = clamp((pSpin - 0.25) / 0.4) * (1 - pSplit);
+        ctx.strokeStyle = lerpCol([255, 255, 255], [30, 215, 96], pCheck);
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.globalAlpha = spinAlpha;
+
+        if (pCheck < 0.5) {
+          const rot = t * 9;
+          const arcLen = lerp(Math.PI * 1.35, 0.1, pCheck * 2);
+          ctx.beginPath();
+          ctx.arc(CX, CY, 13, rot, rot + arcLen);
+          ctx.stroke();
+        } else {
+          const cp = (pCheck - 0.5) * 2;
+          ctx.beginPath();
+          ctx.moveTo(CX - 7, CY + 0.5);
+          const mx = lerp(CX - 7, CX - 1.5, clamp(cp * 2));
+          const my = lerp(CY + 0.5, CY + 6, clamp(cp * 2));
+          ctx.lineTo(mx, my);
+          if (cp > 0.5) {
+            const ex = lerp(CX - 1.5, CX + 8, (cp - 0.5) * 2);
+            const ey = lerp(CY + 6, CY - 5.5, (cp - 0.5) * 2);
+            ctx.lineTo(ex, ey);
+          }
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+
+    // Three Gooey Typing Dots -> Chat Bubbles -> Merge to Center
+    if (t >= 2.2) {
+      const splitDist = 42 * pSplit * (1 - pMerge);
+      const bounce = (i) => Math.sin((t - 2.3) * 8 - i * 1.1) * 4 * pSplit * (1 - pBubbles);
+
+      // Left dot -> Question Bubble (flies up)
+      const qX = lerp(CX - splitDist, CX - 50, pBubbles * (1 - pMerge));
+      const qY = lerp(CY + bounce(0), CY - 92, pBubbles * (1 - pMerge));
+      const qW = lerp(22, 260, pBubbles * (1 - pMerge));
+      const qH = lerp(22, 54, pBubbles * (1 - pMerge));
+      const qR = lerp(11, 20, pBubbles * (1 - pMerge));
+
+      // Right dot -> Answer Bubble (flies down)
+      const pAns = prog(t, 3.1, 0.8);
+      const aX = lerp(CX + splitDist, CX + 50, pAns * (1 - pMerge));
+      const aY = lerp(CY + bounce(2), CY + 92, pAns * (1 - pMerge));
+      const aW = lerp(22, 260, pAns * (1 - pMerge));
+      const aH = lerp(22, 54, pAns * (1 - pMerge));
+      const aR = lerp(11, 20, pAns * (1 - pMerge));
+
+      // Middle dot stays & pulses
+      const mR = lerp(26, 11, pSplit) * lerp(1, 2.2, pMerge);
+      const mY = CY + bounce(1);
+
+      ctx.save();
+      drawShadow(lift, 0.9);
+      ctx.fillStyle = '#0d0d0d';
+
+      // Gooey bridges during split and merge
+      drawGooBridge(CX, mY, mR, qX, qY, qH / 2, 95);
+      drawGooBridge(CX, mY, mR, aX, aY, aH / 2, 95);
+
+      // Center dot
+      ctx.beginPath();
+      ctx.arc(CX, mY, mR, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Question bubble
+      roundRect(ctx, qX - qW / 2, qY - qH / 2, qW, qH, qR);
+      ctx.fill();
+
+      // Reply bubble
+      roundRect(ctx, aX - aW / 2, aY - aH / 2, aW, aH, aR);
+      ctx.fill();
+      clearShadow();
+
+      // Question text typing
+      const qTxt = "is this all code?";
+      const qChars = Math.floor(clamp((t - 3.0) / 0.55) * qTxt.length);
+      const qFade = clamp(1 - prog(t, 4.4, 0.4));
+      if (qChars > 0 && qFade > 0) {
+        ctx.fillStyle = `rgba(255,255,255,${qFade})`;
+        ctx.font = '500 17px -apple-system, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(qTxt.slice(0, qChars), qX - qW / 2 + 24, qY + 1);
+      }
+
+      // Reply text typing
+      const aTxt = "yes. every frame.";
+      const aChars = Math.floor(clamp((t - 3.55) / 0.55) * aTxt.length);
+      if (aChars > 0 && qFade > 0) {
+        ctx.fillStyle = `rgba(30,215,96,${qFade})`;
+        ctx.font = '600 17px -apple-system, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(aTxt.slice(0, aChars), aX - aW / 2 + 24, aY + 1);
+      }
+      ctx.restore();
+    }
+  }
+
+  // =========================================================================
+  // SCENE 3, 4, 5, 6, 7: PLAY -> APP FLOOD -> SWIPE -> VOLUME DRAG -> CHART
+  // =========================================================================
+  if (t >= 5.2 && t < 17.0) {
+    const pDrop = prog(t, 7.0, 0.8);
+    const pSwipe = prog(t, 9.6, 0.8);
+    const pDragOut = prog(t, 12.2, 1.4);
+
+    // 1. Dark Dotted Canvas (underneath the app world, revealed on right)
+    if (pDrop > 0.01) {
+      ctx.save();
+      ctx.fillStyle = '#0e0e10';
+      ctx.fillRect(CX - 1200, CY - 1200, 3600, 2400);
+
+      // Subtle dot matrix grid
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      const step = 32;
+      const startX = Math.floor((camX - 800) / step) * step;
+      const endX = camX + 800;
+      const startY = Math.floor((camY - 500) / step) * step;
+      const endY = camY + 500;
+      for (let gx = startX; gx < endX; gx += step) {
+        for (let gy = startY; gy < endY; gy += step) {
+          ctx.fillRect(gx, gy, 2, 2);
+        }
+      }
+      ctx.restore();
+    }
+
+    // 2. Dark App World (#121212 tinted by current album cover)
+    if (pDrop > 0) {
+      ctx.save();
+      const appW = lerp(56, 520, pDrop);
+      const appH = lerp(56, 650, pDrop);
+      const appX = CX - appW / 2;
+      const appY = lerp(CY, CY + 125, pDrop) - appH / 2;
+      const appR = lerp(28, 28, pDrop);
+
+      drawShadow(1.8, pDrop);
+      // Tint shifts from teal-dark (Cover 1) to warm crimson-dark (Cover 2)
+      const topCol = lerpCol([18, 48, 58], [68, 22, 38], pSwipe);
+      const botCol = [18, 18, 18];
+      const ag = ctx.createLinearGradient(0, appY, 0, appY + appH);
+      ag.addColorStop(0, topCol);
+      ag.addColorStop(0.65, `rgb(${botCol.join(',')})`);
+      ag.addColorStop(1, '#101010');
+
+      ctx.fillStyle = ag;
+      roundRect(ctx, appX, appY, appW, appH, appR);
+      ctx.fill();
+      clearShadow();
+
+      // Clip interior of App card for covers and UI
+      ctx.save();
+      roundRect(ctx, appX, appY, appW, appH, appR);
+      ctx.clip();
+
+      const uiAlpha = clamp((pDrop - 0.35) / 0.65);
+      if (uiAlpha > 0) {
+        ctx.globalAlpha = uiAlpha;
+
+        // Album covers (Swipe transition at 9.6s)
+        const covSize = 290;
+        const covY = CY - 145;
+        const offset1 = -pSwipe * 360;
+        const offset2 = (1 - pSwipe) * 360;
+
+        drawShadow(1.2, uiAlpha);
+        ctx.drawImage(cover1, CX - covSize / 2 + offset1, covY, covSize, covSize);
+        if (pSwipe > 0) {
+          ctx.drawImage(cover2, CX - covSize / 2 + offset2, covY, covSize, covSize);
+        }
+        clearShadow();
+
+        // Track Title & Artist
+        const metaY = covY + covSize + 42;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.font = '700 21px -apple-system, sans-serif';
+        ctx.fillStyle = '#fff';
+        const title = pSwipe < 0.5 ? 'Head Bang' : 'Night Glide';
+        const sub = pSwipe < 0.5 ? 'Mixkit Originals' : 'Synthetic Pulse';
+        ctx.fillText(title, CX - covSize / 2, metaY);
+
+        ctx.font = '500 14px -apple-system, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+        ctx.fillText(sub, CX - covSize / 2, metaY + 24);
+
+        // Heart icon (liked, filling green)
+        const pHeart = prog(t, 8.1, 0.5);
+        const heartScale = 1 + 0.25 * Math.sin(pHeart * Math.PI);
+        drawHeart(CX + covSize / 2 - 14, metaY + 10, heartScale, pHeart);
+
+        // Progress Bar (advances with song beats, 110 BPM)
+        const barY = metaY + 60;
+        const barW = covSize;
+        ctx.fillStyle = 'rgba(255,255,255,0.16)';
+        roundRect(ctx, CX - barW / 2, barY, barW, 4, 2);
+        ctx.fill();
+
+        const playProg = clamp((t - 7.0) / 12.0) * 0.65 + 0.15;
+        ctx.fillStyle = '#fff';
+        roundRect(ctx, CX - barW / 2, barY, barW * playProg, 4, 2);
+        ctx.fill();
+
+        // Time stamps
+        ctx.font = '500 11px -apple-system, sans-serif';
+        ctx.fillStyle = 'rgba(255,255,255,0.45)';
+        ctx.fillText('0:42', CX - barW / 2, barY + 16);
+        ctx.textAlign = 'right';
+        ctx.fillText('2:58', CX + barW / 2, barY + 16);
+
+        // Prev / Next Skip Triangles
+        ctx.fillStyle = 'rgba(255,255,255,0.8)';
+        for (let dir of [-1, 1]) {
+          const sx = CX + dir * 74, sy = CY + 295;
+          ctx.beginPath();
+          ctx.moveTo(sx - dir * 7, sy - 8);
+          ctx.lineTo(sx + dir * 7, sy);
+          ctx.lineTo(sx - dir * 7, sy + 8);
+          ctx.closePath();
+          ctx.fill();
+          ctx.fillRect(sx + dir * 7, sy - 8, 2.5 * dir, 16);
+        }
+      }
+      ctx.restore(); // end App clip
+      ctx.restore();
+    }
+
+    // 3. Center Dot -> Play Triangle (one point at a time) -> White Play Button on Drop
+    const pPt1 = prog(t, 5.2, 0.35);
+    const pPt2 = prog(t, 5.45, 0.35);
+    const pPt3 = prog(t, 5.7, 0.35);
+    const playCenterY = lerp(CY, CY + 295, pDrop);
+
+    ctx.save();
+    ctx.translate(CX, playCenterY);
+
+    // White button appears under click as dark app floods frame
+    if (pDrop > 0) {
+      const btnR = lerp(24, 28, pDrop);
+      ctx.beginPath();
+      ctx.arc(0, 0, btnR, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+    } else {
+      // Morphing black circle before drop
+      const baseR = lerp(24, 0, pPt3);
+      if (baseR > 0.5) {
+        ctx.beginPath();
+        ctx.arc(0, 0, baseR, 0, Math.PI * 2);
+        ctx.fillStyle = '#0d0d0d';
+        ctx.fill();
+      }
+    }
+
+    // Play Triangle / Pause Bars morph
+    const triScale = lerp(1.15, 0.65, pDrop);
+    ctx.scale(triScale, triScale);
+    const r0 = 16;
+    const x1 = lerp(r0, 18, pPt1), y1 = 0; // Right tip
+    const x2 = lerp(-r0 * 0.6, -11, pPt2), y2 = lerp(-r0 * 0.8, -14, pPt2); // Top-left
+    const x3 = lerp(-r0 * 0.6, -11, pPt3), y3 = lerp(r0 * 0.8, 14, pPt3);   // Bottom-left
+
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.lineTo(x3, y3);
+    ctx.closePath();
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = lerp(12, 4, pPt3);
+    ctx.fillStyle = '#0d0d0d';
+    ctx.strokeStyle = '#0d0d0d';
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+
+    // 4. Volume Slider -> Rubber-Band Drag Out -> Green Chart & Counter
+    if (pDrop > 0.4) {
+      const volAlpha = clamp((pDrop - 0.4) / 0.6);
+      const volYBase = CY + 365;
+      const volStartX = CX - 95;
+      const volMaxAppX = CX + 95;
+
+      // Knob position: starts at 65%, pulled to max, then rubber-bands far right onto dark canvas
+      const pPullMax = prog(t, 11.7, 0.5);
+      const pStretch = prog(t, 12.2, 1.6);
+      const pChart = prog(t, 13.8, 0.8);
+
+      let knobX = lerp(volStartX + 120, volMaxAppX, pPullMax);
+      knobX = lerp(knobX, CX + 1120, pStretch);
+      let knobY = lerp(volYBase, CY - 5, pStretch);
+
+      const lineStartX = lerp(volStartX, CX + 660, pStretch);
+      const lineStartY = lerp(volYBase, CY + 205, pStretch);
+
+      ctx.save();
+      ctx.globalAlpha = volAlpha;
+
+      // Speaker icon inside app
+      if (t < 13.2) {
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.beginPath();
+        ctx.moveTo(volStartX - 24, volYBase - 4);
+        ctx.lineTo(volStartX - 18, volYBase - 4);
+        ctx.lineTo(volStartX - 12, volYBase - 9);
+        ctx.lineTo(volStartX - 12, volYBase + 9);
+        ctx.lineTo(volStartX - 18, volYBase + 4);
+        ctx.lineTo(volStartX - 24, volYBase + 4);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // Unfilled track inside app
+      if (t < 13.0) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+        ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(volStartX, volYBase);
+        ctx.lineTo(volMaxAppX, volYBase);
+        ctx.stroke();
+      }
+
+      // Area fill under green chart
+      if (pChart > 0.01) {
+        const grad = ctx.createLinearGradient(0, knobY, 0, knobY + 230);
+        grad.addColorStop(0, `rgba(30, 215, 96, ${0.32 * pChart})`);
+        grad.addColorStop(1, 'rgba(30, 215, 96, 0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        const segs = 40;
+        for (let i = 0; i <= segs; i++) {
+          const u = i / segs;
+          const lx = lerp(-460, 0, u);
+          const px = knobX + lx;
+          const py = knobY + chartCurveY(lx, pChart);
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.lineTo(knobX, knobY + 220);
+        ctx.lineTo(knobX - 460, knobY + 220);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // Active Slider Line / Rubber-Band / Chart Curve
+      ctx.strokeStyle = lerpCol([255, 255, 255], [30, 215, 96], clamp(pStretch * 1.4));
+      ctx.lineWidth = lerp(4, 5, pChart);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      if (pChart <= 0.001) {
+        // Rubber-band tension sag during drag
+        const sag = Math.sin(pStretch * Math.PI) * 38;
+        ctx.moveTo(lineStartX, lineStartY);
+        ctx.quadraticCurveTo((lineStartX + knobX) / 2, (lineStartY + knobY) / 2 + sag, knobX, knobY);
+      } else {
+        const segs = 45;
+        for (let i = 0; i <= segs; i++) {
+          const u = i / segs;
+          const lx = lerp(-460, 0, u);
+          const px = knobX + lx;
+          const py = knobY + chartCurveY(lx, pChart);
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+      }
+      ctx.stroke();
+
+      // Volume Knob -> Chart's Final Point
+      const knobR = lerp(7, 11, pChart);
+      ctx.beginPath();
+      ctx.arc(knobX, knobY, knobR, 0, Math.PI * 2);
+      ctx.fillStyle = lerpCol([255, 255, 255], [30, 215, 96], pChart);
+      ctx.fill();
+      if (pChart > 0) {
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = '#0e0e10';
+        ctx.stroke();
+      }
+
+      // Counting Number Metric above chart
+      if (pStretch > 0.5) {
+        const numAlpha = clamp((pStretch - 0.5) * 2);
+        const countProg = prog(t, 13.6, 1.4);
+        const val = (14.2 + countProg * 270.6).toFixed(1);
+        ctx.fillStyle = `rgba(255,255,255,${numAlpha})`;
+        ctx.font = '700 46px -apple-system, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(`+${val}%`, knobX - 460, knobY - 25);
+
+        ctx.fillStyle = `rgba(30,215,96,${numAlpha})`;
+        ctx.font = '600 14px -apple-system, sans-serif';
+        ctx.fillText('LIVE VELOCITY // 110 BPM', knobX - 460, knobY - 68);
+      }
+      ctx.restore();
+    }
+  }
+
+  ctx.restore(); // End world camera transform
+
+  // =========================================================================
+  // SCENE 7 & 8: DIVE FLOOD -> "Ask Claude" BUTTON -> 12-RAY SPARK LOGO
+  // =========================================================================
+  if (t >= 15.8) {
+    const pDive = prog(t, 15.8, 0.8);
+    // Light stage floods the frame as we dive inside the point
+    drawLightStage(clamp((pDive - 0.35) / 0.55));
+
+    if (t >= 16.5) {
+      const pGrow = prog(t, 16.6, 0.8);
+      const pLine = prog(t, 17.6, 0.8);
+      const pFan  = prog(t, 18.4, 0.8);
+
+      ctx.save();
+      ctx.translate(CX, CY);
+
+      // Button grows from light, narrows into a vertical line
+      if (pFan < 0.99) {
+        const bw = lerp(210, 8, pLine) * Math.max(0.01, pGrow);
+        const bh = lerp(56, 86, pLine) * Math.max(0.01, pGrow);
+        const br = Math.min(bw / 2, 28);
+
+        drawShadow(pGrow * (1 - pFan), 1 - pFan);
+        ctx.fillStyle = lerpCol([15, 15, 15], [217, 119, 87], pLine);
+        roundRect(ctx, -bw / 2, -bh / 2, bw, bh, br);
+        ctx.fill();
+        clearShadow();
+
+        // "Ask Claude" text dissolves during second half of narrowing glide
+        const askAlpha = pGrow * clamp(1 - prog(t, 17.6, 0.45));
+        if (askAlpha > 0) {
+          ctx.fillStyle = `rgba(255,255,255,${askAlpha})`;
+          ctx.font = '500 18px -apple-system, sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText('Ask Claude', 0, 1);
+        }
+      }
+
+      // Six copies rotating into twelve rays in Claude orange (#d97757)
+      if (pFan > 0) {
+        const rayLen = 86;
+        const rayThick = 8.5;
+        drawShadow(0.9, pFan);
+        ctx.fillStyle = '#d97757';
+        for (let i = 0; i < 6; i++) {
+          const targetAngle = (i * Math.PI) / 6;
+          const ang = targetAngle * pFan;
+          ctx.save();
+          ctx.rotate(ang);
+          // Center hub organic fillet
+          roundRect(ctx, -rayThick / 2, -rayLen / 2, rayThick, rayLen, rayThick / 2);
+          ctx.fill();
+          ctx.restore();
+        }
+        clearShadow();
+      }
+      ctx.restore();
+    }
+  }
+
+  // =========================================================================
+  //CONTINUOUS MACOS POINTER CHOREOGRAPHY (One gesture per scene)
+  // =========================================================================
+  let curX = CX + 220, curY = CY + 180, curPress = 0;
+
+  if (t < 1.5) {
+    // 1. Move in & click "Generate" pill
+    const p = prog(t, 0.0, 0.35);
+    curX = lerp(CX + 180, CX + 12, p);
+    curY = lerp(CY + 140, CY + 8, p);
+    curPress = Math.sin(clamp((t - 0.22) / 0.22) * Math.PI);
+  } else if (t < 6.5) {
+    // Drift aside during chat bubbles, then approach Play button
+    const pDrift = prog(t, 1.5, 0.9);
+    curX = lerp(CX + 12, CX + 175, pDrift);
+    curY = lerp(CY + 8, CY + 115, pDrift);
+
+    const pToPlay = prog(t, 5.8, 0.7);
+    curX = lerp(curX, CX + 4, pToPlay);
+    curY = lerp(curY, CY + 4, pToPlay);
+  } else if (t < 8.5) {
+    // 2. Press Play on the hard drop (7.0s)
+    curX = CX + 4;
+    curY = lerp(CY + 4, CY + 170, prog(t, 7.0, 0.8));
+    curPress = Math.sin(clamp((t - 6.88) / 0.28) * Math.PI);
+  } else if (t < 11.2) {
+    // 3. Move up to album cover & Swipe sideways
+    const pToCov = prog(t, 8.6, 0.7);
+    curX = lerp(CX + 4, CX + 85, pToCov);
+    curY = lerp(CY + 170, CY - 115, pToCov);
+
+    const pSw = prog(t, 9.6, 0.8);
+    curX = lerp(curX, CX - 95, pSw);
+    if (t >= 9.5 && t <= 10.4) curPress = Math.sin( prog(t, 9.5, 0.9) * Math.PI );
+  } else if (t < 14.8) {
+    // 4. Move to volume knob & Drag right onto dotted canvas
+    const pToVol = prog(t, 11.2, 0.55);
+    curX = lerp(CX - 95, CX - 65, pToVol);
+    curY = lerp(CY - 115, CY + 215, pToVol);
+
+    const pPull = prog(t, 11.7, 0.5);
+    curX = lerp(curX, CX + 45, pPull);
+
+    const pOut = prog(t, 12.2, 1.6);
+    curX = lerp(curX, CX + 238, pOut);
+    curY = lerp(curY, CY - 95, pOut);
+    if (t >= 11.65 && t <= 13.8) curPress = 0.85;
+  } else if (t < 16.5) {
+    // 5. Click final chart point to dive in
+    const pToPt = prog(t, 14.8, 0.6);
+    curX = lerp(CX + 238, CX + 238, pToPt);
+    curY = lerp(CY - 95, CY - 95, pToPt);
+    curPress = Math.sin(clamp((t - 15.65) / 0.3) * Math.PI);
+
+    // Retract pointer cleanly during dive
+    const pHide = prog(t, 15.85, 0.6);
+    curX = lerp(curX, W + 80, pHide);
+    curY = lerp(curY, H + 80, pHide);
+  } else {
+    curX = W + 100; curY = H + 100;
+  }
+
+  drawMacCursor(curX, curY, curPress);
+}
+
+let t0 = null;
+function loop(now) {
+  if (t0 === null) t0 = now - startT * 1000;
+  const elapsed = ((now - t0) / 1000) % window.DUR;
+  render(elapsed);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

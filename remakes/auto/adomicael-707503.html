@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#s{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+</style></head><body><canvas id="s" width="1280" height="720"></canvas><script>
+const c=document.getElementById('s'),x=c.getContext('2d');
+window.DUR=40;
+function fit(){const k=Math.min(innerWidth/1280,innerHeight/720);c.style.transform=`scale(${k}) translate(-50%,-50%)`;c.style.left='50%';c.style.top='50%';c.style.transformOrigin='0 0';c.style.transform=`translate(-50%,-50%) scale(${k})`;c.style.transformOrigin='center';}
+fit();addEventListener('resize',fit);
+const q=new URLSearchParams(location.search),t0=performance.now()-(parseFloat(q.get('t'))||0)*1000;
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),ease=v=>v<.5?2*v*v:1-Math.pow(-2*v+2,2)/2;
+const L=(a,b,t)=>a+(b-a)*t;
+// scenes: [start,end,title,sub]
+const S=[[0,6,'1. Your phone','You type: "Why is the sky blue?"'],[6,12,'2. Fiber across the US','Pulses of light, ~200,000 km/s through glass'],[12,17,'3. The data center','Thousands of racks, humming and cooled'],[17,23,'4. Eight GPUs','The model is split across 8 chips working in parallel'],[23,29,'5. One transistor','Billions of tiny switches: on / off, ~1 trillion times per second'],[29,40,'6. The answer returns','Token by token, back across the country to you']];
+function txt(s,X,Y,sz,col,al='center',w='600'){x.font=`${w} ${sz}px Helvetica,Arial,sans-serif`;x.fillStyle=col;x.textAlign=al;x.fillText(s,X,Y)}
+function glow(X,Y,r,col){const g=x.createRadialGradient(X,Y,0,X,Y,r);g.addColorStop(0,col);g.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=g;x.beginPath();x.arc(X,Y,r,0,7);x.fill()}
+function phone(X,Y,s,t,ans){x.save();x.translate(X,Y);x.scale(s,s);x.fillStyle='#1b1f2a';x.strokeStyle='#6a7590';x.lineWidth=3;x.beginPath();x.roundRect(-90,-170,180,340,26);x.fill();x.stroke();x.fillStyle='#0b1020';x.fillRect(-78,-150,156,300);
+const q='Why is the sky blue?',n=Math.floor(cl(t*8,0,q.length));x.fillStyle='#2f6fff';x.beginPath();x.roundRect(-70,-130,140,40,10);x.fill();txt(q.slice(0,n),0,-105,12,'#fff');
+if(ans>0){const a='Sunlight scatters off air molecules; blue light scatters most.';const m=Math.floor(ans*a.length);x.fillStyle='#22324a';x.beginPath();x.roundRect(-70,-75,140,110,10);x.fill();const w=a.slice(0,m).split(' ');let line='',yy=-55;for(const k of w){if((line+k).length>20){txt(line,-62,yy,12,'#cfe','left','400');line='';yy+=17}line+=k+' '}txt(line,-62,yy,12,'#cfe','left','400')}
+x.restore()}
+// US map path approx
+const US=[[180,250],[260,200],[420,190],[600,200],[780,210],[900,190],[1010,170],[1080,200],[1060,260],[1020,330],[1000,400],[930,460],[880,520],[820,470],[700,480],[600,520],[500,490],[380,470],[260,430],[200,360]];
+const route=[[230,330],[420,300],[620,330],[800,300],[1010,260]];
+function rp(t){t=cl(t)*(route.length-1);const i=Math.min(route.length-2,Math.floor(t)),f=t-i;return[L(route[i][0],route[i+1][0],f),L(route[i][1],route[i+1][1],f)]}
+function usmap(p,back){x.fillStyle='#0d1a2b';x.strokeStyle='#2a5a8a';x.lineWidth=2;x.beginPath();US.forEach((v,i)=>i?x.lineTo(...v):x.moveTo(...v));x.closePath();x.fill();x.stroke();
+x.strokeStyle='#ff9a2a55';x.lineWidth=6;x.beginPath();route.forEach((v,i)=>i?x.lineTo(...v):x.moveTo(...v));x.stroke();x.strokeStyle='#ffc06a';x.lineWidth=1.5;x.stroke();
+route.forEach(v=>{x.fillStyle='#ffd08a';x.beginPath();x.arc(v[0],v[1],5,0,7);x.fill()});
+txt('You (Los Angeles)',230,360,15,'#9cf');txt('Data center (Virginia)',1010,240,15,'#9cf');
+for(let k=0;k<6;k++){const pp=back?1-cl(p-k*.04):cl(p-k*.04);const[a,b]=rp(pp);glow(a,b,k?10:22,back?'rgba(80,255,170,.9)':'rgba(120,200,255,.9)')}}
+function dc(t){for(let r=0;r<6;r++)for(let i=0;i<10;i++){const X=150+i*102,Y=230+r*55+(i%2)*0;x.fillStyle='#141a26';x.fillRect(X,Y,80,45);for(let k=0;k<4;k++){x.fillStyle=Math.sin(t*9+i*3+r*7+k)>.3?'#3f9':'#143';x.fillRect(X+8+k*18,Y+30,6,4)}x.fillStyle='#232c40';x.fillRect(X+5,Y+6,70,16)}
+const z=ease(cl((t-12)/5));glow(L(250,659,z),L(310,450,z),60*(1-z*.5),'rgba(120,200,255,.8)')}
+function gpus(t){const p=cl((t-17.5)/5);for(let i=0;i<8;i++){const X=170+(i%4)*260,Y=i<4?220:430;const act=p*8>i;x.fillStyle=act?'#1d3a2e':'#151a24';x.strokeStyle=act?'#4f9':'#456';x.lineWidth=2;x.beginPath();x.roundRect(X,Y,180,150,10);x.fill();x.stroke();
+x.fillStyle=act?'#0a5':'#223';x.fillRect(X+55,Y+35,70,70);for(let a=0;a<5;a++)for(let b=0;b<5;b++){x.fillStyle=act&&Math.sin(t*12+a*b+i)>0?'#9fd':'#163';x.fillRect(X+60+a*13,Y+40+b*13,10,10)}txt('GPU '+(i+1),X+90,Y+135,15,act?'#cfe':'#789');
+if(i<7){const nx=170+((i+1)%4)*260,ny=(i+1)<4?220:430;x.strokeStyle='#2a6';x.lineWidth=2;x.beginPath();x.moveTo(X+180,Y+75);x.lineTo(i==3?X+180:nx,i==3?ny+75:ny+75);x.stroke()}}
+const f=p*8,i=Math.min(7,Math.floor(f));glow(170+(i%4)*260+90,(i<4?220:430)+70,70,'rgba(120,255,200,.7)')}
+function trans(t){const p=cl((t-23)/6);const on=Math.sin(t*6)>0;
+x.fillStyle='#3a2a1a';x.fillRect(240,420,800,140);txt('Silicon substrate',640,535,16,'#c96');
+x.fillStyle='#4a6aa0';x.fillRect(300,380,170,45);x.fillRect(810,380,170,45);txt('Source',385,408,16,'#fff');txt('Drain',895,408,16,'#fff');
+x.fillStyle='#ddd';x.fillRect(520,355,240,20);x.fillStyle=on?'#ffcc33':'#776633';x.fillRect(520,280,240,75);txt('Gate '+(on?'= 1 (ON)':'= 0 (OFF)'),640,325,20,'#111','center','700');
+if(on){x.fillStyle='rgba(120,200,255,.35)';x.fillRect(470,425,340,18);for(let k=0;k<14;k++){const e=((t*1.5+k/14)%1);glow(L(380,900,e),434+Math.sin(k*5)*5,9,'rgba(140,220,255,1)')}}
+txt('~5 nm wide — about 25 silicon atoms',640,620,18,'#9ab');x.globalAlpha=1}
+function frame(){const t=((performance.now()-t0)/1000)%DUR;x.fillStyle='#05070d';x.fillRect(0,0,1280,720);
+for(let i=0;i<80;i++){x.fillStyle='rgba(120,160,255,.15)';x.fillRect((i*137+t*10)%1280,(i*71)%720,2,2)}
+const si=S.findIndex(s=>t>=s[0]&&t<s[1]),s=S[si],lt=t-s[0],fa=cl(lt*2)*cl((s[1]-t)*2);x.globalAlpha=fa;
+if(si==0){phone(640,400,1.4,lt,0);if(lt>3.5){const k=(lt-3.5)/2;for(let i=0;i<3;i++){x.strokeStyle=`rgba(120,200,255,${1-((k+i/3)%1)})`;x.lineWidth=3;x.beginPath();x.arc(640,120,40+((k+i/3)%1)*120,3.6,5.8);x.stroke()}}}
+if(si==1)usmap(ease(cl(lt/5.5)),0);
+if(si==2)dc(t);if(si==3)gpus(t);if(si==4)trans(t);
+if(si==5){if(lt<5){usmap(ease(cl(lt/4.5)),1);txt('Each word = trillions of transistor flips',640,620,20,'#9fd')}else{phone(640,400,1.4,10,cl((lt-5)/4));txt('All in about one second.',640,690,22,'#fff')}}
+x.globalAlpha=1;x.fillStyle='rgba(0,0,0,.6)';x.fillRect(0,0,1280,110);txt(s[2],640,52,36,'#fff','center','700');txt(s[3],640,88,20,'#9cf','center','400');
+x.fillStyle='#223';x.fillRect(0,714,1280,6);x.fillStyle='#4af';x.fillRect(0,714,1280*t/DUR,6);
+requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

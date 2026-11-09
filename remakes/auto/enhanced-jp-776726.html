@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8"><title>SHOWREEL</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(100vw,177.78vh);height:min(56.25vw,100vh);background:#000}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=15;
+const c=document.getElementById('c'),x=c.getContext('2d'),W=1280,H=720;
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)||0;
+const t0=performance.now()-off*1000;
+const E={o3:t=>1-Math.pow(1-t,3),io:t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2,back:t=>{const s=1.7;t--;return t*t*((s+1)*t+s)+1},ex:t=>t>=1?1:1-Math.pow(2,-10*t)};
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const p=(t,a,b)=>cl((t-a)/(b-a));
+const C1='#ff3d6e',C2='#3df5ff',C3='#ffd23d',C4='#8a5cff';
+function rnd(i){const s=Math.sin(i*127.1+311.7)*43758.5453;return s-Math.floor(s)}
+function txt(s,X,Y,sz,col,al='center',w='900',ls=0){x.font=`${w} ${sz}px "Helvetica Neue",Arial,"Hiragino Sans","Yu Gothic",sans-serif`;x.fillStyle=col;x.textAlign=al;x.textBaseline='middle';if(ls){x.letterSpacing=ls+'px'}x.fillText(s,X,Y);x.letterSpacing='0px'}
+function bg(t,col){x.fillStyle=col;x.fillRect(0,0,W,H)}
+function grain(t){x.save();x.globalAlpha=.06;for(let i=0;i<220;i++){const r=rnd(i+Math.floor(t*24)*300);x.fillStyle=i%2?'#fff':'#000';x.fillRect(rnd(i*3+r)*W,rnd(i*7+r)*H,2,2)}x.restore()}
+function vign(){const g=x.createRadialGradient(W/2,H/2,200,W/2,H/2,800);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,0,0,.55)');x.fillStyle=g;x.fillRect(0,0,W,H)}
+// Scene 1: 0-3 intro burst + title
+function s1(t){bg(t,'#07070c');
+ const k=E.ex(p(t,0,.8));
+ x.save();x.translate(W/2,H/2);
+ for(let i=0;i<48;i++){const a=i/48*Math.PI*2+t*.3,r1=60+k*200,r2=r1+ (40+rnd(i)*300)*E.o3(p(t,.1+rnd(i)*.3,1.2));
+  x.strokeStyle=[C1,C2,C3,C4][i%4];x.lineWidth=3;x.globalAlpha=1-p(t,1.6,2.6);
+  x.beginPath();x.moveTo(Math.cos(a)*r1,Math.sin(a)*r1);x.lineTo(Math.cos(a)*r2,Math.sin(a)*r2);x.stroke()}
+ x.globalAlpha=1;
+ for(let j=0;j<3;j++){const pr=E.o3(p(t,j*.15,1+j*.15));x.strokeStyle=[C2,C1,C3][j];x.lineWidth=8*(1-pr)+1;x.beginPath();x.arc(0,0,pr*(500+j*120),0,7);x.stroke()}
+ x.restore();
+ const word='MOTION';const tp=p(t,.5,1.6);
+ x.save();x.translate(W/2,H/2-20);
+ for(let i=0;i<word.length;i++){const lp=E.back(p(t,.5+i*.07,1.1+i*.07));const X=(i-2.5)*120;
+  x.save();x.translate(X,(1-lp)*120);x.scale(1,lp||.001);txt(word[i],0,0,170,'#fff');x.restore()}
+ x.restore();
+ const lw=E.io(p(t,1.2,1.8))*760;x.fillStyle=C1;x.fillRect(W/2-380,H/2+80,lw,8);
+ if(t>1.5){x.globalAlpha=E.o3(p(t,1.5,2));txt('モーションデザイン ショーリール 2025',W/2,H/2+130,30,'#ddd','center','700',6);x.globalAlpha=1}
+ // wipe out
+ const w=E.io(p(t,2.6,3));x.fillStyle=C1;x.fillRect(0,0,W*w,H);}
+// Scene 2: 3-6 kinetic typography on stripes
+function s2(t){bg(t,C1);
+ x.save();x.translate(W/2,H/2);x.rotate(-.12);
+ for(let r=-6;r<7;r++){const dir=r%2?1:-1;const y=r*90;const sh=(t*400*dir)%600;
+  x.globalAlpha=.18;for(let k=-4;k<5;k++)txt('KINETIC ',k*600+sh,y,80,'#000','center','900');}
+ x.restore();x.globalAlpha=1;
+ const words=['動き','で','語る。'];
+ words.forEach((w,i)=>{const a=p(t,.15+i*.25,.6+i*.25);const e=E.back(a);
+  x.save();x.translate(240+i*300,H/2);x.rotate((1-e)*.6);x.scale(e,e);
+  x.fillStyle='#000';x.fillRect(-140,-110,280,220);txt(w,0,0,w.length>2?90:120,'#fff');x.restore()});
+ const b=E.o3(p(t,1.4,2));x.fillStyle='#fff';x.fillRect(0,H-120,W*b,70);
+ txt('TYPOGRAPHY / RHYTHM / TIMING',60+ (1-b)*-400,H-85,34,'#000','left','900',4);
+ const w=E.io(p(t,2.6,3));x.fillStyle='#0b0b14';x.beginPath();x.arc(W/2,H/2,w*800,0,7);x.fill();}
+// Scene 3: 6-9 3D-ish geometric shapes morph
+function s3(t){bg(t,'#0b0b14');
+ const N=14;x.save();x.translate(W/2,H/2);
+ const rot=t*1.2;
+ for(let i=0;i<N;i++){const f=i/N;const s=E.o3(p(t,f*.4,.8+f*.4));
+  x.save();x.rotate(rot*(i%2?1:-1)*(.2+f));
+  const sides=3+(Math.floor(t*2+i)%4);const R=(40+i*24)*s;
+  x.strokeStyle=`hsl(${(f*200+t*80)%360},95%,62%)`;x.lineWidth=3;x.beginPath();
+  for(let k=0;k<=sides;k++){const a=k/sides*Math.PI*2;x.lineTo(Math.cos(a)*R,Math.sin(a)*R)}x.stroke();x.restore()}
+ // orbit dots
+ for(let i=0;i<30;i++){const a=i/30*Math.PI*2+t*2;const r=330+Math.sin(t*3+i)*30;x.fillStyle=i%3?C2:C3;x.beginPath();x.arc(Math.cos(a)*r,Math.sin(a)*r*.5,4,0,7);x.fill()}
+ x.restore();
+ x.globalAlpha=E.o3(p(t,.5,1));txt('SHAPE',110,120,70,'#fff','left','900',10);txt('× 幾何学',110,185,36,C2,'left','800');
+ txt('03',W-110,H-90,90,'rgba(255,255,255,.15)','right');x.globalAlpha=1;
+ // slice transition
+ for(let i=0;i<8;i++){const e=E.io(p(t,2.5+i*.04,2.95+i*.04));x.fillStyle=C2;x.fillRect(0,i*90,W*e,90)}}
+// Scene 4: 9-12 data/UI motion
+function s4(t){bg(t,C2);
+ x.fillStyle='#07070c';const pan=E.o3(p(t,0,.5));x.fillRect(80,80,W-160,(H-160)*pan);
+ if(t<.3)return;
+ const bars=16;for(let i=0;i<bars;i++){const h=(120+rnd(i)*220)*E.back(p(t,.3+i*.04,.8+i*.04))*(0.85+.15*Math.sin(t*5+i));
+  x.fillStyle=i%4==0?C1:i%4==1?C3:'#fff';x.fillRect(150+i*36,560-h,24,h)}
+ // line graph
+ x.strokeStyle=C2;x.lineWidth=4;x.beginPath();const lp=E.io(p(t,.6,1.8));
+ for(let i=0;i<=60*lp;i++){const X=760+i*7,Y=420-Math.sin(i*.25)*50-i*2;i?x.lineTo(X,Y):x.moveTo(X,Y)}x.stroke();
+ // donut
+ const dp=E.o3(p(t,.8,1.8));x.lineWidth=26;x.strokeStyle='#222';x.beginPath();x.arc(970,250,80,0,7);x.stroke();
+ x.strokeStyle=C1;x.beginPath();x.arc(970,250,80,-Math.PI/2,-Math.PI/2+dp*Math.PI*2*.98);x.stroke();
+ txt(Math.round(dp*98)+'%',970,250,44,'#fff');
+ x.globalAlpha=E.o3(p(t,1,1.5));txt('INFOGRAPHICS',150,160,48,'#fff','left','900',6);txt('データを、感情に。',150,210,26,C3,'left','700');x.globalAlpha=1;
+ const z=E.io(p(t,2.5,3));x.fillStyle='#000';x.fillRect(W/2-W/2*z,H/2-H/2*z,W*z,H*z);}
+// Scene 5: 12-15 particles converge + end card
+const P=[];for(let i=0;i<500;i++)P.push([rnd(i)*W,rnd(i+9)*H,rnd(i+4)]);
+function s5(t){bg(t,'#000');
+ const k=E.io(p(t,0,1.4));
+ for(let i=0;i<P.length;i++){const[a,b,r]=P[i];const ang=r*Math.PI*2+t;const tx=W/2+Math.cos(ang)*(300*(1-k)+150)*(.4+r),ty=H/2+Math.sin(ang)*(150*(1-k)+60)*(.4+r);
+  const X=a+(tx-a)*k,Y=b+(ty-b)*k;x.fillStyle=[C1,C2,C3,C4][i%4];x.globalAlpha=.7;x.fillRect(X,Y,3,3)}
+ x.globalAlpha=1;
+ const f=E.ex(p(t,1,1.3));x.fillStyle=`rgba(255,255,255,${(1-p(t,1.1,1.6))*f})`;x.fillRect(0,0,W,H);
+ if(t>1.1){const e=E.back(p(t,1.1,1.7));x.save();x.translate(W/2,H/2-40);x.scale(e,e);
+  txt('CREATE',0,-10,130,'#fff','center','900',14);x.restore();
+  const l=E.o3(p(t,1.5,2));x.fillStyle=C2;x.fillRect(W/2-300*l,H/2+50,600*l,4);
+  x.globalAlpha=E.o3(p(t,1.7,2.2));txt('あなたのアイデアを、動かそう。',W/2,H/2+100,32,'#fff','center','700',4);
+  txt('MOTION DESIGNER — PORTFOLIO 2025',W/2,H/2+160,20,'#888','center','600',8);x.globalAlpha=1}
+ const fo=p(t,2.6,3);x.fillStyle=`rgba(0,0,0,${fo})`;x.fillRect(0,0,W,H);}
+function frame(){let T=((performance.now()-t0)/1000)%window.DUR;
+ x.save();
+ const shakeAt=[0.05,3,6,9,12.95];let sh=0;for(const s of shakeAt){const d=T-s;if(d>0&&d<.25)sh=Math.max(sh,(1-d/.25)*10)}
+ x.translate((rnd(T*99)-.5)*sh,(rnd(T*77)-.5)*sh);
+ if(T<3)s1(T);else if(T<6)s2(T-3);else if(T<9)s3(T-6);else if(T<12)s4(T-9);else s5(T-12);
+ x.restore();
+ vign();grain(T);
+ // HUD timecode
+ x.globalAlpha=.6;txt('REEL_25 ● '+T.toFixed(2).padStart(5,'0')+'s',W-30,30,14,'#fff','right','700',2);
+ x.fillStyle='#fff';x.fillRect(0,H-3,W*T/window.DUR,3);x.globalAlpha=1;
+ requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

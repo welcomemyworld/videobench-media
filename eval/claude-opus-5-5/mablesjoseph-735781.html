@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<!-- Note: ElevenLabs and Remotion tools were not available in this environment, and the source article text was not included in the request. This is a self-contained Canvas animation in an X-post visual style (dark UI, blue accent) built on the core "context tax" idea; swap in exact article wording if needed. -->
+<html><head><meta charset="utf-8"><title>The Context Tax</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=44;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px'}
+addEventListener('resize',fit);fit();
+const off=parseFloat(new URLSearchParams(location.search).get('t'))||0,T0=performance.now();
+const BLUE='#1d9bf0',GR='#71767b',WH='#e7e9ea',RED='#f4212e',GRN='#00ba7c',YEL='#ffd400',PUR='#7856ff';
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),E=v=>{v=cl(v);return v<.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2};
+const F='-apple-system,"Segoe UI",Helvetica,Arial,sans-serif';
+function tx(s,X,Y,sz,col,al='left',w=700,a=1){x.globalAlpha=a;x.fillStyle=col;x.font=w+' '+sz+'px '+F;x.textAlign=al;x.textBaseline='middle';x.fillText(s,X,Y);x.globalAlpha=1}
+function rr(X,Y,W,H,r,f,s){x.beginPath();x.roundRect(X,Y,W,H,r);if(f){x.fillStyle=f;x.fill()}if(s){x.strokeStyle=s;x.lineWidth=2;x.stroke()}}
+function win(t,a,b){return E((t-a)/.7)*(1-E((t-b+.7)/.7))}
+function chrome(t){
+ rr(40,30,1200,660,24,'#000','#2f3336');
+ x.fillStyle=BLUE;x.beginPath();x.arc(90,78,22,0,7);x.fill();tx('CT',90,79,16,'#fff','center',800);
+ tx('Engineering Notes',126,68,18,WH);tx('@eng · Article',126,90,15,GR,'left',400);
+ tx('𝕏',1196,78,26,WH,'center',800);
+ x.fillStyle='#2f3336';x.fillRect(40,118,1200,1);
+ const p=t/DUR;rr(40,686,1200,4,2,'#2f3336');rr(40,686,1200*p,4,2,BLUE);
+}
+function head(s,sub,a){tx(s,640,175,42,WH,'center',800,a);if(sub)tx(sub,640,222,20,GR,'center',400,a)}
+const segs=[['System prompt',.14,PUR],['Tool definitions',.22,BLUE],['MCP schemas',.16,'#1a8cd8'],['Chat history',.2,YEL],['Pasted files & logs',.18,'#ff7a00']];
+function s1(t,a){ // title
+ const k=E(t/1.2);
+ tx('ARTICLE',640,240,18,BLUE,'center',800,a*k);
+ tx('The Context Tax',640,320-20*(1-k),88,WH,'center',900,a*k);
+ tx('Every token you load is a token you pay for —',640,410,26,GR,'center',400,a*E((t-.8)/1));
+ tx('in dollars, in latency, and in attention.',640,448,26,GR,'center',400,a*E((t-1.3)/1));
+ const w=E((t-1.8)/1.2)*360;rr(640-w/2,500,w,4,2,BLUE);
+}
+function s2(t,a){ // window filling
+ head('Where your context window actually goes','Before the model even reads your task',a);
+ const X=140,Y=300,W=1000,H=70;rr(X,Y,W,H,14,'#16181c','#2f3336');x.globalAlpha=a;
+ let cx=X;segs.forEach((s,i)=>{const g=E((t-.5-i*.7)/.8);const w=W*s[1]*g;if(w>1){x.save();x.beginPath();x.roundRect(X,Y,W,H,14);x.clip();x.fillStyle=s[2];x.fillRect(cx,Y,w,H);x.restore();
+  const ly=Y+110+(i%2)*46;tx(s[0],cx+W*s[1]/2,ly,17,s[2],'center',700,a*g);tx(Math.round(s[1]*100)+'%',cx+w/2,Y+H/2,20,'#000','center',800,a*g)}cx+=w});
+ x.globalAlpha=1;const g=E((t-4.3)/.8);
+ x.strokeStyle=GRN;x.lineWidth=3;x.globalAlpha=a*g;x.strokeRect(X+W*.9+2,Y-6,W*.1-2,H+12);x.globalAlpha=1;
+ tx('Your actual task: ~10%',X+W*.95,Y-34,20,GRN,'right',800,a*g);
+ tx('"The tax is paid up front, on every single request."',640,560,24,WH,'center',400,a*E((t-5)/.8));
+}
+function s3(t,a){ // three costs
+ head('Three ways you pay','The bill arrives whether you use the tokens or not',a);
+ const cards=[['$','Money','Input tokens are billed every call. Idle tool schemas cost the same as useful ones.',GRN],
+ ['⏱','Latency','More prefill = slower time-to-first-token. Users feel every kilobyte.',YEL],
+ ['◎','Attention','Signal gets diluted. Accuracy drops as relevant facts drown in noise.',RED]];
+ cards.forEach((cd,i)=>{const g=E((t-.4-i*.5)/.8),X=110+i*360,Y=290+30*(1-g);x.globalAlpha=a*g;
+  rr(X,Y,340,300,20,'#16181c','#2f3336');x.fillStyle=cd[3];x.beginPath();x.arc(X+56,Y+60,30,0,7);x.fill();
+  tx(cd[0],X+56,Y+61,28,'#000','center',900,a*g);tx(cd[1],X+100,Y+60,30,WH,'left',800,a*g);
+  x.font='400 19px '+F;let wds=cd[2].split(' '),ln='',ly=Y+125;
+  for(const w of wds){if(x.measureText(ln+w).width>290){tx(ln,X+28,ly,19,GR,'left',400,a*g);ln='';ly+=30}ln+=w+' '}tx(ln,X+28,ly,19,GR,'left',400,a*g);
+  if(i==2){const bx=X+28,by=Y+270;x.strokeStyle=RED;x.lineWidth=3;x.beginPath();for(let j=0;j<=40;j++){const u=j/40*cl((t-1.5)/2);x.lineTo(bx+u*280,by-40+u*u*34)}x.stroke()}
+  x.globalAlpha=1});
+}
+function s4(t,a){ // compounding
+ head('It compounds every turn','Agents re-send the whole context on each step',a);
+ const X=200,Y=600,W=880,H=320;x.globalAlpha=a;x.strokeStyle='#2f3336';x.lineWidth=2;
+ x.beginPath();x.moveTo(X,Y-H);x.lineTo(X,Y);x.lineTo(X+W,Y);x.stroke();
+ tx('agent turns →',X+W,Y+24,16,GR,'right',400,a);tx('cumulative tokens billed',X+8,Y-H-10,16,GR,'left',400,a);
+ const n=20,p=cl((t-.5)/4.5);
+ for(let i=0;i<n*p;i++){const base=.25,h=(base+i*.0375)/1;const bw=W/n-8,bx=X+8+i*(W/n);
+  const hh=h*H*.85;rr(bx,Y-hh,bw,hh,4,i<1?BLUE:'#1d9bf055');rr(bx,Y-base*H*.85,bw,base*H*.85,4,PUR)}
+ x.globalAlpha=1;
+ const g=E((t-4.5)/.8);rr(860,250,300,90,14,'#16181c',BLUE);x.globalAlpha=1;
+ tx('20 turns × 50k tokens',1010,282,19,WH,'center',700,a*g);tx('= 1M tokens of overhead',1010,312,19,BLUE,'center',800,a*g);
+ tx('■ fixed prefix (tools, system)',X+20,Y-H+30,16,PUR,'left',700,a*cl(p*3));
+}
+function s5(t,a){ // fixes
+ head('How to pay less tax','Treat context like memory in a hot loop',a);
+ const fx=[['Load on demand','Expose tools & docs progressively; only fetch what the step needs.',BLUE],
+ ['Isolate with subagents','Give sub-tasks a fresh, small context. Return a summary, not a transcript.',PUR],
+ ['Compact aggressively','Summarize old turns, drop stale tool output, truncate logs.',YEL],
+ ['Cache the stable prefix','Keep system + tools stable and first so prompt caching hits.',GRN]];
+ fx.forEach((f,i)=>{const g=E((t-.4-i*.9)/.8),c2=i%2,r=i>>1,X=130+c2*520,Y=280+r*170;x.globalAlpha=a*g;
+  rr(X+40*(1-g),Y,500,145,18,'#16181c','#2f3336');rr(X+40*(1-g),Y,8,145,4,f[2]);
+  tx((i+1)+'. '+f[0],X+32,Y+40,24,WH,'left',800,a*g);
+  x.font='400 18px '+F;let ln='',ly=Y+82;for(const w of f[1].split(' ')){if(x.measureText(ln+w).width>440){tx(ln,X+32,ly,18,GR,'left',400,a*g);ln='';ly+=27}ln+=w+' '}tx(ln,X+32,ly,18,GR,'left',400,a*g);x.globalAlpha=1});
+}
+function s6(t,a){ // outro: window shrinks/clean
+ const k=E(t/1.5);
+ const X=290,W=700,Y=230;rr(X,Y,W,50,12,'#16181c','#2f3336');
+ x.globalAlpha=a;rr(X,Y,W*(.9-.6*k),50,12,'#1d9bf044');rr(X+W*(.9-.6*k),Y,W*.4*k+W*.1,50,12,GRN);x.globalAlpha=1;
+ tx('overhead',X+10,Y+80,16,GR,'left',400,a);tx('task',X+W-10,Y+80,16,GRN,'right',700,a);
+ tx('Budget context like memory.',640,410,52,WH,'center',900,a*E((t-1)/1));
+ tx('Spend it on the task.',640,475,52,BLUE,'center',900,a*E((t-1.6)/1));
+ tx('Measure it · Trim it · Cache it · Isolate it',640,560,22,GR,'center',400,a*E((t-2.4)/1));
+}
+const S=[[0,6,s1],[6,14,s2],[14,21,s3],[21,29,s4],[29,38,s5],[38,44,s6]];
+function frame(){
+ const t=((performance.now()-T0)/1000+off)%DUR;
+ x.fillStyle='#000';x.fillRect(0,0,1280,720);chrome(t);
+ for(const [a,b,f] of S)if(t>=a&&t<b){const al=win(t,a,b);x.save();x.translate(0,(1-al)*12);f(t-a,al);x.restore()}
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></body></html>

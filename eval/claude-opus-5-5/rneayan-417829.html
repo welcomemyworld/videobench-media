@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>World in Marbles</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}</style>
+</head><body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=50;
+const C=document.getElementById('c'),X=C.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);C.style.width=1280*s+'px';C.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const RAW="India:1441,China:1425,USA:341,Indonesia:279,Pakistan:245,Nigeria:229,Brazil:212,Bangladesh:174,Russia:144,Mexico:130,Ethiopia:129,Japan:124,Egypt:116,Philippines:116,DR Congo:109,Vietnam:100,Iran:91,Turkey:86,Germany:84,Thailand:72,UK:68,Tanzania:68,France:66,S. Africa:61,Italy:59,Kenya:56,Myanmar:55,Colombia:53,S. Korea:52,Sudan:50,Uganda:49,Spain:48,Algeria:46,Iraq:46,Argentina:46,Afghanistan:43,Canada:39,Poland:38,Morocco:38,Ukraine:38,Saudi Arabia:37,Angola:37,Uzbekistan:36,Yemen:35,Peru:34,Malaysia:35,Ghana:35,Mozambique:35,Côte d'Ivoire:32,Nepal:31,Madagascar:31,Venezuela:29,Cameroon:29,Niger:27,Australia:27,N. Korea:26,Taiwan:23,Mali:24,Syria:24,Burkina Faso:24,Sri Lanka:22,Malawi:22,Zambia:21,Chad:19,Kazakhstan:20,Chile:20,Romania:19,Somalia:19,Senegal:18,Guatemala:18,Netherlands:18,Ecuador:18,Cambodia:17,Zimbabwe:17";
+let items=RAW.split(',').map(s=>{const p=s.split(':');return{n:p[0],v:+p[1]}});
+let sum=items.reduce((a,b)=>a+b.v,0);items.push({n:'Rest of world',v:8144-sum});
+items.sort((a,b)=>b.v-a.v);
+let d,LH=22;
+function layout(dd){let x=10,base=708,sh=0;for(const it of items){it.cols=Math.max(Math.ceil(48/dd),Math.ceil(Math.sqrt(it.v*0.55)));it.rows=Math.ceil(it.v/it.cols);
+const w=it.cols*dd,h=it.rows*dd+LH;if(x+w>1270){base-=sh+8;x=10;sh=0;}it.bx=x;it.bot=base-LH;x+=w+10;sh=Math.max(sh,h);}return base-sh;}
+for(d=7;d>2;d-=0.25){if(layout(d)>=84)break;}
+// marbles
+const G=2600,T0=2,SPAN=40,N=8144;const M=[];let gi=0;
+items.forEach((it,ci)=>{it.h=(ci*137.5)%360;it.start=T0+gi*SPAN/N;
+const s=document.createElement('canvas');const r=d/2;s.width=s.height=Math.ceil(d+2);const g=s.getContext('2d');
+const gr=g.createRadialGradient(r*0.7+1,r*0.6+1,r*0.1,r+1,r+1,r);gr.addColorStop(0,`hsl(${it.h},90%,88%)`);gr.addColorStop(0.45,`hsl(${it.h},80%,55%)`);gr.addColorStop(1,`hsl(${it.h},70%,22%)`);
+g.fillStyle=gr;g.beginPath();g.arc(r+1,r+1,r*0.95,0,7);g.fill();it.spr=s;
+for(let k=0;k<it.v;k++){const c=k%it.cols,rw=Math.floor(k/it.cols);const tx=it.bx+(c+0.5)*d,ty=it.bot-(rw+0.5)*d;
+const st=T0+gi*SPAN/N,y0=-10;const ft=Math.sqrt(2*(ty-y0)/G);M.push({it,tx,ty,st,land:st+ft,y0,f:1800+((gi*7919)%2600)});gi++;}
+it.end=T0+gi*SPAN/N;});
+const LAND=M.map(m=>m.land).sort((a,b)=>a-b);
+// audio
+let ac=null;function ia(){if(!ac){try{ac=new(window.AudioContext||window.webkitAudioContext)();}catch(e){}}if(ac&&ac.state!=='running')ac.resume();}
+ia();addEventListener('pointerdown',ia);addEventListener('keydown',ia);
+function clink(f,v,dt){if(!ac||ac.state!=='running')return;const t=ac.currentTime+dt;const o=ac.createOscillator(),o2=ac.createOscillator(),g=ac.createGain();
+o.frequency.value=f;o2.frequency.value=f*2.76;o.type=o2.type='sine';g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+0.002);g.gain.exponentialRampToValueAtTime(0.0001,t+0.09);
+o.connect(g);o2.connect(g);g.connect(ac.destination);o.start(t);o2.start(t);o.stop(t+0.1);o2.stop(t+0.1);}
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t'))||0;const P0=performance.now();let lastT=-1;
+function fmt(n){return Math.round(n).toLocaleString('en-US');}
+function frame(now){const t=((now-P0)/1000+off)%DUR;
+// sounds
+if(lastT>=0&&t>lastT&&t-lastT<0.2){const hits=[];for(const m of M){if(m.land>lastT&&m.land<=t)hits.push(m);}
+const cap=7,vol=Math.min(0.12,0.5/Math.sqrt(hits.length||1));for(let i=0;i<hits.length&&i<cap;i++){const m=hits[Math.floor(i*hits.length/Math.min(cap,hits.length))];clink(m.f,vol,Math.max(0,m.land-lastT)*0.5);}}
+lastT=t;
+const bg=X.createLinearGradient(0,0,0,720);bg.addColorStop(0,'#0b1022');bg.addColorStop(1,'#03040a');X.fillStyle=bg;X.fillRect(0,0,1280,720);
+let cur=null,landed=0;
+for(const it of items){if(t>=it.start&&t<it.end)cur=it;const w=it.cols*d,h=it.rows*d;const act=cur===it;
+X.strokeStyle=act?`hsla(${it.h},90%,70%,0.9)`:'rgba(170,190,255,0.25)';X.lineWidth=1;X.beginPath();X.moveTo(it.bx-1.5,it.bot-h-3);X.lineTo(it.bx-1.5,it.bot+1.5);X.lineTo(it.bx+w+1.5,it.bot+1.5);X.lineTo(it.bx+w+1.5,it.bot-h-3);X.stroke();}
+for(const m of M){if(t<m.st)continue;let y;if(t<m.land){const u=t-m.st;y=m.y0+0.5*G*u*u;}else{landed++;const u=t-m.land;y=u<0.18?m.ty-Math.abs(Math.sin(u/0.18*Math.PI))*d*0.8*(1-u/0.18):m.ty;}
+X.drawImage(m.it.spr,m.tx-d/2-1,y-d/2-1);}
+X.textAlign='center';X.textBaseline='top';
+for(const it of items){const w=it.cols*d;const n=Math.max(0,Math.min(it.v,Math.floor((t-it.start)/SPAN*N)+1));if(t<it.start)continue;
+X.fillStyle=cur===it?'#fff':'rgba(220,228,255,0.8)';X.font=(it.v>=100?'bold 11px':'9px')+' sans-serif';
+let name=it.n;while(X.measureText(name).width>w+8&&name.length>3)name=name.slice(0,-2)+'.';
+X.fillText(name,it.bx+w/2,it.bot+4);X.fillStyle='rgba(160,175,220,0.75)';X.font='8px sans-serif';X.fillText(fmt(Math.min(n,it.v))+'M',it.bx+w/2,it.bot+14);}
+// header
+X.textAlign='left';X.fillStyle='#fff';X.font='bold 28px sans-serif';X.fillText('The World in Marbles',20,16);
+X.fillStyle='rgba(190,205,255,0.8)';X.font='14px sans-serif';X.fillText('1 marble = 1 million people  ·  2024 population  ·  8,144 marbles',20,50);
+X.textAlign='right';X.fillStyle='#fff';X.font='bold 30px sans-serif';X.fillText(fmt(landed),1260,12);
+X.fillStyle='rgba(190,205,255,0.8)';X.font='13px sans-serif';X.fillText(cur?'now dropping: '+cur.n:(landed>=N?'8.14 billion people':'million marbles landed'),1260,48);
+if(t<T0){X.globalAlpha=1-t/T0;X.textAlign='center';X.fillStyle='#fff';X.font='bold 22px sans-serif';X.fillText('Every clink is a collision.',640,330);X.globalAlpha=1;}
+if(t>DUR-1)X.fillStyle=`rgba(0,0,0,${t-(DUR-1)})`,X.fillRect(0,0,1280,720);
+requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

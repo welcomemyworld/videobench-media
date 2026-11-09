@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Neural Synchrony</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#s{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+canvas{display:block}
+</style></head><body>
+<div id="s"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+window.DUR=60;
+const c=document.getElementById('c'),x=c.getContext('2d'),S=document.getElementById('s');
+function fit(){const k=Math.min(innerWidth/1280,innerHeight/720);S.style.transform=`scale(${k}) translate(-50%,-50%)`;S.style.left='50%';S.style.top='50%';S.style.transform=`translate(-50%,-50%) scale(${k})`;S.style.transformOrigin='center';}
+fit();addEventListener('resize',fit);
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)||0;const t0=performance.now()-off*1000;
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),ss=v=>{v=cl(v);return v*v*(3-2*v)};
+function film(t){return Math.sin(t*1.3)+.6*Math.sin(t*3.1+1)+.4*Math.sin(t*.7+2)}
+function noise(t,s){return Math.sin(t*5.3+s)*.6+Math.sin(t*8.7+s*2)*.4+Math.sin(t*2.1+s*3)*.5}
+function sig(t,s,k){return k*film(t)+(1-k)*noise(t,s)}
+function txt(s,X,Y,sz,a,col,al){x.globalAlpha=a;x.fillStyle=col||'#fff';x.font=`${sz}px Helvetica,Arial,sans-serif`;x.textAlign=al||'center';x.fillText(s,X,Y);x.globalAlpha=1}
+function brain(cx,cy,r,t,seed,k,hue){
+ x.save();x.translate(cx,cy);
+ x.strokeStyle=`hsla(${hue},70%,70%,.6)`;x.lineWidth=2;x.beginPath();
+ for(let i=0;i<=60;i++){const a=i/60*Math.PI*2;const rr=r*(1+.05*Math.sin(a*9));const px=Math.cos(a)*rr*1.2,py=Math.sin(a)*rr*.85;i?x.lineTo(px,py):x.moveTo(px,py)}x.closePath();x.stroke();
+ for(let i=0;i<26;i++){const a=i*2.399,d=Math.sqrt(i/26)*r*.85;const px=Math.cos(a)*d*1.2,py=Math.sin(a)*d*.8;
+  const v=sig(t-i*.02,seed+i*.7,k);const g=cl(.5+v*.35);
+  x.fillStyle=`hsla(${hue},90%,${30+g*45}%,${.3+g*.7})`;x.beginPath();x.arc(px,py,4+g*7,0,7);x.fill()}
+ x.restore()}
+function trace(X,Y,w,h,t,seed,k,col){x.strokeStyle=col;x.lineWidth=2;x.beginPath();for(let i=0;i<=w;i+=3){const v=sig(t-(w-i)/120,seed,k);i?x.lineTo(X+i,Y-v*h):x.moveTo(X+i,Y-v*h)}x.stroke()}
+function frame(){
+ let T=((performance.now()-t0)/1000)%DUR;if(T<0)T+=DUR;
+ x.fillStyle='#05060c';x.fillRect(0,0,1280,720);
+ const g=x.createRadialGradient(640,360,50,640,360,700);g.addColorStop(0,'rgba(40,40,90,.35)');g.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=g;x.fillRect(0,0,1280,720);
+ if(T<10){ // intro
+  const a=ss(T/1.5)*ss((10-T)/1);
+  for(let i=0;i<60;i++){const px=(i*197%1280),py=(i*113%720);x.fillStyle=`rgba(150,170,255,${.2*a})`;x.fillRect(px,py+Math.sin(T+i)*10,2,2)}
+  txt('NEURAL SYNCHRONY',640,300,64,a,'#fff');
+  txt('Strangers, one screen, brains that begin to move together',640,360,26,a*ss((T-1.5)/1.5),'#aab');
+  txt('A short film & lab inspired by 2025 research on shared movie viewing',640,410,20,a*ss((T-3)/1.5),'#778');
+  txt('(Illustrative simulation — not real data)',640,660,16,a*ss((T-4)/1),'#556');
+ }else if(T<24){ // cinema scene
+  const u=T-10,a=ss(u/1)*ss((24-T)/1);x.globalAlpha=a;
+  const scr=film(T);x.fillStyle=`hsl(${200+scr*40},60%,${25+scr*8}%)`;x.fillRect(340,60,600,250);
+  x.strokeStyle='#223';x.strokeRect(340,60,600,250);
+  for(let i=0;i<5;i++){x.fillStyle=`rgba(255,255,255,${.15+.1*Math.sin(T*2+i)})`;x.beginPath();x.arc(420+i*110,185+Math.sin(T*1.5+i)*40,18,0,7);x.fill()}
+  const k=ss((u-3)/9)*.9;
+  for(let p=0;p<2;p++){const X=p?820:460;x.fillStyle='#111';x.beginPath();x.arc(X,440,40,0,7);x.fill();x.fillRect(X-55,480,110,120);
+   brain(X,420,34,T,p*9+1,k,p?330:190);}
+  x.globalAlpha=1;
+  txt(u<6?'Two strangers. No conversation. Just the story.':'As the plot unfolds, their neural patterns converge.',640,660,26,a);
+  txt(`Synchrony: ${(k*100).toFixed(0)}%`,640,440,22,a,'#ffd27a');
+ }else if(T<44){ // lab
+  const u=T-24,a=ss(u/1)*ss((44-T)/1);
+  txt('THE LAB — automated session',640,50,28,a,'#ffd27a');
+  // bot sweeps slider
+  const k=cl(.5-.5*Math.cos(u*.5)),
+   K=k*.95;
+  x.globalAlpha=a;brain(250,220,70,T,3,K,190);brain(1030,220,70,T,12,K,330);x.globalAlpha=1;
+  txt('Viewer A',250,330,18,a,'#7cf');txt('Viewer B',1030,330,18,a,'#f7c');
+  x.globalAlpha=a;trace(380,200,520,40,T,3,K,'#6cf');trace(380,260,520,40,T,12,K,'#f6c');x.globalAlpha=1;
+  // correlation
+  let sxy=0,sx=0,sy=0;for(let i=0;i<120;i++){const tt=T-i*.05,p=sig(tt,3,K),r=sig(tt,12,K);sxy+=p*r;sx+=p*p;sy+=r*r}
+  const r=sxy/Math.sqrt(sx*sy);
+  x.globalAlpha=a;x.fillStyle='#223';x.fillRect(340,420,600,14);x.fillStyle='#ffd27a';x.fillRect(340,420,600*k,14);
+  x.beginPath();x.arc(340+600*k,427,13,0,7);x.fill();
+  // cursor
+  x.fillStyle='#fff';x.beginPath();const cx=340+600*k+6,cy=437;x.moveTo(cx,cy);x.lineTo(cx+14,cy+18);x.lineTo(cx+4,cy+16);x.closePath();x.fill();x.globalAlpha=1;
+  txt('Shared story engagement',640,405,18,a,'#aab');
+  txt('Inter-subject correlation (r)',640,500,20,a,'#aab');
+  txt(r.toFixed(2),640,560,56,a,r>.6?'#8f8':'#fff');
+  txt(k<.3?'Distracted viewers: signals wander independently':k<.7?'Attention builds: rhythms start to align':'Gripped by the film: brains rise and fall together',640,640,24,a);
+ }else{ // conclusion
+  const u=T-44,a=ss(u/1)*ss((60-T)/1.5);
+  const n=8;for(let i=0;i<n;i++){const ang=i/n*Math.PI*2+T*.1,X=640+Math.cos(ang)*260,Y=330+Math.sin(ang)*170;
+   x.globalAlpha=a;brain(X,Y,26,T,i*5,ss(u/6),i*45);x.globalAlpha=1;
+   x.strokeStyle=`rgba(255,210,120,${a*.25*ss(u/6)})`;x.beginPath();x.moveTo(X,Y);x.lineTo(640,330);x.stroke()}
+  txt('Stories synchronize us.',640,340,44,a);
+  txt('Watching together, strangers\u2019 minds draw closer.',640,620,26,a*ss((u-2)/1.5),'#ccd');
+  txt('Concept piece · simulated signals',640,670,16,a*ss((u-4)/1),'#667');
+ }
+ requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

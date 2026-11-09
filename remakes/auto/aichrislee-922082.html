@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>V8 Engine — Interactive 3D</title>
+<style>
+html,body{margin:0;height:100%;background:#000;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000;cursor:grab}
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+// Self-contained software 3D renderer (no external libraries allowed, so no Three.js CDN).
+window.DUR=40;
+const DUR=window.DUR,W=1280,H=720,cv=document.getElementById('c'),ctx=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/W,innerHeight/H);cv.style.width=W*s+'px';cv.style.height=H*s+'px'}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),T0=parseFloat(q.get('t')||'0')||0;
+const add=(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]],sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],mul=(a,s)=>[a[0]*s,a[1]*s,a[2]*s],
+dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2],cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],
+nrm=a=>{const l=Math.hypot(a[0],a[1],a[2])||1;return[a[0]/l,a[1]/l,a[2]/l]},rotX=(p,a)=>{const c=Math.cos(a),s=Math.sin(a);return[p[0],p[1]*c-p[2]*s,p[1]*s+p[2]*c]};
+function fixWind(m,cen){for(const f of m.f){const a=m.v[f[0]],b=m.v[f[1]],c=m.v[f[2]];const n=cross(sub(b,a),sub(c,a));let fc=[0,0,0];f.forEach(i=>fc=add(fc,m.v[i]));fc=mul(fc,1/f.length);if(dot(n,sub(fc,cen))<0)f.reverse()}return m}
+function box(c,s,rx=0){const v=[];for(let i=0;i<8;i++){let p=[(i&1?.5:-.5)*s[0],(i&2?.5:-.5)*s[1],(i&4?.5:-.5)*s[2]];v.push(add(rotX(p,rx),c))}
+ return fixWind({v,f:[[0,1,3,2],[4,6,7,5],[0,4,5,1],[2,3,7,6],[0,2,6,4],[1,5,7,3]]},c)}
+function cyl(c,dir,r,len,n=14){dir=nrm(dir);const a=Math.abs(dir[0])<.9?[1,0,0]:[0,1,0],u=nrm(cross(dir,a)),w=cross(dir,u),v=[],f=[];
+ for(let k=0;k<2;k++)for(let i=0;i<n;i++){const t=i/n*Math.PI*2;v.push(add(c,add(add(mul(u,r*Math.cos(t)),mul(w,r*Math.sin(t))),mul(dir,(k-.5)*len))))}
+ for(let i=0;i<n;i++){const j=(i+1)%n;f.push([i,j,n+j,n+i])}
+ f.push([...Array(n).keys()]);f.push([...Array(n).keys()].map(i=>n+i));return fixWind({v,f},c)}
+function merge(ms){const o={v:[],f:[]};for(const m of ms){const b=o.v.length;o.v.push(...m.v);m.f.forEach(f=>o.f.push(f.map(i=>i+b)))}return o}
+// ---- engine definition ----
+const R=.45,L=1.55,ORDER=[1,8,4,3,6,5,7,2],CYL=[];
+for(let b=0;b<2;b++)for(let j=0;j<4;j++){const beta=b?-Math.PI/4:Math.PI/4,num=b*4+j+1,k=ORDER.indexOf(num),sb=b?-1:1;
+ CYL.push({b,j,beta,num,k,x:(j-1.5)*1.15+(b?.22:-.22),d:[0,Math.cos(beta),Math.sin(beta)],eo:[0,-Math.sin(beta)*sb,Math.cos(beta)*sb],sb,pin:beta-k*Math.PI/2})}
+const INFO={
+'Engine Block':'Cast-iron core that holds the cylinders, coolant passages and crank bearings.',
+'Crankshaft':'Turns the pistons\u2019 up-and-down thrust into rotation that drives the car.',
+'Pistons':'Pushed down by burning fuel, they transfer combustion pressure to the rods.',
+'Connecting Rods':'Link each piston to the crankshaft, converting linear to rotary motion.',
+'Cylinder Heads':'Seal the top of the cylinders and house the ports, valves and plugs.',
+'Camshafts':'Lobed shafts at half crank speed that time the opening of every valve.',
+'Valves':'Open to let air-fuel in and exhaust out, then seal for compression.',
+'Spark Plugs':'Fire a high-voltage spark that ignites the compressed air-fuel mixture.',
+'Valve Covers':'Keep the oil splashing over the valvetrain sealed inside the head.',
+'Intake Manifold':'Distributes incoming air from the throttle evenly to all eight cylinders.',
+'Exhaust Headers':'Collect red-hot exhaust gas from each cylinder and route it to the pipes.',
+'Oil Pan':'Reservoir at the bottom that stores and cools the engine oil.',
+'Flywheel':'Heavy disc that smooths the power pulses and engages the clutch.',
+'Front Pulley':'Harmonic balancer that drives the accessory belt and damps vibration.'};
+const GROUPS=Object.keys(INFO),P=[];
+const part=(g,m,o)=>P.push(Object.assign({g,m},o));
+let theta=0,E=0;
+const steel=[150,155,165],alu=[175,180,188];
+part('Engine Block',merge([box([0,-.15,0],[4.9,1.5,2.7]),...[0,1].map(b=>{const be=b?-Math.PI/4:Math.PI/4;return box(mul([0,Math.cos(be),Math.sin(be)],2.15),[4.9,2.1,1.35],be)})]),{col:[95,100,110],a:.42,ex:[0,0,0]});
+[0,1].forEach(b=>{const c=CYL[b*4],d=c.d;
+ part('Cylinder Heads',box(mul(d,3.55),[5,.75,1.55],c.beta),{col:[160,165,172],ex:mul(d,1.7)});
+ part('Valve Covers',merge([box(mul(d,4.18),[4.8,.45,1.3],c.beta),box(mul(d,4.45),[4.3,.15,.9],c.beta)]),{col:[175,30,35],ex:mul(d,3.6)});
+ [-1,1].forEach(s=>{const e=[0,-Math.sin(c.beta),Math.cos(c.beta)],cen=add(mul(d,3.98),mul(e,.33*s)),ms=[cyl(cen,[1,0,0],.09,4.6,8)];
+  CYL.filter(q=>q.b==b).forEach(q=>{const a=q.pin*.5+s;ms.push(box(add([q.x,cen[1],cen[2]],[0,Math.cos(a)*.07,Math.sin(a)*.07]),[.18,.32,.2],a))});
+  part('Camshafts',merge(ms),{col:[120,122,130],piv:cen,rot:()=>theta/2,ex:mul(d,2.7)})});
+ part('Exhaust Headers',null,{seg:true,ex:mul(c.eo,2.2),bank:b});
+});
+CYL.forEach(c=>{
+ part('Pistons',merge([cyl([c.x,0,0],c.d,.43,.55,16),cyl(add([c.x,0,0],mul(c.d,-.05)),c.d,.44,.06,16)]),{col:[200,200,205],cy:c,ex:mul(c.d,1.15)});
+ part('Connecting Rods',null,{seg:true,rod:c,ex:add(mul(c.d,.6),[0,-.4,0])});
+ const e=[0,-Math.sin(c.beta),Math.cos(c.beta)];
+ [-1,1].forEach(s=>part('Valves',merge([cyl(add([c.x,0,0],add(mul(c.d,3.25),mul(e,.24*s))),c.d,.05,.8,6),cyl(add([c.x,0,0],add(mul(c.d,2.88),mul(e,.24*s))),c.d,.15,.05,10)]),{col:[190,185,170],cy:c,vs:s*c.sb,ex:mul(c.d,2.2)}));
+ part('Spark Plugs',merge([cyl(add([c.x,0,0],mul(c.d,4.25)),c.d,.08,.9,8),cyl(add([c.x,0,0],mul(c.d,4.75)),c.d,.12,.25,8)]),{col:[235,235,240],cy:c,plug:1,ex:mul(c.d,4.3)});
+});
+{const ms=[cyl([0,0,0],[1,0,0],.26,5.4,12)];CYL.forEach(c=>{const pd=[0,Math.cos(c.pin),Math.sin(c.pin)];
+ ms.push(cyl([c.x,pd[1]*R,pd[2]*R],[1,0,0],.2,.42,10));
+ [-1,1].forEach(s=>{ms.push(box([c.x+s*.27,pd[1]*R*.4,pd[2]*R*.4],[.12,R+.55,.62],c.pin));ms.push(box([c.x+s*.27,-pd[1]*.45,-pd[2]*.45],[.12,.5,.95],c.pin))})});
+ part('Crankshaft',merge(ms),{col:[130,135,145],rot:()=>theta,ex:[0,-1.9,0]});}
+part('Flywheel',merge([cyl([-2.95,0,0],[1,0,0],1.3,.18,28),cyl([-2.85,0,0],[1,0,0],.5,.1,14)]),{col:[110,112,118],rot:()=>theta,ex:[-2.4,0,0]});
+part('Front Pulley',merge([cyl([2.95,0,0],[1,0,0],.6,.25,20),cyl([3.15,0,0],[1,0,0],.4,.2,16)]),{col:[60,62,68],rot:()=>theta,ex:[2.2,0,0]});
+part('Oil Pan',merge([box([0,-1.25,0],[4.7,.35,2.6]),box([.4,-1.75,0],[3.2,.7,2])]),{col:[70,72,80],ex:[0,-3.6,0]});
+part('Intake Manifold',merge([box([0,3.35,0],[4.4,.6,1.15]),box([0,3.72,0],[3.6,.18,.8]),cyl([-2.75,3.35,0],[1,0,0],.36,.7,16)]),{col:alu,ex:[0,2.7,0],runners:1});
+// ---- interaction ----
+let mouse=null,lastMouse=-99,drag=null,uYaw=0,uPitch=0,zoom=1,manual=null,clickFlash=-9;
+const toCv=e=>{const r=cv.getBoundingClientRect();return[(e.clientX-r.left)*W/r.width,(e.clientY-r.top)*H/r.height]};
+const BTN=[1090,26,164,46];const inBtn=p=>p[0]>BTN[0]&&p[0]<BTN[0]+BTN[2]&&p[1]>BTN[1]&&p[1]<BTN[1]+BTN[3];
+cv.addEventListener('mousedown',e=>{drag={p:toCv(e),m:0};cv.style.cursor='grabbing'});
+addEventListener('mouseup',e=>{if(drag&&!drag.m&&inBtn(toCv(e))){manual=E<.5?1:0;clickFlash=perf()}drag=null;cv.style.cursor='grab'});
+addEventListener('mousemove',e=>{const p=toCv(e);mouse=p;lastMouse=perf();if(drag){const dx=p[0]-drag.p[0],dy=p[1]-drag.p[1];if(Math.abs(dx)+Math.abs(dy)>2)drag.m=1;uYaw+=dx*.008;uPitch=Math.max(-.9,Math.min(.9,uPitch+dy*.006));drag.p=p}});
+cv.addEventListener('wheel',e=>{e.preventDefault();zoom=Math.max(.5,Math.min(2.2,zoom*Math.exp(e.deltaY*.001)))},{passive:false});
+cv.addEventListener('mouseleave',()=>mouse=null);
+const perf=()=>performance.now()/1000;
+// ---- render ----
+const start=performance.now()-T0*1000;let prev=null;
+const sm=x=>x<0?0:x>1?1:x*x*(3-2*x);
+const autoE=t=>sm((t-12)/2)-sm((t-29)/2);
+function frame(){
+ const now=performance.now(),t=((now-start)/1000)%DUR,dt=prev==null?0:Math.min(.1,(now-prev)/1000);prev=now;
+ const tgt=manual==null?autoE(t):manual;E=dt==0?tgt:E+(tgt-E)*Math.min(1,dt*4);
+ theta=t*Math.PI*2*1.2;
+ const yaw=t*.22+uYaw+.6,pitch=.38+.08*Math.sin(t*.3)+uPitch,dist=15*zoom*(1+.38*E),F=950,tgtC=[0,1.4,0];
+ const cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pitch),sp=Math.sin(pitch);
+ const cam=w=>{const p=sub(w,tgtC),x1=p[0]*cy-p[2]*sy,z1=p[0]*sy+p[2]*cy;return[x1,p[1]*cp-z1*sp,p[1]*sp+z1*cp+dist]};
+ const proj=c=>[W/2+F*c[0]/c[2],H/2+30-F*c[1]/c[2]];
+ const items=[],gc={};GROUPS.forEach(g=>gc[g]=[0,0,0]);
+ const acc=(g,s)=>{gc[g][0]+=s[0];gc[g][1]+=s[1];gc[g][2]++};
+ const Ld=nrm([-.45,.75,-.55]);
+ const heat=.75+.25*Math.sin(t*3);
+ const pistonS=c=>{const a=theta+c.pin,y=R*Math.cos(a),z=R*Math.sin(a),u=y*c.d[1]+z*c.d[2],w=-y*Math.sin(c.beta)+z*Math.cos(c.beta);return{s:u+Math.sqrt(L*L-w*w),pin:[c.x,y,z]}};
+ const phase=c=>{let f=(theta-c.k*Math.PI/2)%(4*Math.PI);return f<0?f+4*Math.PI:f};
+ const segs=(g,list,ex)=>{list.forEach(([a,b,w,col,glow])=>{a=add(a,mul(ex,E));b=add(b,mul(ex,E));const ca=cam(a),cb=cam(b);if(ca[2]<.5||cb[2]<.5)return;const pa=proj(ca),pb=proj(cb);acc(g,pa);acc(g,pb);
+  items.push({z:(ca[2]+cb[2])/2,g,seg:[pa,pb],w:w*F/((ca[2]+cb[2])/2),col,glow})})};
+ for(const p of P){
+  const ex=mul(p.ex,E);
+  if(p.seg){
+   if(p.rod){const c=p.rod,ps=pistonS(c),cr=p.g;segs(cr,[[add(ps.pin,mul([0,-1.9,0],E)),add(mul(c.d,ps.s),add([c.x,0,0],mul(c.d,1.15*E))),.17,steel]],[0,0,0]);}
+   else{const b=p.bank,L2=[],col=[255,110*heat+40,30],cs=CYL.filter(c=>c.b==b);let base=null;
+    cs.forEach(c=>{const port=add([c.x,0,0],add(mul(c.d,3.35),mul(c.eo,.8))),p2=add(port,add(mul(c.eo,.7),[0,-.5,0])),p3=add(p2,[0,-.9,0]);base=p3;L2.push([port,p2,.24,col,1],[p2,p3,.24,col,1])});
+    L2.push([[cs[0].x-.3,base[1],base[2]],[cs[3].x+.5,base[1],base[2]],.34,col,1],[[cs[3].x+.5,base[1],base[2]],[cs[3].x+.9,base[1]-1,base[2]],.34,col,1]);segs(p.g,L2,p.ex);}
+   continue}
+  let off=ex,ang=p.rot?p.rot():0,col=p.col,emis=0;
+  if(p.g=='Pistons')off=add(off,mul(p.cy.d,pistonS(p.cy).s+.3));
+  if(p.g=='Valves'){const f=phase(p.cy),pi=Math.PI;let l=0;const ex1=p.vs>0;
+   if(ex1&&f>.8*pi&&f<2*pi)l=Math.sin((f-.8*pi)/(1.2*pi)*pi);if(!ex1&&f>2*pi&&f<3.2*pi)l=Math.sin((f-2*pi)/(1.2*pi)*pi);off=add(off,mul(p.cy.d,-.16*l))}
+  if(p.plug){const fl=Math.exp(-phase(p.cy)*4);if(fl>.05){emis=fl;col=[235+20*fl,235,240+15*fl]}p.flash=fl}
+  if(p.runners){const L2=[];CYL.forEach(c=>L2.push([[c.x,3.25,c.sb*.35],add([c.x,0,0],sub(mul(c.d,3.35),mul(c.eo,.75))),.26,alu]));segs(p.g,L2,p.ex)}
+  const piv=p.piv||[0,0,0],cs=p.m.v.map(v=>{let w=ang?add(rotX(sub(v,piv),ang),piv):v;return cam(add(w,off))});
+  const ps=cs.map(proj);ps.forEach((s,i)=>{if(i%3==0)acc(p.g,s)});
+  for(const f of p.m.f){const a=cs[f[0]],b=cs[f[1]],c=cs[f[2]];let n=nrm(cross(sub(b,a),sub(c,a)));let cc=[0,0,0];f.forEach(i=>cc=add(cc,cs[i]));cc=mul(cc,1/f.length);
+   if(dot(n,cc)>0)continue;const vd=nrm(mul(cc,-1));const df=Math.max(0,dot(n,Ld)),sp=Math.pow(Math.max(0,dot(n,nrm(add(Ld,vd)))),24);
+   items.push({z:cc[2],g:p.g,pts:f.map(i=>ps[i]),col,sh:.32+.68*df,sp,a:p.a||1,emis,plug:p.plug&&p.flash>.05?p:null})}
+ }
+ items.sort((a,b)=>b.z-a.z);
+ // hover
+ let hov=null;const mouseActive=mouse&&perf()-lastMouse<4;
+ if(mouseActive&&!inBtn(mouse)){for(let i=items.length-1;i>=0;i--){const it=items[i];if(it.a<1&&!it.seg){if(hit(it,mouse)){hov=it.g;break}continue}if(hit(it,mouse)){hov=it.g;break}}}
+ else if(!mouseActive&&E>.85&&manual==null){hov=GROUPS[Math.floor((t-14)/1.1)%GROUPS.length]}
+ // background
+ const bg=ctx.createRadialGradient(W/2,H*.45,50,W/2,H/2,800);bg.addColorStop(0,'#2a3040');bg.addColorStop(1,'#07080c');ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+ const fl=cam([0,-2.6-E*2,0]),fp=proj(fl);const sh=ctx.createRadialGradient(fp[0],fp[1],10,fp[0],fp[1],F*4/fl[2]);sh.addColorStop(0,'rgba(0,0,0,.55)');sh.addColorStop(1,'rgba(0,0,0,0)');
+ ctx.save();ctx.translate(fp[0],fp[1]);ctx.scale(1,.3);ctx.translate(-fp[0],-fp[1]);ctx.fillStyle=sh;ctx.fillRect(0,0,W,H*4);ctx.restore();
+ ctx.lineJoin='round';ctx.lineCap='round';
+ for(const it of items){const hl=it.g==hov;
+  if(it.seg){const [a,b]=it.seg;ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);
+   if(it.glow){ctx.strokeStyle=`rgba(255,${80*heat|0},20,.18)`;ctx.lineWidth=it.w*2.4;ctx.stroke()}
+   let c=it.col;if(hl)c=[c[0]*.5+60,c[1]*.5+200,c[2]*.5+255];ctx.strokeStyle=`rgb(${c.map(v=>Math.min(255,v|0))})`;ctx.lineWidth=it.w;ctx.stroke();
+   ctx.strokeStyle='rgba(255,255,255,.25)';ctx.lineWidth=it.w*.25;ctx.stroke();continue}
+  let k=it.emis?1:it.sh,c=it.col.map(v=>v*k+it.sp*120);if(hl)c=[c[0]*.55+40,c[1]*.55+150,c[2]*.55+230];
+  const s=`rgba(${c.map(v=>Math.min(255,v|0))},${hl?Math.max(it.a,.75):it.a})`;
+  ctx.beginPath();it.pts.forEach((q,i)=>i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]));ctx.closePath();ctx.fillStyle=s;ctx.fill();
+  ctx.strokeStyle=it.a<1?`rgba(150,160,175,.12)`:s;ctx.lineWidth=.6;ctx.stroke();
+  if(it.plug&&!it.plug.drawn){it.plug.drawn=1;const q=it.pts[0],r=60*it.plug.flash,g=ctx.createRadialGradient(q[0],q[1],0,q[0],q[1],r);g.addColorStop(0,'rgba(200,230,255,.95)');g.addColorStop(.3,'rgba(120,170,255,.5)');g.addColorStop(1,'rgba(80,120,255,0)');ctx.fillStyle=g;ctx.fillRect(q[0]-r,q[1]-r,2*r,2*r)}}
+ P.forEach(p=>p.drawn=0);
+ // labels
+ if(E>.3){ctx.globalAlpha=sm((E-.3)/.5);ctx.font='600 14px sans-serif';const labs=[];
+  GROUPS.forEach(g=>{const a=gc[g];if(!a[2])return;const x=a[0]/a[2],y=a[1]/a[2],side=x<W/2?-1:1;labs.push({g,x,y,side,ly:y})});
+  [-1,1].forEach(sd=>{const L2=labs.filter(l=>l.side==sd).sort((a,b)=>a.ly-b.ly);for(let i=0;i<L2.length;i++){L2[i].ly=Math.max(L2[i].ly,90,i?L2[i-1].ly+28:0)}
+   for(let i=L2.length-1;i>=0;i--){L2[i].ly=Math.min(L2[i].ly,H-110-(L2.length-1-i)*28)}
+   L2.forEach(l=>{const tw=ctx.measureText(l.g).width+18,lx=sd<0?120:W-120-tw;const ax=sd<0?lx+tw:lx;
+    ctx.strokeStyle=l.g==hov?'#7fe0ff':'rgba(200,215,235,.6)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(l.x,l.y);ctx.lineTo(ax,l.ly);ctx.stroke();
+    ctx.fillStyle=l.g==hov?'#7fe0ff':'#fff';ctx.beginPath();ctx.arc(l.x,l.y,3,0,7);ctx.fill();
+    ctx.fillStyle=l.g==hov?'rgba(20,90,120,.92)':'rgba(15,20,30,.82)';ctx.fillRect(lx,l.ly-11,tw,22);ctx.strokeRect(lx,l.ly-11,tw,22);
+    ctx.fillStyle='#fff';ctx.fillText(l.g,lx+9,l.ly+5)})});ctx.globalAlpha=1}
+ // HUD
+ ctx.fillStyle='#fff';ctx.font='700 26px sans-serif';ctx.fillText('V8 ENGINE',30,48);
+ ctx.font='14px sans-serif';ctx.fillStyle='#aab4c4';ctx.fillText('90° cross-plane · firing order 1-8-4-3-6-5-7-2 · slow motion',30,72);
+ ctx.fillText('Drag to orbit · Scroll to zoom · Hover a part',30,H-24);
+ const bh=(perf()-clickFlash<.25)||(manual==null&&((t>11.4&&t<12)||(t>28.4&&t<29)));
+ ctx.fillStyle=bh?'#3fb6e0':'rgba(25,35,50,.9)';ctx.strokeStyle='#7fe0ff';ctx.lineWidth=1.5;ctx.fillRect(...BTN);ctx.strokeRect(...BTN);
+ ctx.fillStyle='#fff';ctx.font='700 17px sans-serif';ctx.textAlign='center';ctx.fillText(E<.5?'EXPLODE':'ASSEMBLE',BTN[0]+BTN[2]/2,BTN[1]+29);ctx.textAlign='left';
+ if(manual==null&&!mouseActive&&((t>10.4&&t<12.6)||(t>27.4&&t<29.6))){const c0=t<20?10.4:27.4,k=sm((t-c0)/1),cx=900+(BTN[0]+90-900)*k,cyy=300+(BTN[1]+30-300)*k;
+  ctx.fillStyle='#fff';ctx.strokeStyle='#000';ctx.beginPath();ctx.moveTo(cx,cyy);ctx.lineTo(cx,cyy+20);ctx.lineTo(cx+5,cyy+15);ctx.lineTo(cx+12,cyy+16);ctx.closePath();ctx.fill();ctx.stroke()}
+ if(hov){const txt=INFO[hov];ctx.font='15px sans-serif';const w1=ctx.measureText(txt).width;ctx.font='700 16px sans-serif';const w0=ctx.measureText(hov+'  ').width,bw=w0+w1+30,bx=W/2-bw/2;
+  ctx.fillStyle='rgba(10,30,45,.92)';ctx.strokeStyle='#7fe0ff';ctx.fillRect(bx,H-74,bw,36);ctx.strokeRect(bx,H-74,bw,36);
+  ctx.fillStyle='#7fe0ff';ctx.fillText(hov,bx+15,H-50);ctx.font='15px sans-serif';ctx.fillStyle='#eef';ctx.fillText(txt,bx+15+w0,H-50)}
+ requestAnimationFrame(frame)}
+function hit(it,m){if(it.seg){const[a,b]=it.seg,dx=b[0]-a[0],dy=b[1]-a[1],l=dx*dx+dy*dy||1,u=Math.max(0,Math.min(1,((m[0]-a[0])*dx+(m[1]-a[1])*dy)/l));return Math.hypot(a[0]+u*dx-m[0],a[1]+u*dy-m[1])<it.w/2+2}
+ let ins=false;const p=it.pts;for(let i=0,j=p.length-1;i<p.length;j=i++)if((p[i][1]>m[1])!=(p[j][1]>m[1])&&m[0]<(p[j][0]-p[i][0])*(m[1]-p[i][1])/(p[j][1]-p[i][1])+p[i][0])ins=!ins;return ins}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Sphere Las Vegas - History</title>
+<style>
+  body {
+    margin: 0;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    overflow: hidden;
+  }
+  canvas {
+    width: 1280px;
+    height: 720px;
+    max-width: 100vw;
+    max-height: 100vh;
+    object-fit: contain;
+    background: #0a0a14;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const W = 1280, H = 720;
+  canvas.width = W;
+  canvas.height = H;
+  window.DUR = 30;
+
+  // --- URL params ---
+  const params = new URLSearchParams(location.search);
+  const tOffset = parseFloat(params.get('t') || '0') || 0;
+  const DUR = window.DUR;
+
+  // --- Utils ---
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const TAU = Math.PI * 2;
+
+  // Easing functions (GSAP-like feel)
+  function easeOutCubic(t) { t = clamp(t, 0, 1); return 1 - Math.pow(1 - t, 3); }
+  function easeInOutCubic(t) { t = clamp(t, 0, 1); return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+  function easeOutBack(t) { t = clamp(t, 0, 1); const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); }
+  function easeOutExpo(t) { t = clamp(t, 0, 1); return t === 1 ? 1 : 1 - Math.pow(2, -10 * t); }
+  function easeInOutSine(t) { t = clamp(t, 0, 1); return -(Math.cos(Math.PI * t) - 1) / 2; }
+  function easeOutElastic(t) { t = clamp(t, 0, 1); if (t === 0 || t === 1) return t; const c4 = (2 * Math.PI) / 3; return Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * c4) + 1; }
+  function easeInOutQuint(t) { t = clamp(t, 0, 1); return t < 0.5 ? 16 * t * t * t * t * t : 1 - Math.pow(-2 * t + 2, 5) / 2; }
+
+  // --- Sphere geometry ---
+  const cx = 640, cy = 370, R = 200;
+  const groundY = 590;
+
+  // Precompute LED panel positions
+  const panels = [];
+  const latSteps = 14, lonSteps = 14;
+  for (let i = 0; i <= latSteps; i++) {
+    const lat = (i / latSteps - 0.5) * Math.PI * 0.82;
+    for (let j = 0; j <= lonSteps; j++) {
+      const lon = (j / lonSteps - 0.5) * Math.PI * 0.82;
+      const x3 = Math.sin(lon) * Math.cos(lat);
+      const y3 = Math.sin(lat);
+      const z3 = Math.cos(lon) * Math.cos(lat);
+      if (z3 > 0.08) {
+        panels.push({ x: cx + R * x3, y: cy - R * y3, lat, lon, z: z3, idx: panels.length });
+      }
+    }
+  }
+  const totalPanels = panels.length;
+
+  // Stars
+  const stars = [];
+  for (let i = 0; i < 120; i++) {
+    stars.push({ x: Math.random() * W, y: Math.random() * H * 0.6, r: Math.random() * 1.5 + 0.5, phase: Math.random() * TAU, speed: Math.random() * 0.8 + 0.2 });
+  }
+
+  // Confetti particles
+  const confetti = [];
+  for (let i = 0; i < 60; i++) {
+    confetti.push({ x: Math.random() * W, y: Math.random() * H, vx: (Math.random() - 0.5) * 1.2, vy: Math.random() * 0.6 + 0.2, w: Math.random() * 8 + 4, h: Math.random() * 4 + 2, rot: Math.random() * TAU, vr: (Math.random() - 0.5) * 0.06, hue: Math.random() * 360, active: false });
+  }
+
+  // --- Text drawing helper ---
+  function drawText(text, x, y, size, color, align = 'center', weight = 'bold', letterSpacing = 0, alpha = 1) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    ctx.font = `${weight} ${size}px 'Segoe UI', 'Helvetica Neue', Arial, sans-serif`;
+    ctx.textAlign = align;
+    ctx.textBaseline = 'middle';
+    if (letterSpacing > 0) {
+      const chars = text.split('');
+      let totalWidth = 0;
+      for (const ch of chars) totalWidth += ctx.measureText(ch).width + letterSpacing;
+      totalWidth -= letterSpacing;
+      let startX = x - totalWidth / 2;
+      for (const ch of chars) {
+        const cw = ctx.measureText(ch).width;
+        ctx.fillText(ch, startX + cw / 2, y);
+        startX += cw + letterSpacing;
+      }
+    } else {
+      ctx.fillText(text, x, y);
+    }
+    ctx.restore();
+  }
+
+  // --- Background ---
+  function drawBackground(t) {
+    ctx.fillStyle = '#0a0a14';
+    ctx.fillRect(0, 0, W, H);
+    // Stars
+    for (const s of stars) {
+      const twinkle = 0.35 + 0.65 * Math.abs(Math.sin(s.phase + t * s.speed));
+      ctx.fillStyle = `rgba(255,255,255,${twinkle * 0.7})`;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, TAU);
+      ctx.fill();
+    }
+    // Subtle grid (blueprint feel) - only visible during early segments
+    const seg = getSegment(t);
+    if (seg.name === 'vision' || seg.name === 'construction') {
+      const bpAlpha = seg.name === 'vision' ? 0.25 : 0.4;
+      ctx.strokeStyle = `rgba(80,130,200,${bpAlpha})`;
+      ctx.lineWidth = 0.5;
+      for (let gx = 0; gx < W; gx += 40) {
+        ctx.beginPath();
+        ctx.moveTo(gx, 0);
+        ctx.lineTo(gx, H);
+        ctx.stroke();
+      }
+      for (let gy = 0; gy < H; gy += 40) {
+        ctx.beginPath();
+        ctx.moveTo(0, gy);
+        ctx.lineTo(W, gy);
+        ctx.stroke();
+      }
+    }
+    // Ground
+    ctx.fillStyle = '#111122';
+    ctx.fillRect(0, groundY, W, H - groundY);
+    // Ground line
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, groundY);
+    ctx.lineTo(W, groundY);
+    ctx.stroke();
+    // Ground glow from sphere
+    const glowAlpha = seg.name === 'opening' || seg.name === 'today' || seg.name === 'finale' ? 0.25 : 0.1;
+    const grad = ctx.createRadialGradient(cx, groundY + 5, 10, cx, groundY + 5, 250);
+    grad.addColorStop(0, `rgba(120,80,220,${glowAlpha})`);
+    grad.addColorStop(1, 'rgba(120,80,220,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(cx - 280, groundY - 40, 560, 120);
+  }
+
+  // --- Get segment ---
+  function getSegment(t) {
+    const segments = [
+      { start: 0, end: 2, name: 'title' },
+      { start: 2, end: 6, name: 'vision' },
+      { start: 6, end: 10, name: 'construction' },
+      { start: 10, end: 15, name: 'led' },
+      { start: 15, end: 20, name: 'opening' },
+      { start: 20, end: 26, name: 'today' },
+      { start: 26, end: 30, name: 'finale' },
+    ];
+    for (const s of segments) {
+      if (t >= s.start && t < s.end) return s;
+    }
+    return segments[0];
+  }
+  function segProgress(t, seg) {
+    return clamp((t - seg.start) / (seg.end - seg.start), 0, 1);
+  }
+
+  // --- Draw wireframe sphere ---
+  function drawWireframe(t, progress, constructionProgress, ledAlpha = 0) {
+    const e = easeOutCubic(progress);
+    // Main circle
+    ctx.save();
+    ctx.strokeStyle = `rgba(180,210,255,${0.7 * e + 0.15 * ledAlpha})`;
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, TAU);
+    ctx.stroke();
+
+    // Horizontal rings (parallels)
+    const rings = 6;
+    for (let i = 1; i < rings; i++) {
+      const lat = (i / rings - 0.5) * Math.PI * 0.85;
+      const ringR = R * Math.cos(lat);
+      const ringY = cy - R * Math.sin(lat);
+      const ringAlpha = clamp((e - (i / rings) * 0.5) * 2.5, 0, 1);
+      ctx.strokeStyle = `rgba(180,210,255,${ringAlpha * 0.55 + 0.1 * ledAlpha})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.ellipse(cx, ringY, ringR, ringR * 0.22, 0, 0, TAU);
+      ctx.stroke();
+    }
+    // Vertical arcs (meridians)
+    const meridians = 7;
+    for (let j = 1; j < meridians; j++) {
+      const lon = (j / meridians - 0.5) * Math.PI * 0.85;
+      const arcAlpha = clamp((e - (j / meridians) * 0.55) * 2, 0, 1);
+      ctx.strokeStyle = `rgba(180,210,255,${arcAlpha * 0.5 + 0.1 * ledAlpha})`;
+      ctx.lineWidth = 0.9;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, R * Math.abs(Math.sin(lon)), R, 0, 0, TAU);
+      ctx.stroke();
+    }
+    // Diagonal geodesic hints
+    if (e > 0.55) {
+      const diagAlpha = clamp((e - 0.55) * 3, 0, 0.5);
+      ctx.strokeStyle = `rgba(140,180,230,${diagAlpha})`;
+      ctx.lineWidth = 0.7;
+      for (let d = 0; d < 4; d++) {
+        const angle = (d / 4) * Math.PI + t * 0.05;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, R * Math.abs(Math.cos(angle)) * 0.7, R * Math.abs(Math.sin(angle)) * 0.7, angle * 0.4, 0, TAU);
+        ctx.stroke();
+      }
+    }
+    // Structural nodes during construction
+    if (constructionProgress > 0.25 && ledAlpha < 0.5) {
+      const nodeAlpha = clamp((constructionProgress - 0.25) * 3, 0, 0.8) * (1 - ledAlpha);
+      for (const p of panels) {
+        if (p.z > 0.5) {
+          ctx.fillStyle = `rgba(220,235,255,${nodeAlpha})`;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 2.2, 0, TAU);
+          ctx.fill();
+        }
+      }
+    }
+    ctx.restore();
+  }
+
+  // --- Draw LED panels ---
+  function drawLEDPanels(t, ledProgress, patternIntensity) {
+    ctx.save();
+    const lp = easeOutCubic(ledProgress);
+    for (let pi = 0; pi < totalPanels; pi++) {
+      const p = panels[pi];
+      const threshold = (1 - p.z * 0.5) * 0.7;
+      const panelAlpha = clamp((lp - threshold) / (1 - threshold), 0, 1) * clamp((lp - threshold * 0.3) / 0.4, 0, 1);
+      if (panelAlpha <= 0.01) continue;
+      // Color from position and time
+      const hue = (p.lat * 180 + p.lon * 180 + t * 40 * patternIntensity) % 360;
+      const sat = 60 + 35 * Math.sin(p.lat * 2 + t * 1.5);
+      const light = 50 + 45 * Math.abs(Math.sin(p.lat * 3 + p.lon * 2 + t * 2.5));
+      const color = `hsl(${hue},${sat}%,${light}%)`;
+      const size = 2.8 + 2.2 * p.z;
+      ctx.fillStyle = color;
+      ctx.globalAlpha = panelAlpha * 0.92;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, size, 0, TAU);
+      ctx.fill();
+      // Glow dot
+      ctx.globalAlpha = panelAlpha * 0.3;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, size * 2.2, 0, TAU);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+  }
+
+  // --- Draw light beams ---
+  function drawLightBeams(t, intensity) {
+    if (intensity <= 0.01) return;
+    ctx.save();
+    ctx.globalAlpha = intensity * 0.55;
+    const beamCount = 8;
+    for (let i = 0; i < beamCount; i++) {
+      const angle = (i / beamCount) * TAU + t * 0.1;
+      const bx = cx + Math.cos(angle) * R * 0.3;
+      const by = cy - R * 0.85;
+      const tipX = cx + Math.cos(angle) * 250;
+      const tipY = by - 280 - Math.random() * 80;
+      const grad = ctx.createLinearGradient(bx, by, tipX, tipY);
+      const hue = (angle * 180 / Math.PI + t * 30) % 360;
+      grad.addColorStop(0, `hsla(${hue},80%,70%,0.8)`);
+      grad.addColorStop(1, `hsla(${hue},80%,70%,0)`);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.moveTo(bx - 4, by);
+      ctx.lineTo(tipX - 25, tipY);
+      ctx.lineTo(tipX + 25, tipY);
+      ctx.lineTo(bx + 4, by);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // --- Draw crowd silhouettes ---
+  function drawCrowd(t, intensity) {
+    if (intensity <= 0.01) return;
+    ctx.save();
+    ctx.globalAlpha = intensity * 0.6;
+    ctx.fillStyle = '#1a1a2a';
+    for (let i = 0; i < 40; i++) {
+      const px = 150 + i * 25 + Math.sin(i * 2.3 + t) * 3;
+      const ph = 28 + Math.sin(i * 1.7) * 12;
+      const pw = 18;
+      ctx.beginPath();
+      ctx.moveTo(px - pw / 2, groundY);
+      ctx.quadraticCurveTo(px - pw / 4, groundY - ph * 0.6, px, groundY - ph);
+      ctx.quadraticCurveTo(px + pw / 4, groundY - ph * 0.6, px + pw / 2, groundY);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // --- Draw confetti ---
+  function drawConfetti(t, intensity, dt) {
+    if (intensity <= 0.01) return;
+    ctx.save();
+    for (const c of confetti) {
+      if (!c.active) {
+        if (intensity > 0.5 && Math.random() < intensity * 0.08) {
+          c.active = true;
+          c.x = Math.random() * W;
+          c.y = -10;
+          c.vy = 0.8 + Math.random() * 1.5;
+        }
+      }
+      if (c.active) {
+        c.x += c.vx;
+        c.y += c.vy;
+        c.rot += c.vr;
+        if (c.y > H + 20) { c.active = false; c.y = -10; c.x = Math.random() * W; }
+        ctx.save();
+        ctx.translate(c.x, c.y);
+        ctx.rotate(c.rot);
+        ctx.fillStyle = `hsla(${c.hue},80%,65%,${intensity * 0.8})`;
+        ctx.fillRect(-c.w / 2, -c.h / 2, c.w, c.h);
+        ctx.restore();
+      }
+    }
+    ctx.restore();
+  }
+
+  // --- Main render ---
+  function render(t) {
+    ctx.clearRect(0, 0, W, H);
+    const seg = getSegment(t);
+    const prog = segProgress(t, seg);
+
+    drawBackground(t);
+
+    // Determine sphere state
+    let wireProgress = 0;
+    let constructionProgress = 0;
+    let ledProgress = 0;
+    let patternIntensity = 0;
+    let beamIntensity = 0;
+    let crowdIntensity = 0;
+    let confettiIntensity = 0;
+
+    switch (seg.name) {
+      case 'title':
+        wireProgress = 0;
+        constructionProgress = 0;
+        ledProgress = 0;
+        break;
+      case 'vision':
+        wireProgress = easeOutCubic(prog) * 0.65;
+        constructionProgress = 0;
+        ledProgress = 0;
+        break;
+      case 'construction':
+        wireProgress = 0.65 + easeInOutCubic(prog) * 0.35;
+        constructionProgress = easeOutCubic(prog);
+        ledProgress = 0;
+        break;
+      case 'led':
+        wireProgress = 1;
+        constructionProgress = 1;
+        ledProgress = easeInOutCubic(prog);
+        patternIntensity = prog * 0.3;
+        break;
+      case 'opening':
+        wireProgress = 1;
+        constructionProgress = 1;
+        ledProgress = 1;
+        patternIntensity = 0.5 + easeOutCubic(prog) * 0.5;
+        beamIntensity = easeOutBack(clamp((prog - 0.15) * 1.5, 0, 1));
+        crowdIntensity = easeOutCubic(clamp((prog - 0.25) * 2, 0, 1));
+        confettiIntensity = easeOutCubic(clamp((prog - 0.3) * 1.8, 0, 1));
+        break;
+      case 'today':
+        wireProgress = 1;
+        constructionProgress = 1;
+        ledProgress = 1;
+        patternIntensity = 1;
+        beamIntensity = 0.7;
+        crowdIntensity = 0.4;
+        break;
+      case 'finale':
+        wireProgress = 1;
+        constructionProgress = 1;
+        ledProgress = 1;
+        patternIntensity = 1 - easeInOutCubic(prog) * 0.4;
+        beamIntensity = 0.7 * (1 - prog * 0.5);
+        crowdIntensity = 0.3 * (1 - prog);
+        break;
+    }
+
+    // Draw sphere
+    if (wireProgress > 0) {
+      drawWireframe(t, wireProgress, constructionProgress, ledProgress);
+    }
+    if (ledProgress > 0.01) {
+      drawLEDPanels(t, ledProgress, patternIntensity);
+    }
+    // Light beams
+    drawLightBeams(t, beamIntensity);
+    // Crowd
+    drawCrowd(t, crowdIntensity);
+    // Confetti
+    if (confettiIntensity > 0.05) {
+      drawConfetti(t, confettiIntensity, 0.016);
+    }
+
+    // --- Text overlays ---
+    const textAlpha = (s) => {
+      const e = easeInOutSine(clamp((t - s.start) / 0.6, 0, 1));
+      const e2 = easeInOutSine(clamp((s.end - t) / 0.5, 0, 1));
+      return Math.min(e, e2);
+    };
+
+    if (seg.name === 'title') {
+      const ta = textAlpha(seg);
+      const scale = easeOutBack(clamp((t - 0.2) / 1.2, 0, 1));
+      ctx.save();
+      ctx.translate(cx, cy - 20);
+      ctx.scale(scale, scale);
+      drawText('THE SPHERE', 0, -30, 64, '#ffffff', 'center', 'bold', 12, ta);
+      drawText('L A S   V E G A S', 0, 25, 22, '#c8c8e8', 'center', 'normal', 8, ta);
+      ctx.restore();
+      // Decorative line
+      const lineAlpha = easeOutCubic(clamp((t - 0.6) / 0.7, 0, 1));
+      ctx.save();
+      ctx.globalAlpha = lineAlpha * ta;
+      ctx.strokeStyle = 'rgba(200,180,255,0.5)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(cx - 140, cy + 55);
+      ctx.lineTo(cx + 140, cy + 55);
+      ctx.stroke();
+      ctx.restore();
+    } else if (seg.name === 'vision') {
+      const ta = textAlpha(seg);
+      drawText('2018 · THE VISION', cx, 60, 30, '#ffffff', 'center', 'bold', 4, ta);
+      drawText('Architectural concept approved', cx, 95, 16, '#aab', 'center', 'normal', 1, ta);
+      const subTa = easeOutCubic(clamp((prog - 0.4) * 3, 0, 1)) * ta;
+      drawText('A revolutionary spherical venue', cx, groundY + 45, 15, '#8899bb', 'center', 'normal', 0, subTa);
+    } else if (seg.name === 'construction') {
+      const ta = textAlpha(seg);
+      drawText('2019–2021 · CONSTRUCTION', cx, 60, 30, '#ffffff', 'center', 'bold', 4, ta);
+      drawText('Structural framework takes shape', cx, 95, 16, '#aab', 'center', 'normal', 1, ta);
+      const subst = easeOutCubic(clamp((prog - 0.3) * 2.5, 0, 1)) * ta;
+      drawText('366 ft tall · 516 ft wide', cx, groundY + 45, 15, '#8899bb', 'center', 'normal', 0, subst);
+    } else if (seg.name === 'led') {
+      const ta = textAlpha(seg);
+      drawText('2022 · LED EXTERIOR', cx, 60, 30, '#ffffff', 'center', 'bold', 4, ta);
+      drawText('580,000 sq ft of programmable LED display', cx, 95, 16, '#aab', 'center', 'normal', 1, ta);
+      const subst = easeOutCubic(clamp((prog - 0.45) * 3, 0, 1)) * ta;
+      drawText('16K resolution surface', cx, groundY + 45, 15, '#8899bb', 'center', 'normal', 0, subst);
+    } else if (seg.name === 'opening') {
+      const ta = textAlpha(seg);
+      drawText('2023 · GRAND OPENING', cx, 60, 30, '#ffffff', 'center', 'bold', 4, ta);
+      drawText('September 29, 2023', cx, 95, 16, '#aab', 'center', 'normal', 2, ta);
+      const u2ta = easeOutBack(clamp((prog - 0.35) * 2.5, 0, 1)) * ta;
+      drawText('U2 · UV ACHTUNG BABY LIVE', cx, groundY + 38, 22, '#ffcc88', 'center', 'bold', 3, u2ta);
+      const bandta = easeOutCubic(clamp((prog - 0.55) * 3, 0, 1)) * ta;
+      drawText('Live music takes center stage', cx, groundY + 65, 14, '#8899bb', 'center', 'normal', 0, bandta);
+    } else if (seg.name === 'today') {
+      const ta = textAlpha(seg);
+      drawText('TODAY · ICON OF ENTERTAINMENT', cx, 60, 30, '#ffffff', 'center', 'bold', 4, ta);
+      drawText('U2 · Phish · Dead & Co · Eagles', cx, 95, 16, '#aab', 'center', 'normal', 1, ta);
+      const statTa = easeOutCubic(clamp((prog - 0.3) * 2.5, 0, 1)) * ta;
+      drawText('18,600 seats · $2.3B investment', cx, groundY + 45, 15, '#8899bb', 'center', 'normal', 0, statTa);
+    } else if (seg.name === 'finale') {
+      const ta = textAlpha(seg);
+      const scale = easeOutBack(clamp((t - 26.2) / 1.1, 0, 1));
+      ctx.save();
+      ctx.translate(cx, cy - 20);
+      ctx.scale(scale, scale);
+      drawText('THE SPHERE', 0, -30, 58, '#ffffff', 'center', 'bold', 10, ta);
+      drawText('L A S   V E G A S', 0, 28, 20, '#c8c8e8', 'center', 'normal', 7, ta);
+      ctx.restore();
+      const footerTa = easeOutCubic(clamp((prog - 0.5) * 3, 0, 1)) * ta;
+      drawText('Where innovation meets entertainment', cx, groundY + 40, 15, '#8899bb', 'center', 'normal', 1, footerTa);
+    }
+
+    // Subtle vignette
+    const vig = ctx.createRadialGradient(cx, cy, R * 1.2, cx, cy, Math.max(W, H) * 0.75);
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(1, 'rgba(0,0,0,0.55)');
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // --- Animation loop ---
+  let startTime = null;
+  function animate(timestamp) {
+    if (startTime === null) {
+      startTime = timestamp - tOffset * 1000;
+    }
+    const elapsed = ((timestamp - startTime) / 1000) % DUR;
+    render(elapsed);
+    requestAnimationFrame(animate);
+  }
+  requestAnimationFrame(animate);
+})();
+</script>
+</body>
+</html>

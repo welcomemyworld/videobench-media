@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Flow - 产品介绍</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{width:100%;height:100%;background:#000;display:flex;align-items:center;justify-content:center;overflow:hidden;font-family:'Helvetica Neue',Arial,'PingFang SC','Microsoft YaHei',sans-serif;}
+  canvas{max-width:100vw;max-height:100vh;display:block;border-radius:4px;box-shadow:0 0 60px rgba(124,108,255,.15);}
+  #hint{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);color:rgba(255,255,255,.5);font-size:13px;letter-spacing:1px;pointer-events:none;z-index:10;transition:opacity 1s;}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hint">点击启动配乐</div>
+<script>
+(()=>{
+const c=document.getElementById('c'),ctx=c.getContext('2d');
+const W=1280,H=720;
+c.width=W;c.height=H;
+const DUR=45;
+const params=new URLSearchParams(location.search);
+const tOffset=parseFloat(params.get('t')||'0')||0;
+const TAU=Math.PI*2;
+
+// ===== 工具函数 =====
+function lerp(a,b,t){return a+(b-a)*t;}
+function clamp(v,a,b){return v<a?a:v>b?b:v;}
+function smooth(t){return t*t*(3-2*t);}
+function easeOut(t){return 1-Math.pow(1-t,3);}
+function easeInOut(t){return t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;}
+function easeOutBack(t){const c1=1.70158,c3=c1+1;return 1+c3*Math.pow(t-1,3)+c1*Math.pow(t-1,2);}
+function rr(x,y,w,h,r){ctx.beginPath();if(ctx.roundRect)ctx.roundRect(x,y,w,h,r);else{ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);}ctx.closePath();}
+function txt(s,x,y,size,color,align='center',weight=400,spacing=0,alpha=1){
+  ctx.save();ctx.globalAlpha=alpha||1;ctx.fillStyle=color;ctx.font=weight+' '+size+'px "Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif';
+  ctx.textAlign=align;ctx.textBaseline='middle';
+  if(spacing){ctx.letterSpacing=spacing+'px';}
+  ctx.fillText(s,x,y);ctx.restore();
+}
+function txtGrad(s,x,y,size,g,align='center',weight=600,alpha=1){
+  ctx.save();ctx.globalAlpha=alpha;ctx.font=weight+' '+size+'px "Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif';
+  ctx.textAlign=align;ctx.textBaseline='middle';
+  const grad=ctx.createLinearGradient(x-size*.4,y,x+size*.4,y);
+  grad.addColorStop(0,g[0]);grad.addColorStop(1,g[1]);
+  ctx.fillStyle=grad;ctx.fillText(s,x,y);ctx.restore();
+}
+function dot(x,y,r,color,alpha=1){ctx.save();ctx.globalAlpha=alpha;ctx.fillStyle=color;ctx.beginPath();ctx.arc(x,y,r,0,TAU);ctx.fill();ctx.restore();}
+function line(x1,y1,x2,y2,color,w,alpha=1){ctx.save();ctx.globalAlpha=alpha;ctx.strokeStyle=color;ctx.lineWidth=w;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();ctx.restore();}
+function curve(x1,y1,cx,cy,x2,y2,color,w,alpha=1){ctx.save();ctx.globalAlpha=alpha;ctx.strokeStyle=color;ctx.lineWidth=w;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(x1,y1);ctx.quadraticCurveTo(cx,cy,x2,y2);ctx.stroke();ctx.restore();}
+function glow(x,y,r,color,alpha=.3){const g=ctx.createRadialGradient(x,y,0,x,y,r);g.addColorStop(0,color);g.addColorStop(1,'transparent');ctx.save();ctx.globalAlpha=alpha;ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,y,r,0,TAU);ctx.fill();ctx.restore();}
+
+// ===== 品牌色 =====
+const BRAND1='#7C6CFF',BRAND2='#00E5FF',ACCENT='#FF6EC7';
+const BG='#0A0A14',SURFACE='#1A1A2E',BORDER='#2A2A40';
+const TEXT='#F0F0FA',TEXT2='#A0A0C0',TEXT3='#666680';
+const OBS_BG='#1E1E2E',OBS_SIDE='#181825',OBS_BORDER='#313244',OBS_TEXT='#CDD6F4',OBS_ACCENT='#89B4FA';
+
+// ===== 粒子系统 =====
+const particles=[];
+function spawnParticles(x,y,count,spread,color,speed=60,life=2){
+  for(let i=0;i<count;i++){
+    const a=Math.random()*TAU,v=(Math.random()*.5+.5)*speed;
+    particles.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v-.3*speed,life:0,maxLife:life*(Math.random()*.6+.6),size:1+Math.random()*2.5,color});
+  }
+}
+function updateParticles(dt){
+  for(let i=particles.length-1;i>=0;i--){const p=particles[i];p.life+=dt;
+    if(p.life>=p.maxLife){particles.splice(i,1);continue;}
+    p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=8*dt;
+  }
+}
+function drawParticles(){for(const p of particles){const a=1-p.life/p.maxLife;dot(p.x,p.y,p.size,p.color,a*.7);}}
+
+// ===== 音频系统 =====
+let audioCtx=null,musicStarted=false,nextNoteTime=0,noteIdx=0,chordIdx=0;
+const CHORDS=[
+  [261.63,329.63,392.00,493.88],
+  [220.00,261.63,329.63,392.00],
+  [174.61,220.00,261.63,329.63],
+  [196.00,246.94,293.66,329.63]
+];
+const MELODY=[523.25,659.25,392.00,329.63,440.00,523.25,392.00,293.66,349.23,440.00,523.25,392.00,392.00,493.88,587.33,440.00];
+function initAudio(){
+  if(audioCtx)return;
+  try{
+    audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+    const master=audioCtx.createGain();master.gain.value=.22;master.connect(audioCtx.destination);
+    // 和弦垫
+    const padGain=audioCtx.createGain();padGain.gain.value=.12;padGain.connect(master);
+    for(let cIdx=0;cIdx<CHORDS.length;cIdx++){
+      for(let n=0;n<CHORDS[cIdx].length;n++){
+        const osc=audioCtx.createOscillator();osc.type='sine';osc.frequency.value=CHORDS[cIdx][n];
+        const g=audioCtx.createGain();g.gain.value=.15;
+        const pan=audioCtx.createStereoPanner();pan.pan.value=(n-1.5)*.25;
+        osc.connect(g);g.connect(pan);pan.connect(padGain);
+        osc.start();
+      }
+    }
+    // 旋律
+    const melGain=audioCtx.createGain();melGain.gain.value=.25;melGain.connect(master);
+    const melOsc=audioCtx.createOscillator();melOsc.type='triangle';melOsc.connect(melGain);melOsc.start();
+    // 延迟/混响效果
+    const delay=audioCtx.createDelay();delay.delayTime.value=.3;
+    const fb=audioCtx.createGain();fb.gain.value=.35;
+    const wet=audioCtx.createGain();wet.gain.value=.15;
+    melGain.connect(delay);delay.connect(fb);fb.connect(delay);delay.connect(wet);wet.connect(master);
+    musicStarted=true;
+    document.getElementById('hint').style.opacity='0';
+  }catch(e){console.warn('Audio init failed',e);}
+}
+function scheduleMelody(now){
+  if(!audioCtx||!musicStarted)return;
+  const interval=0.9;
+  while(nextNoteTime<now+0.5){
+    const t=nextNoteTime;
+    playNote(MELODY[noteIdx%MELODY.length],t,interval*.7,.12);
+    noteIdx++;
+    if(noteIdx%4===0)chordIdx=(chordIdx+1)%CHORDS.length;
+    nextNoteTime+=interval;
+  }
+}
+function playNote(freq,startTime,dur,vol){
+  if(!audioCtx)return;
+  const osc=audioCtx.createOscillator();osc.type='triangle';osc.frequency.value=freq;
+  const g=audioCtx.createGain();
+  g.gain.setValueAtTime(0,startTime);
+  g.gain.linearRampToValueAtTime(vol,startTime+.02);
+  g.gain.exponentialRampToValueAtTime(.001,startTime+dur);
+  const pan=audioCtx.createStereoPanner();pan.pan.value=(Math.random()-.5)*.4;
+  osc.connect(g);g.connect(pan);pan.connect(audioCtx.destination);
+  osc.start(startTime);osc.stop(startTime+dur+.05);
+}
+document.addEventListener('click',initAudio,{once:true});
+document.addEventListener('touchstart',initAudio,{once:true});
+
+// ===== 场景管理 =====
+const scenes=[
+  {name:'intro',start:0,dur:5},
+  {name:'obsidian',start:5,dur:10},
+  {name:'web',start:15,dur:11},
+  {name:'graph',start:26,dur:7},
+  {name:'sync',start:33,dur:5},
+  {name:'outro',start:38,dur:7}
+];
+function getScene(t){
+  for(let i=0;i<scenes.length;i++){
+    const s=scenes[i];
+    if(t>=s.start&&t<s.start+s.dur)return {scene:s,idx:i,local:t-s.start,progress:s.dur>0?(t-s.start)/s.dur:0};
+  }
+  return {scene:scenes[0],idx:0,local:0,progress:0};
+}
+function sceneAlpha(t,idx){
+  const s=scenes[idx];
+  const fadeIn=.6,fadeOut=.6;
+  let a=1;
+  if(idx>0&&t<s.start+fadeIn)a=Math.max(0,(t-s.start)/fadeIn);
+  if(idx<scenes.length-1){
+    const next=scenes[idx+1];
+    if(t>next.start-fadeOut&&t<next.start)a=Math.min(a,Math.max(0,(next.start-t)/fadeOut));
+  }
+  if(t<s.start)a=Math.max(0,1-(s.start-t)/fadeIn);
+  return clamp(a,0,1);
+}
+
+// ===== 鼠标状态 =====
+const mouse={x:W*.5,y:H*.5,clickX:0,clickY:0,clickTime:-10,visible:false};
+
+// ===== 场景绘制函数 =====
+function drawIntro(t,lt,prog){
+  const p=prog;
+  // 背景光晕
+  const cx=W*.5,cy=H*.42;
+  glow(cx,cy,450,'rgba(124,108,255,.12)',easeOut(p));
+  glow(cx,cy,250,'rgba(0,229,255,.10)',easeOut(p*.9));
+  // 粒子
+  if(p>.3&&Math.random()<.15)spawnParticles(cx+(Math.random()-.5)*500,cy+(Math.random()-.5)*300,2,100,Math.random()>.5?BRAND1:BRAND2,40,2.5);
+  // 品牌名
+  const nameY=cy;
+  const scale=easeOutBack(clamp((p-.15)/.5,0,1));
+  const alpha=clamp((p-.2)/.3,0,1);
+  ctx.save();ctx.translate(cx,nameY);ctx.scale(scale,scale);
+  txtGrad('Flow',0,0,88,[BRAND1,BRAND2],'center',700,alpha);
+  ctx.restore();
+  // 副标题
+  const subA=clamp((p-.45)/.3,0,1);
+  const subY=nameY+75;
+  txt('连接你的思想',cx,subY+Math.sin(lt*1.5)*4,28,TEXT2,'center',300,2,subA);
+  // 分割线
+  const lineW=120*(easeOut(clamp((p-.5)/.4,0,1)));
+  const lineY=subY+52;
+  const lg=ctx.createLinearGradient(cx-lineW,lineY,cx+lineW,lineY);
+  lg.addColorStop(0,'transparent');lg.addColorStop(.5,BRAND1);lg.addColorStop(1,'transparent');
+  ctx.save();ctx.globalAlpha=subA;ctx.fillStyle=lg;ctx.fillRect(cx-lineW,lineY-1.5,lineW*2,3);ctx.restore();
+  // 小字
+  const tagA=clamp((p-.65)/.3,0,1);
+  txt('Obsidian 插件 · Web · 桌面端',cx,H*.72,19,TEXT3,'center',300,4,tagA);
+}
+
+function drawObsidian(t,lt,prog){
+  const p=prog;
+  const slideIn=easeOut(clamp(p/.25,0,1));
+  const alpha=clamp(p/.2,0,1)*clamp((1-p)/.15,0,1);
+  const ox=(1-slideIn)*80;
+  // 界面容器
+  const ix=90,iy=70,iw=1100,ih=620;
+  ctx.save();ctx.globalAlpha=alpha;ctx.translate(ox,0);
+  // 主背景
+  rr(ix,iy,iw,ih,10);ctx.fillStyle=OBS_BG;ctx.fill();
+  // 左侧边栏
+  rr(ix,iy,200,ih,10);ctx.fillStyle=OBS_SIDE;ctx.fill();
+  // 边栏标题
+  txt('Files',ix+100,iy+32,14,TEXT3,'center',600,0);
+  // 文件树
+  const files=[['笔记','📄'],['灵感收集','📄'],['读书笔记','📄'],['工作日志','📄'],['项目规划','📄']];
+  for(let i=0;i<5;i++){
+    const fy=iy+75+i*38;
+    rr(ix+15,fy-12,170,28,5);
+    if(i===2){ctx.fillStyle='rgba(137,180,250,.2)';ctx.fill();}
+    txt(files[i][0],ix+38,fy,13.5,i===2?OBS_ACCENT:TEXT2,'left',400);
+    dot(ix+25,fy,3,i===2?OBS_ACCENT:'#555570');
+  }
+  // 右侧面板
+  rr(ix+iw-250,iy,250,ih,10);ctx.fillStyle=OBS_SIDE;ctx.fill();
+  txt('Backlinks',ix+iw-125,iy+32,13,TEXT3,'center',600);
+  rr(ix+iw-235,iy+55,220,80,6);ctx.fillStyle='rgba(255,255,255,.03)';ctx.fill();
+  txt('← 相关笔记',ix+iw-125,iy+80,13,TEXT3,'center',400);
+  txt('Flow 自动识别关联',ix+iw-125,iy+102,12.5,OBS_ACCENT,'center',400);
+  // 顶部标签栏
+  rr(ix+200,iy,iw-450,40,0);ctx.fillStyle='#1B1B28';ctx.fill();
+  txt('新笔记.md',ix+260,iy+20,13.5,OBS_TEXT,'left',400);
+  dot(ix+245,iy+20,4,BRAND2);
+  // 编辑器区域
+  rr(ix+200,iy+40,iw-450,ih-40-30,0);ctx.fillStyle=OBS_BG;ctx.fill();
+  // 编辑器内容（打字机效果）
+  const typeP=clamp((p-.25)/.45,0,1);
+  const titleChars='在 Obsidian 中记录灵感';
+  const bodyChars='今天读了一本关于知识管理的书，\n突然想到一个很好的想法——\n把笔记连接起来，\n让知识自然生长。';
+  const titleCount=Math.floor(typeP*titleChars.length);
+  const bodyCount=Math.floor(clamp((p-.45)/.45,0,1)*bodyChars.length);
+  txt(titleChars.slice(0,titleCount),ix+240,iy+80,22,OBS_TEXT,'left',600);
+  if(bodyCount>0)txt(bodyChars.slice(0,bodyCount),ix+240,iy+160,15,TEXT2,'left',400,0,1);
+  // 标签
+  if(p>.6){
+    const tagA=clamp((p-.6)/.15,0,1);
+    rr(ix+240,iy+260,70,26,13);ctx.fillStyle='rgba(124,108,255,.25)';ctx.fill();
+    txt('#灵感',ix+275,iy+273,13,BRAND2,'center',500,0,tagA);
+    rr(ix+320,iy+260,80,26,13);ctx.fillStyle='rgba(0,229,255,.15)';ctx.fill();
+    txt('#知识管理',ix+360,iy+273,13,BRAND1,'center',500,0,tagA*.8);
+  }
+  // 底部状态栏
+  rr(ix,iy+ih-30,iw,30,0);ctx.fillStyle='#161622';ctx.fill();
+  txt('Flow 插件已激活 · 自动关联中',ix+iw*.5,iy+ih-15,11.5,TEXT3,'center',400);
+  // 鼠标动画
+  animateObsidianMouse(t,lt,p,ix,iy,iw,ih);
+  ctx.restore();
+}
+function animateObsidianMouse(t,lt,p,ix,iy,iw,ih){
+  const mt=clamp((p-.1)/.75,0,1);
+  if(mt<=0||mt>=1)return;
+  // 鼠标路径：移动到文件->点击->移动到编辑器->点击->打字
+  const pts=[
+    {x:ix+80,y:iy+75+2*38},{x:ix+80,y:iy+75+2*38},
+    {x:ix+230,y:iy+80},{x:ix+230,y:iy+80},
+    {x:ix+250,y:iy+160},{x:ix+250,y:iy+160}
+  ];
+  const seg=Math.floor(mt*5);
+  const segT=(mt*5)%1;
+  const ease=segT<.3?easeOut(segT/.3):segT>.7?1-easeOut((segT-.7)/.3):1;
+  const mx=lerp(pts[seg].x,pts[seg+1].x,ease);
+  const my=lerp(pts[seg].y,pts[seg+1].y,ease);
+  mouse.x=mx;mouse.y=my;mouse.visible=true;
+  if(seg===1&&segT>.5)mouse.clickTime=t,mouse.clickX=mx,mouse.clickY=my;
+  if(seg===3&&segT>.5)mouse.clickTime=t,mouse.clickX=mx,mouse.clickY=my;
+  // 点击波纹
+  if(t-mouse.clickTime<.35){const rp=(t-mouse.clickTime)/.35;glow(mouse.clickX,mouse.clickY,30*rp,'rgba(124,108,255,.4)',1-rp);}
+  // 绘制鼠标
+  drawCursor(mx,my);
+}
+function drawCursor(x,y){
+  ctx.save();ctx.translate(x,y);
+  ctx.fillStyle='#fff';ctx.strokeStyle='#333';ctx.lineWidth=1.2;
+  ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,18);ctx.lineTo(4.5,13);ctx.lineTo(8,19.5);ctx.lineTo(10.5,17.5);ctx.lineTo(7,12);ctx.lineTo(12,11.5);ctx.closePath();
+  ctx.fill();ctx.stroke();ctx.restore();
+}
+
+function drawWeb(t,lt,prog){
+  const p=prog;
+  const alpha=clamp(p/.15,0,1)*clamp((1-p)/.12,0,1);
+  const slideUp=easeOut(clamp(p/.2,0,1));
+  const oy=(1-slideUp)*40;
+  ctx.save();ctx.globalAlpha=alpha;ctx.translate(0,oy);
+  const ix=70,iy=55,iw=1140,ih=630;
+  // 背景
+  rr(ix,iy,iw,ih,14);ctx.fillStyle=SURFACE;ctx.fill();
+  // 顶部导航
+  rr(ix,iy,iw,56,14);ctx.fillStyle='rgba(20,20,35,.95)';ctx.fill();
+  txt('Flow',ix+35,iy+28,22,TEXT,'left',700);
+  dot(ix+25,iy+28,4,BRAND2);
+  // 搜索栏
+  const searchW=280;
+  rr(ix+iw-searchW-30,iy+12,searchW,32,16);ctx.fillStyle='rgba(255,255,255,.06)';ctx.fill();
+  txt('🔍 搜索笔记...',ix+iw-searchW-10,iy+28,13,TEXT3,'right',400);
+  // 内容区
+  const gridY=iy+80;
+  const cards=[
+    {x:ix+35,y:gridY,w:330,h:180,title:'读书笔记：知识管理',tags:['#读书','#知识'],color:'rgba(124,108,255,.18)'},
+    {x:ix+385,y:gridY,w:330,h:180,title:'灵感：连接思想',tags:['#灵感','#Flow'],color:'rgba(0,229,255,.13)'},
+    {x:ix+735,y:gridY,w:330,h:180,title:'工作日志：项目复盘',tags:['#工作','#复盘'],color:'rgba(255,110,199,.15)'}
+  ];
+  // 卡片
+  for(let i=0;i<cards.length;i++){
+    const cd=cards[i];
+    const delay=i*.08;
+    const ca=clamp((p-.25-delay)/.25,0,1);
+    const cy=ca*10;
+    ctx.save();ctx.globalAlpha=ca;ctx.translate(0,cy);
+    rr(cd.x,cd.y,cd.w,cd.h,10);ctx.fillStyle=cd.color;ctx.fill();
+    ctx.strokeStyle=BORDER;ctx.lineWidth=1.5;ctx.stroke();
+    txt(cd.title,cd.x+cd.w*.5,cd.y+42,17,TEXT,'center',600);
+    txt(cd.tags[0]+' '+cd.tags[1],cd.x+cd.w*.5,cd.y+88,13,TEXT2,'center',400);
+    // 底部连接指示
+    if(ca>.6){dot(cd.x+cd.w*.5-20,cd.y+cd.h-22,3.5,BRAND2,ca);dot(cd.x+cd.w*.5,cd.y+cd.h-22,1.5,TEXT3,ca);dot(cd.x+cd.w*.5+20,cd.y+cd.h-22,3.5,BRAND1,ca);}
+    ctx.restore();
+  }
+  // 第二行卡片
+  const cards2=[
+    {x:ix+35,y:gridY+210,w:330,h:150,title:'随时记录',tags:['#灵感'],color:'rgba(124,108,255,.12)'},
+    {x:ix+385,y:gridY+210,w:330,h:150,title:'自动关联',tags:['#Flow'],color:'rgba(0,229,255,.10)'},
+    {x:ix+735,y:gridY+210,w:330,h:150,title:'多端同步',tags:['#同步'],color:'rgba(255,110,199,.12)'}
+  ];
+  for(let i=0;i<cards2.length;i++){
+    const cd=cards2[i];
+    const delay=.35+i*.07;
+    const ca=clamp((p-.3-delay)/.3,0,1);
+    ctx.save();ctx.globalAlpha=ca;ctx.translate(0,(ca-1)*-12);
+    rr(cd.x,cd.y,cd.w,cd.h,10);ctx.fillStyle=cd.color;ctx.fill();
+    ctx.strokeStyle=BORDER;ctx.lineWidth=1.3;ctx.stroke();
+    txt(cd.title,cd.x+cd.w*.5,cd.y+55,16,TEXT,'center',600);
+    txt(cd.tags[0],cd.x+cd.w*.5,cd.y+100,12,TEXT3,'center',400);
+    ctx.restore();
+  }
+  // 鼠标动画 + 拖拽连线
+  animateWebMouse(t,lt,p,ix,iy,iw,ih,cards);
+  // 连接线
+  const connP=clamp((p-.55)/.3,0,1);
+  if(connP>0){
+    const c1=cards[0],c2=cards[1];
+    const sx=c1.x+c1.w*.85,sy=c1.y+c1.h*.5;
+    const ex=c2.x+c2.w*.15,ey=c2.y+c2.h*.5;
+    curve(sx,sy,(sx+ex)*.5,sy-60,ex,ey,'rgba(124,108,255,.5)',2.5,connP);
+    dot(sx,sy,4,BRAND1,connP);dot(ex,ey,4,BRAND2,connP);
+    // 流动点
+    const flowT=(lt*1.2)%1;
+    const fx=lerp(sx,ex,flowT);
+    const fy=lerp(sy,ey,flowT)-Math.sin(flowT*Math.PI)*50;
+    dot(fx,fy,2.5,'#fff',connP*.8);
+  }
+  // 底部宣传
+  const ctaA=clamp((p-.75)/.15,0,1);
+  txt('Web 端 + 桌面端 + Obsidian 插件',ix+iw*.5,iy+ih-28,15,TEXT2,'center',400,1,ctaA);
+  ctx.restore();
+}
+function animateWebMouse(t,lt,p,ix,iy,iw,ih,cards){
+  const mt=clamp((p-.1)/.7,0,1);
+  if(mt<=0||mt>=1)return;
+  const pts=[
+    {x:ix+iw-170,y:iy+28},
+    {x:ix+iw-170,y:iy+28},
+    {x:cards[0].x+cards[0].w*.5,y:cards[0].y+cards[0].h*.5},
+    {x:cards[1].x+cards[1].w*.5,y:cards[1].y+cards[1].h*.5}
+  ];
+  const seg=Math.min(Math.floor(mt*3),2);
+  const segT=(mt*3)%1;
+  const ease=segT<.25?easeOut(segT/.25):segT>.75?1-easeOut((segT-.75)/.25):1;
+  const mx=lerp(pts[seg].x,pts[seg+1].x,ease);
+  const my=lerp(pts[seg].y,pts[seg+1].y,ease);
+  mouse.x=mx;mouse.y=my;mouse.visible=true;
+  if(seg===1&&segT>.4){mouse.clickTime=t;mouse.clickX=mx;mouse.clickY=my;}
+  if(t-mouse.clickTime<.3){const rp=(t-mouse.clickTime)/.3;glow(mouse.clickX,mouse.clickY,25*rp,'rgba(0,229,255,.35)',1-rp);}
+  drawCursor(mx,my);
+}
+
+function drawGraph(t,lt,prog){
+  const p=prog;
+  const alpha=clamp(p/.12,0,1)*clamp((1-p)/.12,0,1);
+  ctx.save();ctx.globalAlpha=alpha;
+  const nodes=[
+    {x:W*.32,y:H*.38,label:'读书笔记',r:28},
+    {x:W*.50,y:H*.28,label:'灵感',r:24},
+    {x:W*.68,y:H*.40,label:'工作日志',r:26},
+    {x:W*.42,y:H*.58,label:'项目规划',r:22},
+    {x:W*.60,y:H*.62,label:'每日思考',r:20},
+    {x:W*.30,y:H*.70,label:'收藏夹',r:18},
+  ];
+  const edges=[[0,1],[0,2],[1,2],[0,3],[2,3],[1,4],[3,4],[4,5],[2,5],[0,5],[3,5]];
+  // 背景光
+  glow(W*.5,H*.5,500,'rgba(124,108,255,.15)',alpha*.6);
+  // 边
+  const edgeP=clamp((p-.25)/.4,0,1);
+  for(let i=0;i<edges.length;i++){
+    const e=edges[i];
+    const n1=nodes[e[0]],n2=nodes[e[1]];
+    const ep=edgeP*(1-i*.05);
+    if(ep>0){
+      curve(n1.x,n1.y,(n1.x+n2.x)*.5,(n1.y+n2.y)*.5-40,n2.x,n2.y,'rgba(124,108,255,.35)',1.5,ep);
+    }
+  }
+  // 节点
+  for(let i=0;i<nodes.length;i++){
+    const n=nodes[i];
+    const np=clamp((p-.15-i*.04)/.3,0,1);
+    if(np<=0)continue;
+    const pulse=1+Math.sin(lt*2+i)*.06;
+    const r=n.r*pulse*easeOut(np);
+    glow(n.x,n.y,r*2.5,'rgba(124,108,255,.25)',np*.5);
+    dot(n.x,n.y,r,'rgba(20,20,40,.9)',np);
+    ctx.save();ctx.globalAlpha=np;
+    ctx.strokeStyle=i%2?BRAND1:BRAND2;ctx.lineWidth=2;ctx.beginPath();ctx.arc(n.x,n.y,r,0,TAU);ctx.stroke();
+    ctx.restore();
+    txt(n.label,n.x,n.y+r+22,13,TEXT2,'center',500,0,np*.9);
+  }
+  // 中心标题
+  const titleA=clamp((p-.5)/.25,0,1);
+  txt('看见思想的脉络',W*.5,H*.15,30,TEXT,'center',600,0,titleA);
+  txt('Flow 自动构建你的知识图谱',W*.5,H*.19,16,TEXT2,'center',300,1,titleA*.7);
+  // 粒子
+  if(p>.3&&Math.random()<.1){
+    const n=nodes[Math.floor(Math.random()*nodes.length)];
+    spawnParticles(n.x,n.y,1,60,Math.random()>.5?BRAND1:BRAND2,30,1.8);
+  }
+  ctx.restore();
+}
+
+function drawSync(t,lt,prog){
+  const p=prog;
+  const alpha=clamp(p/.15,0,1)*clamp((1-p)/.12,0,1);
+  ctx.save();ctx.globalAlpha=alpha;
+  const cy=H*.42;
+  const devices=[
+    {x:W*.25,type:'laptop',label:'桌面端'},
+    {x:W*.5,type:'cloud',label:'Flow Cloud'},
+    {x:W*.75,type:'phone',label:'移动端'}
+  ];
+  // 连接线
+  const lineP=clamp((p-.2)/.3,0,1);
+  curve(devices[0].x,cy,devices[1].x-80,cy-70,devices[1].x,cy,'rgba(124,108,255,.4)',2,lineP);
+  curve(devices[1].x,cy,devices[1].x+80,cy-70,devices[2].x,cy,'rgba(0,229,255,.4)',2,lineP);
+  // 流动粒子
+  const flowA=clamp((p-.35)/.3,0,1);
+  for(let i=0;i<3;i++){
+    const ft=(lt*.6+i*.33)%1;
+    const sx=devices[0].x+(devices[1].x-devices[0].x)*ft;
+    const sy=cy-Math.sin(ft*Math.PI)*55;
+    dot(sx,sy,3,i%2?BRAND1:BRAND2,flowA*.7);
+  }
+  // 设备
+  for(let i=0;i<devices.length;i++){
+    const d=devices[i];
+    const dp=clamp((p-.1-i*.07)/.3,0,1);
+    if(dp<=0)continue;
+    const scale=easeOutBack(dp);
+    ctx.save();ctx.translate(d.x,cy);ctx.scale(scale,scale);
+    if(d.type==='laptop'){
+      rr(-55,-40,110,65,6);ctx.fillStyle='#1E1E30';ctx.fill();ctx.strokeStyle=BORDER;ctx.stroke();
+      rr(-45,-32,90,47,3);ctx.fillStyle='#0A0A18';ctx.fill();
+      txt('▣',0,10,24,BRAND1,'center',400);
+      rr(-8,25,16,8,3);ctx.fillStyle='#2A2A40';ctx.fill();
+    }else if(d.type==='phone'){
+      rr(-32,-55,64,110,12);ctx.fillStyle='#1E1E30';ctx.fill();ctx.strokeStyle=BORDER;ctx.stroke();
+      rr(-26,-48,52,92,5);ctx.fillStyle='#0A0A18';ctx.fill();
+      txt('▣',0,-5,20,BRAND2,'center',400);
+      rr(-4,48,8,4,3);ctx.fillStyle='#2A2A40';ctx.fill();
+    }else{
+      dot(0,0,32,'rgba(124,108,255,.25)');
+      ctx.strokeStyle=BRAND1;ctx.lineWidth=2;ctx.beginPath();ctx.arc(0,0,32,0,TAU);ctx.stroke();
+      txt('☁',0,2,28,TEXT,'center',400);
+    }
+    ctx.restore();
+    txt(d.label,d.x,cy+85,14,TEXT2,'center',400,0,dp);
+    txt(d.label==='Flow Cloud'?'':'同步至',d.x,cy+70,11,TEXT3,'center',300,0,dp*.7);
+  }
+  // 标题
+  const titleA=clamp((p-.5)/.25,0,1);
+  txt('一处记录，处处同步',W*.5,H*.22,28,TEXT,'center',600,0,titleA);
+  txt('你的知识库在所有设备上实时同步',W*.5,H*.27,15,TEXT2,'center',300,1,titleA*.7);
+  ctx.restore();
+}
+
+function drawOutro(t,lt,prog){
+  const p=prog;
+  const cx=W*.5,cy=H*.42;
+  glow(cx,cy,400,'rgba(124,108,255,.12)',easeOut(p));
+  glow(cx,cy,220,'rgba(0,229,255,.08)',easeOut(p*.9));
+  if(p>.1&&Math.random()<.12)spawnParticles(cx+(Math.random()-.5)*550,cy+(Math.random()-.5)*350,2,100,Math.random()>.5?BRAND1:BRAND2,45,2.5);
+  const scale=easeOutBack(clamp((p-.15)/.45,0,1));
+  const alpha=clamp((p-.2)/.3,0,1);
+  ctx.save();ctx.translate(cx,cy);ctx.scale(scale,scale);
+  txtGrad('Flow',0,0,82,[BRAND1,BRAND2],'center',700,alpha);
+  ctx.restore();
+  const subA=clamp((p-.4)/.25,0,1);
+  txt('连接你的思想',cx,cy+72,26,TEXT2,'center',300,2,subA);
+  const lineW=100*easeOut(clamp((p-.5)/.3,0,1));
+  const lineY=cy+118;
+  const lg=ctx.createLinearGradient(cx-lineW,lineY,cx+lineW,lineY);
+  lg.addColorStop(0,'transparent');lg.addColorStop(.5,BRAND1);lg.addColorStop(1,'transparent');
+  ctx.save();ctx.globalAlpha=subA;ctx.fillStyle=lg;ctx.fillRect(cx-lineW,lineY-1.5,lineW*2,3);ctx.restore();
+  const ctaA=clamp((p-.62)/.25,0,1);
+  rr(cx-140,cy+150,280,52,26);ctx.fillStyle='rgba(124,108,255,.2)';ctx.fill();
+  ctx.strokeStyle=BRAND1;ctx.lineWidth=1.5;ctx.stroke();
+  txt('开始你的知识之旅',cx,cy+176,18,TEXT,'center',500,0,ctaA);
+  const infoA=clamp((p-.78)/.15,0,1);
+  txt('Obsidian 插件 · Web 端 · 桌面端',cx,H*.72,18,TEXT3,'center',300,3,infoA);
+}
+
+// ===== 主循环 =====
+let lastTime=performance.now();
+function frame(now){
+  const dt=Math.min((now-lastTime)/1000,.05);
+  lastTime=now;
+  const t=(now/1000+tOffset)%DUR;
+  // 调度旋律
+  scheduleMelody(now/1000+tOffset);
+  // 更新粒子
+  updateParticles(dt);
+  // 渲染
+  ctx.fillStyle=BG;
+  ctx.fillRect(0,0,W,H);
+  // 查找活动场景
+  const sc=getScene(t);
+  const idx=sc.idx;
+  const alpha=sceneAlpha(t,idx);
+  // 绘制当前场景
+  ctx.save();ctx.globalAlpha=alpha;
+  switch(sc.scene.name){
+    case 'intro':drawIntro(t,sc.local,sc.progress);break;
+    case 'obsidian':drawObsidian(t,sc.local,sc.progress);break;
+    case 'web':drawWeb(t,sc.local,sc.progress);break;
+    case 'graph':drawGraph(t,sc.local,sc.progress);break;
+    case 'sync':drawSync(t,sc.local,sc.progress);break;
+    case 'outro':drawOutro(t,sc.local,sc.progress);break;
+  }
+  ctx.restore();
+  // 检查下一个场景的过渡
+  const nextIdx=(idx+1)%scenes.length;
+  const nextS=scenes[nextIdx];
+  if(nextIdx>0&&t>=nextS.start-.6&&t<nextS.start){
+    const na=Math.max(0,(t-(nextS.start-.6))/.6);
+    ctx.save();ctx.globalAlpha=na*.8;
+    switch(nextS.name){
+      case 'obsidian':drawObsidian(t,t-nextS.start,0);break;
+      case 'web':drawWeb(t,t-nextS.start,0);break;
+      case 'graph':drawGraph(t,t-nextS.start,0);break;
+      case 'sync':drawSync(t,t-nextS.start,0);break;
+      case 'outro':drawOutro(t,t-nextS.start,0);break;
+    }
+    ctx.restore();
+  }
+  // 绘制粒子
+  drawParticles();
+  // 淡入淡出遮罩
+  const fadeIn=.5,fadeOut=.5;
+  if(t<fadeIn){ctx.fillStyle=`rgba(0,0,0,${1-t/fadeIn})`;ctx.fillRect(0,0,W,H);}
+  if(t>DUR-fadeOut){ctx.fillStyle=`rgba(0,0,0,${(t-(DUR-fadeOut))/fadeOut})`;ctx.fillRect(0,0,W,H);}
+  // 全局微光
+  const vg=ctx.createRadialGradient(W*.5,H*.45,0,W*.5,H*.45,600);
+  vg.addColorStop(0,'rgba(124,108,255,.03)');vg.addColorStop(1,'transparent');
+  ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);
+  requestAnimationFrame(frame);
+}
+// 初始化音频上下文（部分浏览器需要用户手势）
+if(!audioCtx){try{audioCtx=new (window.AudioContext||window.webkitAudioContext)();}catch(e){}}
+if(audioCtx&&audioCtx.state==='suspended'){audioCtx.resume().catch(()=>{});}
+// 设置初始时间偏移
+const initNow=performance.now();
+nextNoteTime=initNow/1000+tOffset+0.1;
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

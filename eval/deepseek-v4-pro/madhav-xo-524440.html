@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>What I Know About You</title>
+    <style>
+        body {
+            margin: 0;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            font-family: 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif;
+        }
+        canvas {
+            display: block;
+            object-fit: contain;
+            max-width: 100vw;
+            max-height: 100vh;
+        }
+    </style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+(function() {
+    window.DUR = 10;
+
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+    const W = 1280;
+    const H = 720;
+
+    // Time setup
+    const params = new URLSearchParams(location.search);
+    const startOffset = Math.max(0, parseFloat(params.get('t') || '0'));
+    let startTime = performance.now() - startOffset * 1000;
+
+    // Text phases
+    const phases = [
+        { text: "What do I know about you?", inS: 0.0, inE: 0.5, outS: 1.3, outE: 1.8 },
+        { text: "You're curious.",              inS: 1.8, inE: 2.3, outS: 3.3, outE: 3.8 },
+        { text: "You love creative experiments.", inS: 3.8, inE: 4.3, outS: 5.3, outE: 5.8 },
+        { text: "You're open to surprise.",     inS: 5.8, inE: 6.3, outS: 7.3, outE: 7.8 },
+        { text: "You asked me for this.",       inS: 7.8, inE: 8.3, outS: 9.2, outE: 9.6 },
+        { text: "That's enough.",               inS: 9.6, inE: 9.8, outS: 10.0, outE: 10.0 }
+    ];
+
+    // Smoothstep
+    function smoothstep(t) {
+        t = Math.max(0, Math.min(1, t));
+        return t * t * (3 - 2 * t);
+    }
+
+    // Get alpha for a phase at time t
+    function getAlpha(phase, t) {
+        if (t < phase.inS) return 0;
+        if (t < phase.inE) return smoothstep((t - phase.inS) / (phase.inE - phase.inS));
+        if (t < phase.outS) return 1;
+        if (t < phase.outE) return 1 - smoothstep((t - phase.outS) / (phase.outE - phase.outS));
+        return 0;
+    }
+
+    // Main particles
+    const numParticles = 110;
+    const particles = [];
+    const connectionDist = 140;
+
+    for (let i = 0; i < numParticles; i++) {
+        particles.push({
+            x: Math.random() * W,
+            y: Math.random() * H,
+            vx: (Math.random() - 0.5) * 18,
+            vy: (Math.random() - 0.5) * 18,
+            r: 1.2 + Math.random() * 2.0,
+            baseR: 1.2 + Math.random() * 2.0,
+            twinklePhase: Math.random() * Math.PI * 2,
+            twinkleSpeed: 0.8 + Math.random() * 1.5,
+            hueShift: Math.random() * 15
+        });
+    }
+
+    // Star field (background tiny dots)
+    const numStars = 220;
+    const stars = [];
+    for (let i = 0; i < numStars; i++) {
+        stars.push({
+            x: Math.random() * W,
+            y: Math.random() * H,
+            r: 0.4 + Math.random() * 1.0,
+            twinklePhase: Math.random() * Math.PI * 2,
+            twinkleSpeed: 1.2 + Math.random() * 2.5,
+            baseAlpha: 0.3 + Math.random() * 0.6
+        });
+    }
+
+    // Get color for text phase (subtle shifts)
+    function getTextColor(t) {
+        const r = 242, g = 236, b = 224;
+        const warmShift = Math.sin(t * 0.6) * 8;
+        return {
+            r: Math.round(r + warmShift * 0.3),
+            g: Math.round(g - warmShift * 0.2),
+            b: Math.round(b - warmShift * 0.5),
+            alpha: 0.96
+        };
+    }
+
+    // Get particle color (warm gold with slight variation)
+    function getParticleColor(p, t) {
+        const twinkle = Math.sin(p.twinklePhase + t * p.twinkleSpeed) * 0.5 + 0.5;
+        const brightness = 0.75 + twinkle * 0.3;
+        const r = Math.round(210 * brightness + p.hueShift * 0.4);
+        const g = Math.round(175 * brightness - p.hueShift * 0.2);
+        const b = Math.round(110 * brightness - p.hueShift * 0.6);
+        return `rgba(${r}, ${g}, ${b}, 0.85)`;
+    }
+
+    // Vignette
+    function drawVignette() {
+        const grad = ctx.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.85);
+        grad.addColorStop(0, 'rgba(0,0,0,0)');
+        grad.addColorStop(1, 'rgba(0,0,0,0.55)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, H);
+    }
+
+    // Subtle background gradient
+    function drawBackground(t) {
+        const grad = ctx.createRadialGradient(W / 2, H / 2 - 30, 60, W / 2, H / 2, H * 0.8);
+        const pulse = Math.sin(t * 0.4) * 0.04 + 0.96;
+        grad.addColorStop(0, `rgba(18, 16, 20, ${pulse})`);
+        grad.addColorStop(1, 'rgba(4, 4, 7, 1)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, W, H);
+    }
+
+    // Draw stars
+    function drawStars(t) {
+        for (const s of stars) {
+            const twinkle = Math.sin(s.twinklePhase + t * s.twinkleSpeed) * 0.5 + 0.5;
+            const alpha = s.baseAlpha * (0.55 + twinkle * 0.45);
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(230, 220, 200, ${alpha})`;
+            ctx.fill();
+        }
+    }
+
+    // Update particles
+    function updateParticles(t, dt) {
+        for (const p of particles) {
+            p.x += p.vx * dt;
+            p.y += p.vy * dt;
+            // Wrap with margin
+            if (p.x < -20) p.x = W + 20;
+            if (p.x > W + 20) p.x = -20;
+            if (p.y < -20) p.y = H + 20;
+            if (p.y > H + 20) p.y = -20;
+            // Subtle radius oscillation
+            p.r = p.baseR + Math.sin(p.twinklePhase + t * p.twinkleSpeed) * 0.35;
+        }
+    }
+
+    // Draw connection lines
+    function drawConnections(t) {
+        ctx.lineWidth = 0.7;
+        for (let i = 0; i < particles.length; i++) {
+            for (let j = i + 1; j < particles.length; j++) {
+                const dx = particles[i].x - particles[j].x;
+                const dy = particles[i].y - particles[j].y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < connectionDist) {
+                    const alpha = (1 - dist / connectionDist) * 0.16;
+                    if (alpha > 0.02) {
+                        const twinkle = Math.sin(t * 1.8 + i * 0.7 + j * 0.3) * 0.3 + 0.7;
+                        const r = 210, g = 175, b = 120;
+                        ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha * twinkle})`;
+                        ctx.beginPath();
+                        ctx.moveTo(particles[i].x, particles[i].y);
+                        ctx.lineTo(particles[j].x, particles[j].y);
+                        ctx.stroke();
+                    }
+                }
+            }
+        }
+    }
+
+    // Draw main particles
+    function drawParticles(t) {
+        for (const p of particles) {
+            // Glow
+            const twinkle = Math.sin(p.twinklePhase + t * p.twinkleSpeed) * 0.5 + 0.5;
+            const glowAlpha = 0.25 + twinkle * 0.2;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.r * 3.2, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(210, 175, 115, ${glowAlpha})`;
+            ctx.fill();
+            // Core
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+            const alpha = 0.7 + twinkle * 0.3;
+            const r = Math.round(215 * (0.8 + twinkle * 0.25) + p.hueShift * 0.4);
+            const g = Math.round(180 * (0.75 + twinkle * 0.25) - p.hueShift * 0.2);
+            const b = Math.round(115 * (0.7 + twinkle * 0.25) - p.hueShift * 0.5);
+            ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+            ctx.fill();
+        }
+    }
+
+    // Draw text with glow
+    function drawText(t) {
+        // Find the active phase
+        let activePhase = null;
+        let maxAlpha = 0;
+        for (const phase of phases) {
+            const alpha = getAlpha(phase, t);
+            if (alpha > maxAlpha) {
+                maxAlpha = alpha;
+                activePhase = phase;
+            }
+            if (alpha > 0.5) break;
+        }
+        if (!activePhase || maxAlpha < 0.01) return;
+
+        const alpha = maxAlpha;
+        const text = activePhase.text;
+        const fontSize = 46;
+        const fontString = `${fontSize}px 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif`;
+
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = fontString;
+
+        // Measure text width for potential responsive sizing
+        const metrics = ctx.measureText(text);
+        const textWidth = metrics.width;
+        const maxWidth = W * 0.75;
+        const scale = textWidth > maxWidth ? maxWidth / textWidth : 1;
+        const effectiveFontSize = fontSize * scale;
+
+        ctx.font = `${effectiveFontSize}px 'Palatino Linotype', 'Book Antiqua', Palatino, Georgia, serif`;
+
+        const centerX = W / 2;
+        const centerY = H / 2;
+
+        // Text glow layers
+        const tc = getTextColor(t);
+        const glowColor = `rgba(${Math.round(tc.r)}, ${Math.round(tc.g)}, ${Math.round(tc.b)}, ${alpha * 0.4})`;
+        const mainColor = `rgba(${tc.r}, ${tc.g}, ${tc.b}, ${alpha})`;
+
+        // Soft outer glow
+        ctx.shadowColor = glowColor;
+        ctx.shadowBlur = 28;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+        ctx.fillStyle = mainColor;
+        ctx.fillText(text, centerX, centerY);
+
+        // Slightly sharper layer
+        ctx.shadowBlur = 12;
+        ctx.shadowColor = `rgba(255, 240, 210, ${alpha * 0.5})`;
+        ctx.fillStyle = `rgba(255, 250, 240, ${alpha * 0.7})`;
+        ctx.fillText(text, centerX, centerY);
+
+        // Clean final layer
+        ctx.shadowBlur = 0;
+        ctx.shadowColor = 'transparent';
+        ctx.fillStyle = `rgba(255, 252, 245, ${alpha})`;
+        ctx.fillText(text, centerX, centerY);
+
+        ctx.restore();
+    }
+
+    // Subtle floating dust motes
+    const numDust = 50;
+    const dust = [];
+    for (let i = 0; i < numDust; i++) {
+        dust.push({
+            x: Math.random() * W,
+            y: Math.random() * H,
+            vx: (Math.random() - 0.5) * 6,
+            vy: (Math.random() - 0.5) * 6,
+            r: 0.5 + Math.random() * 1.2,
+            alpha: 0.1 + Math.random() * 0.3,
+            phase: Math.random() * Math.PI * 2
+        });
+    }
+
+    function drawDust(t) {
+        for (const d of dust) {
+            const driftX = d.x + Math.sin(t * 0.5 + d.phase) * 20;
+            const driftY = d.y + Math.cos(t * 0.4 + d.phase) * 30;
+            const flAlpha = d.alpha * (0.5 + Math.sin(t * 1.2 + d.phase) * 0.4);
+            ctx.beginPath();
+            ctx.arc(driftX, driftY, d.r, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(200, 185, 155, ${flAlpha})`;
+            ctx.fill();
+        }
+        // Update dust positions slowly
+        for (const d of dust) {
+            d.x += d.vx * 0.016;
+            d.y += d.vy * 0.016;
+            if (d.x < -10) d.x = W + 10;
+            if (d.x > W + 10) d.x = -10;
+            if (d.y < -10) d.y = H + 10;
+            if (d.y > H + 10) d.y = -10;
+        }
+    }
+
+    // Main render loop
+    let prevTime = performance.now();
+    let dustLastUpdate = prevTime;
+
+    function render(now) {
+        // Compute elapsed time
+        const elapsed = ((now - startTime) / 1000) % DUR;
+        const dt = Math.min((now - prevTime) / 1000, 0.1);
+        prevTime = now;
+
+        // Clear
+        ctx.clearRect(0, 0, W, H);
+
+        // Background
+        drawBackground(elapsed);
+
+        // Stars
+        drawStars(elapsed);
+
+        // Dust motes
+        drawDust(elapsed);
+
+        // Update particles
+        updateParticles(elapsed, dt);
+
+        // Draw connections
+        drawConnections(elapsed);
+
+        // Draw particle glows and cores
+        drawParticles(elapsed);
+
+        // Draw text
+        drawText(elapsed);
+
+        // Vignette
+        drawVignette();
+
+        requestAnimationFrame(render);
+    }
+
+    // Set canvas display size for scaling
+    function resizeCanvas() {
+        const windowW = window.innerWidth;
+        const windowH = window.innerHeight;
+        const scaleX = windowW / W;
+        const scaleY = windowH / H;
+        const scale = Math.min(scaleX, scaleY);
+        canvas.style.width = (W * scale) + 'px';
+        canvas.style.height = (H * scale) + 'px';
+    }
+
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // Start animation
+    requestAnimationFrame(render);
+})();
+</script>
+</body>
+</html>

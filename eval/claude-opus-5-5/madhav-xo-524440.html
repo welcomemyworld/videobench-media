@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>About You</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
+</style></head><body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=15;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=parseFloat(new URLSearchParams(location.search).get('t'))||0;
+const t0=performance.now()-q*1000;
+let seed=7;const R=()=>(seed=(seed*16807)%2147483647)/2147483647;
+const P=[];for(let i=0;i<160;i++)P.push({a:R()*6.283,r:120+R()*520,s:(R()-.5)*.08,z:R()*2+.4,h:190+R()*80});
+const lines=[
+ [0.3,3.2,"What do I know about you?",""],
+ [3.4,6.2,"Honestly… not much.","No name. No history. Just this moment."],
+ [6.4,9.2,"But you're curious.","You asked a machine to make you something."],
+ [9.4,12.2,"You like seeing what happens.","And you're watching right now."],
+ [12.4,14.8,"That's enough to start.","Hi. 👋"]
+];
+const E=v=>v<0?0:v>1?1:v*v*(3-2*v);
+function frame(){
+ const t=((performance.now()-t0)/1000)%DUR;
+ x.fillStyle='#000';x.fillRect(0,0,1280,720);
+ const g=x.createRadialGradient(640,360,0,640,360,700);
+ g.addColorStop(0,`hsla(${230+t*6},60%,14%,1)`);g.addColorStop(1,'#000');
+ x.fillStyle=g;x.fillRect(0,0,1280,720);
+ // converge particles toward center as story progresses
+ const pull=E((t-6)/6)*0.55;
+ const pts=P.map(p=>{const a=p.a+t*p.s,r=p.r*(1-pull)+Math.sin(t*.7+p.a*3)*10;
+  return[640+Math.cos(a)*r*1.4,360+Math.sin(a)*r*.75,p];});
+ x.lineWidth=1;
+ for(let i=0;i<pts.length;i++)for(let j=i+1;j<pts.length;j+=3){
+  const dx=pts[i][0]-pts[j][0],dy=pts[i][1]-pts[j][1],d=dx*dx+dy*dy;
+  if(d<9000){x.strokeStyle=`hsla(${pts[i][2].h},80%,70%,${(1-d/9000)*.18})`;
+   x.beginPath();x.moveTo(pts[i][0],pts[i][1]);x.lineTo(pts[j][0],pts[j][1]);x.stroke();}}
+ for(const[px,py,p]of pts){x.fillStyle=`hsla(${p.h},90%,75%,${.5+.5*Math.sin(t*2+p.a*5)})`;
+  x.beginPath();x.arc(px,py,p.z,0,7);x.fill();}
+ // the "you" dot
+ const pu=1+.15*Math.sin(t*3),ya=E(t/1.5);
+ const yg=x.createRadialGradient(640,360,0,640,360,60*pu);
+ yg.addColorStop(0,`rgba(255,240,210,${ya})`);yg.addColorStop(.2,`rgba(255,180,120,${.5*ya})`);yg.addColorStop(1,'rgba(255,120,80,0)');
+ x.fillStyle=yg;x.beginPath();x.arc(640,360,60*pu,0,7);x.fill();
+ // rings
+ for(let k=0;k<3;k++){const ph=(t*.5+k/3)%1;x.strokeStyle=`rgba(255,200,150,${(1-ph)*.25*ya})`;
+  x.beginPath();x.arc(640,360,20+ph*220,0,7);x.stroke();}
+ // text
+ x.textAlign='center';x.textBaseline='middle';
+ for(const[a,b,s1,s2]of lines){if(t<a||t>b)continue;
+  const al=Math.min(E((t-a)/.6),E((b-t)/.5)),dy=(1-al)*14;
+  x.shadowColor='rgba(120,160,255,.8)';x.shadowBlur=20;
+  x.fillStyle=`rgba(255,255,255,${al})`;x.font='600 54px Georgia,serif';
+  x.fillText(s1,640,180+dy);
+  x.shadowBlur=0;x.fillStyle=`rgba(200,215,255,${al*.85})`;x.font='italic 28px Georgia,serif';
+  if(s2)x.fillText(s2,640,560-dy);}
+ // fade edges for loop
+ const f=Math.max(1-E(t/.4),E((t-14.5)/.5));
+ if(f>0){x.fillStyle=`rgba(0,0,0,${f})`;x.fillRect(0,0,1280,720);}
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></body></html>

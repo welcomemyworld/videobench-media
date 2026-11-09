@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000;overflow:hidden}canvas{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:center;}</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+const cv=document.getElementById('c'),g=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.transform`=`;cv.style.transform='translate(-50%,-50%) scale('+s+')'}
+fit();onresize=fit;
+window.DUR=48;
+const W=1280,H=720;
+let seed=7;function R(){seed=(seed*16807)%2147483647;return seed/2147483647}
+function hash(x,y){let h=Math.sin(x*127.1+y*311.7)*43758.5453;return h-Math.floor(h)}
+function noise(x,y){const xi=Math.floor(x),yi=Math.floor(y),xf=x-xi,yf=y-yi,u=xf*xf*(3-2*xf),v=yf*yf*(3-2*yf);
+return hash(xi,yi)*(1-u)*(1-v)+hash(xi+1,yi)*u*(1-v)+hash(xi,yi+1)*(1-u)*v+hash(xi+1,yi+1)*u*v}
+function fbm(x,y){let a=.5,s=0;for(let i=0;i<5;i++){s+=a*noise(x,y);x*=2;y*=2;a/=2}return s}
+function height(x,z){let h=fbm(x*.004,z*.004)*260-90;const r=Math.abs(Math.sin(x*.0021+fbm(z*.003,x*.002)*4));h-=Math.pow(1-r,6)*90;return h}
+const WL=-10;
+// structures
+const S=[];
+for(let i=0;i<46;i++){const x=(R()-.5)*3600,z=R()*3200+100,t=Math.floor(R()*5);S.push({x,z,t,s:60+R()*180,r:R()*6,y:Math.max(height(x,z),WL)})}
+const trees=[];for(let i=0;i<900;i++){const x=(R()-.5)*4000,z=R()*3400;const h=height(x,z);if(h>WL+5&&h<90)trees.push({x,z,h,s:6+R()*10})}
+const stars=[];for(let i=0;i<200;i++)stars.push([R()*W,R()*300,R()]);
+function sky(t,hor){const gr=g.createLinearGradient(0,0,0,hor+40);
+gr.addColorStop(0,'#1a1038');gr.addColorStop(.5,'#8a4a70');gr.addColorStop(.85,'#f0a070');gr.addColorStop(1,'#ffd9a0');g.fillStyle=gr;g.fillRect(0,0,W,H);
+for(const s of stars){g.fillStyle='rgba(255,255,255,'+(s[2]*.6*(1-hor/500>0?1:0))+')';g.fillRect(s[0],s[1]*(hor/360),1.2,1.2)}}
+let cam;
+function P(x,y,z){const dx=x-cam.x,dy=y-cam.y,dz=z-cam.z;const c=Math.cos(cam.yaw),s=Math.sin(cam.yaw);
+const rx=dx*c-dz*s,rz=dx*s+dz*c;const cp=Math.cos(cam.pitch),sp=Math.sin(cam.pitch);
+const ry=dy*cp-rz*sp,rz2=dy*sp+rz*cp;if(rz2<4)return null;const f=700/rz2;return[W/2+rx*f,H/2-ry*f,rz2,f]}
+function fog(d,a){const k=Math.min(1,d/2600);return k}
+function mix(a,b,k){return[a[0]+(b[0]-a[0])*k|0,a[1]+(b[1]-a[1])*k|0,a[2]+(b[2]-a[2])*k|0]}
+const FOG=[230,160,140];
+function col(c,d){const m=mix(c,FOG,Math.pow(Math.min(1,d/2800),.7));return'rgb('+m+')'}
+function poly(pts,c,d,stroke){if(pts.some(p=>!p))return;g.beginPath();pts.forEach((p,i)=>i?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1]));g.closePath();g.fillStyle=col(c,d);g.fill();if(stroke){g.strokeStyle=stroke;g.lineWidth=.6;g.stroke()}}
+function box(x,y,z,w,h,d,c,rot){const ca=Math.cos(rot),sa=Math.sin(rot);
+const q=[[-1,-1],[1,-1],[1,1],[-1,1]].map(([a,b])=>[x+(a*w*ca-b*d*sa),z+(a*w*sa+b*d*ca)]);
+const dist=Math.hypot(x-cam.x,z-cam.z);
+const top=q.map(p=>P(p[0],y+h,p[1])),bot=q.map(p=>P(p[0],y,p[1]));
+for(let i=0;i<4;i++){const j=(i+1)%4;const sh=.55+.45*Math.cos(i*1.6+rot);
+poly([bot[i],bot[j],top[j],top[i]],c.map(v=>v*sh),dist,'rgba(40,20,30,.15)')}
+poly(top,c.map(v=>Math.min(255,v*1.15)),dist)}
+function drawStruct(s,t){const c0=[[150,120,130],[110,100,125],[170,140,120],[100,120,130],[140,110,100]][s.t];
+const y=s.y;const rot=s.r+(s.t==1?t*.05:0);
+if(s.t==0){for(let i=0;i<9;i++){const k=1-i/9;box(s.x,y+i*s.s*.35,s.z,s.s*k*.8,s.s*.35,s.s*k*.8,c0.map(v=>v*(.8+i*.03)),rot+i*.25)}}
+else if(s.t==1){// floating rings & spire
+box(s.x,y,s.z,s.s*.12,s.s*3,s.s*.12,c0,rot);
+for(let i=0;i<3;i++){const a=t*.3+i*2.1,ry=y+s.s*(1.2+i*.6);for(let k=0;k<10;k++){const b=k/10*6.283+a;box(s.x+Math.cos(b)*s.s*(1.1-i*.2),ry+Math.sin(t+k)*3,s.z+Math.sin(b)*s.s*(1.1-i*.2),s.s*.1,s.s*.1,s.s*.1,[200,170,150],b)}}}
+else if(s.t==2){// colonnade arch ruin
+for(let i=0;i<6;i++){const h=s.s*(1.4-(i%3)*.3);box(s.x+(i-2.5)*s.s*.35,y,s.z,s.s*.07,h,s.s*.07,c0,0)}
+box(s.x,y+s.s*1.4,s.z,s.s*1.0,s.s*.07,s.s*.1,c0.map(v=>v*.9),0)}
+else if(s.t==3){// inverted pyramid hanging
+for(let i=0;i<7;i++){const k=(i+1)/7;box(s.x,y+s.s*1.5+ (6-i)*s.s*.2,s.z,s.s*k*.7,s.s*.2,s.s*k*.7,c0.map(v=>v*(.7+k*.4)),rot)}
+box(s.x,y,s.z,s.s*.08,s.s*1.5,s.s*.08,[90,80,90],0)}
+else{for(let i=0;i<12;i++){const a=i*.55+rot;box(s.x+Math.cos(a)*s.s*.4,y+i*s.s*.28,s.z+Math.sin(a)*s.s*.4,s.s*.18,s.s*.28,s.s*.18,c0.map(v=>v*(.7+i*.03)),a)}}
+}
+let t0=performance.now(),off=+(new URLSearchParams(location.search).get('t')||0);
+function frame(now){
+const t=((now-t0)/1000+off)%DUR;
+// camera path
+const u=t/DUR*6.283;
+cam={x:Math.sin(u)*500+Math.sin(u*3)*100,z:200+t*55,y:0,yaw:Math.sin(u*1.5)*.35+Math.sin(u*2)*.1,pitch:.12+Math.sin(u*2)*.05};
+cam.z=(cam.z%3000);
+cam.y=Math.max(height(cam.x,cam.z),WL)+110+Math.sin(u*4)*30;
+const hor=H/2-Math.tan(-cam.pitch)*700*-1;
+const horizon=H/2-700*Math.tan(cam.pitch)*(-1)*-1;
+const hy=H/2-700*Math.tan(cam.pitch);
+sky(t,hy);
+// sun
+const sg=g.createRadialGradient(W/2+Math.sin(cam.yaw)*-300+300,hy-40,5,W/2+300,hy-40,260);
+sg.addColorStop(0,'rgba(255,240,200,1)');sg.addColorStop(.1,'rgba(255,200,140,.7)');sg.addColorStop(1,'rgba(255,150,100,0)');g.fillStyle=sg;g.fillRect(0,0,W,H);
+// terrain: rows far to near, columns
+const rows=[];const NZ=70,NX=60;
+const fwdx=-Math.sin(cam.yaw),fwdz=Math.cos(cam.yaw);
+const rowsPts=[];
+for(let j=NZ;j>=1;j--){const d=20+Math.pow(j/NZ,2.1)*3200;const row=[];
+for(let i=-NX;i<=NX;i++){const wx=cam.x+(fwdx*d)+ -fwdz*(i*d*.027)*-1*-1,wz=cam.z+fwdz*d+fwdx*(i*d*.027)*-1*-1;
+// rotate properly using inverse of P: build from yaw
+const c=Math.cos(cam.yaw),s=Math.sin(cam.yaw);const lx=i*d*.027,lz=d;
+const X=cam.x+lx*c+lz*s,Z=cam.z-lx*s+lz*c;
+const h=height(X,Z);row.push({X,Z,h,p:P(X,Math.max(h,WL),Z),w:h<WL})}
+rowsPts.push(row)}
+for(let j=0;j<rowsPts.length-1;j++){const a=rowsPts[j],b=rowsPts[j+1];
+for(let i=0;i<a.length-1;i++){const q=[a[i],a[i+1],b[i+1],b[i]];if(q.some(v=>!v.p))continue;
+const hh=(q[0].h+q[2].h)/2,sl=Math.abs(q[0].h-q[1].h)+Math.abs(q[0].h-q[3].h);
+let c;const d=q[0].p[2];
+if(q.every(v=>v.w)){c=[40+Math.sin(q[0].X*.02+t)*6,90,120];}
+else if(hh>95)c=[225,225,235];
+else if(sl>26)c=[110-sl,90-sl*.5,85];
+else if(hh<WL+8)c=[200,175,130];
+else c=[50+hh*.3|0,95+fbm(q[0].X*.02,q[0].Z*.02)*60|0,50];
+const light=.75+(q[0].h-q[1].h)*.012;c=c.map(v=>Math.max(0,Math.min(255,v*light)));
+g.beginPath();g.moveTo(q[0].p[0],q[0].p[1]);for(let k=1;k<4;k++)g.lineTo(q[k].p[0],q[k].p[1]);g.closePath();
+const f=col(c,d);g.fillStyle=f;g.fill();g.strokeStyle=f;g.lineWidth=.8;g.stroke()}
+}
+// objects sorted far to near
+const objs=[];
+for(const s of S){for(const o of [0,3000]){const z=s.z+o-(cam.z>1500&&o==0?0:0);objs.push({s,z:s.z,k:0})}break}
+const list=[];
+const wrapz=z=>{let d=z-cam.z;d=((d%3000)+3000)%3000;return cam.z+d};
+for(const s of S){const z=wrapz(s.z);const dx=s.x-cam.x,dz=z-cam.z;const fz=dx*Math.sin(cam.yaw)+dz*Math.cos(cam.yaw);if(fz>20&&fz<3000)list.push({s,z,fz,tr:0})}
+for(const tr of trees){const z=wrapz(tr.z);const dx=tr.x-cam.x,dz=z-cam.z;const fz=dx*Math.sin(cam.yaw)+dz*Math.cos(cam.yaw);if(fz>20&&fz<1800)list.push({s:tr,z,fz,tr:1})}
+list.sort((a,b)=>b.fz-a.fz);
+for(const o of list){if(o.tr){const p=P(o.s.x,o.s.h,o.z),q=P(o.s.x,o.s.h+o.s.s*2.5,o.z);if(!p||!q)continue;const d=p[2];
+g.fillStyle=col([25,70,45],d);const w=o.s.s*p[3]*.5;g.beginPath();g.moveTo(p[0]-w,p[1]);g.lineTo(q[0],q[1]);g.lineTo(p[0]+w,p[1]);g.fill()}
+else{const s={...o.s,z:o.z};drawStruct(s,t)}}
+// mist
+const mg=g.createLinearGradient(0,hy-30,0,hy+140);mg.addColorStop(0,'rgba(240,170,150,0)');mg.addColorStop(.3,'rgba(240,180,160,.35)');mg.addColorStop(1,'rgba(240,180,160,0)');g.fillStyle=mg;g.fillRect(0,hy-30,W,170);
+// vignette & bars
+const vg=g.createRadialGradient(W/2,H/2,250,W/2,H/2,780);vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(20,0,20,.6)');g.fillStyle=vg;g.fillRect(0,0,W,H);
+g.fillStyle='#000';g.fillRect(0,0,W,50);g.fillRect(0,H-50,W,50);
+const a=Math.min(1,t/2,(DUR-t)/2);g.fillStyle='rgba(0,0,0,'+(1-a)+')';g.fillRect(0,0,W,H);
+g.font='italic 22px Georgia,serif';g.textAlign='center';
+const ta=Math.max(0,Math.min(1,(t-2)/2,(9-t)/2));g.fillStyle='rgba(255,230,210,'+ta+')';
+g.fillText('Das Reich der schweigenden Türme',W/2,H-70);
+requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

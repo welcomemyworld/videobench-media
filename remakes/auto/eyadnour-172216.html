@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>How QR Codes Hold & Repair a Message</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#05070d}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+// Note: external libraries (Three.js) cannot be loaded offline, so a tiny 3D projection renderer is built in.
+window.DUR=40;
+const cv=document.getElementById('c'),g=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const T0=performance.now()-(parseFloat(q.get('t'))||0)*1000;
+const N=21;let seed=7;const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
+// module types: 0 data,1 ecc,2 finder,3 timing
+const M=[];
+function finder(x,y){for(let i=-1;i<8;i++)for(let j=-1;j<8;j++){const a=x+i,b=y+j;if(a<0||b<0||a>=N||b>=N)continue;const d=Math.max(Math.abs(i-3),Math.abs(j-3));M[b][a]={t:2,v:d==3||d<=1?1:0};}}
+for(let y=0;y<N;y++){M[y]=[];for(let x=0;x<N;x++)M[y][x]={t:0,v:rnd()<.5?1:0};}
+finder(0,0);finder(N-7,0);finder(0,N-7);
+for(let i=8;i<N-8;i++){M[6][i]={t:3,v:i%2==0?1:0};M[i][6]={t:3,v:i%2==0?1:0};}
+// zigzag order
+const order=[];for(let x=N-1;x>0;x-=2){if(x==6)x--;const up=((N-1-x)>>1)%2==0;for(let k=0;k<N;k++){const y=up?N-1-k:k;for(const xx of[x,x-1])if(M[y][xx].t==0)order.push([xx,y]);}}
+order.forEach((p,i)=>{const m=M[p[1]][p[0]];m.i=i;if(i>=order.length*0.55)m.t=1;});
+const dmg=(x,y)=>Math.hypot(x-13.5,y-12.5)<4.2;
+// audio
+let AC=null,last=-1;
+addEventListener('click',()=>{if(!AC)AC=new (window.AudioContext||window.webkitAudioContext)();});
+function tone(f,d,ty,v){if(!AC)return;const o=AC.createOscillator(),gn=AC.createGain();o.type=ty||'sine';o.frequency.value=f;gn.gain.setValueAtTime(v||.15,AC.currentTime);gn.gain.exponentialRampToValueAtTime(.001,AC.currentTime+d);o.connect(gn).connect(AC.destination);o.start();o.stop(AC.currentTime+d);}
+const ease=x=>x<0?0:x>1?1:x*x*(3-2*x);
+const scenes=[[0,'1 · Text becomes bits','Each character is encoded into 8-bit bytes.'],[8,'2 · Bits fill the grid','Finder squares and timing lines guide the camera; data snakes up and down in columns.'],[16,'3 · Reed–Solomon error correction','Extra parity bytes (orange) are computed from the data — redundancy as polynomial math.'],[24,'4 · Damage','A smudge destroys modules. Up to ~30% can be lost at level H.'],[32,'5 · Repair & decode','Parity equations locate and rebuild the missing bytes. The message survives.']];
+function proj(x,y,z,ry,rx){let cx=Math.cos(ry),sx=Math.sin(ry),X=x*cx+z*sx,Z=-x*sx+z*cx;let c2=Math.cos(rx),s2=Math.sin(rx),Y=y*c2-Z*s2;Z=y*s2+Z*c2;const p=900/(900+Z);return[640+X*p,380+Y*p,Z];}
+function frame(){
+ const t=((performance.now()-T0)/1000)%DUR;
+ const si=scenes.filter(s=>t>=s[0]).length-1;
+ if(si!=last){last=si;tone([330,440,523,196,660][si],.6,'triangle',.2);}
+ if(si==4&&Math.random()<.15)tone(800+Math.random()*600,.05,'square',.03);
+ g.fillStyle='#05070d';g.fillRect(0,0,1280,720);
+ const bg=g.createRadialGradient(640,380,50,640,380,700);bg.addColorStop(0,'rgba(40,80,160,.25)');bg.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=bg;g.fillRect(0,0,1280,720);
+ const ry=Math.sin(t*.25)*.45,rx=.25+Math.sin(t*.17)*.1,S=19;
+ const build=ease((t-8)/6),eccA=ease((t-16)/3),dm=ease((t-25)/2),rep=ease((t-34)/4);
+ const quads=[];
+ for(let y=0;y<N;y++)for(let x=0;x<N;x++){const m=M[y][x];let show=1,z=0,col;
+  if(t<8){show=0}
+  else if(m.t==0||m.t==1){const k=m.i/order.length;show=build>k?1:0;z=-40*(1-ease((build-k)*8));}
+  else show=ease((t-8)*1.5);
+  if(!show)continue;
+  let v=m.v,broken=dmg(x,y)&&dm>0&&rep<1;
+  if(m.t==2)col=v?'#e8f0ff':'#1a2238';else if(m.t==3)col=v?'#9fd0ff':'#1a2238';
+  else if(m.t==1&&eccA>0)col=v?`rgb(${255},${140+60*(1-eccA)|0},${60})`:'#2a1a12';
+  else col=v?'#5fe0c0':'#122028';
+  if(broken){z=-30*dm*Math.sin(x*3+y);col=`rgba(120,40,60,${.5+.3*Math.sin(t*10+x*y)})`;}
+  if(dmg(x,y)&&rep>0&&rep<1){const r=rep*6>Math.hypot(x-13.5,y-12.5)*1.4;if(r){z=-20*(1-rep);col=v?'#ffffff':'#20304a';}}
+  if(v&&!broken)z-=6;
+  const X=(x-N/2)*S,Y=(y-N/2)*S;
+  const p=[proj(X,Y,z,ry,rx),proj(X+S-1,Y,z,ry,rx),proj(X+S-1,Y+S-1,z,ry,rx),proj(X,Y+S-1,z,ry,rx)];
+  quads.push([p[0][2],p,col]);}
+ quads.sort((a,b)=>b[0]-a[0]);
+ for(const qd of quads){g.fillStyle=qd[2];g.beginPath();qd[1].forEach((p,i)=>i?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1]));g.fill();}
+ // smudge
+ if(dm>0&&rep<1){const c=proj((13.5-N/2+.5)*S,(12.5-N/2+.5)*S,-20,ry,rx);g.fillStyle=`rgba(70,30,20,${.55*dm*(1-rep)})`;g.beginPath();for(let a=0;a<6.3;a+=.3){const r=80+12*Math.sin(a*5+1);g.lineTo(c[0]+Math.cos(a)*r,c[1]+Math.sin(a)*r*.85);}g.fill();}
+ // scanline
+ if(t>32){const sy=200+((t*180)%380);g.fillStyle='rgba(120,255,200,.15)';g.fillRect(380,sy,520,3);}
+ // scene 1: bytes
+ g.textAlign='center';g.font='bold 64px monospace';
+ const msg='HELLO';
+ if(t<9){const a=t<8?1:9-t;g.globalAlpha=a;for(let i=0;i<5;i++){const x=440+i*100;g.fillStyle='#fff';g.fillText(msg[i],x,300);const b=msg.charCodeAt(i).toString(2).padStart(8,'0');g.font='20px monospace';for(let k=0;k<8;k++){const on=ease(t-1-i*.5-k*.08);g.fillStyle=b[k]=='1'?'#5fe0c0':'#456';g.globalAlpha=a*on;g.fillText(b[k],x,350+k*24);}g.globalAlpha=a;g.font='bold 64px monospace';}g.globalAlpha=1;}
+ // bars data vs ecc
+ if(t>17&&t<32){const a=Math.min(1,(t-17),32-t);g.globalAlpha=a;g.font='16px sans-serif';g.textAlign='left';g.fillStyle='#5fe0c0';g.fillRect(70,330,140*1,18);g.fillText('Data bytes',70,320);g.fillStyle='#ff9a3c';g.fillRect(70,400,140*eccA*.82,18);g.fillText('Parity (ECC) bytes',70,390);g.fillStyle='#9ab';g.fillText('Levels: L 7% · M 15% · Q 25% · H 30%',70,460);g.globalAlpha=1;}
+ // decoded
+ if(t>36){const a=ease(t-36)*Math.min(1,DUR-t);g.globalAlpha=a;g.textAlign='right';g.font='18px sans-serif';g.fillStyle='#9ab';g.fillText('Decoded:',1210,330);g.font='bold 52px monospace';g.fillStyle='#fff';g.fillText('HELLO',1210,390);g.font='18px sans-serif';g.fillStyle='#5fe0c0';g.fillText('✓ errors corrected',1210,425);g.globalAlpha=1;}
+ // titles
+ const sc=scenes[si],fa=Math.min(1,(t-sc[0])*2);g.globalAlpha=fa;g.textAlign='left';g.fillStyle='#fff';g.font='bold 34px sans-serif';g.fillText(sc[1],60,70);g.font='19px sans-serif';g.fillStyle='#b8c8e0';g.fillText(sc[2],60,104);g.globalAlpha=1;
+ g.fillStyle='#345';g.fillRect(60,680,1160,4);g.fillStyle='#5fe0c0';g.fillRect(60,680,1160*t/DUR,4);
+ if(!AC){g.font='13px sans-serif';g.fillStyle='#567';g.textAlign='right';g.fillText('click for sound',1220,666);}
+ requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

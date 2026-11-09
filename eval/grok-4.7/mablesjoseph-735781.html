@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Context Tax</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden;}
+#stage{position:absolute;left:50%;top:50%;width:1280px;height:720px;background:#000;}
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+window.DUR = 50;
+const c = document.getElementById('stage');
+const ctx = c.getContext('2d');
+const q = new URLSearchParams(location.search);
+const tOff = Math.max(0, parseFloat(q.get('t')) || 0);
+function fit(){
+  const s = Math.min(innerWidth/1280, innerHeight/720);
+  c.style.transform = 'translate(-50%,-50%) scale(' + s + ')';
+}
+addEventListener('resize', fit); fit();
+
+const grain = document.createElement('canvas');
+grain.width = 320; grain.height = 180;
+const gctx = grain.getContext('2d');
+const img = gctx.createImageData(320, 180);
+for (let i = 0; i < img.data.length; i += 4) {
+  const v = (Math.random() * 255) | 0;
+  img.data[i] = img.data[i+1] = img.data[i+2] = v;
+  img.data[i+3] = 36;
+}
+gctx.putImageData(img, 0, 0);
+
+const clamp = (v,a,b) => v < a ? a : v > b ? b : v;
+const lerp = (a,b,t) => a + (b-a) * t;
+const ease = t => { t = clamp(t,0,1); return t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t+2,2)/2; };
+const io = t => { t = clamp(t,0,1); return 1 - Math.pow(1-t, 3); };
+function seg(t, a, b){ return clamp((t-a)/(b-a), 0, 1); }
+
+function rr(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+function track(str, x, y, tr){
+  let xx = x;
+  for (const ch of str) {
+    ctx.fillText(ch, xx, y);
+    xx += ctx.measureText(ch).width + tr;
+  }
+  return xx;
+}
+function wrap(text, x, y, max, lh){
+  const words = text.split(' ');
+  let line = '', yy = y;
+  for (const w of words) {
+    const t = line ? line + ' ' + w : w;
+    if (ctx.measureText(t).width > max && line) {
+      ctx.fillText(line, x, yy); line = w; yy += lh;
+    } else line = t;
+  }
+  if (line) ctx.fillText(line, x, yy);
+  return yy;
+}
+
+const INK = '#f3efe6';
+const MUTED = '#9c968c';
+const DIM = '#6d6860';
+const ACCENT = '#e4a24a';
+const RED = '#e36a55';
+const LINE = '#2c2a27';
+
+function bg(t){
+  const g = ctx.createLinearGradient(0, 0, 900, 720);
+  g.addColorStop(0, '#12110f');
+  g.addColorStop(0.55, '#0a0908');
+  g.addColorStop(1, '#050504');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 1280, 720);
+  ctx.save();
+  ctx.globalAlpha = 0.045;
+  ctx.strokeStyle = '#f3efe6';
+  ctx.lineWidth = 1;
+  const drift = (t * 8) % 40;
+  for (let x = -40 + drift; x < 1320; x += 40) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x - 80, 720); ctx.stroke();
+  }
+  ctx.restore();
+  ctx.save();
+  ctx.globalAlpha = 0.07;
+  ctx.drawImage(grain, 0, 0, 1280, 720);
+  ctx.restore();
+  const v = ctx.createRadialGradient(640, 340, 180, 640, 360, 780);
+  v.addColorStop(0, 'rgba(0,0,0,0)');
+  v.addColorStop(1, 'rgba(0,0,0,0.55)');
+  ctx.fillStyle = v;
+  ctx.fillRect(0, 0, 1280, 720);
+}
+
+function chrome(t, label, idx){
+  ctx.font = '13px ui-monospace, Menlo, Consolas, monospace';
+  ctx.fillStyle = DIM;
+  ctx.textAlign = 'left';
+  ctx.fillText('CONTEXT TAX', 64, 42);
+  ctx.fillStyle = ACCENT;
+  ctx.fillText('  /  ' + label, 64 + ctx.measureText('CONTEXT TAX').width, 42);
+  ctx.fillStyle = DIM;
+  ctx.textAlign = 'right';
+  ctx.fillText(String(idx).padStart(2,'0') + '  /  05', 1216, 42);
+  ctx.strokeStyle = LINE;
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(64, 56); ctx.lineTo(1216, 56); ctx.stroke();
+  const p = t / window.DUR;
+  ctx.fillStyle = '#1c1b19';
+  ctx.fillRect(64, 694, 1152, 2);
+  ctx.fillStyle = ACCENT;
+  ctx.fillRect(64, 694, 1152 * p, 2);
+}
+
+function fadeOverlay(t){
+  let a = 0;
+  if (t < 0.45) a = 1 - t / 0.45;
+  if (t > window.DUR - 0.7) a = (t - (window.DUR - 0.7)) / 0.7;
+  if (a > 0) {
+    ctx.fillStyle = 'rgba(0,0,0,' + clamp(a,0,1) + ')';
+    ctx.fillRect(0, 0, 1280, 720);
+  }
+}
+
+function sceneTitle(t){
+  const u = ease(seg(t, 0.3, 1.4));
+  const u2 = ease(seg(t, 1.1, 2.2));
+  const u3 = ease(seg(t, 2.0, 3.1));
+  ctx.save();
+  ctx.globalAlpha = u;
+  ctx.font = '14px ui-monospace, Menlo, Consolas, monospace';
+  ctx.fillStyle = ACCENT;
+  ctx.textAlign = 'left';
+  track('AN ESSAY  FOR  ENGINEERS', 64, 250, 3.2);
+  ctx.restore();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(64, 250, 1100 * u2, 160);
+  ctx.clip();
+  ctx.font = '92px Georgia, Palatino, serif';
+  ctx.fillStyle = INK;
+  ctx.textAlign = 'left';
+  ctx.fillText('Context Tax', 64, 360);
+  ctx.restore();
+
+  ctx.save();
+  ctx.globalAlpha = u3;
+  ctx.font = '22px Georgia, Palatino, serif';
+  ctx.fillStyle = MUTED;
+  wrap('The cost of continuing the work without the context that made the last decision true.', 64, 410, 760, 32);
+  ctx.restore();
+
+  const chips = ['WHY', 'CONSTRAINT', 'DECISION', 'TASTE', 'NON-GOAL'];
+  chips.forEach((name, i) => {
+    const k = ease(seg(t, 3.2 + i * 0.18, 3.9 + i * 0.18));
+    ctx.save();
+    ctx.globalAlpha = k;
+    ctx.translate(64 + i * 168, 520 + (1-k) * 16);
+    rr(0, 0, 152, 36, 18);
+    ctx.fillStyle = '#161513';
+    ctx.fill();
+    ctx.strokeStyle = '#3a342c';
+    ctx.stroke();
+    ctx.font = '12px ui-monospace, Menlo, Consolas, monospace';
+    ctx.fillStyle = INK;
+    ctx.textAlign = 'center';
+    ctx.fillText(name, 76, 23);
+    ctx.restore();
+  });
+}
+
+function sceneDef(t){
+  const local = t - 7;
+  chrome(t, 'THE LEVY', 1);
+  const u = ease(seg(local, 0.2, 1.1));
+  ctx.save();
+  ctx.globalAlpha = u;
+  ctx.font = '13px ui-monospace, Menlo, Consolas, monospace';
+  ctx.fillStyle = ACCENT;
+  ctx.textAlign = 'left';
+  ctx.fillText('01   DEFINITION', 64, 110);
+  ctx.font = '40px Georgia, Palatino, serif';
+  ctx.fillStyle = INK;
+  wrap('You do not pay for the answer. You pay to rebuild the room it was asked in.', 64, 170, 620, 50);
+  ctx.font = '18px Georgia, Palatino, serif';
+  ctx.fillStyle = MUTED;
+  wrap('A fresh chat, a new teammate, a ticket with no why — each one starts in the dark. Reloading what was already known is not free. That reload is the tax.', 64, 310, 600, 28);
+  ctx.restore();
+
+  const facts = [
+    { l: 'WHY', s: 'the bet' },
+    { l: 'CONSTRAINT', s: 'what must hold' },
+    { l: 'DECISION', s: 'what we chose' },
+    { l: 'TASTE', s: 'what good looks like' },
+    { l: 'NON-GOAL', s: 'what we will not do' }
+  ];
+  facts.forEach((f, i) => {
+    const k = ease(seg(local, 0.6 + i * 0.28, 1.4 + i * 0.28));
+    const shed = ease(seg(local, 3.2 + i * 0.22, 4.4 + i * 0.22));
+    const x = 760, y = 130 + i * 86;
+    ctx.save();
+    ctx.globalAlpha = k * (1 - shed * 0.85);
+    ctx.translate(shed * (40 + i * 18), shed * (18 + i * 6));
+    rr(x, y, 420, 70, 8);
+    ctx.fillStyle = '#141311';
+    ctx.fill();
+    ctx.strokeStyle = shed > 0.2 ? '#5a3028' : '#3a342c';
+    ctx.stroke();
+    ctx.fillStyle = ACCENT;
+    ctx.fillRect(x, y, 3, 70);
+    ctx.font = '13px ui-monospace, Menlo, Consolas, monospace';
+    ctx.fillStyle = ACCENT;
+    ctx.textAlign = 'left';
+    ctx.fillText(f.l, x + 22, y + 28);
+    ctx.font = '18px Georgia, Palatino, serif';
+    ctx.fillStyle = INK;
+    ctx.fillText(f.s, x + 22, y + 52);
+    if (shed > 0.05) {
+      ctx.globalAlpha = shed;
+      ctx.fillStyle = RED;
+      ctx.font = '12px ui-monospace, Menlo, Consolas, monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText('DROPPED', x + 400, y + 28);
+    }
+    ctx.restore();
+  });
+
+  const stamp = ease(seg(local, 4.6, 5.6));
+  if (stamp > 0) {
+    ctx.save();
+    ctx.translate(980, 560);
+    ctx.rotate(-0.12);
+    ctx.globalAlpha = stamp;
+    ctx.strokeStyle = RED;
+    ctx.lineWidth = 3;
+    rr(-90, -28, 180, 56, 6);
+    ctx.stroke();
+    ctx.font = '20px ui-monospace, Menlo, Consolas, monospace';
+    ctx.fillStyle = RED;
+    ctx.textAlign = 'center';
+    ctx.fillText('TAX DUE', 0, 8);
+    ctx.restore();
+  }
+}
+
+function sceneReceipt(t){
+  const local = t - 15.2;
+  chrome(t, 'THE INVOICE', 2);
+  ctx.font = '13px ui-monospace, Menlo, Consolas, monospace';
+  ctx.fillStyle = ACCENT;
+  ctx.textAlign = 'left';
+  ctx.fillText('02   WHAT YOU ACTUALLY PAY', 64, 110);
+
+  const items = [
+    ['Re-explain the constraint', '12 min'],
+    ['Re-prompt the model', '800 tok'],
+    ['Re-open the ticket', '1 cycle'],
+    ['Rebuild the assumption', '1 bug'],
+    ['Review the wrong diff', '2 hrs'],
+    ['Re-teach the taste', 'a meeting']
+  ];
+  ctx.save();
+  ctx.globalAlpha = ease(seg(local, 0.1, 0.7));
+  rr(180, 150, 920, 500, 12);
+  ctx.fillStyle = '#12110e';
+  ctx.fill();
+  ctx.strokeStyle = '#3a342c';
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.save();
+  ctx.globalAlpha = ease(seg(local, 0.2, 0.8));
+  ctx.font = '28px Georgia, Palatino, serif';
+  ctx.fillStyle = INK;
+  ctx.fillText('Invoice  —  one missing prior', 216, 204);
+  ctx.font = '13px ui-monospace, Menlo, Consolas, monospace';
+  ctx.fillStyle = DIM;
+  ctx.fillText('PAID AGAIN, NOT ONCE', 216, 228);
+  ctx.strokeStyle = LINE;
+  ctx.beginPath(); ctx.moveTo(216, 248); ctx.lineTo(1064, 248); ctx.stroke();
+  ctx.restore();
+
+  items.forEach((it, i) => {
+    const k = ease(seg(local, 0.7 + i * 0.55, 1.4 + i * 0.55));
+    const y = 292 + i * 46;
+    ctx.save();
+    ctx.globalAlpha = k;
+    ctx.translate((1-k) * -24, 0);
+    ctx.font = '20px Georgia, Palatino, serif';
+    ctx.fillStyle = INK;
+    ctx.textAlign = 'left';
+    ctx.fillText(it[0], 216, y);
+    ctx.font = '16px ui-monospace, Menlo, Consolas, monospace';
+    ctx.fillStyle = ACCENT;
+    ctx.textAlign = 'right';
+    ctx.fillText(it[1], 1048, y);
+    ctx.strokeStyle = '#2a2723';
+    ctx.setLineDash([2, 6]);
+    ctx.beginPath();
+    const lw = ctx.measureText(it[1]).width;
+    ctx.moveTo(230 + ctx.measureText(it[0]).width + 8, y - 4);
+    ctx.lineTo(1036 - lw, y - 4);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  });
+
+  const tot = ease(seg(local, 4.3, 5.2));
+  ctx.save();
+  ctx.globalAlpha = tot;
+  ctx.strokeStyle = ACCENT;
+  ctx.beginPath(); ctx.moveTo(216, 568); ctx.lineTo(1064, 568); ctx.stroke();
+  ctx.font = '22px Georgia, Palatino, serif';
+  ctx.fillStyle = INK;
+  ctx.textAlign = 'left';
+  ctx.fillText('Total', 216, 604);
+  ctx.font = '22px ui-monospace, Menlo, Consolas, monospace';
+  ctx.fillStyle = ACCENT;
+  ctx.textAlign = 'right';
+  ctx.fillText('THE SAME WORK, TWICE', 1048, 604);
+  ctx.restore();
+}
+
+function scenePlaces(t){
+  const local = t - 24.6;
+  chrome(t, 'WHERE IT LANDS', 3);
+  ctx.font = '13px ui-monospace, Menlo, Consolas, monospace';
+  ctx.fillStyle = ACCENT;
+  ctx.textAlign = 'left';
+  ctx.fillText('03   THREE ROOMS, ONE LEVY', 64, 110);
+  ctx.font = '32px Georgia, Palatino, serif';
+  ctx.fillStyle = INK;
+  ctx.globalAlpha = ease(seg(local, 0.15, 0.8));
+  ctx.fillText('Context dies in the handoff. The tax shows up downstream.', 64, 158);
+  ctx.globalAlpha = 1;
+
+  const cards = [
+    ['THE MODEL', '01', 'The window keeps the last tokens, not the why. A clever answer on a dropped constraint is still the wrong ship.', 'WINDOW'],
+    ['THE TEAM', '02', 'The ticket moves. The decision does not. The next person rebuilds the bet from a title and a guess.', 'HANDOFF'],
+    ['THE CODE', '03', 'The diff shows what changed. It rarely shows what must never change. Review becomes archaeology.', 'DIFF']
+  ];
+  cards.forEach((cd, i) => {
+    const k = ease(seg(local, 0.5 + i * 0.35, 1.4 + i * 0.35));
+    const x = 64 + i * 392;
+    ctx.save();
+    ctx.globalAlpha = k;
+    ctx.translate(0, (1-k) * 28);
+    rr(x, 200, 368, 430, 12);
+    ctx.fillStyle = '#12110e';
+    ctx.fill();
+    ctx.strokeStyle = '#3a342c';
+    ctx.stroke();
+    ctx.fillStyle = ACCENT;
+    ctx.fillRect(x, 200, 368, 3);
+    ctx.font = '13px ui-monospace, Menlo, Consolas, monospace';
+    ctx.fillStyle = ACCENT;
+    ctx.textAlign = 'left';
+    ctx.fillText(cd[1] + '   ' + cd[3], x + 24, 240);
+    ctx.font = '28px Georgia, Palatino, serif';
+    ctx.fillStyle = INK;
+    ctx.fillText(cd[0], x + 24, 286);
+    ctx.font = '18px Georgia, Palatino, serif';
+    ctx.fillStyle = MUTED;
+    wrap(cd[2], x + 24, 340, 316, 28);
+    ctx.restore();
+  });
+}
+
+function sceneCompound(t){
+  const local = t - 33.4;
+  chrome(t, 'COMPOUNDING', 4);
+  ctx.font = '13px ui-monospace, Menlo, Consolas, monospace';
+  ctx.fillStyle = ACCENT;
+  ctx.textAlign = 'left';
+  ctx.fillText('04   IT DOES NOT ADD. IT MULTIPLIES.', 64, 110);
+
+  ctx.save();
+  ctx.globalAlpha = ease(seg(local, 0.2, 0.9));
+  ctx.font = '32px Georgia, Palatino, serif';
+  ctx.fillStyle = INK;
+  ctx.textAlign = 'left';
+  wrap('One wrong prior turns the next hour into rework.', 64, 168, 520, 40);
+  ctx.font = '18px Georgia, Palatino, serif';
+  ctx.fillStyle = MUTED;
+  wrap('Each missing fact is a multiplier on the next mistake. Two people, three tools, four sessions — the tax compounds faster than the work.', 64, 270, 500, 28);
+  ctx.restore();
+
+  const ox = 700, oy = 560, w = 460, h = 340;
+  ctx.save();
+  ctx.globalAlpha = ease(seg(local, 0.3, 1));
+  ctx.strokeStyle = '#2c2a27';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ox + w, oy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(ox, oy); ctx.lineTo(ox, oy - h); ctx.stroke();
+  ctx.font = '12px ui-monospace, Menlo, Consolas, monospace';
+  ctx.fillStyle = DIM;
+  ctx.textAlign = 'left';
+  ctx.fillText('MISSING CONTEXT', ox, oy + 28);
+  ctx.save();
+  ctx.translate(ox - 18, oy - 20);
+  ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = 'left';
+  ctx.fillText('REWORK', 0, 0);
+  ctx.restore();
+  ctx.restore();
+
+  const drawCurve = (col, fn, prog) => {
+    ctx.beginPath();
+    const steps = 48;
+    for (let i = 0; i <= steps * prog; i++) {
+      const u = i / steps;
+      const x = ox + u * w;
+      const y = oy - fn(u) * (h - 20);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+  };
+  const p = ease(seg(local, 0.8, 3.4));
+  ctx.save();
+  ctx.globalAlpha = 0.9;
+  drawCurve('#6d6860', u => u * 0.28, p);
+  drawCurve(ACCENT, u => Math.pow(u, 2.15) * 0.92, p);
+  ctx.restore();
+
+  const lab = ease(seg(local, 2.6, 3.4));
+  ctx.save();
+  ctx.globalAlpha = lab;
+  ctx.font = '13px ui-monospace, Menlo, Consolas, monospace';
+  ctx.fillStyle = DIM;
+  ctx.textAlign = 'left';
+  ctx.fillText('LINEAR GUESS', 760, 250);
+  ctx.fillStyle = ACCENT;
+  ctx.fillText('ACTUAL TAX', 980, 188);
+  ctx.restore();
+
+  const note = ease(seg(local, 3.5, 4.3));
+  ctx.save();
+  ctx.globalAlpha = note;
+  rr(64, 470, 500, 120, 10);
+  ctx.fillStyle = '#16130f';
+  ctx.fill();
+  ctx.strokeStyle = '#5a4630';
+  ctx.stroke();
+  ctx.font = '16px Georgia, Palatino, serif';
+  ctx.fillStyle = INK;
+  ctx.textAlign = 'left';
+  wrap('Speed without context is just a faster way to pay.', 84, 516, 460, 26);
+  ctx.restore();
+}
+
+function sceneClose(t){
+  const local = t - 41.6;
+  chrome(t, 'CUT THE TAX', 5);
+  ctx.font = '13px ui-monospace, Menlo, Consolas, monospace';
+  ctx.fillStyle = ACCENT;
+  ctx.textAlign = 'left';
+  ctx.fillText('05   PAY ONCE', 64, 110);
+
+  const rules = [
+    ['01', 'Write the decision, not only the diff.'],
+    ['02', 'Keep constraints beside the work, not in a wiki no one reloads.'],
+    ['03', 'Name non-goals. They are context too.'],
+    ['04', 'Make the source of truth short enough to paste into a fresh session.']
+  ];
+  rules.forEach((r, i) => {
+    const k = ease(seg(local, 0.25 + i * 0.32, 1.0 + i * 0.32));
+    const y = 160 + i * 72;
+    ctx.save();
+    ctx.globalAlpha = k;
+    ctx.translate((1-k) * 20, 0);
+    ctx.font = '16px ui-monospace, Menlo, Consolas, monospace';
+    ctx.fillStyle = ACCENT;
+    ctx.textAlign = 'left';
+    ctx.fillText(r[0], 64, y);
+    ctx.font = '26px Georgia, Palatino, serif';
+    ctx.fillStyle = INK;
+    ctx.fillText(r[1], 120, y);
+    ctx.restore();
+  });
+
+  const end = ease(seg(local, 2.4, 3.4));
+  ctx.save();
+  ctx.globalAlpha = end;
+  ctx.font = '44px Georgia, Palatino, serif';
+  ctx.fillStyle = INK;
+  ctx.textAlign = 'left';
+  ctx.fillText('Pay context once.', 64, 520);
+  ctx.fillStyle = ACCENT;
+  ctx.fillText('Spend it everywhere.', 64, 572);
+  ctx.font = '15px ui-monospace, Menlo, Consolas, monospace';
+  ctx.fillStyle = DIM;
+  ctx.fillText('DECISIONS   ·   CONSTRAINTS   ·   NON-GOALS   ·   SHORT ENOUGH TO RELOAD', 64, 620);
+  ctx.restore();
+}
+
+const scenes = [
+  { a: 0, b: 7.4, fn: sceneTitle },
+  { a: 7.0, b: 15.6, fn: sceneDef },
+  { a: 15.2, b: 25.0, fn: sceneReceipt },
+  { a: 24.6, b: 33.8, fn: scenePlaces },
+  { a: 33.4, b: 42.0, fn: sceneCompound },
+  { a: 41.6, b: 50.0, fn: sceneClose }
+];
+
+let start = 0;
+function frame(now){
+  if (!start) start = now - tOff * 1000;
+  const elapsed = (now - start) / 1000;
+  const t = ((elapsed % window.DUR) + window.DUR) % window.DUR;
+  bg(t);
+  scenes.forEach(s => {
+    if (t < s.a || t > s.b) return;
+    let al = 1;
+    if (t < s.a + 0.45) al = (t - s.a) / 0.45;
+    if (t > s.b - 0.45) al = Math.min(al, (s.b - t) / 0.45);
+    ctx.save();
+    ctx.globalAlpha = clamp(al, 0, 1);
+    s.fn(t);
+    ctx.restore();
+  });
+  fadeOverlay(t);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

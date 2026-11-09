@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8"><title>ブラウザ時短ショートカット5選</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+const cv=document.getElementById('c'),x=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const F='"Hiragino Sans","Yu Gothic","Noto Sans JP",sans-serif';
+// 台本(構造化): 見出し・キー・セリフ(秒数=ゆっくり音声の長さ)
+const S=[
+ {type:'intro',h:'ブラウザ時短ショートカット5選',lines:[['霊','今日はChromeで使える時短ワザを5つ紹介するよ',3.5]]},
+ {type:1,h:'閉じたタブを復元',k:['Ctrl','Shift','T'],m:'⌘ + Shift + T',lines:[['魔','うっかり閉じたタブ、諦めてない？',3.5],['霊','Ctrl+Shift+Tで直前に閉じたタブが復活するよ',4.5]]},
+ {type:2,h:'アドレスバーへ移動',k:['Ctrl','L'],m:'⌘ + L',lines:[['魔','URLをクリックするのは遅いぜ',3],['霊','Ctrl+Lでアドレスバーを選択、すぐ入力できる',4]]},
+ {type:3,h:'ページ内検索',k:['Ctrl','F'],m:'⌘ + F',lines:[['魔','長いページで目的の言葉を探すなら？',3],['霊','Ctrl+Fで検索バーを開いて一致箇所をハイライト',4.5]]},
+ {type:4,h:'シークレットウィンドウ',k:['Ctrl','Shift','N'],m:'⌘ + Shift + N',lines:[['魔','履歴を残さず調べたいときは？',3],['霊','Ctrl+Shift+Nでシークレットウィンドウが開くよ',4.5]]},
+ {type:5,h:'次のタブへ切り替え',k:['Ctrl','Tab'],m:'⌘ + Option + →',lines:[['魔','タブを行き来するのが面倒だぜ',3],['霊','Ctrl+Tabで右隣のタブへ順番に切り替えられる',4]]},
+ {type:'outro',h:'まとめ',lines:[['霊','出典はChromeヘルプ「キーボードショートカット」',3.5],['魔','役に立ったら高評価よろしくだぜ！',3]]}
+];
+let T=0;S.forEach(s=>{s.st=T;s.d=s.lines.reduce((a,l)=>a+l[2],0);T+=s.d;});
+window.DUR=Math.ceil(T);
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t'))||0,t0=performance.now();
+const ease=v=>v<0?0:v>1?1:1-Math.pow(1-v,3);
+function rr(X,Y,w,h,r){x.beginPath();x.roundRect(X,Y,w,h,r);}
+function txt(s,X,Y,sz,c,al='left',w='bold'){x.font=w+' '+sz+'px '+F;x.fillStyle=c;x.textAlign=al;x.fillText(s,X,Y);}
+function key(lb,X,Y,p){const w=Math.max(90,lb.length*28+40);x.save();x.translate(X,Y+(p?6:0));
+ x.fillStyle='#222';rr(0,10,w,80,14);x.fill();x.fillStyle=p?'#ffd54a':'#f4f4f4';rr(0,p?4:0,w,80,14);x.fill();
+ txt(lb,w/2,52+(p?4:0),34,'#222','center');x.restore();return w;}
+function browser(X,Y,W,H,o){x.save();x.fillStyle='rgba(0,0,0,.35)';rr(X+8,Y+12,W,H,16);x.fill();
+ x.fillStyle=o.dark?'#2b2f36':'#dfe3ea';rr(X,Y,W,H,16);x.fill();
+ const tabs=o.tabs||3;for(let i=0;i<tabs;i++){const a=(o.active??0)===i,al=o.tabA&&i==tabs-1?o.tabA:1;x.globalAlpha=al;
+  x.fillStyle=a?(o.dark?'#3c4049':'#fff'):(o.dark?'#24272d':'#c9ced8');rr(X+16+i*150,Y+12,140,34,9);x.fill();
+  txt('タブ'+(i+1),X+40+i*150,Y+36,17,o.dark?'#ddd':'#444','left','normal');x.globalAlpha=1;}
+ x.fillStyle=o.dark?'#3c4049':'#fff';rr(X+16,Y+56,W-32,36,18);x.fill();
+ if(o.addr){x.strokeStyle='#3b82f6';x.lineWidth=4;x.globalAlpha=o.addr;rr(X+16,Y+56,W-32,36,18);x.stroke();
+  x.fillStyle='rgba(59,130,246,.3)';x.fillRect(X+40,Y+64,260*o.addr,20);x.globalAlpha=1;}
+ txt('https://example.com/page',X+44,Y+80,17,o.dark?'#bbb':'#555','left','normal');
+ x.fillStyle=o.dark?'#1e2126':'#fff';x.fillRect(X+16,Y+102,W-32,H-118);
+ for(let i=0;i<6;i++){x.fillStyle=o.dark?'#3a3e46':'#d5d9e0';x.fillRect(X+40,Y+130+i*34,(W-110)*(0.6+0.4*Math.abs(Math.sin(i*2.3))),14);
+  if(o.hl&&i%2==1){x.fillStyle='rgba(255,213,74,'+o.hl+')';x.fillRect(X+80+i*20,Y+125+i*34,90,24);}}
+ x.restore();}
+function yk(X,Y,c,talk,t,lbl){x.save();x.translate(X,Y+(talk?Math.sin(t*14)*3:0));
+ x.fillStyle=c;x.beginPath();x.arc(0,-30,52,Math.PI,0);x.fill();
+ x.fillStyle='#ffe6cf';x.beginPath();x.arc(0,0,46,0,7);x.fill();
+ x.fillStyle=c;x.beginPath();x.arc(0,-24,48,Math.PI*1.05,Math.PI*1.95);x.fill();
+ x.fillStyle='#222';x.beginPath();x.ellipse(-16,0,6,9,0,0,7);x.ellipse(16,0,6,9,0,0,7);x.fill();
+ const m=talk?Math.abs(Math.sin(t*14))*8+2:2;x.fillStyle='#a33';x.beginPath();x.ellipse(0,22,8,m,0,0,7);x.fill();
+ txt(lbl,0,72,18,'#fff','center');x.restore();}
+function frame(now){const t=((now-t0)/1000+off)%window.DUR;x.clearRect(0,0,1280,720);
+ const g=x.createLinearGradient(0,0,1280,720);g.addColorStop(0,'#14213d');g.addColorStop(1,'#3a1c5c');x.fillStyle=g;x.fillRect(0,0,1280,720);
+ for(let i=0;i<30;i++){x.fillStyle='rgba(255,255,255,.05)';x.beginPath();x.arc((i*173+t*20)%1300,(i*97)%720,6+i%5*4,0,7);x.fill();}
+ let s=S.find(s=>t>=s.st&&t<s.st+s.d)||S[S.length-1];const lt=t-s.st,p=ease(lt/0.5);
+ let li=0,acc=0;for(let i=0;i<s.lines.length;i++){if(lt>=acc)li=i;acc+=s.lines[i][2];}
+ const line=s.lines[li];
+ // 見出しバー
+ x.fillStyle='#e63946';rr(30,24,1220,84,14);x.fill();
+ if(typeof s.type=='number'){x.fillStyle='#ffd54a';x.beginPath();x.arc(96,66,46,0,7);x.fill();txt(s.type+'位',96,80,36,'#222','center');
+  txt(s.h,160,82,46,'#fff');}else txt(s.h,640,82,46,'#fff','center');
+ // 進行
+ for(let i=1;i<=5;i++){const cur=s.type===i,done=typeof s.type=='number'?i<s.type:s.type=='outro';
+  x.fillStyle=cur?'#ffd54a':done?'#888':'rgba(255,255,255,.25)';rr(1050+(i-1)*38,120,30,10,5);x.fill();}
+ x.save();x.globalAlpha=p;x.translate(0,(1-p)*30);
+ if(typeof s.type=='number'){
+  const ty=s.type,BX=60,BY=150,BW=660,BH=340;
+  if(ty==1)browser(BX,BY,BW,BH,{tabs:3,active:lt>3.6?2:0,tabA:lt<3.5?0.15:ease((lt-3.5)/0.6)});
+  if(ty==2)browser(BX,BY,BW,BH,{addr:lt>3?ease((lt-3)/0.6):0});
+  if(ty==3){browser(BX,BY,BW,BH,{hl:lt>3?ease((lt-3)/0.6):0});if(lt>3){x.fillStyle='#fff';rr(BX+BW-280,BY+106,250,40,8);x.fill();x.strokeStyle='#888';x.stroke();txt('検索: 例 1/3',BX+BW-265,BY+133,18,'#333','left','normal');}}
+  if(ty==4){const dk=lt>3;browser(BX,BY,BW,BH,{dark:dk,tabs:1});if(dk){x.fillStyle='#aab';x.beginPath();x.arc(BX+BW/2,BY+230,40,Math.PI,0);x.fill();x.fillRect(BX+BW/2-60,BY+228,120,8);
+   x.beginPath();x.arc(BX+BW/2-22,BY+258,14,0,7);x.arc(BX+BW/2+22,BY+258,14,0,7);x.fill();}}
+  if(ty==5)browser(BX,BY,BW,BH,{tabs:4,active:Math.floor(Math.max(0,lt-3)*1.5)%4});
+  // キー
+  let kx=780,on=lt>line[2]*0+ (s.lines[0][2])&&Math.sin(lt*6)>0;
+  s.k.forEach((k,i)=>{const w=key(k,kx,200,on);kx+=w+(i<s.k.length-1?40:0);if(i<s.k.length-1)txt('+',kx-20,255,36,'#fff','center');});
+  txt('Mac: '+s.m,780,350,28,'#ffd54a','left');
+  txt('※Chrome公式ヘルプ準拠',780,395,20,'rgba(255,255,255,.7)','left','normal');
+ }else if(s.type=='intro'){txt('知らないと損！',640,260,64,'#ffd54a','center');[['Ctrl',0],['Shift',1],['T',2]].forEach((k,i)=>key(k[0],420+i*160,320,Math.floor(lt*2)%3==i));}
+ else{const L=['1. Ctrl+Shift+T 復元','2. Ctrl+L アドレスバー','3. Ctrl+F ページ内検索','4. Ctrl+Shift+N シークレット','5. Ctrl+Tab タブ切替'];
+  L.forEach((l,i)=>{const a=ease((lt-i*0.3)/0.4);x.globalAlpha=p*a;txt(l,320+(1-a)*40,190+i*58,36,'#fff');});x.globalAlpha=p;}
+ x.restore();
+ // 字幕・キャラ
+ x.fillStyle='rgba(0,0,0,.72)';rr(180,520,920,170,18);x.fill();x.strokeStyle='#fff';x.lineWidth=3;x.stroke();
+ const n=Math.min(line[1].length,Math.floor((lt-s.lines.slice(0,li).reduce((a,l)=>a+l[2],0))*16)+1);
+ txt(line[1].slice(0,n),640,618,32,line[0]=='霊'?'#ff8fa3':'#ffe066','center');
+ const sp=t%1>.0;yk(95,600,'#c0392b',line[0]=='霊',t,'れいむ風');yk(1185,600,'#f1c40f',line[0]=='魔',t,'まりさ風');
+ requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

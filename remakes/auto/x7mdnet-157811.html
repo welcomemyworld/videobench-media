@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ar"><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+window.DUR=30;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px'}
+fit();addEventListener('resize',fit);
+const F='"Segoe UI","Noto Sans Arabic","Geeza Pro",Tahoma,sans-serif';
+let sd=7;const R=()=>(sd=(sd*16807)%2147483647)/2147483647;
+function paper(w,h,base){const p=document.createElement('canvas');p.width=w;p.height=h;const g=p.getContext('2d');
+g.fillStyle=base;g.fillRect(0,0,w,h);const id=g.getImageData(0,0,w,h),d=id.data;
+for(let i=0;i<d.length;i+=4){const n=(R()-.5)*22;d[i]+=n;d[i+1]+=n;d[i+2]+=n*.9}g.putImageData(id,0,0);
+g.strokeStyle='rgba(120,100,70,.08)';for(let i=0;i<w*h/900;i++){g.beginPath();const a=R()*w,b=R()*h;g.moveTo(a,b);g.lineTo(a+(R()-.5)*30,b+(R()-.5)*30);g.stroke()}
+const rg=g.createRadialGradient(w/2,h/2,Math.min(w,h)*.2,w/2,h/2,Math.max(w,h)*.75);rg.addColorStop(0,'rgba(0,0,0,0)');rg.addColorStop(1,'rgba(90,60,20,.25)');g.fillStyle=rg;g.fillRect(0,0,w,h);return p}
+const BG=paper(1280,720,'#e9dfc9'),CARD=paper(420,300,'#f7f2e6'),DOC=paper(600,780,'#fbf8f0');
+const grain=[];for(let k=0;k<4;k++){const p=document.createElement('canvas');p.width=320;p.height=180;const g=p.getContext('2d');const id=g.createImageData(320,180);for(let i=0;i<id.data.length;i+=4){const v=R()*255;id.data[i]=id.data[i+1]=id.data[i+2]=v;id.data[i+3]=18}g.putImageData(id,0,0);grain.push(p)}
+const cl=v=>Math.max(0,Math.min(1,v)),eo=t=>1-Math.pow(1-cl(t),3),eb=t=>{t=cl(t);const s=1.7;return 1+(s+1)*Math.pow(t-1,3)+s*Math.pow(t-1,2)};
+const YEL='rgba(255,214,0,.75)',RED='#e8412c';
+function card(cx,cy,w,h,rot,sc,img){x.save();x.translate(cx,cy);x.rotate(rot);x.scale(sc,sc);
+x.shadowColor='rgba(40,25,10,.35)';x.shadowBlur=18;x.shadowOffsetY=8;x.drawImage(img||CARD,-w/2,-h/2,w,h);x.shadowColor='transparent';}
+function tape(px,py,r){x.save();x.translate(px,py);x.rotate(r);x.fillStyle='rgba(240,230,190,.7)';x.fillRect(-35,-11,70,22);x.restore()}
+function txt(s,px,py,sz,col,w,al){x.font=(w||700)+' '+sz+'px '+F;x.fillStyle=col||'#1a1a1a';x.textAlign=al||'center';x.textBaseline='middle';x.direction='rtl';x.fillText(s,px,py)}
+function hl(s,px,py,sz,p,w){x.font=(w||800)+' '+sz+'px '+F;const W=x.measureText(s).width+20;x.fillStyle=YEL;const r=px+W/2;
+x.beginPath();x.moveTo(r,py-sz*.45);x.lineTo(r-W*eo(p),py-sz*.4);x.lineTo(r-W*eo(p),py+sz*.5);x.lineTo(r,py+sz*.45);x.fill()}
+function scribble(cx,cy,rx,ry,p){x.strokeStyle=RED;x.lineWidth=5;x.lineCap='round';x.beginPath();const N=80*cl(p);
+for(let i=0;i<=N;i++){const a=-1+i/80*Math.PI*2.2,j=1+Math.sin(i*.7)*.03;const X=cx+Math.cos(a)*rx*j,Y=cy+Math.sin(a)*ry*j;i?x.lineTo(X,Y):x.moveTo(X,Y)}x.stroke()}
+function dots(cx,cy,r,col){x.fillStyle=col;for(let i=-r;i<r;i+=12)for(let j=-r;j<r;j+=12){const d=Math.hypot(i,j);if(d<r){x.beginPath();x.arc(cx+i,cy+j,3.2*(1-d/r)+.6,0,7);x.fill()}}}
+function chip(s,px,py,a){x.globalAlpha=a;x.font='700 22px '+F;const w=x.measureText(s).width+30;x.fillStyle='#1a1a1a';x.fillRect(px-w/2,py-20,w,40);txt(s,px,py+1,22,'#f5eedd');x.globalAlpha=1}
+
+function scene(t){
+ x.drawImage(BG,0,0);
+ if(t<6){const z=1+t*.015;x.save();x.translate(640,360);x.scale(z,z);x.translate(-640,-360);
+  dots(980,250,170*eo(t/1.2),'rgba(232,65,44,.55)');
+  card(640,360,760,330,-.02,eb(t/.9));
+  txt('تجربتي',0,-95,30,'#8a6d3b',600);
+  hl('جرّبت Motion',0,-15,84,(t-1.2)/.8);txt('جرّبت Motion',0,-15,84);
+  txt('مع Claude Opus 5.5',0,80,40,'#333',600);x.restore();
+  tape(640,195,.05);
+  chip('صناعة فيديو بأسلوب Vox',640,590,cl((t-2.2)*2));x.restore();
+ }else if(t<12){const s=t-6;
+  txt('أعطيته ملفات…',1180,80,48,'#1a1a1a',800,'right');x.textAlign='center';
+  const items=[['PDF',380,330,-.12,0],['IMG',640,370,.06,.35],['PDF',900,320,.1,.7],['IMG',520,520,-.05,1.05],['PDF',780,540,.14,1.4]];
+  items.forEach(([k,X,Y,r,d],i)=>{const p=eo((s-d)/.7);if(p<=0)return;
+   card(X,Y-(1-p)*500,220,280,r+(1-p)*.6,1);
+   if(k=='PDF'){x.fillStyle=RED;x.fillRect(-90,-120,80,34);txt('PDF',-50,-102,22,'#fff',800);
+    x.fillStyle='rgba(0,0,0,.25)';for(let l=0;l<7;l++)x.fillRect(-90,-60+l*22,170-(l*37%60),7)}
+   else{const g=x.createLinearGradient(0,-110,0,90);g.addColorStop(0,['#7fb3c9','#e8a65c'][i%2]);g.addColorStop(1,['#2f5d6e','#8a3d2a'][i%2]);
+    x.fillStyle=g;x.fillRect(-95,-120,190,210);x.fillStyle='rgba(255,255,255,.8)';x.beginPath();x.arc(40,-70,18,0,7);x.fill();
+    x.fillStyle='rgba(0,0,0,.35)';x.beginPath();x.moveTo(-95,90);x.lineTo(-20,-10);x.lineTo(40,50);x.lineTo(95,0);x.lineTo(95,90);x.fill();
+    txt('صورة',0,115,20,'#555',700)}
+   x.restore()});
+  if(s>2.6){hl('PDFs وصور',640,660,44,(s-2.6)/.6);txt('PDFs وصور',640,660,44)}
+ }else if(t<20){const s=t-12;
+  txt('الأدوات',640,70,52,'#1a1a1a',800);x.fillStyle=RED;x.fillRect(640-60*eo(s),102,120*eo(s),5);
+  const tools=[['Headless Chrome','التصيير والتسجيل'],['Canvas API','توليد الأصول وملامس الورق'],['Yoga-layout','تخطيط العناصر'],['Pretext','قياس النصوص وتوزيعها'],['Floating UI','تموضع التعليقات والملصقات']];
+  tools.forEach(([n,d],i)=>{const p=(s-.4-i*.9)/.6;if(p<=0)return;const col=i%3,row=i<3?0:1;
+   const X=row?470+col*340:300+col*340,Y=row?520:270;
+   card(X,Y,300,170,(i%2?.04:-.04),eb(p));
+   txt(n,0,-25,34,'#1a1a1a',800);txt(d,0,30,22,'#6a5a40',600);x.restore();tape(X+(i%2?-90:90),Y-85,i%2?-.3:.3)});
+  if(s>6){x.globalAlpha=cl((s-6)*2);txt('+ ملفات PDF وصور = Claude يكتب كل شيء',640,665,30,'#8a3d2a',700);x.globalAlpha=1}
+ }else if(t<26){const s=t-20,z=1+eo(s/5)*.35;x.save();x.translate(640,360);x.scale(z,z);x.rotate(-.03);
+  x.shadowColor='rgba(40,25,10,.35)';x.shadowBlur=25;x.drawImage(DOC,-300,-390,600,780);x.shadowColor='transparent';
+  txt('الطلب',0,-320,36,'#8a6d3b',800);
+  x.fillStyle='rgba(30,30,30,.22)';for(let l=0;l<14;l++){if(l==5)continue;const w=500-(l*53%140);x.fillRect(250-w,-250+l*38,w,10)}
+  hl('سوِّ لي فيديو بأسلوب Vox',40,-60,40,(s-1)/.9);txt('سوِّ لي فيديو بأسلوب Vox',40,-60,40,'#111',800);
+  if(s>2.2)scribble(-150,-60,90,40,(s-2.2)/1);
+  if(s>3.3){x.globalAlpha=cl((s-3.3)*2);x.strokeStyle=RED;x.lineWidth=4;x.beginPath();x.moveTo(-200,-20);x.quadraticCurveTo(-230,80,-150,130);x.stroke();
+   txt('Vox-vibe!',-90,160,34,RED,800);x.globalAlpha=1}
+  x.restore();
+ }else{const s=t-26;
+  dots(640,360,330*eo(s/1.2),'rgba(232,65,44,.35)');
+  card(640,360,820,300,.015,eb(s/.8));
+  txt('النتيجة',0,-85,32,'#8a6d3b',700);
+  hl('فيديو Vox-vibe كامل',0,0,72,(s-.8)/.8);txt('فيديو Vox-vibe كامل',0,0,72);
+  txt('ورق، هايلايت، وتعليقات — بالكود فقط',0,85,28,'#444',600);x.restore();
+  tape(330,215,-.3);tape(950,215,.3);
+ }
+ const fl=Math.floor(t*12)%4;x.drawImage(grain[fl],0,0,1280,720);
+ const v=x.createRadialGradient(640,360,250,640,360,800);v.addColorStop(0,'rgba(0,0,0,0)');v.addColorStop(1,'rgba(0,0,0,.45)');x.fillStyle=v;x.fillRect(0,0,1280,720);
+ const tr=[6,12,20,26].map(b=>Math.abs(t-b)).reduce((a,b)=>Math.min(a,b),9);
+ if(tr<.15){x.fillStyle='rgba(245,238,221,'+(1-tr/.15)*.8+')';x.fillRect(0,0,1280,720)}
+}
+const off=parseFloat(new URLSearchParams(location.search).get('t'))||0,t0=performance.now();
+function loop(n){scene(((n-t0)/1000+off)%DUR);requestAnimationFrame(loop)}requestAnimationFrame(loop);
+</script></body></html>

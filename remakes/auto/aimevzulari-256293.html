@@ -1,0 +1,43 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;background:#000;overflow:hidden}canvas{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#0b0f1a}</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+window.DUR=36;const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px'}onresize=fit;fit();
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t')||0)*1000,t0=performance.now()-off;
+const A={x:240,y:200},W=800,H=360,B={x:A.x+W,y:A.y+H},g=900;
+// cycloid through A,B: solve theta
+let th=Math.PI;{let lo=0.1,hi=2*Math.PI;for(let i=0;i<60;i++){let m=(lo+hi)/2;((m-Math.sin(m))/(1-Math.cos(m))>W/H)?hi=m:lo=m}th=(lo+hi)/2}
+const R=H/(1-Math.cos(th));
+function build(f){const p=[];for(let i=0;i<=300;i++)p.push(f(i/300));let s=[0];for(let i=1;i<p.length;i++)s.push(s[i-1]+Math.hypot(p[i].x-p[i-1].x,p[i].y-p[i-1].y));
+// time table
+let T=[0];for(let i=1;i<p.length;i++){const v1=Math.sqrt(2*g*Math.max(p[i-1].y-A.y,0.01)),v2=Math.sqrt(2*g*Math.max(p[i].y-A.y,0.01));T.push(T[i-1]+(s[i]-s[i-1])*2/(v1+v2))}return{p,T,tot:T[T.length-1]}}
+const line=build(u=>({x:A.x+W*u,y:A.y+H*u}));
+// circle arc: center to the right of A horizontally? choose circle through A,B with center at (A.x+?,...) tangent vertical at A? Galileo: arc with center on horizontal through B... use center at (A.x, B.y)? choose center (cx,A.y? ) -> use center at (B.x? ) use center (A.x+W', ) simple: center at (A.x+k, A.y) for vertical start? use quarter-ish arc center (A.x, A.y+H+...) general: center on vertical line through B.
+const cy=(()=>{/* center (B.x,cy) : dist to A = dist to B */return (W*W+H*H+0)/(2*H)>0?0:0})();
+const Cx=B.x,Cy=( (A.x-B.x)**2+A.y*A.y-B.y*B.y)/(2*(A.y-B.y)),Rr=Math.abs(B.y-Cy);
+const a0=Math.atan2(A.y-Cy,A.x-Cx),a1=Math.atan2(B.y-Cy,B.x-Cx);
+const arc=build(u=>({x:Cx+Rr*Math.cos(a0+(a1-a0)*u),y:Cy+Rr*Math.sin(a0+(a1-a0)*u)}));
+const cyc=build(u=>{const t=th*u;return{x:A.x+R*(t-Math.sin(t)),y:A.y+R*(1-Math.cos(t))}});
+const scale=1/(cyc.tot)*2.2;// slow-mo: cycloid ~2.2s
+function pos(P,tt){const T=tt/scale;if(T>=P.tot)return P.p[P.p.length-1];let i=1;while(P.T[i]<T)i++;const f=(T-P.T[i-1])/(P.T[i]-P.T[i-1]);return{x:P.p[i-1].x+(P.p[i].x-P.p[i-1].x)*f,y:P.p[i-1].y+(P.p[i].y-P.p[i-1].y)*f}}
+function path(P,col,a){x.globalAlpha=a;x.strokeStyle=col;x.lineWidth=5;x.beginPath();P.p.forEach((q,i)=>i?x.lineTo(q.x,q.y):x.moveTo(q.x,q.y));x.stroke();x.globalAlpha=1}
+function ball(q,col){x.fillStyle=col;x.shadowColor=col;x.shadowBlur=20;x.beginPath();x.arc(q.x,q.y-0,13,0,7);x.fill();x.shadowBlur=0}
+function txt(s,X,Y,sz,col,a=1,al='center'){x.globalAlpha=Math.max(0,Math.min(1,a));x.fillStyle=col;x.font=sz+'px Georgia,serif';x.textAlign=al;x.fillText(s,X,Y);x.globalAlpha=1}
+const cl=v=>Math.max(0,Math.min(1,v));
+function fr(){const t=((performance.now()-t0)/1000)%DUR;x.clearRect(0,0,1280,720);
+const gr=x.createRadialGradient(640,360,100,640,360,800);gr.addColorStop(0,'#16203a');gr.addColorStop(1,'#05070d');x.fillStyle=gr;x.fillRect(0,0,1280,720);
+x.strokeStyle='rgba(255,255,255,.04)';for(let i=0;i<1280;i+=40){x.beginPath();x.moveTo(i,0);x.lineTo(i,720);x.stroke()}
+if(t<6){txt('1638 — Galileo Galilei',640,280,52,'#f3d9a4',cl(t)*cl(6-t));txt('Bir top A noktasından B\'ye',640,360,34,'#ddd',cl(t-1.2)*cl(6-t));txt('en hızlı hangi yoldan iner?',640,410,34,'#ddd',cl(t-2)*cl(6-t));requestAnimationFrame(fr);return}
+const s=t-6;
+txt('A',A.x-30,A.y-10,30,'#fff');txt('B',B.x+30,B.y+10,30,'#fff');
+x.fillStyle='#fff';[A,B].forEach(p=>{x.beginPath();x.arc(p.x,p.y,5,0,7);x.fill()});
+const showArc=s>8,showCyc=s>17;
+path(line,'#ff6b6b',cl(s));if(showArc)path(arc,'#5bc0ff',cl(s-8));if(showCyc)path(cyc,'#7dff9a',cl(s-17));
+let rs=s<8?s-1:s<17?s-9:s-18.5;rs=Math.max(0,rs);
+const balls=[[line,'#ff6b6b','Düz rampa']];if(showArc)balls.push([arc,'#5bc0ff','Çember yayı']);if(showCyc)balls.push([cyc,'#7dff9a','Sikloid']);
+balls.forEach(([P,col,n],i)=>{const tt=rs%5;ball(pos(P,tt),col);const done=Math.min(tt/scale,P.tot);txt(n+': '+(done*1).toFixed(3)+' s',60,560+i*38,26,col,1,'left')});
+if(s<8){txt('Düz rampa en kısa yol…',640,80,38,'#ffb3b3',cl(s-.5));txt('…ama en hızlısı değil!',640,130,34,'#fff',cl(s-4))}
+else if(s<17){txt('Galileo: çember yayı daha hızlı!',640,80,38,'#9fd8ff',cl(s-8.5));txt('Başta dikleşip hız kazanmak, kısa yoldan iyidir.',640,130,26,'#ddd',cl(s-11))}
+else{txt('1696 — Johann Bernoulli: asıl cevap SİKLOİD',640,80,36,'#b6ffc5',cl(s-17.5));txt('Brakistokron: en hızlı iniş eğrisi',640,130,28,'#ddd',cl(s-20));
+if(s>18){const u=cl((s-18)/2.5);x.globalAlpha=.5*cl(26-s);x.strokeStyle='#7dff9a';x.lineWidth=1.5;const tt=th*u;x.beginPath();x.arc(A.x+R*tt,A.y+R,R,0,7);x.stroke();x.globalAlpha=1}}
+txt('(süreler g=9.8 ölçekli, yavaş çekim)',1220,700,16,'#889',1,'right');
+requestAnimationFrame(fr)}requestAnimationFrame(fr);
+</script></body></html>

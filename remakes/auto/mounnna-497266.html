@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+window.DUR=20;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px'}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t')||0)||0,t0=performance.now();
+const CX=640,CY=320,R=150;
+// logo: hexagonal gem, triangulated: outer hex + inner hex + center
+const P=[[0,0]];
+for(let i=0;i<6;i++){const a=-Math.PI/2+i*Math.PI/3;P.push([Math.cos(a)*R,Math.sin(a)*R])}
+for(let i=0;i<6;i++){const a=-Math.PI/2+Math.PI/6+i*Math.PI/3;P.push([Math.cos(a)*R*.5,Math.sin(a)*R*.5])}
+const T=[];
+for(let i=0;i<6;i++){const o1=1+i,o2=1+(i+1)%6,n=7+i,np=7+(i+5)%6;
+T.push([o1,o2,n]);T.push([o1,n,np]);T.push([0,np,n]);}
+let seed=7;const rnd=()=>(seed=(seed*16807)%2147483647)/2147483647;
+const sh=T.map((t,i)=>{const cx=(P[t[0]][0]+P[t[1]][0]+P[t[2]][0])/3,cy=(P[t[0]][1]+P[t[1]][1]+P[t[2]][1])/3;
+const ang=Math.atan2(cy,cx)+(rnd()-.5);return{t,cx,cy,dx:Math.cos(ang)*900,dy:Math.sin(ang)*600-200,rot:(rnd()-.5)*6,
+start:4+i*.33,light:.35+.65*(.5+.5*Math.cos(Math.atan2(cy,cx)+2.2)),hue:190+cy/R*40+cx/R*20}});
+const ease=k=>k<0?0:k>1?1:1-Math.pow(1-k,3);
+const edges=[];T.forEach(t=>{for(let k=0;k<3;k++)edges.push([t[k],t[(k+1)%3]])});
+const NAME="PRISMA";
+function frame(){
+let t=((performance.now()-t0)/1000+off)%DUR;
+x.fillStyle='#05060c';x.fillRect(0,0,1280,720);
+const g=x.createRadialGradient(CX,CY,0,CX,CY,700);g.addColorStop(0,'rgba(40,60,120,.35)');g.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=g;x.fillRect(0,0,1280,720);
+// grid particles
+x.fillStyle='rgba(120,160,255,.15)';
+for(let i=0;i<60;i++){const px=(i*197+t*10)%1280,py=(i*331)%720;x.fillRect(px,py,2,2)}
+const fadeOut=t>DUR-1?1-(t-(DUR-1)):1;x.globalAlpha=fadeOut;
+// icon background
+const ib=ease((t-11)/1.5);
+if(ib>0){const s=230*(0.6+.4*ib),r=60;x.save();x.globalAlpha=ib*fadeOut;
+const gg=x.createLinearGradient(CX-s,CY-s,CX+s,CY+s);gg.addColorStop(0,'#1b2a6b');gg.addColorStop(1,'#6a1f8a');
+x.fillStyle=gg;x.shadowColor='rgba(120,90,255,.6)';x.shadowBlur=60;x.beginPath();x.roundRect(CX-s,CY-s,s*2,s*2,r*ib+20);x.fill();x.restore();}
+x.save();x.translate(CX,CY);
+// wireframe drawing
+const wf=Math.min(1,t/3.5),wa=t<12?1:Math.max(0,1-(t-12));
+x.strokeStyle=`rgba(120,200,255,${.8*wa})`;x.lineWidth=1.5;
+edges.forEach((e,i)=>{const k=Math.max(0,Math.min(1,wf*edges.length-i*.6));if(k<=0)return;
+const a=P[e[0]],b=P[e[1]];x.beginPath();x.moveTo(a[0],a[1]);x.lineTo(a[0]+(b[0]-a[0])*k,a[1]+(b[1]-a[1])*k);x.stroke()});
+x.fillStyle=`rgba(180,230,255,${wa})`;P.forEach((p,i)=>{if(wf*13>i){x.beginPath();x.arc(p[0],p[1],3,0,7);x.fill()}});
+// shards
+sh.forEach(s=>{const k=ease((t-s.start)/1.4);if(k<=0)return;const m=1-k;
+x.save();x.translate(s.cx+s.dx*m,s.cy+s.dy*m);x.rotate(s.rot*m);x.scale(1+m*.5,1+m*.5);
+const l=s.light*(0.7+.3*k)+(k<1&&k>.9?.3:0);
+x.fillStyle=`hsla(${s.hue},80%,${25+l*45}%,${Math.min(1,k*2)})`;
+x.beginPath();s.t.forEach((pi,j)=>{const p=P[pi];j?x.lineTo(p[0]-s.cx,p[1]-s.cy):x.moveTo(p[0]-s.cx,p[1]-s.cy)});x.closePath();x.fill();
+x.strokeStyle=`rgba(255,255,255,${.25*k})`;x.lineWidth=1;x.stroke();x.restore()});
+// glint sweep
+if(t>10.6&&t<12){const gx=-R+(t-10.6)/1.4*R*2*1.4;x.save();x.beginPath();P.slice(1,7).forEach((p,i)=>i?x.lineTo(p[0],p[1]):x.moveTo(p[0],p[1]));x.clip();
+const lg=x.createLinearGradient(gx-40,0,gx+40,0);lg.addColorStop(0,'rgba(255,255,255,0)');lg.addColorStop(.5,'rgba(255,255,255,.6)');lg.addColorStop(1,'rgba(255,255,255,0)');x.fillStyle=lg;x.fillRect(-R,-R,R*2,R*2);x.restore()}
+x.restore();
+// typing
+if(t>13){const n=Math.min(NAME.length,Math.floor((t-13)/.25));
+x.font='bold 64px Helvetica,Arial,sans-serif';x.textAlign='left';x.textBaseline='middle';
+const w=x.measureText(NAME).width,sx=CX-w/2-12;const tx=NAME.slice(0,n);
+const sp=12;let px=sx;x.fillStyle='#fff';for(const ch of tx){x.fillText(ch,px,620);px+=x.measureText(ch).width+sp/ (NAME.length-1)*2}
+if(Math.floor(t*2.5)%2==0||n<NAME.length){x.fillStyle='#8ad8ff';x.fillRect(px+4,592,4,56)}
+if(n==NAME.length){x.globalAlpha=Math.min(1,(t-14.8))*fadeOut;x.font='20px Helvetica,Arial,sans-serif';x.textAlign='center';x.fillStyle='#9fb4e0';x.fillText('Clarity in every facet',CX,675)}}
+x.globalAlpha=1;
+requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

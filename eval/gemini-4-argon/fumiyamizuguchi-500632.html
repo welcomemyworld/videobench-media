@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>AETHER // X1 - Product Showreel</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', 'Meiryo', system-ui, sans-serif;
+  }
+  #stage {
+    position: relative;
+    width: 1280px;
+    height: 720px;
+    background: #04060a;
+    overflow: hidden;
+    box-shadow: 0 0 60px rgba(0, 240, 255, 0.15);
+    transform-origin: center center;
+  }
+  canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1280px;
+    height: 720px;
+    display: block;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="glCanvas" width="1280" height="720"></canvas>
+  <canvas id="uiCanvas" width="1280" height="720"></canvas>
+</div>
+
+<script>
+window.DUR = 15.0;
+
+// --- Stage auto-fit ---
+const stage = document.getElementById('stage');
+function resizeStage() {
+  const s = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+  stage.style.transform = `scale(${s})`;
+}
+window.addEventListener('resize', resizeStage);
+resizeStage();
+
+// --- Time offset support (?t=SECONDS) ---
+const urlParams = new URLSearchParams(window.location.search);
+const timeOffset = parseFloat(urlParams.get('t')) || 0;
+
+// --- WebGL Raymarching Setup ---
+const glCanvas = document.getElementById('glCanvas');
+const gl = glCanvas.getContext('webgl', { preserveDrawingBuffer: true, antialias: false });
+
+const vsSource = `
+attribute vec2 aPos;
+void main() {
+  gl_Position = vec4(aPos, 0.0, 1.0);
+}
+`;
+
+const fsSource = `
+precision highp float;
+uniform float uTime;
+uniform vec2 uRes;
+
+#define PI 3.14159265359
+
+mat2 rot(float a) {
+  float s = sin(a), c = cos(a);
+  return mat2(c, -s, s, c);
+}
+
+float smin(float a, float b, float k) {
+  float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+  return mix(b, a, h) - k * h * (1.0 - h);
+}
+
+float sdBox(vec3 p, vec3 b) {
+  vec3 q = abs(p) - b;
+  return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+}
+
+float sdTorus(vec3 p, vec2 t) {
+  vec2 q = vec2(length(p.xz) - t.x, p.y);
+  return length(q) - t.y;
+}
+
+float sdOctahedron(vec3 p, float s) {
+  p = abs(p);
+  return (p.x + p.y + p.z - s) * 0.57735027;
+}
+
+// Scene parameters driven by timeline
+float getExplode(float t) {
+  float e1 = smoothstep(2.6, 3.3, t) - smoothstep(5.4, 6.2, t);
+  float e2 = smoothstep(9.2, 10.0, t) * 0.45 - smoothstep(11.6, 12.4, t) * 0.45;
+  return clamp(e1 + e2, 0.0, 1.0);
+}
+
+float getMorph(float t) {
+  return smoothstep(6.0, 6.8, t) - smoothstep(8.7, 9.4, t);
+}
+
+// Returns vec2(distance, materialID)
+// Mat 1: Inner plasma core
+// Mat 2: Dark metallic shell
+// Mat 3: Neon gyro rings
+// Mat 4: Floor grid
+vec2 map(vec3 p, float t) {
+  float explode = getExplode(t);
+  float morph = getMorph(t);
+
+  // Core rotation
+  vec3 cp = p;
+  cp.xz *= rot(t * 1.4);
+  cp.xy *= rot(t * 0.9);
+
+  // Inner Core (Sphere + Octahedron + Gyroid)
+  float coreRad = 0.68 + 0.06 * sin(t * 10.0);
+  float dSphere = length(cp) - coreRad;
+  float dOcta = sdOctahedron(cp, coreRad * 1.35);
+  float dCore = mix(dSphere, dOcta, 0.4 + 0.4 * sin(t * 2.5));
+  float gyroid = dot(sin(cp * 10.0 + t * 4.0), cos(cp.zxy * 10.0)) * 0.035;
+  dCore += gyroid * (0.4 + 0.6 * morph);
+
+  vec2 res = vec2(dCore, 1.0);
+
+  // Outer Segmented Shell (8 octants that expand)
+  vec3 sp = p;
+  sp.xz *= rot(-t * 0.5);
+  sp.yz *= rot(sin(t * 0.6) * 0.35);
+
+  vec3 sgn = sign(sp);
+  float shellExp = 0.09 + explode * 0.72 + morph * 0.12;
+  vec3 q = sp - sgn * shellExp;
+
+  float dOuterSphere = length(q) - 1.15;
+  float dOuterBox = sdBox(q, vec3(0.9)) - 0.18;
+  float dShellBase = mix(dOuterSphere, dOuterBox, morph * 0.7);
+  float dShellHollow = -(length(sp) - (0.85 + explode * 0.35));
+  float dShell = max(dShellBase, dShellHollow);
+
+  // Carve tech vents into shell
+  float vents = sin(q.x * 22.0) * sin(q.y * 22.0) * sin(q.z * 22.0);
+  dShell -= smoothstep(0.4, 0.9, vents) * 0.015;
+
+  if (dShell < res.x) res = vec2(dShell, 2.0);
+
+  // Gyroscopic Energy Rings
+  vec3 rp1 = p;
+  rp1.xy *= rot(t * 1.1 + 0.4);
+  rp1.xz *= rot(t * 0.7);
+  float rScale1 = 1.45 + explode * 0.45 + morph * 0.25;
+  float dRing1 = sdTorus(rp1, vec2(rScale1, 0.028));
+
+  vec3 rp2 = p;
+  rp2.yz *= rot(-t * 1.3);
+  rp2.xy *= rot(t * 0.5 - 0.8);
+  float rScale2 = 1.75 + explode * 0.65 - morph * 0.2;
+  float dRing2 = sdTorus(rp2, vec2(rScale2, 0.02));
+
+  // Orbiting satellite nodes
+  vec3 op = rp2;
+  float ang = atan(op.z, op.x);
+  float nodeWave = sin(ang * 6.0 + t * 5.0);
+  dRing2 -= nodeWave * 0.008;
+
+  float dRings = min(dRing1, dRing2);
+  if (dRings < res.x) res = vec2(dRings, 3.0);
+
+  // Cybernetic Floor Plane
+  float floorY = -2.35;
+  float dFloor = p.y - floorY;
+  if (dFloor < res.x && dFloor > -0.5) {
+    res = vec2(dFloor, 4.0);
+  }
+
+  return res;
+}
+
+vec3 calcNormal(vec3 p, float t) {
+  vec2 e = vec2(0.002, -0.002);
+  return normalize(
+    e.xyy * map(p + e.xyy, t).x +
+    e.yyx * map(p + e.yyx, t).x +
+    e.yxy * map(p + e.yxy, t).x +
+    e.xxx * map(p + e.xxx, t).x
+  );
+}
+
+void main() {
+  vec2 uv = (gl_FragCoord.xy - 0.5 * uRes) / uRes.y;
+  float t = uTime;
+
+  // Dynamic Camera Choreography across 5 scenes
+  float camDist = 4.4;
+  float camAngle = t * 0.45;
+  float camElev = 0.25 * sin(t * 0.5);
+  vec3 target = vec3(0.0, 0.0, 0.0);
+
+  if (t < 2.8) {
+    // Scene 1: Dramatic pull-in from darkness
+    float k = smoothstep(0.0, 2.8, t);
+    camDist = mix(7.5, 4.0, pow(k, 0.6));
+    camAngle = mix(-1.8, 0.4, k);
+    camElev = mix(1.2, 0.15, k);
+  } else if (t < 6.0) {
+    // Scene 2: Exploded architecture showcase
+    float k = (t - 2.8) / 3.2;
+    camDist = 3.9 - 0.5 * sin(k * PI);
+    camAngle = 0.4 + k * 2.1;
+    camElev = 0.15 + 0.45 * sin(k * PI);
+  } else if (t < 9.2) {
+    // Scene 3: Close-up neural matrix pulse
+    float k = (t - 6.0) / 3.2;
+    camDist = mix(3.4, 2.75, sin(k * PI));
+    camAngle = 2.5 + k * 2.4;
+    camElev = -0.25 + 0.5 * cos(k * PI);
+  } else if (t < 12.2) {
+    // Scene 4: High-speed orbital sweep
+    float k = (t - 9.2) / 3.0;
+    camDist = mix(3.2, 4.6, k);
+    camAngle = 4.9 + k * 3.2;
+    camElev = 0.55 * cos(k * PI * 1.5);
+  } else {
+    // Scene 5: Hero framing (shifted left for right-side title lockup)
+    float k = smoothstep(12.2, 13.6, t);
+    camDist = mix(4.6, 4.3, k);
+    camAngle = 8.1 + (t - 12.2) * 0.25;
+    camElev = mix(0.2, 0.08, k);
+    target.x = mix(0.0, 0.65, k);
+  }
+
+  vec3 ro = target + vec3(
+    sin(camAngle) * cos(camElev) * camDist,
+    sin(camElev) * camDist,
+    cos(camAngle) * cos(camElev) * camDist
+  );
+
+  vec3 cw = normalize(target - ro);
+  vec3 cp = vec3(0.05 * sin(t * 0.7), 1.0, 0.0);
+  vec3 cu = normalize(cross(cw, cp));
+  vec3 cv = cross(cu, cw);
+  vec3 rd = normalize(uv.x * cu + uv.y * cv + 1.35 * cw);
+
+  // Background Deep Cyber Gradient + Star/Data field
+  vec3 bgCol = mix(vec3(0.008, 0.015, 0.03), vec3(0.03, 0.05, 0.10), clamp(uv.y + 0.6, 0.0, 1.0));
+  
+  // Volumetric Raymarching
+  float totalDist = 0.0;
+  float matID = 0.0;
+  vec3 glowAcc = vec3(0.0);
+
+  for (int i = 0; i < 72; i++) {
+    vec3 p = ro + rd * totalDist;
+    vec2 d = map(p, t);
+
+    // Accumulate volumetric neon glow near core (1) and rings (3)
+    if (d.y == 1.0) {
+      vec3 cGlow = mix(vec3(0.0, 0.9, 1.0), vec3(1.0, 0.1, 0.55), 0.5 + 0.5 * sin(t * 3.0 + p.y * 2.0));
+      glowAcc += cGlow * (0.012 / (0.025 + d.x * d.x * 5.0));
+    } else if (d.y == 3.0) {
+      glowAcc += vec3(0.0, 0.75, 1.0) * (0.006 / (0.015 + d.x * d.x * 10.0));
+    }
+
+    if (d.x < 0.0025 || totalDist > 18.0) {
+      matID = d.y;
+      break;
+    }
+    totalDist += d.x * 0.85;
+  }
+
+  vec3 col = bgCol;
+
+  if (totalDist < 18.0) {
+    vec3 p = ro + rd * totalDist;
+    vec3 n = calcNormal(p, t);
+    vec3 v = normalize(ro - p);
+    vec3 l1 = normalize(vec3(2.0, 3.5, 2.0));
+    vec3 l2 = normalize(vec3(-3.0, -1.5, -2.0));
+
+    float diff1 = max(dot(n, l1), 0.0);
+    float diff2 = max(dot(n, l2), 0.0);
+    float fresnel = pow(1.0 - max(dot(n, v), 0.0), 3.0);
+    float spec = pow(max(dot(reflect(-l1, n), v), 0.0), 40.0);
+
+    if (matID == 1.0) {
+      // Plasma Core
+      vec3 coreCol = mix(vec3(0.0, 0.95, 1.0), vec3(1.0, 0.05, 0.5), fresnel);
+      col = coreCol * (1.3 + 0.5 * sin(t * 8.0)) + vec3(1.0) * spec;
+    } else if (matID == 2.0) {
+      // Dark Anodized Titanium Shell
+      vec3 base = vec3(0.06, 0.08, 0.12);
+      // Glowing panel seam lines
+      float seam = smoothstep(0.03, 0.0, abs( fract(p.x * 4.0) - 0.5 ))
+                 + smoothstep(0.03, 0.0, abs( fract(p.y * 4.0) - 0.5 ));
+      vec3 rimCol = mix(vec3(0.0, 0.85, 1.0), vec3(0.95, 0.1, 0.5), 0.5 + 0.5 * sin(p.y * 2.0 + t));
+      col = base * (diff1 * 1.4 + diff2 * 0.5 + 0.25);
+      col += rimCol * fresnel * 1.8;
+      col += vec3(0.8, 0.95, 1.0) * spec * 1.1;
+      col += vec3(0.0, 0.9, 1.0) * clamp(seam, 0.0, 1.0) * 0.25 * getMorph(t);
+    } else if (matID == 3.0) {
+      // Energy Gyro Rings
+      col = vec3(0.4, 0.95, 1.0) * 1.6 + vec3(1.0) * spec;
+    } else if (matID == 4.0) {
+      // Perspective Grid Floor
+      vec2 gridUV = p.xz * 1.5;
+      gridUV.y += t * 2.0;
+      vec2 g = abs(fract(gridUV - 0.5) - 0.5) / fwidth(gridUV);
+      float line = min(g.x, g.y);
+      float gridMask = 1.0 - min(line, 1.0);
+      float radialFade = exp(-length(p.xz) * 0.28);
+      // Sonic shockwave rings on floor
+      float wave = sin(length(p.xz) * 4.0 - t * 6.0);
+      float waveMask = smoothstep(0.85, 1.0, wave) * radialFade;
+      col = mix(bgCol, vec3(0.0, 0.8, 1.0), gridMask * radialFade * 0.55);
+      col += vec3(1.0, 0.15, 0.55) * waveMask * 0.35;
+    }
+
+    // Distance fog
+    float fog = exp(-totalDist * totalDist * 0.006);
+    col = mix(bgCol, col, fog);
+  }
+
+  // Add volumetric glow
+  col += glowAcc;
+
+  // Scene Transition Light Flash at cuts
+  float flash = exp(-abs(t - 2.8) * 12.0) * 0.45
+              + exp(-abs(t - 6.0) * 12.0) * 0.45
+              + exp(-abs(t - 9.2) * 12.0) * 0.45
+              + exp(-abs(t - 12.2) * 12.0) * 0.55;
+  col += vec3(0.6, 0.95, 1.0) * flash;
+
+  // Cinematic Vignette & Filmic Tone Mapping
+  float vig = 1.0 - 0.35 * dot(uv, uv);
+  col *= vig;
+  col = col / (1.0 + col * 0.65);
+  col = pow(max(col, 0.0), vec3(0.4545));
+
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+function compileShader(type, source) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, source);
+  gl.compileShader(s);
+  return s;
+}
+
+const prog = gl.createProgram();
+gl.attachShader(prog, compileShader(gl.VERTEX_SHADER, vsSource));
+gl.attachShader(prog, compileShader(gl.FRAGMENT_SHADER, fsSource));
+gl.linkProgram(prog);
+gl.useProgram(prog);
+
+const quadBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+
+const aPos = gl.getAttribLocation(prog, 'aPos');
+gl.enableVertexAttribArray(aPos);
+gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+const uTimeLoc = gl.getUniformLocation(prog, 'uTime');
+const uResLoc = gl.getUniformLocation(prog, 'uRes');
+
+// --- 2D HUD & Kinetic Typography Overlay ---
+const uiCanvas = document.getElementById('uiCanvas');
+const ctx = uiCanvas.getContext('2d');
+
+// Easing utilities
+const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+const easeOutCubic = x => 1 - Math.pow(1 - x, 3);
+const easeOutExpo = x => x === 1 ? 1 : 1 - Math.pow(2, -10 * x);
+const easeInOutCubic = x => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+
+function subProgress(t, start, end) {
+  return clamp((t - start) / (end - start), 0, 1);
+}
+
+// Deterministic pseudo-random for glitch/data effects
+function hash(n) {
+  return Math.abs(Math.sin(n * 127.1 + 311.7) * 43758.5453) % 1;
+}
+
+function drawCornerBracket(x, y, w, h, len, color, alpha) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = alpha;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  // TL
+  ctx.moveTo(x, y + len); ctx.lineTo(x, y); ctx.lineTo(x + len, y);
+  // TR
+  ctx.moveTo(x + w - len, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + len);
+  // BR
+  ctx.moveTo(x + w, y + h - len); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w - len, y + h);
+  // BL
+  ctx.moveTo(x + len, y + h); ctx.lineTo(x, y + h); ctx.lineTo(x, y + h - len);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawCallout(x1, y1, x2, y2, x3, labelJP, labelEN, valueStr, prog, alignRight = false) {
+  if (prog <= 0) return;
+  const pLine = easeOutCubic(clamp(prog * 1.6, 0, 1));
+  const pText = easeOutCubic(clamp((prog - 0.25) * 1.4, 0, 1));
+
+  ctx.save();
+  // Target pulse rings on 3D object
+  ctx.strokeStyle = '#00f0ff';
+  ctx.fillStyle = '#00f0ff';
+  ctx.globalAlpha = pLine;
+  ctx.beginPath();
+  ctx.arc(x1, y1, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x1, y1, 9 + 3 * Math.sin(prog * 10), 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Diagonal & Horizontal leader line
+  const curX2 = x1 + (x2 - x1) * clamp(pLine * 2, 0, 1);
+  const curY2 = y1 + (y2 - y1) * clamp(pLine * 2, 0, 1);
+  const curX3 = x2 + (x3 - x2) * clamp((pLine - 0.5) * 2, 0, 1);
+
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(curX2, curY2);
+  if (pLine > 0.5) ctx.lineTo(curX3, y2);
+  ctx.stroke();
+
+  // Text block
+  if (pText > 0) {
+    ctx.globalAlpha = pText;
+    ctx.textAlign = alignRight ? 'right' : 'left';
+    const tx = alignRight ? x3 - 8 : x3 + 8;
+
+    ctx.font = '700 11px monospace';
+    ctx.fillStyle = '#ff1e78';
+    ctx.fillText(labelEN, tx, y2 - 26);
+
+    ctx.font = '700 18px "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(labelJP, tx, y2 - 6);
+
+    ctx.font = '700 22px monospace';
+    ctx.fillStyle = '#00f0ff';
+    ctx.fillText(valueStr, tx, y2 + 22);
+  }
+  ctx.restore();
+}
+
+function drawKineticTitle(text, subText, x, y, prog, align = 'left') {
+  if (prog <= 0) return;
+  const pIn = easeOutExpo(clamp(prog * 1.5, 0, 1));
+  ctx.save();
+  ctx.textAlign = align;
+
+  // Accent bar
+  ctx.fillStyle = '#00f0ff';
+  const barX = align === 'left' ? x : (align === 'right' ? x - 140 * pIn : x - 70 * pIn);
+  ctx.fillRect(barX, y - 54, 140 * pIn, 3);
+
+  // Sub-header
+  ctx.font = '700 13px monospace';
+  ctx.fillStyle = '#00f0ff';
+  ctx.globalAlpha = pIn;
+  ctx.fillText(subText, x, y - 34);
+
+  // Main Japanese Headline with slight RGB split on entrance
+  ctx.font = '900 44px "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif';
+  const shift = (1 - pIn) * 35;
+  if (pIn < 0.95) {
+    ctx.fillStyle = 'rgba(255, 30, 120, 0.7)';
+    ctx.fillText(text, x + shift * 1.4, y);
+    ctx.fillStyle = 'rgba(0, 240, 255, 0.7)';
+    ctx.fillText(text, x - shift * 1.4, y);
+  }
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(text, x + shift * 0.4, y);
+
+  ctx.restore();
+}
+
+function drawGlobalHUD(t) {
+  ctx.save();
+  // Subtle scanlines
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.018)';
+  for (let y = 0; y < 720; y += 4) {
+    ctx.fillRect(0, y, 1280, 1);
+  }
+
+  // Outer Frame & Top/Bottom Status Bar
+  ctx.strokeStyle = 'rgba(0, 240, 255, 0.25)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(32, 28, 1216, 664);
+  drawCornerBracket(26, 22, 1228, 676, 18, '#00f0ff', 0.8);
+
+  // Top Left Brand Tag
+  ctx.fillStyle = '#00f0ff';
+  ctx.fillRect(48, 44, 8, 8);
+  ctx.font = '700 12px monospace';
+  ctx.fillStyle = '#e0faff';
+  ctx.textAlign = 'left';
+  ctx.fillText('AETHER // X1   QUANTUM SPATIAL ENGINE', 66, 52);
+
+  // Top Center Scene Phase Indicator
+  const phases = [
+    '01 // GENESIS IGNITION',
+    '02 // MULTI-LAYER ARCHITECTURE',
+    '03 // NEURAL PROCESSING MATRIX',
+    '04 // REALTIME TELEMETRY',
+    '05 // PRODUCT REVEAL'
+  ];
+  const pIdx = t < 2.8 ? 0 : t < 6.0 ? 1 : t < 9.2 ? 2 : t < 12.2 ? 3 : 4;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#00f0ff';
+  ctx.fillText(`PHASE ${phases[pIdx]}`, 640, 52);
+
+  // Top Right Timecode & FPS
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#88b8cc';
+  const sec = Math.floor(t).toString().padStart(2, '0');
+  const ms = Math.floor((t % 1) * 60).toString().padStart(2, '0');
+  ctx.fillText(`REC ●  00:00:${sec}:${ms}   [4K/60FPS]`, 1230, 52);
+
+  // Bottom Timeline Progress Bar
+  ctx.fillStyle = 'rgba(0, 240, 255, 0.15)';
+  ctx.fillRect(48, 672, 1184, 3);
+  const grad = ctx.createLinearGradient(48, 0, 1232, 0);
+  grad.addColorStop(0, '#00f0ff');
+  grad.addColorStop(1, '#ff1e78');
+  ctx.fillStyle = grad;
+  ctx.fillRect(48, 672, 1184 * (t / window.DUR), 3);
+
+  // Section ticks on timeline
+  [0, 2.8, 6.0, 9.2, 12.2, 15.0].forEach(mark => {
+    const mx = 48 + (mark / 15.0) * 1184;
+    ctx.fillStyle = t >= mark ? '#00f0ff' : '#335566';
+    ctx.fillRect(mx - 1, 668, 2, 11);
+  });
+
+  ctx.restore();
+}
+
+function renderOverlay(t) {
+  ctx.clearRect(0, 0, 1280, 720);
+  drawGlobalHUD(t);
+
+  // ==========================================
+  // SCENE 1: 0.0s - 2.8s (GENESIS IGNITION)
+  // ==========================================
+  if (t < 2.8) {
+    const pIn = subProgress(t, 0.15, 1.1);
+    const pOut = 1.0 - subProgress(t, 2.3, 2.75);
+    const alpha = Math.min(pIn, pOut);
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    // Center Target Reticle
+    ctx.translate(640, 360);
+    ctx.rotate(t * 0.4);
+    ctx.strokeStyle = 'rgba(0, 240, 255, 0.45)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([12, 8]);
+    ctx.beginPath();
+    ctx.arc(0, 0, 210 * easeOutExpo(pIn), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    // Left Hero Intro Typography
+    drawKineticTitle(
+      '次世代空間演算コア、起動。',
+      'SYSTEM INITIALIZATION // ZERO-LATENCY CORE',
+      70, 595, alpha, 'left'
+    );
+
+    // Right Boot Sequence Readout
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.9;
+    ctx.font = '700 12px monospace';
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#00f0ff';
+    const logs = [
+      `> KERNEL BOOT: OK [0.002ms]`,
+      `> QUANTUM LATTICE: SYNCHRONIZED`,
+      `> FLUX STABILIZER: ${(t * 38.4).toFixed(1)}%`,
+      `> RAY-CORE ALLOCATION: 16,384 NODES`
+    ];
+    logs.forEach((line, i) => {
+      if (t > 0.25 + i * 0.3) {
+        ctx.fillText(line, 1210, 540 + i * 22);
+      }
+    });
+    ctx.restore();
+  }
+
+  // ==========================================
+  // SCENE 2: 2.8s - 6.0s (EXPLODED ARCHITECTURE)
+  // ==========================================
+  if (t >= 2.8 && t < 6.0) {
+    const p = subProgress(t, 2.9, 3.8);
+    const pOut = 1.0 - subProgress(t, 5.5, 5.95);
+    const a = Math.min(p, pOut);
+
+    drawKineticTitle(
+      '超精密マルチレイヤー構造',
+      'ARCHITECTURE // 8-OCTANT MAGNETIC SHELL',
+      70, 145, a, 'left'
+    );
+
+    // 3 Dynamic Callouts pointing to exploded 3D components
+    drawCallout(
+      535, 255, 420, 195, 250,
+      '高密度プラズマ磁気シールド',
+      'PART 01 // MAGNETIC CONTAINMENT',
+      '99.98% SHIELDING',
+      subProgress(t, 3.1, 4.1) * pOut,
+      true
+    );
+
+    drawCallout(
+      755, 285, 865, 225, 1050,
+      'ナノカーボン放熱フィン構造',
+      'PART 02 // THERMAL DISSIPATION MATRIX',
+      'ΔT -42.5°C / SEC',
+      subProgress(t, 3.4, 4.4) * pOut,
+      false
+    );
+
+    drawCallout(
+      710, 455, 845, 520, 1050,
+      'デュアル・ジャイロ・スタビライザー',
+      'PART 03 // ZERO-G HARMONIC RING',
+      '120,000 RPM SYNC',
+      subProgress(t, 3.7, 4.7) * pOut,
+      false
+    );
+  }
+
+  // ==========================================
+  // SCENE 3: 6.0s - 9.2s (NEURAL PROCESSING MATRIX)
+  // ==========================================
+  if (t >= 6.0 && t < 9.2) {
+    const p = subProgress(t, 6.1, 7.0);
+    const pOut = 1.0 - subProgress(t, 8.7, 9.15);
+    const a = Math.min(p, pOut);
+
+    drawKineticTitle(
+      'AI自律制御・超並列ニューラル演算',
+      'CORE ENGINE // AUTONOMOUS TENSOR TOPOLOGY',
+      70, 145, a, 'left'
+    );
+
+    // Left glass card: Frequency Spectrum Analyzer
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.fillStyle = 'rgba(4, 14, 26, 0.72)';
+    ctx.fillRect(70, 210, 310, 260);
+    drawCornerBracket(70, 210, 310, 260, 14, '#00f0ff', a);
+
+    ctx.font = '700 12px monospace';
+    ctx.fillStyle = '#00f0ff';
+    ctx.fillText('NEURAL HARMONICS // REALTIME FFT', 90, 240);
+
+    // Animated spectrum bars
+    for (let i = 0; i < 24; i++) {
+      const freq = Math.sin(t * 9 + i * 0.55) * 0.5 + 0.5;
+      const h = 15 + freq * 110;
+      const bx = 90 + i * 11.2;
+      const by = 385 - h;
+      ctx.fillStyle = i % 3 === 0 ? '#ff1e78' : '#00f0ff';
+      ctx.fillRect(bx, by, 7, h);
+    }
+
+    ctx.font = '700 15px "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('リアルタイム波形最適化: 稼働中', 90, 425);
+    ctx.font = '700 13px monospace';
+    ctx.fillStyle = '#88d8ff';
+    ctx.fillText(`LATENCY: ${(0.08 + 0.02 * Math.sin(t * 20)).toFixed(3)} ms`, 90, 448);
+
+    // Right side KPI Big Counter Card
+    ctx.fillStyle = 'rgba(4, 14, 26, 0.72)';
+    ctx.fillRect(880, 210, 330, 260);
+    drawCornerBracket(880, 210, 330, 260, 14, '#ff1e78', a);
+
+    ctx.textAlign = 'left';
+    ctx.font = '700 12px monospace';
+    ctx.fillStyle = '#ff1e78';
+    ctx.fillText('THROUGHPUT // QUANTUM TFLOPS', 900, 240);
+
+    const numVal = (1024 * easeOutCubic(subProgress(t, 6.2, 7.6))).toFixed(0);
+    ctx.font = '900 64px monospace';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(`${numVal}`, 900, 315);
+    ctx.font = '700 22px monospace';
+    ctx.fillStyle = '#00f0ff';
+    ctx.fillText('PFLOPS', 1085, 315);
+
+    ctx.font = '700 16px "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('従来比 400% の演算効率を実現', 900, 365);
+
+    // Progress bars
+    const metrics = [
+      { name: 'RAY-TRACING CORE', val: 0.96 },
+      { name: 'NEURAL SHADER', val: 0.92 },
+      { name: 'POWER EFFICIENCY', val: 0.99 }
+    ];
+    metrics.forEach((m, idx) => {
+      const my = 392 + idx * 24;
+      ctx.font = '700 10px monospace';
+      ctx.fillStyle = '#99ccdd';
+      ctx.fillText(m.name, 900, my);
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      ctx.fillRect(1030, my - 8, 155, 7);
+      ctx.fillStyle = '#00f0ff';
+      ctx.fillRect(1030, my - 8, 155 * m.val * easeOutCubic(p), 7);
+    });
+    ctx.restore();
+  }
+
+  // ==========================================
+  // SCENE 4: 9.2s - 12.2s (PERFORMANCE TELEMETRY)
+  // ==========================================
+  if (t >= 9.2 && t < 12.2) {
+    const p = subProgress(t, 9.3, 10.1);
+    const pOut = 1.0 - subProgress(t, 11.75, 12.15);
+    const a = Math.min(p, pOut);
+
+    drawKineticTitle(
+      '圧倒的パフォーマンスと信頼性',
+      'BENCHMARK // EXTREME STRESS TEST VERIFIED',
+      70, 145, a, 'left'
+    );
+
+    // 3 Horizontal Feature Cards at Bottom
+    const cards = [
+      {
+        code: 'SPEC // 01',
+        title: '超低遅延レスポンス',
+        stat: '0.01 ms',
+        desc: '光量子インターコネクトによる瞬時応答'
+      },
+      {
+        code: 'SPEC // 02',
+        title: '完全自律サーマル制御',
+        stat: '99.999%',
+        desc: '高負荷レンダリング時も静音・低温を維持'
+      },
+      {
+        code: 'SPEC // 03',
+        title: 'モジュラー拡張設計',
+        stat: '∞ SCALE',
+        desc: '用途に応じてクラスターを自在に連結'
+      }
+    ];
+
+    cards.forEach((c, i) => {
+      const cp = subProgress(t, 9.4 + i * 0.2, 10.3 + i * 0.2) * pOut;
+      if (cp <= 0) return;
+      const easeP = easeOutCubic(cp);
+      const cx = 70 + i * 390;
+      const cy = 485 + (1 - easeP) * 35;
+
+      ctx.save();
+      ctx.globalAlpha = easeP;
+      ctx.fillStyle = 'rgba(5, 16, 30, 0.82)';
+      ctx.fillRect(cx, cy, 360, 150);
+      drawCornerBracket(cx, cy, 360, 150, 14, i === 1 ? '#ff1e78' : '#00f0ff', easeP);
+
+      ctx.font = '700 11px monospace';
+      ctx.fillStyle = i === 1 ? '#ff1e78' : '#00f0ff';
+      ctx.fillText(c.code, cx + 22, cy + 28);
+
+      ctx.font = '900 34px monospace';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(c.stat, cx + 22, cy + 72);
+
+      ctx.font = '700 18px "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif';
+      ctx.fillStyle = '#00f0ff';
+      ctx.fillText(c.title, cx + 22, cy + 104);
+
+      ctx.font = '500 13px "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif';
+      ctx.fillStyle = '#b8dce8';
+      ctx.fillText(c.desc, cx + 22, cy + 128);
+      ctx.restore();
+    });
+  }
+
+  // ==========================================
+  // SCENE 5: 12.2s - 15.0s (HERO FINALE LOCKUP)
+  // ==========================================
+  if (t >= 12.2) {
+    const pIn = easeOutExpo(subProgress(t, 12.3, 13.4));
+    // Smooth loop fade on the last 0.45s
+    const loopFade = subProgress(t, 14.55, 15.0);
+
+    ctx.save();
+    ctx.globalAlpha = pIn;
+
+    const rx = 620 + (1 - pIn) * 50;
+
+    // Product Category Pill
+    ctx.fillStyle = 'rgba(0, 240, 255, 0.15)';
+    ctx.strokeStyle = '#00f0ff';
+    ctx.lineWidth = 1.5;
+    ctx.fillRect(rx, 205, 275, 28);
+    ctx.strokeRect(rx, 205, 275, 28);
+    ctx.font = '700 12px monospace';
+    ctx.fillStyle = '#00f0ff';
+    ctx.textAlign = 'left';
+    ctx.fillText('NEXT-GEN SPATIAL COMPUTING', rx + 14, 223);
+
+    // Giant Brand Title
+    ctx.font = '900 84px system-ui, sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('AETHER // X1', rx - 4, 315);
+
+    // Japanese Tagline
+    ctx.font = '900 32px "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif';
+    ctx.fillStyle = '#00f0ff';
+    ctx.fillText('想像を超える、創造のエンジン。', rx, 370);
+
+    // Sub-copy
+    ctx.font = '500 16px "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif';
+    ctx.fillStyle = '#cceeff';
+    ctx.fillText('リアルタイム3D・AI空間演算・超並列レンダリングを単一コアに統合。', rx, 412);
+
+    // Spec summary badges
+    const badges = ['1,024 PFLOPS', '0.01ms LATENCY', 'QUANTUM CORE'];
+    badges.forEach((b, i) => {
+      const bx = rx + i * 175;
+      const by = 445;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+      ctx.strokeRect(bx, by, 160, 34);
+      ctx.font = '700 13px monospace';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(b, bx + 16, by + 22);
+    });
+
+    // CTA Box
+    const ctaPulse = 0.85 + 0.15 * Math.sin(t * 8);
+    ctx.fillStyle = '#ff1e78';
+    ctx.fillRect(rx, 510, 320, 48);
+    ctx.font = '900 18px "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('今すぐ未来を体験する  ▶', rx + 42, 540);
+
+    ctx.font = '700 12px monospace';
+    ctx.fillStyle = `rgba(0, 240, 255, ${ctaPulse})`;
+    ctx.fillText('AVAILABLE NOW // PORTFOLIO SHOWREEL EDITION', rx, 585);
+
+    ctx.restore();
+
+    if (loopFade > 0) {
+      ctx.save();
+      ctx.fillStyle = `rgba(4, 6, 10, ${easeInOutCubic(loopFade)})`;
+      ctx.fillRect(0, 0, 1280, 720);
+      ctx.restore();
+    }
+  }
+}
+
+// --- Main Animation Loop driven purely by performance.now() ---
+let startTime = null;
+function frame(now) {
+  if (startTime === null) startTime = now;
+  const elapsed = (now - startTime) / 1000 + timeOffset;
+  const t = elapsed % window.DUR;
+
+  // Render 3D Raymarched Product
+  gl.viewport(0, 0, 1280, 720);
+  gl.uniform1f(uTimeLoc, t);
+  gl.uniform2f(uResLoc, 1280, 720);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+  // Render 2D Motion Graphics & Japanese Typography
+  renderOverlay(t);
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

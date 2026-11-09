@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8"><title>Lámpara de lava</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#st{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+canvas{position:absolute;left:0;top:0;width:1280px;height:720px}
+</style></head><body>
+<div id="st"><canvas id="g" width="1280" height="720"></canvas><canvas id="o" width="1280" height="720"></canvas></div>
+<script>
+window.DUR=40;
+const st=document.getElementById('st');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);st.style.transform=`scale(${s}) translate(-50%,-50%)`;st.style.transformOrigin='0 0';st.style.left='50%';st.style.top='50%';st.style.transform=`translate(-50%,-50%) scale(${s})`;st.style.transformOrigin='center';}
+fit();addEventListener('resize',fit);
+const gl=document.getElementById('g').getContext('webgl',{preserveDrawingBuffer:true});
+const ov=document.getElementById('o').getContext('2d');
+const VS=`attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}`;
+const FS=`precision highp float;
+uniform vec2 R;uniform float S,P,H,TP;uniform vec3 WC,LC;
+float hs(float n){return fract(sin(n)*43758.5453);}
+float smin(float a,float b,float k){float h=clamp(.5+.5*(b-a)/k,0.,1.);return mix(b,a,h)-k*h*(1.-h);}
+float cone(vec3 p,float h,float r1,float r2){vec2 q=vec2(length(p.xz),p.y);vec2 k1=vec2(r2,h);vec2 k2=vec2(r2-r1,2.*h);
+vec2 ca=vec2(q.x-min(q.x,(q.y<0.)?r1:r2),abs(q.y)-h);vec2 cb=q-k1+k2*clamp(dot(k1-q,k2)/dot(k2,k2),0.,1.);
+float s=(cb.x<0.&&ca.y<0.)?-1.:1.;return s*sqrt(min(dot(ca,ca),dot(cb,cb)));}
+float glass(vec3 p){return cone(p-vec3(0,.08,0),.7,.36,.17);}
+float metal(vec3 p){float b=cone(p-vec3(0,-.96,0),.34,.5,.36);
+float c=cone(p-vec3(0,.93,0),.15,.17,.07);
+vec2 q=vec2(length(p.xz)-.365,p.y+.62);float r=length(q)-.025;
+vec2 q2=vec2(length(p.xz)-.175,p.y-.78);float r2=length(q2)-.018;
+return min(min(b,c),min(r,r2));}
+float ell(vec3 p,vec3 r){return (length(p/r)-1.)*min(min(r.x,r.y),r.z);}
+float wax(vec3 p){float yb=-.55,yt=.68;
+float d=ell(p-vec3(0,yb-.02,0),vec3(.33,.07+.05*(1.-H),.33));
+d=smin(d,ell(p-vec3(0,yt+.04,0),vec3(.14,.035,.14)*(.2+.8*H)),.06);
+for(int i=0;i<6;i++){float fi=float(i);
+float ph=fract(S*(.09+.025*fi)+fi*.173);
+float m=.5-.5*cos(ph*6.2832);float vel=sin(ph*6.2832);
+float y=yb+.04+m*(yt-yb-.12)*H;
+float rg=mix(.36,.17,(y+.62)/1.4);
+vec2 xz=vec2(sin(S*.37+fi*2.1),cos(S*.29+fi*1.3))*max(rg-.14,0.)*.7;
+float r=.07+.035*hs(fi*7.1);
+float st=1.+.6*abs(vel)*H;
+float sep=(mod(fi,2.)<.5)?.17*smoothstep(.12,.42,ph)*(1.-smoothstep(.5,.85,ph))*H:0.;
+vec3 c=vec3(xz.x,y,xz.y);
+float b1=ell(p-c-vec3(0,sep,0),vec3(r,r*st,r));
+float b2=ell(p-c+vec3(0,sep,0),vec3(r*.85,r*.85*st,r*.85));
+float b=sep>0.?smin(b1,b2,.07):b1;
+d=smin(d,b,.12);}
+return max(d,glass(p)+.015);}
+vec3 env(vec3 d){vec3 c=vec3(.015,.016,.02)+vec3(.03)*max(d.y,0.);
+c+=vec3(1.)*1.6*smoothstep(.12,.0,abs(d.x-.55))*smoothstep(-.1,.3,d.y)*smoothstep(.95,.7,d.y);
+c+=vec3(.7,.75,.9)*.8*smoothstep(.1,0.,abs(d.x+.7))*smoothstep(0.,.4,d.y);
+c+=WC*P*.25*smoothstep(.3,-.3,d.y);return c;}
+float map(vec3 p,out float id){float g=glass(p),m=metal(p);id=g<m?1.:2.;return min(g,m);}
+vec3 nrm(vec3 p){vec2 e=vec2(.0015,0);float i;return normalize(vec3(map(p+e.xyy,i)-map(p-e.xyy,i),map(p+e.yxy,i)-map(p-e.yxy,i),map(p+e.yyx,i)-map(p-e.yyx,i)));}
+vec3 wn(vec3 p){vec2 e=vec2(.004,0);return normalize(vec3(wax(p+e.xyy)-wax(p-e.xyy),wax(p+e.yxy)-wax(p-e.yxy),wax(p+e.yyx)-wax(p-e.yyx)));}
+void main(){vec2 uv=(gl_FragCoord.xy-.5*R)/R.y;uv.x+=.2;
+vec3 ro=vec3(0,0,4.2);vec3 rd=normalize(vec3(uv,-1.6));
+vec3 kl=normalize(vec3(.6,.6,.5));
+float t=0.,id=0.;bool hit=false;
+for(int i=0;i<90;i++){vec3 p=ro+rd*t;float d=map(p,id);if(d<.001){hit=true;break;}t+=d;if(t>8.)break;}
+vec3 col;
+if(!hit){
+ vec2 lp=vec2(uv.x,uv.y+.0);col=vec3(.012,.012,.016)+vec3(.02)*(uv.y+.5);
+ col+=WC*P*.22*exp(-length(lp*vec2(1.,.6))*3.);
+ if(rd.y<0.){float tp=(-1.3-ro.y)/rd.y;vec3 p=ro+rd*tp;float r=length(p.xz);
+  vec3 fl=vec3(.02,.018,.017)*(1.+.3*hs(floor(p.x*40.)+floor(p.z*3.)*7.));
+  fl+=WC*P*.35*exp(-r*2.2);fl*=smoothstep(.45,.75,r)*.8+.2;
+  fl+=env(reflect(rd,vec3(0,1,0)))*.04;col=mix(col,fl,exp(-tp*.05)*smoothstep(-.02,-.1,rd.y)+.0);}
+}else{vec3 p=ro+rd*t;vec3 n=nrm(p);
+ if(id>1.5){float ang=atan(p.z,p.x);
+  float br=hs(floor(p.y*1400.))*.6+.4*hs(floor(p.y*300.)+floor(ang*6.));
+  vec3 T=vec3(-sin(ang),0,cos(ang));vec3 hv=normalize(kl-rd);
+  float th=dot(T,hv);float an=pow(sqrt(max(1.-th*th,0.)),80.)*(.5+.5*br);
+  vec3 r=reflect(rd,n);r.y+=(br-.5)*.15;
+  vec3 mc=vec3(.72,.73,.76);
+  col=mc*env(normalize(r))*(.55+.45*br)+mc*an*.9+mc*.05*max(dot(n,kl),0.);
+  float nearG=exp(-abs(p.y+.62)*7.)+exp(-abs(p.y-.78)*7.);
+  col+=WC*P*.6*nearG*(.4+.6*max(n.y,0.));
+ }else{float F=.04+.96*pow(1.-max(dot(n,-rd),0.),5.);
+  vec3 rr=refract(rd,n,1./1.33);float s=.0;bool wh=false;vec3 q;
+  for(int i=0;i<64;i++){q=p+rr*s;float d=wax(q);if(d<.002){wh=true;break;}if(glass(q)>.002)break;s+=max(d,.008);}
+  float hy=exp(-(q.y+.62)*1.6);
+  vec3 liq=LC*(.12+P*(.25+1.5*hy));
+  vec3 inside=liq;
+  if(wh){vec3 wn_=wn(q);vec3 L=normalize(vec3(0,-.8,0)-q);
+   float dif=.5+.5*dot(wn_,L);float sh=.6+.7*exp(-(q.y+.6)*1.3);
+   float rim=pow(1.-abs(dot(wn_,-rr)),2.);
+   vec3 wc=WC*(.08+P*(.3+.8*dif)*sh)+WC*rim*.5*P;
+   wc+=vec3(1.,.9,.8)*pow(max(dot(reflect(rr,wn_),kl),0.),30.)*.25;
+   inside=mix(wc,liq,1.-exp(-s*1.2));}
+  inside*=1.-exp(-0.)*.0;
+  vec3 re=env(reflect(rd,n));
+  col=inside*(1.-F)+re*F*1.3;
+  col+=vec3(1.)*.12*smoothstep(.03,0.,abs(n.x-.5))*smoothstep(.0,.5,n.z);
+ }}
+col=col/(1.+col*.6);col=pow(col,vec3(.4545));
+col*=1.-.35*dot(uv-vec2(.2,0),uv-vec2(.2,0));
+gl_FragColor=vec4(col,1.);}`;
+function sh(t,s){const o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);if(!gl.getShaderParameter(o,gl.COMPILE_STATUS))console.log(gl.getShaderInfoLog(o));return o;}
+const pr=gl.createProgram();gl.attachShader(pr,sh(gl.VERTEX_SHADER,VS));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,FS));gl.linkProgram(pr);gl.useProgram(pr);
+gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+const U={};['R','S','P','H','TP','WC','LC'].forEach(n=>U[n]=gl.getUniformLocation(pr,n));
+const cl=(x,a,b)=>Math.max(a,Math.min(b,x)),ss=(a,b,x)=>{x=cl((x-a)/(b-a),0,1);return x*x*(3-2*x)};
+const ON=2,OFF=37;
+function pw(t){return t<ON?0:t<OFF?ss(ON,ON+.6,t):1-ss(OFF,OFF+.6,t);}
+function heat(t){if(t<ON)return 0;const h=1-Math.exp(-(Math.min(t,OFF)-ON)/5);return t<OFF?h:h*Math.exp(-(t-OFF)/3);}
+function temp(t){return .45+.5*ss(22,23.5,t);}
+const PAL=[[[1,.38,.06],[.45,.06,.03]],[[1,.16,.55],[.07,.05,.33]],[[.35,1,.3],[.04,.18,.28]]];
+function pal(t){const k1=ss(14,14.8,t),k2=ss(30,30.8,t);const m=(i)=>[0,1,2].map(c=>{let a=PAL[0][i][c]*(1-k1)+PAL[1][i][c]*k1;return a*(1-k2)+PAL[2][i][c]*k2;});return[m(0),m(1)];}
+function simT(t){let s=0;for(let x=0;x<t;x+=1/60)s+=heat(x)*(.35+temp(x)*1.1)/60;return s+3;}
+const SW=[1035,262],CB=[1035,375],KN=[1035,492],RS=[1190,650];
+const K=[[0,RS],[1.3,SW],[2.4,SW],[3.6,RS],[12.6,RS],[13.6,CB],[14.5,CB],[15.5,RS],[20.8,RS],[21.8,KN],[22,KN],[23.5,[KN[0]+30,KN[1]-30]],[24.5,RS],[29,RS],[29.8,CB],[30.6,CB],[31.5,RS],[35.8,RS],[36.7,SW],[37.6,SW],[38.6,RS],[40,RS]];
+function cur(t){for(let i=0;i<K.length-1;i++){if(t<=K[i+1][0]){const k=ss(K[i][0],K[i+1][0],t);return[K[i][1][0]+(K[i+1][1][0]-K[i][1][0])*k,K[i][1][1]+(K[i+1][1][1]-K[i][1][1])*k];}}return RS;}
+function rr(x,y,w,h,r){ov.beginPath();ov.moveTo(x+r,y);ov.arcTo(x+w,y,x+w,y+h,r);ov.arcTo(x+w,y+h,x,y+h,r);ov.arcTo(x,y+h,x,y,r);ov.arcTo(x,y,x+w,y,r);ov.closePath();}
+const rgb=(c,a)=>`rgba(${c.map(v=>Math.round(cl(v,0,1)*255)).join(',')},${a})`;
+function overlay(t,c){ov.clearRect(0,0,1280,720);
+ov.font='600 30px sans-serif';ov.fillStyle='rgba(235,235,240,.9)';ov.fillText('Lámpara de lava',60,80);
+ov.font='16px sans-serif';ov.fillStyle='rgba(200,200,210,.6)';
+const msg=t<ON?'Apagada':t>=OFF?'Apagando… la cera se asienta':heat(t)<.6?'Calentando la cera…':temp(t)>.7?'Temperatura alta: la cera sube, se estira y se parte':'La cera sube y se separa';
+ov.fillText(msg,60,110);
+const g=ov.createLinearGradient(960,0,1110,0);g.addColorStop(0,'#5a5d63');g.addColorStop(.5,'#9a9ea6');g.addColorStop(1,'#4c4f55');
+rr(955,190,160,370,16);ov.fillStyle=g;ov.fill();ov.save();ov.clip();
+for(let y=190;y<560;y+=2){ov.fillStyle=`rgba(255,255,255,${(Math.sin(y*12.9898)*43758.5%1+1)%1*.06})`;ov.fillRect(955,y,160,1);}ov.restore();
+ov.strokeStyle='rgba(0,0,0,.5)';ov.lineWidth=2;rr(955,190,160,370,16);ov.stroke();
+ov.font='600 12px sans-serif';ov.textAlign='center';ov.fillStyle='#111';
+const on=t>=ON&&t<OFF;
+ov.fillText('INTERRUPTOR',1035,222);rr(1005,240,60,44,22);ov.fillStyle='#222';ov.fill();
+const sx=on?1043:1027;ov.beginPath();ov.arc(sx,262,17,0,7);const kg=ov.createRadialGradient(sx-5,256,2,sx,262,17);kg.addColorStop(0,'#eee');kg.addColorStop(1,'#777');ov.fillStyle=kg;ov.fill();
+ov.fillStyle=on?'#6f6':'#433';ov.beginPath();ov.arc(1090,262,5,0,7);ov.fill();
+ov.fillStyle='#111';ov.fillText(on?'ENCENDIDO':'APAGADO',1035,302);
+ov.fillText('COLOR',1035,338);const pr=(t>14&&t<14.3)||(t>30&&t<30.3)?3:0;
+ov.beginPath();ov.arc(1035,375+pr,24,0,7);ov.fillStyle='#2a2a2a';ov.fill();
+ov.beginPath();ov.arc(1035,373+pr,19,0,7);ov.fillStyle=rgb(c[0],1);ov.fill();
+ov.fillStyle='rgba(255,255,255,.35)';ov.beginPath();ov.arc(1029,367+pr,6,0,7);ov.fill();
+ov.fillStyle='#111';ov.fillText('TEMPERATURA',1035,450);
+const tp=temp(t),a0=Math.PI*.75,a1=a0+tp*Math.PI*1.5;
+ov.lineWidth=5;ov.strokeStyle='#333';ov.beginPath();ov.arc(1035,492,30,a0,a0+Math.PI*1.5);ov.stroke();
+ov.strokeStyle=`rgb(255,${Math.round(200-tp*170)},40)`;ov.beginPath();ov.arc(1035,492,30,a0,a1);ov.stroke();
+ov.beginPath();ov.arc(1035,492,22,0,7);const dg=ov.createRadialGradient(1028,485,2,1035,492,22);dg.addColorStop(0,'#ddd');dg.addColorStop(1,'#666');ov.fillStyle=dg;ov.fill();
+ov.strokeStyle='#111';ov.lineWidth=3;ov.beginPath();ov.moveTo(1035,492);ov.lineTo(1035+Math.cos(a1)*18,492+Math.sin(a1)*18);ov.stroke();
+ov.fillStyle='#111';ov.fillText(Math.round(40+tp*40)+' °C',1035,540);ov.textAlign='left';
+const[cx,cy]=cur(t);
+for(const ct of[ON,14,30,OFF]){const d=t-ct;if(d>0&&d<.6){ov.strokeStyle=`rgba(255,255,255,${.6-d})`;ov.lineWidth=2;ov.beginPath();ov.arc(cx,cy,8+d*50,0,7);ov.stroke();}}
+ov.save();ov.translate(cx,cy);ov.beginPath();ov.moveTo(0,0);ov.lineTo(0,22);ov.lineTo(6,17);ov.lineTo(10,26);ov.lineTo(14,24);ov.lineTo(10,16);ov.lineTo(17,16);ov.closePath();
+ov.fillStyle='#fff';ov.fill();ov.strokeStyle='#000';ov.lineWidth=1.5;ov.stroke();ov.restore();}
+const t0=parseFloat(new URLSearchParams(location.search).get('t'))||0;let start=null;
+function frame(now){if(start===null)start=now;const t=((now-start)/1000+t0)%DUR;
+const c=pal(t);gl.viewport(0,0,1280,720);
+gl.uniform2f(U.R,1280,720);gl.uniform1f(U.S,simT(t));gl.uniform1f(U.P,pw(t));gl.uniform1f(U.H,heat(t));gl.uniform1f(U.TP,temp(t));
+gl.uniform3fv(U.WC,c[0]);gl.uniform3fv(U.LC,c[1]);gl.drawArrays(gl.TRIANGLES,0,3);
+overlay(t,c);requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

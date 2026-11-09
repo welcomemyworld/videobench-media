@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>SQLite Explained</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#s{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+canvas{display:block}</style></head><body><div id="s"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+window.DUR=60;
+const c=document.getElementById('c'),x=c.getContext('2d'),S=document.getElementById('s');
+function fit(){const k=Math.min(innerWidth/1280,innerHeight/720);S.style.transform=`scale(${k}) translate(-50%,-50%)`;S.style.left='50%';S.style.top='50%';S.style.transformOrigin='0 0';S.style.transform=`translate(-50%,-50%) scale(${k})`;S.style.transformOrigin='50% 50%';}
+fit();addEventListener('resize',fit);
+const q=new URLSearchParams(location.search),T0=performance.now()-(parseFloat(q.get('t'))||0)*1000;
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),E=t=>t<0?0:t>1?1:t*t*(3-2*t);
+const F='Helvetica,Arial,sans-serif';
+function txt(s,X,Y,sz,col,al='left',w=''){x.font=`${w} ${sz}px ${F}`;x.fillStyle=col;x.textAlign=al;x.fillText(s,X,Y);}
+function box(X,Y,W,H,col,a=1,r=10){x.globalAlpha=a;x.beginPath();x.roundRect(X,Y,W,H,r);x.fillStyle=col+'22';x.fill();x.strokeStyle=col;x.lineWidth=2;x.stroke();x.globalAlpha=1;}
+function bg(t){const g=x.createRadialGradient(640,360,50,640,360,800);g.addColorStop(0,'#0e1a2e');g.addColorStop(1,'#03060c');x.fillStyle=g;x.fillRect(0,0,1280,720);
+x.strokeStyle='#ffffff08';x.lineWidth=1;for(let i=0;i<1280;i+=40){x.beginPath();x.moveTo(i,0);x.lineTo(i,720);x.stroke();}for(let j=0;j<720;j+=40){x.beginPath();x.moveTo(0,j);x.lineTo(1280,j);x.stroke();}}
+function head(n,title,sub,lt){x.globalAlpha=E(lt*2);txt('0'+n,60,80,22,'#4fc3f7','left','bold');txt(title,110,80,32,'#fff','left','bold');txt(sub,60,115,18,'#8aa','left');x.globalAlpha=1;}
+const scenes=[[0,12],[12,24],[24,36],[36,48],[48,60]];
+const layers=[['Interface','main.c  legacy.c','#4fc3f7'],['Tokenizer','tokenize.c','#4fc3f7'],['Parser','parse.y','#4fc3f7'],['Code Generator','select.c where.c expr.c','#81c784'],['Virtual Machine','vdbe.c','#ffb74d'],['B-Tree','btree.c','#e57373'],['Pager','pager.c  wal.c','#ba68c8'],['OS Interface','os_unix.c  os_win.c','#90a4ae']];
+function s1(t){head(1,'What is SQLite?','A complete SQL database in a single C library',t);
+const a=E(t/2);x.save();x.translate(400,380);x.rotate(t*.2);for(let i=0;i<3;i++){x.globalAlpha=a*(.4+i*.3);x.beginPath();x.ellipse(0,-60+i*60,110,30,0,0,Math.PI*2);x.strokeStyle='#4fc3f7';x.lineWidth=3;x.stroke();}x.restore();x.globalAlpha=1;
+txt('app.db',400,520,22,'#fff','center','bold');txt('one file. no server.',400,550,16,'#8aa','center');
+const pts=['~150k lines of public-domain C','Zero config, serverless, embedded','Runs in every phone, browser, plane','Over 1 trillion databases in use','ACID transactions on a plain file'];
+pts.forEach((p,i)=>{const k=E((t-1.5-i*1.2)/.8);x.globalAlpha=k;box(650+(1-k)*40,220+i*70,540,52,'#4fc3f7',k);txt(p,672+(1-k)*40,253+i*70,20,'#e8f4ff');});x.globalAlpha=1;}
+function s2(t){head(2,'Map of the Code','Eight layers, each talks only to its neighbor',t);
+layers.forEach((L,i)=>{const k=E((t-.5-i*.4)/.7),Y=150+i*65,W=520-i*10;x.globalAlpha=k;box(380+i*5,Y,W,52,L[2],k,8);txt(L[0],400+i*5,Y+33,20,'#fff','left','bold');txt(L[1],880-i*5,Y+33,15,L[2],'right');
+if(i<7){x.fillStyle=L[2];x.fillRect(638,Y+52,4,13);}});x.globalAlpha=E((t-5)/1);
+[['Frontend: SQL text → bytecode',150,3,'#4fc3f7'],['Backend: run bytecode',345,1,'#ffb74d'],['Storage: pages on disk',410,3,'#e57373']].forEach(g=>{x.strokeStyle=g[3];x.lineWidth=3;x.beginPath();x.moveTo(930,g[1]);x.lineTo(945,g[1]);x.lineTo(945,g[1]+g[2]*65-13);x.lineTo(930,g[1]+g[2]*65-13);x.stroke();txt(g[0],960,g[1]+g[2]*32,17,g[3]);});
+txt('src/',300,175,16,'#8aa','right');x.globalAlpha=1;}
+function s3(t){head(3,'Life of a Query','SELECT name FROM users WHERE age > 30',t);
+const st=['"SELECT" "name" "FROM" …','AST: Select{cols,src,where}','OP_OpenRead · OP_Column · OP_Gt','execute opcode loop','cursor → seek page 4','read 4 KB page','pread(fd, …)'];
+const steps=[1,2,3,4,5,6,7];const p=cl(t/10)*7;
+layers.forEach((L,i)=>{const Y=150+i*65,on=p>i-.5;box(80,Y,300,50,L[2],on?1:.3,8);txt(L[0],100,Y+32,19,on?'#fff':'#567','left','bold');
+if(i>0){const k=E(p-i+.5);x.globalAlpha=k;txt(st[i-1],420,Y+32,18,L[2]);x.globalAlpha=1;}});
+const Y=150+cl(p,0,7)*65+25;x.beginPath();x.arc(230+Math.sin(t*6)*3,Y,10,0,7);x.fillStyle='#fff';x.shadowColor='#4fc3f7';x.shadowBlur=25;x.fill();x.shadowBlur=0;
+if(t>9){x.globalAlpha=E(t-9);box(820,300,380,120,'#81c784');txt('Result rows bubble back up',840,345,19,'#fff','left','bold');txt('via OP_ResultRow → sqlite3_step()',840,380,16,'#a5d6a7');x.globalAlpha=1;}}
+function s4(t){head(4,'Core Abstractions','Five structs hold the whole engine together',t);
+const A=[['sqlite3','connection handle','#4fc3f7'],['Vdbe','prepared statement / bytecode program','#ffb74d'],['BtCursor','position inside a B-tree','#e57373'],['MemPage','one page of the file','#ba68c8'],['Mem','a dynamically typed value','#81c784']];
+A.forEach((a,i)=>{const k=E((t-.5-i*.9)/.8),ang=i/5*Math.PI*2-Math.PI/2+t*.05,X=640+Math.cos(ang)*260,Yy=400+Math.sin(ang)*200;
+x.globalAlpha=k*.5;x.strokeStyle=a[2];x.beginPath();x.moveTo(640,400);x.lineTo(X,Yy);x.stroke();x.globalAlpha=k;box(X-130,Yy-35,260,70,a[2],k);txt(a[0],X,Yy-5,22,'#fff','center','bold');txt(a[1],X,Yy+20,13,a[2],'center');});
+x.globalAlpha=E(t-5);x.beginPath();x.arc(640,400,46,0,7);x.fillStyle='#0e1a2e';x.fill();x.strokeStyle='#fff';x.stroke();txt('sqlite3_stmt',640,405,15,'#fff','center','bold');x.globalAlpha=1;}
+function s5(t){head(5,'A Real Trace + Join Planning','EXPLAIN SELECT * FROM a JOIN b ON a.id=b.aid',t);
+const ops=['Init','OpenRead a','OpenRead b','Rewind a','Column a.id','SeekGE b.idx','IdxGT','ResultRow','Next b','Next a','Halt'];
+const pc=Math.floor(t*1.6)%ops.length;
+ops.forEach((o,i)=>{const Y=160+i*42;if(i==pc){x.fillStyle='#ffb74d33';x.fillRect(60,Y-26,420,38);}txt(String(i).padStart(2,'0'),75,Y,16,'#8aa');txt(o,120,Y,18,i==pc?'#ffb74d':'#cde','left',i==pc?'bold':'');});
+txt('Which table goes outer?',560,180,22,'#fff','left','bold');
+const pl=[['a ⟶ b (index)','cost 2,400',1],['b ⟶ a (scan)','cost 48,000',0]];
+pl.forEach((P,i)=>{const k=E((t-2-i*1.5)),Y=220+i*110;box(560,Y,640,85,P[2]?'#81c784':'#e57373',k);x.globalAlpha=k;txt(P[0],585,Y+38,21,'#fff','left','bold');txt(P[1],585,Y+66,16,P[2]?'#a5d6a7':'#ef9a9a');
+const w=P[2]?60:560;x.fillStyle=P[2]?'#81c784':'#e57373';x.fillRect(860,Y+30,w*E((t-3-i*1.5)/2)*.6,20);x.globalAlpha=1;});
+if(t>7){x.globalAlpha=E(t-7);txt('where.c tries join orders, estimates rows ×',560,490,18,'#cde');txt('lookups with N-best path search — picks cheapest.',560,518,18,'#cde');txt('Everything truly is code.',880,640,30,'#4fc3f7','center','bold');x.globalAlpha=1;}}
+const fns=[s1,s2,s3,s4,s5];
+function frame(){const T=((performance.now()-T0)/1000)%DUR;bg(T);const i=Math.min(4,Math.floor(T/12)),lt=T-i*12;fns[i](lt);
+const fa=Math.min(cl(lt/.5),cl((12-lt)/.5));x.fillStyle=`rgba(0,0,0,${1-fa})`;x.fillRect(0,0,1280,720);
+x.fillStyle='#4fc3f7';x.fillRect(0,714,1280*T/DUR,6);txt('SQLite · how it works',1220,40,14,'#567','right');requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

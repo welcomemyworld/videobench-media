@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>The Last Prost - Wiesn Closing</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    font-family: Georgia, 'Times New Roman', serif;
+  }
+  #stage {
+    width: 1280px; height: 720px;
+    background: #05050a;
+    box-shadow: 0 0 40px rgba(0,0,0,0.9);
+  }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+window.DUR = 15;
+const canvas = document.getElementById('stage');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  const s = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+  canvas.style.transform = `scale(${s})`;
+}
+window.addEventListener('resize', resize);
+resize();
+
+const params = new URLSearchParams(window.location.search);
+const timeOffset = parseFloat(params.get('t')) || 0;
+
+// Helpers
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * clamp(t, 0, 1);
+const easeOut = t => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
+const easeInOut = t => {
+  t = clamp(t, 0, 1);
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+};
+
+// Procedural Starfield
+const stars = Array.from({length: 140}, (_, i) => ({
+  x: (Math.sin(i * 127.1) * 0.5 + 0.5) * 1280,
+  y: (Math.cos(i * 311.7) * 0.5 + 0.5) * 420,
+  r: 0.7 + (i % 3) * 0.65,
+  p: i * 1.3
+}));
+
+// Procedural Sparklers & Clink Sparks
+const sparkSeeds = Array.from({length: 55}, (_, i) => ({
+  ang: (i / 55) * Math.PI * 2 + (i % 3) * 0.15,
+  spd: 50 + (i * 37) % 160,
+  sz: 2 + (i % 4),
+  hue: 38 + (i % 20)
+}));
+
+const crowdSilhouettes = Array.from({length: 26}, (_, i) => ({
+  x: (i / 25) * 1320 - 20,
+  h: 45 + (i * 19) % 35,
+  hasSparkler: i % 2 === 0 && i > 2 && i < 23,
+  phase: i * 0.9
+}));
+
+function drawDiamondPattern(x0, y0, w, h, size) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x0, y0, w, h);
+  ctx.clip();
+  ctx.fillStyle = '#f2f6fa';
+  ctx.fillRect(x0, y0, w, h);
+  ctx.fillStyle = '#0072ce'; // Bavarian Blue
+  for (let y = y0 - size; y < y0 + h + size; y += size) {
+    for (let x = x0 - size; x < x0 + w + size; x += size * 1.4) {
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + size * 0.7, y + size * 0.5);
+      ctx.lineTo(x, y + size);
+      ctx.lineTo(x - size * 0.7, y + size * 0.5);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+function drawPretzel(x, y, scale, rot) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rot);
+  ctx.scale(scale, scale);
+  ctx.lineWidth = 10;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#8c4312';
+  ctx.beginPath();
+  ctx.moveTo(-18, -20);
+  ctx.bezierCurveTo(-45, 10, -10, 35, 0, 5);
+  ctx.bezierCurveTo(10, 35, 45, 10, 18, -20);
+  ctx.bezierCurveTo(5, -35, -5, -35, -18, -20);
+  ctx.stroke();
+  // Salt specks
+  ctx.fillStyle = '#fff5e4';
+  [[-15, 5], [15, 5], [0, -25], [-8, 16], [9, 15]].forEach(([sx, sy]) => {
+    ctx.fillRect(sx - 1.5, sy - 1.5, 3, 3);
+  });
+  ctx.restore();
+}
+
+function drawMasskrug(x, y, tilt, flipX, foamPulse, warmth) {
+  ctx.save();
+  ctx.translate(x, y);
+  if (flipX) ctx.scale(-1, 1);
+  ctx.rotate(tilt);
+
+  // Handle (on left side of mug local coords)
+  ctx.strokeStyle = 'rgba(235, 245, 255, 0.78)';
+  ctx.lineWidth = 12;
+  ctx.beginPath();
+  ctx.arc(-44, 0, 26, Math.PI * 0.5, Math.PI * 1.5);
+  ctx.stroke();
+
+  // Glass Body
+  ctx.fillStyle = 'rgba(220, 238, 255, 0.28)';
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.roundRect(-45, -58, 90, 116, 10);
+  ctx.fill();
+  ctx.stroke();
+
+  // Golden Beer Liquid
+  const beerGrad = ctx.createLinearGradient(0, -45, 0, 55);
+  beerGrad.addColorStop(0, '#ffcf33');
+  beerGrad.addColorStop(0.6, '#e68a00');
+  beerGrad.addColorStop(1, '#994d00');
+  ctx.fillStyle = beerGrad;
+  ctx.beginPath();
+  ctx.roundRect(-39, -38, 78, 90, 6);
+  ctx.fill();
+
+  // Glass Dimples (Reflections)
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.25)';
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 3; c++) {
+      ctx.beginPath();
+      ctx.ellipse(-22 + c * 22, -16 + r * 26, 7, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Warm rim highlight from tent lights
+  if (warmth > 0.05) {
+    ctx.fillStyle = `rgba(255, 230, 140, ${0.45 * warmth})`;
+    ctx.fillRect(20, -36, 10, 84);
+  }
+
+  // Rising bubbles
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+  for (let b = 0; b < 8; b++) {
+    const by = 40 - ((foamPulse * 60 + b * 17) % 75);
+    const bx = -25 + ((b * 23) % 50);
+    ctx.beginPath();
+    ctx.arc(bx, by, 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Fluffy Foam Head
+  ctx.fillStyle = '#fffdf7';
+  const blobs = [[-32, -45, 19], [-12, -52, 23], [12, -50, 22], [32, -44, 18], [0, -42, 20]];
+  blobs.forEach(([bx, by, br], idx) => {
+    const wobble = Math.sin(foamPulse * 5 + idx) * 2;
+    ctx.beginPath();
+    ctx.arc(bx, by + wobble, br, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  ctx.restore();
+}
+
+function drawMainCharacter(t, warmth, mugX, mugY) {
+  const cx = 640, cy = 490;
+  const sway = t < 8.5 ? Math.sin(t * 3.8) * 9 : Math.sin(t * 1.2) * 2;
+  const bounce = t < 8.5 ? Math.abs(Math.sin(t * 3.8)) * 6 : 0;
+
+  ctx.save();
+  ctx.translate(cx + sway, cy + bounce);
+
+  // Back Hair
+  ctx.fillStyle = '#693c16';
+  ctx.beginPath();
+  ctx.arc(0, -118, 66, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Left & Right Braids
+  ctx.strokeStyle = '#5c3310';
+  ctx.lineWidth = 18;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-48, -95);
+  ctx.quadraticCurveTo(-72, -30, -56, 25);
+  ctx.moveTo(48, -95);
+  ctx.quadraticCurveTo(72, -30, 56, 25);
+  ctx.stroke();
+
+  // Blue Ribbons on braids
+  ctx.fillStyle = '#0072ce';
+  ctx.beginPath();
+  ctx.arc(-56, 25, 9, 0, Math.PI * 2);
+  ctx.arc(56, 25, 9, 0, Math.PI * 2);
+  ctx.fill();
+
+  // White Puff Blouse Sleeves
+  ctx.fillStyle = '#f4f6fa';
+  ctx.beginPath();
+  ctx.arc(-74, -22, 34, 0, Math.PI * 2);
+  ctx.arc(74, -22, 34, 0, Math.PI * 2);
+  ctx.arc(0, -32, 62, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Torso Dirndl Bodice
+  ctx.fillStyle = '#14331b'; // Deep forest green
+  ctx.beginPath();
+  ctx.moveTo(-64, -36);
+  ctx.lineTo(64, -36);
+  ctx.lineTo(52, 85);
+  ctx.lineTo(-52, 85);
+  ctx.closePath();
+  ctx.fill();
+
+  // Golden Lacing on Bodice
+  ctx.strokeStyle = '#e5b842';
+  ctx.lineWidth = 3.5;
+  ctx.beginPath();
+  for (let y = -18; y < 55; y += 18) {
+    ctx.moveTo(-22, y);
+    ctx.lineTo(22, y + 10);
+    ctx.moveTo(22, y);
+    ctx.lineTo(-22, y + 10);
+  }
+  ctx.stroke();
+
+  // Red Apron Hint at bottom
+  ctx.fillStyle = '#a81c24';
+  ctx.fillRect(-52, 68, 104, 30);
+
+  // Neck
+  ctx.fillStyle = '#f2c19e';
+  ctx.fillRect(-18, -75, 36, 36);
+
+  // Lebkuchenherz (Gingerbread Heart) on Ribbon
+  const heartSway = sway * 0.015;
+  ctx.save();
+  ctx.translate(0, 18);
+  ctx.rotate(heartSway);
+  ctx.strokeStyle = '#0072ce';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(-24, -66);
+  ctx.lineTo(0, -15);
+  ctx.lineTo(24, -66);
+  ctx.stroke();
+  // Heart shape
+  ctx.fillStyle = '#7c3f14';
+  ctx.strokeStyle = '#fff5e6';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(0, 26);
+  ctx.bezierCurveTo(-48, -2, -32, -38, 0, -16);
+  ctx.bezierCurveTo(32, -38, 48, -2, 0, 26);
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'italic bold 12px Georgia';
+  ctx.textAlign = 'center';
+  ctx.fillText('Spatzl', 0, 3);
+  ctx.restore();
+
+  // Head
+  ctx.fillStyle = '#f7c8a6';
+  ctx.beginPath();
+  ctx.arc(0, -112, 54, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Warm Rosy Cheeks
+  ctx.fillStyle = 'rgba(235, 95, 95, 0.42)';
+  ctx.beginPath();
+  ctx.ellipse(-30, -100, 13, 8, 0, 0, Math.PI * 2);
+  ctx.ellipse(30, -100, 13, 8, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Front Hair Bangs
+  ctx.fillStyle = '#693c16';
+  ctx.beginPath();
+  ctx.arc(0, -124, 55, Math.PI * 1.05, Math.PI * 1.95);
+  ctx.quadraticCurveTo(0, -110, -54, -124);
+  ctx.fill();
+
+  // Eyes (Expressive: joyful -> nostalgic look up -> peaceful)
+  const lookY = t > 8.5 ? -4 : 0;
+  ctx.fillStyle = '#24170e';
+  if (t > 4.2 && t < 5.3) {
+    // Happy closed-eye laugh during Prost clink
+    ctx.strokeStyle = '#24170e';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(-20, -112, 9, Math.PI * 1.1, Math.PI * 1.9);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(20, -112, 9, Math.PI * 1.1, Math.PI * 1.9);
+    ctx.stroke();
+  } else {
+    ctx.beginPath();
+    ctx.arc(-20, -114 + lookY, 6.5, 0, Math.PI * 2);
+    ctx.arc(20, -114 + lookY, 6.5, 0, Math.PI * 2);
+    ctx.fill();
+    // Eye sparkle
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(-18, -116 + lookY, 2.3, 0, Math.PI * 2);
+    ctx.arc(22, -116 + lookY, 2.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Smile
+  ctx.strokeStyle = '#8f3929';
+  ctx.lineWidth = 3.5;
+  ctx.beginPath();
+  if (t > 3.5 && t < 6.8) {
+    // Big open cheer
+    ctx.fillStyle = '#731c1c';
+    ctx.arc(0, -93, 14, 0, Math.PI);
+    ctx.fill();
+    ctx.stroke();
+  } else {
+    // Soft nostalgic smile
+    ctx.arc(0, -95, 11, 0.15 * Math.PI, 0.85 * Math.PI);
+    ctx.stroke();
+  }
+
+  // Left Arm resting on table
+  ctx.strokeStyle = '#f2c19e';
+  ctx.lineWidth = 22;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-76, -15);
+  ctx.quadraticCurveTo(-110, 45, -75, 85);
+  ctx.stroke();
+
+  // Right Arm holding the Masskrug (connects shoulder to mug handle)
+  const localHandX = (mugX - 52) - (cx + sway);
+  const localHandY = mugY - (cy + bounce);
+  ctx.beginPath();
+  ctx.moveTo(76, -15);
+  ctx.quadraticCurveTo(115, 35, localHandX, localHandY);
+  ctx.stroke();
+
+  // Tyrolean Felt Hat (Trachtenhut)
+  ctx.save();
+  ctx.translate(0, -156);
+  ctx.rotate(-0.06 + sway * 0.004);
+  // Hat crown
+  ctx.fillStyle = '#1e4628';
+  ctx.beginPath();
+  ctx.moveTo(-46, 8);
+  ctx.quadraticCurveTo(-36, -42, 0, -40);
+  ctx.quadraticCurveTo(36, -42, 46, 8);
+  ctx.closePath();
+  ctx.fill();
+  // Hat cord
+  ctx.strokeStyle = '#d4af37';
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(-45, 4);
+  ctx.quadraticCurveTo(0, 12, 45, 4);
+  ctx.stroke();
+  // Hat brim
+  ctx.strokeStyle = '#16361e';
+  ctx.lineWidth = 10;
+  ctx.beginPath();
+  ctx.moveTo(-68, 6);
+  ctx.quadraticCurveTo(0, 20, 68, 6);
+  ctx.stroke();
+  // White Gamsbart / Feather
+  ctx.strokeStyle = '#f7f9fc';
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.moveTo(32, 0);
+  ctx.quadraticCurveTo(60, -28, 48, -50);
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.restore();
+}
+
+function render(now) {
+  const t = ((now / 1000) + timeOffset) % window.DUR;
+
+  // Timeline Lighting States:
+  // Switch 1 (Far garlands): off at 7.4s
+  // Switch 2 (Mid garlands): off at 8.3s
+  // Switch 3 (Hero overhead chandelier): off at 9.2s
+  const sw1 = t < 7.4 ? 1 : Math.max(0, 1 - (t - 7.4) * 9);
+  const sw2 = t < 8.3 ? 1 : Math.max(0, 1 - (t - 8.3) * 9);
+  const sw3 = t < 9.2 ? 1 : Math.max(0, 1 - (t - 9.2) * 7);
+  const warmth = sw1 * 0.2 + sw2 * 0.3 + sw3 * 0.5;
+  const sparklerAlpha = easeInOut((t - 8.7) / 1.4);
+
+  // Camera subtle push-in during toast
+  const zoom = 1 + 0.045 * Math.sin((t / window.DUR) * Math.PI);
+  ctx.save();
+  ctx.translate(640, 360);
+  ctx.scale(zoom, zoom);
+  ctx.translate(-640, -360);
+
+  // 1. Night Sky & Warm Tent Ceiling Ambience
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, 560);
+  const rTop = Math.round(lerp(6, 52, warmth));
+  const gTop = Math.round(lerp(9, 28, warmth));
+  const bTop = Math.round(lerp(24, 10, warmth));
+  const rBot = Math.round(lerp(16, 130, warmth));
+  const gBot = Math.round(lerp(24, 72, warmth));
+  const bBot = Math.round(lerp(52, 18, warmth));
+  skyGrad.addColorStop(0, `rgb(${rTop},${gTop},${bTop})`);
+  skyGrad.addColorStop(1, `rgb(${rBot},${gBot},${bBot})`);
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, 1280, 720);
+
+  // 2. Stars (emerge as tent lights go out)
+  const starVis = 1 - warmth * 0.92;
+  if (starVis > 0.02) {
+    stars.forEach(s => {
+      const tw = 0.55 + 0.45 * Math.sin(t * 3.5 + s.p);
+      ctx.fillStyle = `rgba(255, 250, 235, ${starVis * tw})`;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  // 3. Munich Silhouette: Bavaria Statue & Riesenrad (Ferris Wheel)
+  const wheelX = 250, wheelY = 295, wheelR = 125;
+  ctx.save();
+  // Ferris Wheel spokes
+  const wheelLight = lerp(0.35, 0.85, 1 - warmth);
+  ctx.strokeStyle = `rgba(255, 195, 110, ${wheelLight * 0.45})`;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(wheelX, wheelY, wheelR, 0, Math.PI * 2);
+  ctx.arc(wheelX, wheelY, wheelR * 0.55, 0, Math.PI * 2);
+  ctx.stroke();
+
+  const numGondolas = 16;
+  for (let i = 0; i < numGondolas; i++) {
+    const a = (i / numGondolas) * Math.PI * 2 + t * 0.14;
+    const gx = wheelX + Math.cos(a) * wheelR;
+    const gy = wheelY + Math.sin(a) * wheelR;
+    ctx.beginPath();
+    ctx.moveTo(wheelX, wheelY);
+    ctx.lineTo(gx, gy);
+    ctx.stroke();
+    // Gondola glow
+    ctx.fillStyle = i % 2 === 0 ? `rgba(255, 220, 130, ${wheelLight})` : `rgba(130, 210, 255, ${wheelLight})`;
+    ctx.beginPath();
+    ctx.arc(gx, gy, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Distant Tent Peaks & Crowd Horizon
+  ctx.fillStyle = '#070913';
+  ctx.beginPath();
+  ctx.moveTo(0, 500);
+  ctx.lineTo(0, 420);
+  ctx.lineTo(140, 390);
+  ctx.lineTo(340, 430);
+  ctx.lineTo(890, 425);
+  ctx.lineTo(1060, 365);
+  ctx.lineTo(1280, 415);
+  ctx.lineTo(1280, 500);
+  ctx.closePath();
+  ctx.fill();
+
+  // 4. Oktoberfest Tent Rafters & Bavarian Flag Banners
+  ctx.save();
+  ctx.strokeStyle = `rgb(${Math.round(lerp(15, 78, warmth))}, ${Math.round(lerp(18, 44, warmth))}, ${Math.round(lerp(30, 18, warmth))})`;
+  ctx.lineWidth = 22;
+  ctx.beginPath();
+  ctx.moveTo(-40, 170); ctx.lineTo(640, -30); ctx.lineTo(1320, 170);
+  ctx.moveTo(-40, 270); ctx.lineTo(640, 40); ctx.lineTo(1320, 270);
+  ctx.stroke();
+
+  // Draped Blue/White Diamond Banners
+  drawDiamondPattern(80, 0, 95, 165, 22);
+  drawDiamondPattern(1105, 0, 95, 165, 22);
+  if (warmth < 0.99) {
+    ctx.fillStyle = `rgba(5, 8, 22, ${(1 - warmth) * 0.72})`;
+    ctx.fillRect(80, 0, 95, 165);
+    ctx.fillRect(1105, 0, 95, 165);
+  }
+  ctx.restore();
+
+  // 5. Background Crowd & Sparkler Sea (Final Moment)
+  crowdSilhouettes.forEach(c => {
+    const bob = Math.sin(t * 2.5 + c.phase) * 3;
+    ctx.fillStyle = `rgb(${Math.round(lerp(10, 42, warmth))}, ${Math.round(lerp(12, 24, warmth))}, ${Math.round(lerp(22, 14, warmth))})`;
+    ctx.beginPath();
+    ctx.arc(c.x, 465 - c.h + bob, 18, 0, Math.PI * 2);
+    ctx.arc(c.x, 505 - c.h + bob, 32, Math.PI, 0);
+    ctx.fill();
+
+    // Background Sparklers after lights go out
+    if (c.hasSparkler && sparklerAlpha > 0.01) {
+      const sx = c.x + 18;
+      const sy = 425 - c.h + bob + Math.sin(t * 2 + c.phase) * 6;
+      const g = ctx.createRadialGradient(sx, sy, 1, sx, sy, 26);
+      g.addColorStop(0, `rgba(255, 255, 240, ${sparklerAlpha})`);
+      g.addColorStop(0.35, `rgba(255, 195, 70, ${sparklerAlpha * 0.65})`);
+      g.addColorStop(1, 'rgba(255, 140, 0, 0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 26, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Tiny flying sparks
+      ctx.strokeStyle = `rgba(255, 230, 150, ${sparklerAlpha * 0.85})`;
+      ctx.lineWidth = 1.3;
+      for (let k = 0; k < 5; k++) {
+        const a = t * 14 + k * 1.25 + c.phase;
+        const len = 6 + ((k * 7) % 9);
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(sx + Math.cos(a) * len, sy + Math.sin(a) * len);
+        ctx.stroke();
+      }
+    }
+  });
+
+  // 6. Wiesn String Lights (3 Banks that shut off in sequence)
+  const lightRows = [
+    { y0: 215, sag: 55, count: 18, power: sw1, r: 5 },
+    { y0: 145, sag: 70, count: 14, power: sw2, r: 7 },
+    { y0: 68,  sag: 85, count: 11, power: sw3, r: 9.5 }
+  ];
+
+  lightRows.forEach(row => {
+    ctx.strokeStyle = '#181414';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i <= row.count; i++) {
+      const u = i / row.count;
+      const lx = u * 1280;
+      const ly = row.y0 + Math.sin(u * Math.PI) * row.sag;
+      if (i === 0) ctx.moveTo(lx, ly);
+      else ctx.lineTo(lx, ly);
+    }
+    ctx.stroke();
+
+    for (let i = 1; i < row.count; i++) {
+      const u = i / row.count;
+      const lx = u * 1280;
+      const ly = row.y0 + Math.sin(u * Math.PI) * row.sag;
+
+      // Unlit glass bulb
+      ctx.fillStyle = 'rgba(90, 95, 110, 0.45)';
+      ctx.beginPath();
+      ctx.arc(lx, ly + 4, row.r * 0.65, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Lit warm filament & halo
+      if (row.power > 0.01) {
+        const halo = ctx.createRadialGradient(lx, ly + 4, 1, lx, ly + 4, row.r * 6.5);
+        halo.addColorStop(0, `rgba(255, 250, 210, ${row.power})`);
+        halo.addColorStop(0.3, `rgba(255, 185, 55, ${row.power * 0.55})`);
+        halo.addColorStop(1, 'rgba(255, 130, 0, 0)');
+        ctx.fillStyle = halo;
+        ctx.beginPath();
+        ctx.arc(lx, ly + 4, row.r * 6.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = `rgba(255, 252, 230, ${row.power})`;
+        ctx.beginPath();
+        ctx.arc(lx, ly + 4, row.r * 0.75, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  });
+
+  // 7. Mug Trajectory Calculation (Raise -> Clink at 4.2s -> Hold -> Settle)
+  let toastProgress = 0;
+  if (t < 2.2) {
+    toastProgress = 0.15 * Math.sin(t * 3);
+  } else if (t < 4.2) {
+    toastProgress = easeOut((t - 2.2) / 2.0);
+  } else if (t < 6.8) {
+    const bounce = Math.exp(-(t - 4.2) * 4) * Math.sin((t - 4.2) * 22) * 0.12;
+    toastProgress = 1.0 - bounce;
+  } else if (t < 9.5) {
+    toastProgress = 1.0 - 0.75 * easeInOut((t - 6.8) / 2.7);
+  } else {
+    toastProgress = 0.25;
+  }
+
+  const heroMugX = lerp(745, 795, toastProgress);
+  const heroMugY = lerp(520, 390, toastProgress);
+  const heroMugTilt = lerp(0.04, -0.22, toastProgress);
+
+  // Friend's Mug entering from right edge for the "Prost!" clink
+  let friendEnter = 0;
+  if (t > 2.0 && t < 4.2) friendEnter = easeOut((t - 2.0) / 2.2);
+  else if (t >= 4.2 && t < 7.2) friendEnter = 1 - easeInOut((t - 5.4) / 1.8);
+  const friendMugX = lerp(1390, 895, friendEnter);
+  const friendMugY = lerp(520, 385, friendEnter);
+  const friendMugTilt = lerp(-0.1, 0.24, friendEnter);
+
+  // 8. Draw Main Character
+  drawMainCharacter(t, warmth, heroMugX, heroMugY);
+
+  // 9. Wooden Beer Tent Table (Bierzeltgarnitur)
+  const tableGrad = ctx.createLinearGradient(0, 585, 0, 720);
+  tableGrad.addColorStop(0, `rgb(${Math.round(lerp(28, 125, warmth))}, ${Math.round(lerp(18, 70, warmth))}, ${Math.round(lerp(14, 24, warmth))})`);
+  tableGrad.addColorStop(1, `rgb(${Math.round(lerp(12, 65, warmth))}, ${Math.round(lerp(8, 34, warmth))}, ${Math.round(lerp(8, 10, warmth))})`);
+  ctx.fillStyle = tableGrad;
+  ctx.fillRect(0, 585, 1280, 135);
+  ctx.fillStyle = `rgba(255, 200, 110, ${0.25 * warmth})`;
+  ctx.fillRect(0, 585, 1280, 4);
+
+  // Pretzels on Table
+  drawPretzel(440, 635, 0.9, -0.2);
+  drawPretzel(1030, 645, 0.85, 0.35);
+
+  // 10. Draw Mugs & Friend's Arm
+  drawMasskrug(heroMugX, heroMugY, heroMugTilt, false, t, warmth);
+
+  if (friendEnter > 0.01) {
+    // Friend's sleeve & arm
+    ctx.strokeStyle = '#e8c09e';
+    ctx.lineWidth = 24;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(1320, 470);
+    ctx.lineTo(friendMugX + 50, friendMugY + 5);
+    ctx.stroke();
+
+    drawMasskrug(friendMugX, friendMugY, friendMugTilt, true, t + 1.5, warmth);
+  }
+
+  // 11. Clink Burst & Foam Splash at t = 4.2s
+  if (t >= 4.18 && t < 5.8) {
+    const dt = t - 4.18;
+    const clinkX = 845, clinkY = 380;
+
+    // Shockwave ring
+    if (dt < 0.6) {
+      ctx.strokeStyle = `rgba(255, 245, 200, ${1 - dt / 0.6})`;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(clinkX, clinkY, dt * 190, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Golden droplets & foam sparkles
+    sparkSeeds.forEach(sp => {
+      const dist = sp.spd * dt;
+      const gravity = 210 * dt * dt;
+      const sx = clinkX + Math.cos(sp.ang) * dist;
+      const sy = clinkY + Math.sin(sp.ang) * dist + gravity;
+      const alpha = Math.max(0, 1 - dt / 1.3);
+      ctx.fillStyle = `hsla(${sp.hue}, 100%, 70%, ${alpha})`;
+      ctx.beginPath();
+      ctx.arc(sx, sy, sp.sz, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  // 12. Hero Foreground Sparkler (Left Hand lights up after tent goes dark)
+  if (sparklerAlpha > 0.01) {
+    const spX = 520 + Math.sin(t * 1.8) * 14;
+    const spY = 470 + Math.cos(t * 2.4) * 8;
+
+    // Stick
+    ctx.strokeStyle = '#777';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(555, 555);
+    ctx.lineTo(spX, spY);
+    ctx.stroke();
+
+    // Warm illumination cast onto character's face & table
+    const castGlow = ctx.createRadialGradient(spX, spY, 5, spX, spY, 260);
+    castGlow.addColorStop(0, `rgba(255, 245, 200, ${sparklerAlpha * 0.85})`);
+    castGlow.addColorStop(0.3, `rgba(255, 180, 65, ${sparklerAlpha * 0.35})`);
+    castGlow.addColorStop(1, 'rgba(255, 130, 0, 0)');
+    ctx.fillStyle = castGlow;
+    ctx.beginPath();
+    ctx.arc(spX, spY, 260, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Intense sparkler rays
+    for (let i = 0; i < 24; i++) {
+      const ang = (i / 24) * Math.PI * 2 + t * 19;
+      const len = (12 + ((i * 19 + Math.floor(t * 30)) % 36)) * sparklerAlpha;
+      ctx.strokeStyle = i % 2 === 0 ? '#ffffff' : '#ffcf55';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(spX + Math.cos(ang) * 4, spY + Math.sin(ang) * 4);
+      ctx.lineTo(spX + Math.cos(ang) * len, spY + Math.sin(ang) * len);
+      ctx.stroke();
+    }
+  }
+
+  ctx.restore(); // End camera zoom transform
+
+  // 13. Typography & Cinematic Overlays (Inside Safe Margins)
+  ctx.save();
+  ctx.textAlign = 'center';
+
+  // "PROST!" Toast Banner (4.2s - 7.3s)
+  if (t >= 4.18 && t < 7.3) {
+    const pt = t - 4.18;
+    const scale = pt < 0.25 ? lerp(0.4, 1.12, pt / 0.25) : lerp(1.12, 1.0, (pt - 0.25) / 0.25);
+    const alpha = pt > 2.3 ? Math.max(0, 1 - (pt - 2.3) / 0.8) : 1;
+
+    ctx.save();
+    ctx.translate(640, 175);
+    ctx.scale(scale, scale);
+    ctx.font = 'italic bold 86px Georgia, serif';
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
+    ctx.shadowBlur = 18;
+    ctx.lineWidth = 8;
+    ctx.strokeStyle = `rgba(75, 30, 5, ${alpha})`;
+    ctx.strokeText('PROST!', 0, 0);
+    ctx.fillStyle = `rgba(255, 232, 135, ${alpha})`;
+    ctx.fillText('PROST!', 0, 0);
+    ctx.restore();
+  }
+
+  // Final Closing Card (10.6s - 14.8s)
+  if (t > 10.6) {
+    const a1 = easeInOut((t - 10.6) / 1.2) * (1 - easeInOut((t - 14.2) / 0.7));
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+    ctx.shadowBlur = 14;
+    ctx.fillStyle = `rgba(255, 240, 200, ${a1})`;
+    ctx.font = 'italic 44px Georgia, serif';
+    ctx.fillText('One last Prost… as the Wiesn lights go out.', 640, 145);
+
+    const a2 = easeInOut((t - 11.4) / 1.2) * (1 - easeInOut((t - 14.2) / 0.7));
+    ctx.fillStyle = `rgba(170, 210, 255, ${a2})`;
+    ctx.font = 'bold 22px Georgia, serif';
+    ctx.letterSpacing = '4px';
+    ctx.fillText('BIS ZUM NÄCHSTEN JAHR • OKTOBERFEST', 640, 192);
+  }
+
+  // Smooth Cinematic Fade-In and Loop Fade-Out
+  let blackFade = 0;
+  if (t < 0.7) blackFade = 1 - (t / 0.7);
+  else if (t > 14.3) blackFade = (t - 14.3) / 0.7;
+  if (blackFade > 0) {
+    ctx.fillStyle = `rgba(0, 0, 0, ${clamp(blackFade, 0, 1)})`;
+    ctx.fillRect(0, 0, 1280, 720);
+  }
+
+  ctx.restore();
+  requestAnimationFrame(render);
+}
+
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

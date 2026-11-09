@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>拾页</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#wrap{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:center center}
+canvas{display:block}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+window.DUR=38;
+const cv=document.getElementById("c"),ctx=cv.getContext("2d");
+const wrap=document.getElementById("wrap");
+function fit(){wrap.style.transform="translate(-50%,-50%) scale("+Math.min(innerWidth/1280,innerHeight/720)+")"}
+addEventListener("resize",fit);fit();
+const q=new URLSearchParams(location.search);
+const OFF=(parseFloat(q.get("t"))||0);
+const T0=performance.now()-OFF*1000;
+function clamp(v,a,b){return v<a?a:v>b?b:v}
+function sm(x){x=clamp(x,0,1);return x*x*(3-2*x)}
+function ease(x){x=clamp(x,0,1);return x<.5?2*x*x:1-Math.pow(-2*x+2,2)/2}
+function fade(t,a,b,i,o){if(t<a||t>b)return 0;let k=1;if(t<a+i)k=sm((t-a)/i);if(t>b-o)k=Math.min(k,sm((b-t)/o));return k}
+function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath()}
+const grain=document.createElement("canvas");grain.width=1280;grain.height=720;
+const gg=grain.getContext("2d");
+for(let i=0;i<5000;i++){gg.fillStyle="rgba(255,255,255,"+(Math.random()*0.05)+")";gg.fillRect(Math.random()*1280,Math.random()*720,1,1)}
+let ac,master,lastSlot=-1,audioOn=false;
+function startAudio(){
+  if(audioOn)return;
+  const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;
+  ac=new AC();master=ac.createGain();master.gain.value=0.11;master.connect(ac.destination);
+  const del=ac.createDelay();del.delayTime.value=0.42;
+  const fb=ac.createGain();fb.gain.value=0.28;const wet=ac.createGain();wet.gain.value=0.35;
+  del.connect(fb);fb.connect(del);del.connect(wet);wet.connect(master);
+  const lp=ac.createBiquadFilter();lp.type="lowpass";lp.frequency.value=1400;lp.connect(del);
+  window._bus=lp;audioOn=true;
+}
+function tone(f,dur,g,type,to){
+  if(!ac)return;const o=ac.createOscillator(),gn=ac.createGain();
+  o.type=type||"sine";o.frequency.value=f;gn.gain.value=0;
+  const n=ac.currentTime;gn.gain.setValueAtTime(0,n);
+  gn.gain.linearRampToValueAtTime(g,n+0.03);
+  gn.gain.exponentialRampToValueAtTime(0.0008,n+dur);
+  o.connect(gn);gn.connect(to||master);if(window._bus&&to!==master)gn.connect(window._bus);
+  o.start(n);o.stop(n+dur+0.05);
+}
+const SEQ=[0,4,7,4,2,5,9,4,0,7,4,11,2,5,7,4];
+const SC=[0,2,4,7,9,12,14,16,19];
+function music(t){
+  if(!ac)return;if(ac.state==="suspended")ac.resume();
+  const slot=Math.floor(t*2);
+  if(slot===lastSlot)return;lastSlot=slot;
+  const step=((slot%16)+16)%16;
+  const f=196*Math.pow(2,SC[SEQ[step]%SC.length]/12);
+  tone(f,step%4===0?1.6:0.55,step%4===0?0.05:0.035,"triangle");
+  if(step%8===0){tone(130.8,3.6,0.03,"sine",master);tone(196,3.6,0.02,"sine",master);tone(261.6,3.2,0.015,"sine",master)}
+  if(step%16===4)tone(523.25,1.2,0.012,"sine");
+}
+addEventListener("pointerdown",startAudio);
+function pageIcon(x,y,s,a){
+  ctx.save();ctx.translate(x,y);ctx.globalAlpha*=a;
+  ctx.fillStyle="#f3efe6";rr(-s*.42,-s*.5,s*.84,s,s*.08);ctx.fill();
+  ctx.fillStyle="#e4d9c8";ctx.beginPath();ctx.moveTo(s*.18,-s*.5);ctx.lineTo(s*.42,-s*.5);ctx.lineTo(s*.42,-s*.26);ctx.closePath();ctx.fill();
+  ctx.strokeStyle="#c9bfb0";ctx.lineWidth=1.5;
+  for(let i=0;i<3;i++){ctx.beginPath();ctx.moveTo(-s*.22,-s*.12+i*s*.16);ctx.lineTo(s*.16,-s*.12+i*s*.16);ctx.stroke()}
+  ctx.restore();
+}
+function bg(t){
+  const g=ctx.createLinearGradient(0,0,1280,720);
+  g.addColorStop(0,"#0c0c0e");g.addColorStop(1,"#14120f");
+  ctx.fillStyle=g;ctx.fillRect(0,0,1280,720);
+  const spots=[[280,180,260,"rgba(196,168,130,.09)"],[980,520,320,"rgba(120,140,160,.06)"],[640,360,180,"rgba(255,244,220,.04)"]];
+  spots.forEach((s,i)=>{const r=s[2]+Math.sin(t*.3+i)*12;const rg=ctx.createRadialGradient(s[0],s[1],0,s[0],s[1],r);rg.addColorStop(0,s[3]);rg.addColorStop(1,"rgba(0,0,0,0)");ctx.fillStyle=rg;ctx.fillRect(0,0,1280,720)});
+}
+function label(text,x,y,size,weight,color,align){
+  ctx.fillStyle=color;ctx.font=weight+" "+size+"px 'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif";
+  ctx.textAlign=align||"left";ctx.textBaseline="middle";ctx.fillText(text,x,y);
+}
+const bits=[{tx:210,ty:250,tx2:470,ty2:300,r:-8,w:"突然的想法"},{tx:860,ty:180,tx2:560,ty2:300,r:6,w:"周末菜谱"},{tx:180,ty:520,tx2:470,ty2:360,r:4,w:"一句提醒"},{tx:980,ty:480,tx2:560,ty2:360,r:-5,w:"想读的书"},{tx:620,ty:120,tx2:515,ty2:250,r:2,w:"会议之后"}];
+function drawCard(x,y,w,rot,a){
+  ctx.save();ctx.translate(x,y);ctx.rotate(rot);ctx.globalAlpha*=a;
+  ctx.fillStyle="#1c1b19";rr(-110,-36,220,72,12);ctx.fill();
+  ctx.strokeStyle="rgba(243,239,230,.12)";ctx.stroke();
+  label(w, -90,0,18,"500","#f3efe6","left");ctx.restore();
+}
+function demo(t,a){
+  if(a<=0)return;
+  ctx.save();ctx.globalAlpha*=a;
+  const y=86+ (1-ease(clamp((t-8.7)/.8,0,1)))*40;
+  ctx.fillStyle="rgba(0,0,0,.35)";rr(188,y+8,904,520,22);ctx.fill();
+  ctx.fillStyle="#171614";rr(180,y,904,512,20);ctx.fill();
+  ctx.strokeStyle="rgba(243,239,230,.1)";ctx.stroke();
+  ctx.fillStyle="#100f0e";rr(180,y,904,48,20);ctx.fill();ctx.fillRect(180,y+28,904,20);
+  for(let i=0;i<3;i++){ctx.beginPath();ctx.arc(206+i*16,y+24,5,0,7);ctx.fillStyle=i===0?"#c47a6a":i===1?"#c9b27a":"#7d9a78";ctx.fill()}
+  label("拾页",640,y+24,15,"500","#d9d3c8","center");
+  ctx.fillStyle="#121110";ctx.fillRect(180,y+48,200,464);
+  const items=["全部","家人","生活","稍后再看"];
+  const hi=t>16.1;
+  items.forEach((it,i)=>{
+    const on=hi&&i===1;
+    if(on){ctx.fillStyle="rgba(243,239,230,.08)";rr(196,y+78+i*46,168,36,8);ctx.fill()}
+    label(it,214,y+96+i*46,16,on?"600":"400",on?"#f3efe6":"#9a948a","left");
+  });
+  const line1="明天记得给妈妈打电话";
+  const line2="她喜欢桂花糕";
+  const n1=clamp(Math.floor((t-10.3)*9),0,line1.length);
+  const n2=t>13.1?clamp(Math.floor((t-13.1)*8),0,line2.length):0;
+  label(line1.slice(0,n1),420,y+130,28,"500","#f6f1e8","left");
+  if(n2)label(line2.slice(0,n2),420,y+178,22,"400","#c9c2b6","left");
+  const blink=Math.sin(t*6)>0;
+  if(t>10.2&&t<15.2&&blink){
+    const shown=n2?line2.slice(0,n2):line1.slice(0,n1);
+    ctx.font=(n2?"400 22px ":"500 28px ")+"'PingFang SC','Microsoft YaHei',sans-serif";
+    const tw=ctx.measureText(shown).width;
+    ctx.fillStyle="#f3efe6";ctx.fillRect(420+tw+4,(n2?y+166:y+114),2,n2?22:30);
+  }
+  const chip=fade(t,14.7,22.8,.45,.4);
+  if(chip){
+    ctx.globalAlpha*=chip;
+    ctx.fillStyle="rgba(196,168,130,.16)";rr(420,y+230,250,40,20);ctx.fill();
+    label("已放进「家人」",545,y+250,16,"500","#e6d3b0","center");
+    ctx.globalAlpha/=chip;
+  }
+  const syn=fade(t,17.3,22.8,.5,.4);
+  if(syn){
+    ctx.globalAlpha*=syn;
+    label("已同步到网页和电脑",420,y+430,16,"400","#8f887e","left");
+    ["插件","网页","电脑"].forEach((nm,i)=>{
+      const on=t>17.6+i*.35;
+      ctx.beginPath();ctx.arc(760+i*78,y+430,5,0,7);ctx.fillStyle=on?"#c4a882":"#3a3834";ctx.fill();
+      label(nm,772+i*78,y+430,13,"400",on?"#d9d0c4":"#6d6862","left");
+    });
+    ctx.globalAlpha/=syn;
+  }
+  const path=[[980,640,9.2],[520,y+140,10.15],[700,y+250,15.3],[300,y+150,16.0]];
+  let cx=980,cy=640,press=0;
+  for(let i=0;i<path.length-1;i++){
+    const A=path[i],B=path[i+1];
+    if(t>=A[2]&&t<=B[2]){const u=ease((t-A[2])/(B[2]-A[2]));cx=A[0]+(B[0]-A[0])*u;cy=A[1]+(B[1]-A[1])*u}
+    else if(t>B[2]){cx=B[0];cy=B[1]}
+  }
+  if(t>16.05&&t<16.28)press=1;
+  if(t<22.2){
+    ctx.save();ctx.translate(cx,cy);ctx.scale(press?.86:1,press?.86:1);
+    ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,20);ctx.lineTo(5.5,15);ctx.lineTo(10,22);ctx.lineTo(13,20.5);ctx.lineTo(8.5,13.5);ctx.lineTo(15,13);ctx.closePath();
+    ctx.fillStyle="#fff";ctx.fill();ctx.restore();
+  }
+  ctx.restore();
+}
+function platforms(t,a){
+  if(a<=0)return;
+  ctx.save();ctx.globalAlpha*=a;
+  label("同一个拾页，三种打开方式",640,118,28,"500","#f3efe6","center");
+  label("不用学新方法。你在哪写，都能接着写。",640,158,16,"400","#9a948a","center");
+  const names=["Obsidian 插件","网页","电脑应用"];
+  const desc=["装上就能在笔记里用","打开浏览器就能写","桌面上随时打开"];
+  for(let i=0;i<3;i++){
+    const d=ease(clamp((t-23.4-i*.18)/.7,0,1));
+    const x=220+i*300,y=230+(1-d)*28;
+    ctx.globalAlpha=a*d;
+    ctx.fillStyle="#171614";rr(x,y,250,280,18);ctx.fill();
+    ctx.strokeStyle="rgba(243,239,230,.1)";ctx.stroke();
+    pageIcon(x+125,y+78,64,1);
+    label(names[i],x+125,y+168,18,"600","#f3efe6","center");
+    label(desc[i],x+125,y+204,14,"400","#9a948a","center");
+    ctx.strokeStyle="rgba(196,168,130,.7)";ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.moveTo(x+92,y+240);ctx.lineTo(x+158,y+240);ctx.stroke();
+  }
+  ctx.restore();
+}
+function frame(t){
+  startAudio();music(t);bg(t);
+  ctx.save();ctx.translate(Math.sin(t*.25)*3,Math.cos(t*.2)*2);
+  const a1=fade(t,0.2,5.6,.8,.7);
+  if(a1){
+    ctx.globalAlpha=a1;
+    pageIcon(640,250,92,1);
+    label("拾页",640,360,72,"600","#f6f1e8","center");
+    label("想到，就写下",640,420,22,"400","#b7b0a6","center");
+    ctx.globalAlpha=1;
+  }
+  const a2=fade(t,5.1,9.2,.5,.55);
+  if(a2){
+    label("想法不必再散落各处",640,150,32,"500","#f3efe6","center");
+    const u=ease(clamp((t-5.6)/2.2,0,1));
+    bits.forEach(b=>{
+      const x=b.tx+(b.tx2-b.tx)*u,y=b.ty+(b.ty2-b.ty)*u;
+      drawCard(x,y,b.w,(1-u)*b.r*Math.PI/180,a2);
+    });
+    const k=fade(t,7.6,9.2,.4,.3);
+    if(k){ctx.globalAlpha=k;label("收进一处，就安静了",640,520,20,"400","#c4b5a0","center");ctx.globalAlpha=1}
+  }
+  demo(t,fade(t,8.6,23.2,.55,.5));
+  platforms(t,fade(t,23.0,31.2,.5,.5));
+  const a5=fade(t,30.8,38,.7,.6);
+  if(a5){
+    ctx.globalAlpha=a5;
+    pageIcon(640,230,70,1);
+    label("简单，就好",640,340,56,"600","#f6f1e8","center");
+    label("写下的每一句，都会在插件、网页和电脑上等你。",640,400,18,"400","#b7b0a6","center");
+    label("拾页",640,470,16,"500","#c4a882","center");
+    ctx.globalAlpha=1;
+  }
+  ctx.restore();
+  ctx.globalAlpha=.18;ctx.drawImage(grain,0,0);ctx.globalAlpha=1;
+  const vg=ctx.createRadialGradient(640,360,280,640,360,760);
+  vg.addColorStop(0,"rgba(0,0,0,0)");vg.addColorStop(1,"rgba(0,0,0,.45)");
+  ctx.fillStyle=vg;ctx.fillRect(0,0,1280,720);
+}
+function loop(){
+  const raw=(performance.now()-T0)/1000;
+  const t=((raw%window.DUR)+window.DUR)%window.DUR;
+  frame(t);requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

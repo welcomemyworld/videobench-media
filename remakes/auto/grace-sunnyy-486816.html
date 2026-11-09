@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>太阳系与银河系 · Solar System & Milky Way</title>
+<style>
+html,body{margin:0;background:#000;overflow:hidden;height:100%}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=60;
+const cv=document.getElementById('c'),X=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const off=parseFloat(new URLSearchParams(location.search).get('t'))||0;
+let R=1;function rnd(){R=(R*16807)%2147483647;return R/2147483647;}
+const stars=[];for(let i=0;i<700;i++)stars.push([rnd()*1280,rnd()*720,rnd()*1.6+.2,rnd()*6,rnd()]);
+const neb=document.createElement('canvas');neb.width=1280;neb.height=720;
+{const n=neb.getContext('2d');const cols=['80,40,160','20,80,160','160,40,120','30,120,140'];
+for(let i=0;i<14;i++){const x=rnd()*1280,y=rnd()*720,r=150+rnd()*350,g=n.createRadialGradient(x,y,0,x,y,r);
+g.addColorStop(0,'rgba('+cols[i%4]+',0.13)');g.addColorStop(1,'rgba(0,0,0,0)');n.fillStyle=g;n.fillRect(0,0,1280,720);}}
+const P=[
+{zh:'水星',en:'Mercury',c:['#9a9590','#6e6a66'],d:'直径 4,879 km · 公转 88 天',
+s:['水星离太阳最近，几乎没有大气保温，','Mercury is closest to the Sun with almost no atmosphere,'],
+s2:['白天约 430°C，夜晚降到 -180°C。','so days reach 430°C and nights drop to -180°C.']},
+{zh:'金星',en:'Venus',c:['#e8c27a','#c99a4e'],bands:1,d:'直径 12,104 km · 公转 225 天',
+s:['金星被浓厚的二氧化碳包裹，温室效应极强，','Venus is wrapped in thick CO₂ — a runaway greenhouse,'],
+s2:['表面约 465°C，是最热的行星。','making it the hottest planet at about 465°C.']},
+{zh:'地球',en:'Earth',c:['#2a6fd0','#123a80'],earth:1,d:'直径 12,742 km · 公转 365 天',
+s:['地球是目前唯一已知存在生命的星球，','Earth is the only known world that hosts life;'],
+s2:['约 71% 的表面被海洋覆盖。','about 71% of its surface is ocean.']},
+{zh:'火星',en:'Mars',c:['#c8582e','#8a3418'],d:'直径 6,779 km · 公转 687 天',
+s:['火星呈红色，因为表面富含氧化铁（铁锈），','Mars is red because its soil is rich in iron oxide (rust);'],
+s2:['奥林帕斯山高约 22 km，是太阳系最高火山。','Olympus Mons, ~22 km high, is the tallest volcano known.']},
+{zh:'木星',en:'Jupiter',c:['#d9b38c','#a8744a','#f0dcc0','#8a5a3a'],bands:5,spot:1,d:'直径 139,820 km · 公转 12 年',
+s:['木星是最大的行星，能装下 1300 多个地球，','Jupiter is the largest — over 1,300 Earths could fit inside;'],
+s2:['大红斑是一场比地球还大的风暴。','the Great Red Spot is a storm bigger than Earth.']},
+{zh:'土星',en:'Saturn',c:['#e6cf96','#b99a5e','#f2e2b8'],bands:3,ring:1,d:'直径 116,460 km · 公转 29 年',
+s:['土星的光环由无数冰块和岩石组成，','Saturn\'s rings are made of countless chunks of ice and rock;'],
+s2:['它的平均密度比水还小。','its average density is lower than water.']},
+{zh:'天王星',en:'Uranus',c:['#9fe3e6','#5fb3c0'],tilt:1,d:'直径 50,724 km · 公转 84 年',
+s:['天王星的自转轴倾斜约 98°，','Uranus is tilted about 98°,'],
+s2:['就像“躺着”绕太阳公转。','so it rolls around the Sun on its side.']},
+{zh:'海王星',en:'Neptune',c:['#3a66e0','#1a2f90','#5b86f0'],bands:2,d:'直径 49,244 km · 公转 165 年',
+s:['海王星是离太阳最远的行星，','Neptune is the farthest planet from the Sun;'],
+s2:['风速可达每小时 2100 公里，太阳系最强。','its winds reach 2,100 km/h — the fastest in the system.']}];
+const conts=[];for(let i=0;i<22;i++)conts.push([rnd()*2,rnd()*1.6-.8,.08+rnd()*.22]);
+const gal=[];for(let i=0;i<5000;i++){const arm=i%4,r=Math.pow(rnd(),.7)*1;const a=arm*Math.PI/2+r*5.2+(rnd()-.5)*(0.5+ (1-r)*0.8);
+const core=rnd()<.25;const rr=core?rnd()*.22:r;gal.push([rr,core?rnd()*6.28:a,rnd(),core]);}
+function drawPlanet(x,y,r,p,t){
+ X.save();
+ if(p.ring){ring(x,y,r,t,0);}
+ X.save();X.beginPath();X.arc(x,y,r,0,7);X.clip();
+ if(p.tilt){X.translate(x,y);X.rotate(1.5);X.translate(-x,-y);}
+ X.fillStyle=p.c[0];X.fillRect(x-r,y-r,2*r,2*r);
+ if(p.bands){const n=p.bands*4+4;for(let i=0;i<n;i++){X.fillStyle=p.c[1+i%(p.c.length-1)];X.globalAlpha=.35+.25*Math.sin(i*2.3);
+  const yy=y-r+i*2*r/n;X.beginPath();X.moveTo(x-r,yy);for(let k=0;k<=20;k++)X.lineTo(x-r+k*r/10,yy+Math.sin(k*.8+t*.6+i)*r*.02);
+  X.lineTo(x+r,yy+r/n*.7);X.lineTo(x-r,yy+r/n*.7);X.fill();}X.globalAlpha=1;}
+ if(p.earth){X.fillStyle='#3c8a3a';for(const c of conts){let u=((c[0]+t*.05)%2);const xx=x+(u-1)*r*1.6,yy=y+c[1]*r;
+  X.beginPath();X.ellipse(xx,yy,c[2]*r*1.3,c[2]*r,0,0,7);X.fill();}
+  X.fillStyle='rgba(255,255,255,.5)';for(let i=0;i<8;i++){X.beginPath();X.ellipse(x+((i*.37+t*.08)%2-1)*r*1.4,y+(i%5-2)*r*.35,r*.25,r*.04,0,0,7);X.fill();}
+  X.fillStyle='#eef';X.fillRect(x-r,y-r,2*r,r*.12);X.fillRect(x-r,y+r*.9,2*r,r*.1);}
+ if(p.zh=='火星'){X.fillStyle='rgba(90,30,10,.5)';for(let i=0;i<10;i++){X.beginPath();X.arc(x+((i*.29+t*.04)%2-1)*r*1.3,y+(i%4-1.5)*r*.4,r*(.08+i%3*.05),0,7);X.fill();}X.fillStyle='#fff';X.fillRect(x-r,y-r,2*r,r*.08);}
+ if(p.spot){X.fillStyle='#b5482c';X.beginPath();X.ellipse(x+((t*.05+.3)%2-1)*r*1.2,y+r*.35,r*.18,r*.1,0,0,7);X.fill();}
+ const g=X.createRadialGradient(x-r*.45,y-r*.35,r*.1,x,y,r*1.05);g.addColorStop(0,'rgba(255,255,255,.18)');g.addColorStop(.5,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,0,0,.85)');
+ X.fillStyle=g;X.fillRect(x-r,y-r,2*r,2*r);X.restore();
+ const a=X.createRadialGradient(x,y,r*.95,x,y,r*1.15);a.addColorStop(0,'rgba(140,190,255,.35)');a.addColorStop(1,'rgba(0,0,0,0)');X.fillStyle=a;X.beginPath();X.arc(x,y,r*1.15,0,7);X.fill();
+ if(p.ring)ring(x,y,r,t,1);
+ X.restore();}
+function ring(x,y,r,t,front){X.save();X.translate(x,y);X.rotate(-.25);
+ for(let i=0;i<26;i++){const rr=r*(1.3+i*.04);X.strokeStyle=`rgba(${220-i*2},${200-i*3},${150-i*2},${.25+.3*Math.abs(Math.sin(i*1.7))})`;X.lineWidth=r*.035;
+ X.beginPath();X.ellipse(0,0,rr,rr*.22,0,front?0:Math.PI,front?Math.PI:Math.PI*2);X.stroke();}X.restore();}
+function bg(t,sp){X.fillStyle='#000';X.fillRect(0,0,1280,720);X.globalAlpha=.9;X.drawImage(neb,0,0);X.globalAlpha=1;
+ for(const s of stars){const x=(s[0]-t*sp*(s[2]*8))%1280;X.fillStyle=`rgba(255,255,255,${.4+.6*Math.abs(Math.sin(t*1.5+s[3]))*s[4]})`;X.fillRect(x<0?x+1280:x,s[1],s[2],s[2]);}}
+function sub(zh,en,a){X.globalAlpha=a;X.fillStyle='rgba(0,0,0,.55)';X.fillRect(140,628,1000,74);
+ X.textAlign='center';X.fillStyle='#fff';X.font='bold 26px sans-serif';X.fillText(zh,640,660);
+ X.fillStyle='#bcd';X.font='19px sans-serif';X.fillText(en,640,690);X.globalAlpha=1;}
+function sun(x,y,r,t){for(let i=0;i<3;i++){const g=X.createRadialGradient(x,y,r*.5,x,y,r*(2.2+i*.8+.1*Math.sin(t*2+i)));
+ g.addColorStop(0,'rgba(255,170,60,.35)');g.addColorStop(1,'rgba(255,80,0,0)');X.fillStyle=g;X.beginPath();X.arc(x,y,r*4,0,7);X.fill();}
+ const g=X.createRadialGradient(x-r*.2,y-r*.2,0,x,y,r);g.addColorStop(0,'#fffbe0');g.addColorStop(.5,'#ffc030');g.addColorStop(1,'#e05a10');
+ X.fillStyle=g;X.beginPath();X.arc(x,y,r,0,7);X.fill();}
+const ORB=[60,85,115,145,205,265,320,370];
+function system(t,z){const cx=640,cy=330;sun(cx,cy,26*z,t);
+ P.forEach((p,i)=>{const o=ORB[i]*z*1.5;X.strokeStyle='rgba(150,180,255,.25)';X.lineWidth=1;X.beginPath();X.ellipse(cx,cy,o,o*.42,0,0,7);X.stroke();
+ const a=t*(1.2/Math.sqrt(i+1))+i;const r=[3,5,5,4,12,10,7,7][i]*z;drawPlanet(cx+Math.cos(a)*o,cy+Math.sin(a)*o*.42,r,p,t);
+ X.fillStyle='rgba(220,230,255,.8)';X.font='13px sans-serif';X.textAlign='center';X.fillText(p.zh+' '+p.en,cx+Math.cos(a)*o,cy+Math.sin(a)*o*.42-r-6);});}
+function galaxy(t,k){const cx=640,cy=320,S=440*(0.6+k*.5),rot=t*.05;
+ const g=X.createRadialGradient(cx,cy,0,cx,cy,S*.35);g.addColorStop(0,'rgba(255,230,180,.9)');g.addColorStop(1,'rgba(255,180,100,0)');X.fillStyle=g;X.beginPath();X.ellipse(cx,cy,S*.4,S*.18,0,0,7);X.fill();
+ for(const s of gal){const a=s[1]+rot,x=cx+Math.cos(a)*s[0]*S,y=cy+Math.sin(a)*s[0]*S*.42;
+  X.fillStyle=s[3]?'rgba(255,220,170,.7)':(s[2]<.3?'rgba(255,150,200,.8)':'rgba(170,200,255,.75)');const z=s[2]*1.6+.4;X.fillRect(x,y,z,z);}
+ const sa=0.6+rot,sx=cx+Math.cos(sa)*.55*S,sy=cy+Math.sin(sa)*.55*S*.42;
+ X.strokeStyle='#ff0';X.lineWidth=2;X.beginPath();X.arc(sx,sy,9+3*Math.sin(t*4),0,7);X.stroke();
+ X.fillStyle='#ff6';X.font='bold 16px sans-serif';X.textAlign='left';X.fillText('太阳 Sun',sx+14,sy-8);
+ return [cx,cy];}
+const GS=[['银河系是一个棒旋星系，直径约 10 万光年，','The Milky Way is a barred spiral galaxy about 100,000 light-years wide,','包含 1000 亿到 4000 亿颗恒星。','holding 100 to 400 billion stars.'],
+['它的中心有一个超大质量黑洞——人马座 A*，','At its center lies a supermassive black hole, Sagittarius A*,','质量约为太阳的 400 万倍。','about 4 million times the mass of the Sun.'],
+['太阳位于猎户臂上，距银心约 2.6 万光年，','The Sun sits in the Orion Arm, ~26,000 light-years from the center,','约 2.3 亿年才绕银心转一圈。','taking ~230 million years to complete one orbit.']];
+let t0=null;
+function frame(now){if(t0===null)t0=now;const t=((now-t0)/1000+off)%DUR;
+ const fade=(a,b)=>Math.min(1,(t-a)/.6,(b-t)/.6);
+ if(t<4){bg(t,2);const a=fade(0,4);X.globalAlpha=a;X.textAlign='center';X.fillStyle='#fff';X.font='bold 64px sans-serif';X.fillText('太阳系与银河系',640,320);
+  X.fillStyle='#9cf';X.font='28px sans-serif';X.fillText('The Solar System & The Milky Way',640,372);X.font='18px sans-serif';X.fillStyle='#889';X.fillText('科普讲解 · Science Explained',640,412);X.globalAlpha=1;}
+ else if(t<9){bg(t,1);const k=(t-4)/5;sun(640,300,110+k*20,t);const a=fade(4,9);
+  if(t<6.5)sub('太阳是太阳系的中心，占整个太阳系质量的 99.86%。','The Sun is the heart of the system, holding 99.86% of its mass.',a);
+  else sub('八大行星在引力作用下绕它公转，下面逐一认识它们。','Eight planets orbit it under gravity — let\'s meet them one by one.',a);}
+ else if(t<41){const i=Math.floor((t-9)/4),lt=t-9-i*4,p=P[i],a=fade(9+i*4,13+i*4);bg(t,3);
+  X.globalAlpha=a;const r=p.zh=='木星'?210:p.zh=='土星'?150:170;drawPlanet(880-(1-a)*80,310,r,p,t);
+  X.textAlign='left';X.fillStyle='#fff';X.font='bold 60px sans-serif';X.fillText(p.zh,110,200);X.fillStyle='#9cf';X.font='30px sans-serif';X.fillText(p.en,112,245);
+  X.fillStyle='#ccd';X.font='20px sans-serif';X.fillText(p.d,112,295);X.fillStyle='#fc6';X.fillText('第 '+(i+1)+' 颗行星 · Planet #'+(i+1),112,335);
+  for(let j=0;j<8;j++){X.fillStyle=j==i?'#fc6':'rgba(255,255,255,.3)';X.beginPath();X.arc(116+j*28,375,j==i?8:5,0,7);X.fill();}
+  X.globalAlpha=1;const s=lt<2?p.s:p.s2;sub(s[0],s[1],a);}
+ else if(t<45){bg(t,.5);const k=(t-41)/4;system(t,1-k*.3);
+  sub('四颗岩质行星在内侧，四颗巨行星在外侧。','Four rocky planets lie inside, four giant planets lie outside.',fade(41,45));}
+ else if(t<57){bg(t,.3);const k=(t-45)/12,i=Math.min(2,Math.floor((t-45)/4)),lt=(t-45)%4;const c=galaxy(t,k);
+  if(i==1){X.strokeStyle='rgba(255,120,60,'+(.5+.5*Math.sin(t*5))+')';X.lineWidth=2;X.beginPath();X.arc(c[0],c[1],22,0,7);X.stroke();
+   X.fillStyle='#000';X.beginPath();X.arc(c[0],c[1],8,0,7);X.fill();X.fillStyle='#fa8';X.font='bold 16px sans-serif';X.textAlign='left';X.fillText('人马座 A* · Sgr A*',c[0]+28,c[1]-20);}
+  X.globalAlpha=Math.min(1,(t-45)/1);X.textAlign='left';X.fillStyle='#fff';X.font='bold 40px sans-serif';X.fillText('银河系',50,70);X.fillStyle='#9cf';X.font='22px sans-serif';X.fillText('The Milky Way',52,102);X.globalAlpha=1;
+  const g=GS[i];sub(lt<2?g[0]:g[2],lt<2?g[1]:g[3],fade(45+i*4,49+i*4));}
+ else{bg(t,1);const a=fade(57,60);X.globalAlpha=a;X.textAlign='center';X.fillStyle='#fff';X.font='bold 40px sans-serif';X.fillText('宇宙中约有 2 万亿个星系，银河系只是其中之一',640,330);
+  X.fillStyle='#9cf';X.font='24px sans-serif';X.fillText('The universe holds ~2 trillion galaxies — ours is just one.',640,375);X.globalAlpha=1;}
+ requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

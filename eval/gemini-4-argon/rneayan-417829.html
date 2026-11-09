@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>8,144 Marbles — World Population 2024</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    user-select: none;
+  }
+  #stage {
+    width: 1280px; height: 720px;
+    background: radial-gradient(circle at 68% 40%, #141c2b 0%, #090d14 70%, #04060a 100%);
+    box-shadow: 0 0 60px rgba(0,0,0,0.9);
+    display: block;
+  }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+(() => {
+  window.DUR = 46;
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d', { alpha: false });
+
+  function fitStage() {
+    const s = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+    canvas.style.transform = `scale(${s})`;
+    canvas.style.transformOrigin = 'center center';
+  }
+  window.addEventListener('resize', fitStage);
+  fitStage();
+
+  // Region colors: 0:Asia, 1:Africa, 2:Europe, 3:N.America, 4:S.America, 5:Oceania
+  const REGIONS = [
+    { name: 'Asia',          color: '#ff4769', glow: '#ff8da1', dark: '#7a0f25' },
+    { name: 'Africa',        color: '#ffb82e', glow: '#ffe08c', dark: '#784e00' },
+    { name: 'Europe',        color: '#38b6ff', glow: '#9edbff', dark: '#06466e' },
+    { name: 'North America', color: '#2ee68a', glow: '#9df7c6', dark: '#086335' },
+    { name: 'South America', color: '#b466ff', glow: '#dec0ff', dark: '#461578' },
+    { name: 'Oceania',       color: '#00f0e6', glow: '#a3fffb', dark: '#00615d' }
+  ];
+
+  // Real 2024 UN Population Estimates (in millions, sum = 8144)
+  const RAW_DATA = [
+    ["Rest of World (64 nations)",78,0],["New Zealand",5,5],["Oman",5,0],["Liberia",5,1],["Ireland",5,2],["Mauritania",5,1],
+    ["Panama",5,3],["Kuwait",5,0],["Croatia",4,2],["Moldova",3,2],["Georgia",4,0],["Eritrea",4,1],["Uruguay",3,4],
+    ["Bosnia & Herz.",3,2],["Mongolia",3,0],["Armenia",3,0],["Jamaica",3,3],["Qatar",3,0],["Albania",3,2],["Puerto Rico",3,3],
+    ["Lithuania",3,2],["Namibia",3,1],["Gambia",3,1],["Botswana",3,1],["Gabon",2,1],["Lesotho",2,1],["North Macedonia",2,2],
+    ["Slovenia",2,2],["Latvia",2,2],["Central African Rep.",6,1],["Norway",6,2],["Lebanon",5,0],["Palestine",5,0],
+    ["Slovakia",5,2],["Finland",6,2],["Costa Rica",5,3],["Congo",6,1],["Turmenistan",7,0],["Singapore",6,0],["Denmark",6,2],
+    ["Kyrgyzstan",7,0],["El Salvador",6,3],["Libya",7,1],["Nicaragua",7,3],["Bulgaria",7,2],["Serbia",7,2],["Paraguay",7,4],
+    ["Laos",8,0],["Hong Kong",7,0],["Sierra Leone",9,1],["Togo",9,1],["Switzerland",9,2],["Papua New Guinea",10,5],["Israel",9,0],
+    ["Austria",9,2],["Belarus",9,2],["Tajikistan",10,0],["Hungary",10,2],["UAE",10,0],["Honduras",11,3],["Sweden",11,2],
+    ["Azerbaijan",10,0],["Greece",10,2],["Portugal",10,2],["Czechia",11,2],["Dominican Rep.",11,3],["Jordan",11,0],["Cuba",11,3],
+    ["South Sudan",11,1],["Haiti",12,3],["Belgium",12,2],["Bolivia",12,4],["Tunisia",13,1],["Benin",14,1],["Burundi",14,1],
+    ["Rwanda",14,1],["Guinea",14,1],["Zimbabwe",17,1],["Cambodia",17,0],["Ecuador",18,4],["Netherlands",18,2],["Senegal",18,1],
+    ["Guatemala",18,3],["Somalia",19,1],["Chad",19,1],["Zambia",21,1],["Kazakhstan",20,0],["Chile",20,4],["Malawi",21,1],
+    ["Romania",19,2],["Syria",24,0],["Burkina Faso",24,1],["Sri Lanka",22,0],["Mali",24,1],["Taiwan",24,0],["Australia",27,5],
+    ["North Korea",26,0],["Niger",28,1],["Ivory Coast",30,1],["Cameroon",29,1],["Madagascar",31,1],["Venezuela",29,4],["Nepal",31,0],
+    ["Ghana",34,1],["Yemen",35,0],["Malaysia",35,0],["Peru",35,4],["Mozambique",35,1],["Uzbekistan",36,0],["Saudi Arabia",37,0],
+    ["Angola",38,1],["Ukraine",38,2],["Morocco",38,1],["Afghanistan",43,0],["Poland",40,2],["Canada",39,3],["Iraq",46,0],
+    ["Algeria",46,1],["Argentina",46,4],["Spain",48,2],["Uganda",50,1],["Sudan",50,1],["South Korea",52,0],["Colombia",52,4],
+    ["Myanmar",55,0],["Kenya",56,1],["Italy",59,2],["South Africa",61,1],["France",65,2],["United Kingdom",68,2],["Tanzania",69,1],
+    ["Thailand",72,0],["Germany",83,2],["Turkey",86,0],["Iran",90,0],["Vietnam",99,0],["DR Congo",106,1],["Egypt",114,1],
+    ["Philippines",119,0],["Japan",123,0],["Mexico",129,3],["Ethiopia",130,1],["Russia",144,2],["Bangladesh",175,0],
+    ["Brazil",217,4],["Nigeria",229,1],["Pakistan",245,0],["Indonesia",280,0],["United States",342,3],["China",1419,0],["India",1442,0]
+  ];
+  // Total check: sum is 8,144
+
+  // Pre-render marble sprites for each region for crisp, ultra-fast rendering
+  const R = 3.2; // Marble radius in px
+  const DIAM = R * 2;
+  const sprites = REGIONS.map(reg => {
+    const sc = document.createElement('canvas');
+    sc.width = sc.height = 16;
+    const sctx = sc.getContext('2d');
+    const cx = 8, cy = 8, r = R + 0.3;
+
+    // Base sphere gradient
+    const g = sctx.createRadialGradient(cx - r * 0.35, cy - r * 0.35, r * 0.1, cx, cy, r);
+    g.addColorStop(0, reg.glow);
+    g.addColorStop(0.45, reg.color);
+    g.addColorStop(0.9, reg.dark);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    sctx.fillStyle = g;
+    sctx.beginPath();
+    sctx.arc(cx, cy, r, 0, Math.PI * 2);
+    sctx.fill();
+
+    // Glass specular highlight
+    sctx.fillStyle = 'rgba(255,255,255,0.85)';
+    sctx.beginPath();
+    sctx.arc(cx - r * 0.38, cy - r * 0.38, r * 0.24, 0, Math.PI * 2);
+    sctx.fill();
+    return sc;
+  });
+
+  // Deterministic PRNG
+  let seed = 1337;
+  function rand() {
+    seed = (seed * 16807) % 2147483647;
+    return (seed - 1) / 2147483646;
+  }
+
+  // Schedule countries across timeline (1.2s to 38.8s)
+  const countries = [];
+  let schedTime = 1.2;
+  let runningPop = 0;
+  for (let i = 0; i < RAW_DATA.length; i++) {
+    const [name, pop, reg] = RAW_DATA[i];
+    const dur = Math.max(0.06, Math.pow(pop, 0.56) * 0.043);
+    const startT = schedTime;
+    const endT = startT + dur;
+    schedTime = endT + (pop > 100 ? 0.08 : 0.015);
+    runningPop += pop;
+    countries.push({ id: i, name, pop, reg, startT, endT, cumPop: runningPop });
+  }
+
+  // Vessel Geometry (Centered at X = 840)
+  const VCX = 840;
+  const FLOOR_Y = 678;
+  function getWalls(y) {
+    if (y < 75) {
+      // Top funnel
+      const t = (75 - y) / 75;
+      const hw = 46 + t * 90;
+      return [VCX - hw, VCX + hw];
+    } else if (y < 118) {
+      // Neck
+      const t = (y - 75) / 43;
+      const hw = 46 + Math.sin(t * Math.PI) * 4;
+      return [VCX - hw, VCX + hw];
+    } else if (y < 195) {
+      // Shoulder flare
+      const t = (y - 118) / 77;
+      const ease = 0.5 - 0.5 * Math.cos(t * Math.PI);
+      const hw = 46 + ease * (332 - 46);
+      return [VCX - hw, VCX + hw];
+    } else if (y <= 645) {
+      // Main cylinder body
+      return [VCX - 332, VCX + 332];
+    } else {
+      // Rounded bottom bowl
+      const t = Math.min(1, (y - 645) / (FLOOR_Y - 645));
+      const hw = 332 - t * t * 34;
+      return [VCX - hw, VCX + hw];
+    }
+  }
+
+  // Generate all 8,144 marble schedules
+  const N = 8144;
+  const mSpawnT   = new Float32Array(N);
+  const mInitX    = new Float32Array(N);
+  const mInitVX   = new Float32Array(N);
+  const mInitVY   = new Float32Array(N);
+  const mReg      = new Uint8Array(N);
+  const mCountry  = new Uint16Array(N);
+
+  let mIdx = 0;
+  for (let c = 0; c < countries.length; c++) {
+    const cObj = countries[c];
+    for (let k = 0; k < cObj.pop; k++) {
+      const frac = (k + 0.5) / cObj.pop;
+      mSpawnT[mIdx] = cObj.startT + frac * (cObj.endT - cObj.startT);
+      const spread = Math.min(38, 8 + Math.sqrt(cObj.pop) * 1.1);
+      mInitX[mIdx] = VCX + (rand() - 0.5) * 2 * spread;
+      mInitVX[mIdx] = (rand() - 0.5) * 70;
+      mInitVY[mIdx] = 210 + rand() * 80;
+      mReg[mIdx] = cObj.reg;
+      mCountry[mIdx] = c;
+      mIdx++;
+    }
+  }
+
+  // Physics State Arrays
+  const mx = new Float32Array(N);
+  const my = new Float32Array(N);
+  const mvx = new Float32Array(N);
+  const mvy = new Float32Array(N);
+  const mState = new Uint8Array(N); // 0: unspawned, 1: active, 2: settled
+  const mSettleFrames = new Uint8Array(N);
+  const mFlash = new Float32Array(N);
+  const regCounts = new Int32Array(6);
+
+  // Spatial Hash Grid for O(1) neighbor lookups & settled pile collision
+  const CELL = 7;
+  const GW = Math.ceil(1280 / CELL);
+  const GH = Math.ceil(720 / CELL);
+  const GSIZE = GW * GH;
+  const settledHead = new Int32Array(GSIZE);
+  const settledNext = new Int32Array(N);
+  const activeHead  = new Int32Array(GSIZE);
+  const activeNext  = new Int32Array(N);
+  const activeList  = new Int32Array(N);
+  let activeCount = 0;
+  let spawnedCursor = 0;
+  let settledCount = 0;
+  let highestSettledY = FLOOR_Y;
+
+  // Visual Sparks for high-energy collisions
+  const MAX_SPARKS = 80;
+  const spX = new Float32Array(MAX_SPARKS);
+  const spY = new Float32Array(MAX_SPARKS);
+  const spLife = new Float32Array(MAX_SPARKS);
+  let spCursor = 0;
+  function emitSpark(x, y, intensity) {
+    spX[spCursor] = x;
+    spY[spCursor] = y;
+    spLife[spCursor] = Math.min(1, intensity);
+    spCursor = (spCursor + 1) % MAX_SPARKS;
+  }
+
+  // Static offscreen layer forsettled marbles (huge speedup!)
+  const settledCanvas = document.createElement('canvas');
+  settledCanvas.width = 1280;
+  settledCanvas.height = 720;
+  const sCtx = settledCanvas.getContext('2d');
+
+  // Web Audio API Synthesizer for realistic glass marble clinks
+  let audioCtx = null;
+  let audioUnlocked = false;
+  let clinksThisStep = 0;
+  const audioWaveforms = new Float32Array(128); // Visual oscilloscope buffer
+
+  function initAudio() {
+    if (!audioCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) audioCtx = new AC();
+    }
+    if (audioCtx && audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+    audioUnlocked = true;
+  }
+  window.addEventListener('pointerdown', initAudio);
+  window.addEventListener('keydown', initAudio);
+  // Attempt immediate auto-init (succeeds in headless recorders & permissive browsers)
+  try { initAudio(); } catch (e) {}
+
+  function triggerClink(x, y, impactSpeed) {
+    // Visual pulse on oscilloscope
+    const waveIdx = Math.floor(rand() * 120);
+    const amp = Math.min(1, impactSpeed / 240);
+    audioWaveforms[waveIdx] = Math.max(audioWaveforms[waveIdx], amp);
+
+    if (impactSpeed > 110 && rand() < 0.35) {
+      emitSpark(x, y, amp);
+    }
+
+    if (!audioCtx || audioCtx.state !== 'running') return;
+    if (clinksThisStep >= 4) return; // Cap per physics frame to avoid distortion
+    clinksThisStep++;
+
+    const now = audioCtx.currentTime + rand() * 0.012;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+
+    // Pitch rises slightly as vessel fills up + natural glass variation
+    const fillFactor = settledCount / N;
+    const baseFreq = 2100 + fillFactor * 900 + (rand() - 0.5) * 1100;
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(baseFreq, now);
+    osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.72, now + 0.028);
+
+    const vol = Math.min(0.09, (impactSpeed / 320) * 0.075);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(vol, now + 0.0018);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.028);
+
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(now);
+    osc.stop(now + 0.03);
+  }
+
+  function resetSimulation() {
+    settledHead.fill(-1);
+    settledNext.fill(-1);
+    mState.fill(0);
+    mSettleFrames.fill(0);
+    mFlash.fill(0);
+    regCounts.fill(0);
+    spLife.fill(0);
+    activeCount = 0;
+    spawnedCursor = 0;
+    settledCount = 0;
+    highestSettledY = FLOOR_Y;
+    sCtx.clearRect(0, 0, 1280, 720);
+  }
+
+  // Fixed-timestep Physics Engine (60Hz steps)
+  const DT = 1 / 60;
+  const GRAVITY = 680;
+  const MIN_DIST = DIAM - 0.15;
+  const MIN_DIST_SQ = MIN_DIST * MIN_DIST;
+
+  function stepPhysics(simTime, allowAudio) {
+    clinksThisStep = 0;
+
+    // 1. Spawn scheduled marbles
+    while (spawnedCursor < N && mSpawnT[spawnedCursor] <= simTime) {
+      const i = spawnedCursor++;
+      mx[i] = mInitX[i];
+      my[i] = 28;
+      mvx[i] = mInitVX[i];
+      mvy[i] = mInitVY[i];
+      mState[i] = 1;
+      mSettleFrames[i] = 0;
+      mFlash[i] = 1.0;
+      activeList[activeCount++] = i;
+      regCounts[mReg[i]]++;
+    }
+
+    // 2. Integrate velocities & positions, apply walls, build active grid
+    activeHead.fill(-1);
+    for (let idx = 0; idx < activeCount; idx++) {
+      const i = activeList[idx];
+      mvy[i] += GRAVITY * DT;
+      mvx[i] *= 0.996;
+      mvy[i] *= 0.996;
+      mx[i] += mvx[i] * DT;
+      my[i] += mvy[i] * DT;
+      if (mFlash[i] > 0) mFlash[i] = Math.max(0, mFlash[i] - 0.04);
+
+      // Floor constraint
+      if (my[i] > FLOOR_Y - R) {
+        my[i] = FLOOR_Y - R;
+        if (Math.abs(mvy[i]) > 65 && allowAudio) triggerClink(mx[i], my[i], Math.abs(mvy[i]));
+        mvy[i] *= -0.25;
+        mvx[i] *= 0.7;
+      }
+
+      // Vessel walls constraint
+      const [wL, wR] = getWalls(my[i]);
+      if (mx[i] < wL + R) {
+        mx[i] = wL + R;
+        if (Math.abs(mvx[i]) > 70 && allowAudio) triggerClink(mx[i], my[i], Math.abs(mvx[i]));
+        mvx[i] = Math.abs(mvx[i]) * 0.4 + 8;
+      } else if (mx[i] > wR - R) {
+        mx[i] = wR - R;
+        if (Math.abs(mvx[i]) > 70 && allowAudio) triggerClink(mx[i], my[i], Math.abs(mvx[i]));
+        mvx[i] = -Math.abs(mvx[i]) * 0.4 - 8;
+      }
+
+      const gx = Math.max(1, Math.min(GW - 2, (mx[i] / CELL) | 0));
+      const gy = Math.max(1, Math.min(GH - 2, (my[i] / CELL) | 0));
+      const cell = gy * GW + gx;
+      activeNext[i] = activeHead[cell];
+      activeHead[cell] = i;
+    }
+
+    // 3. Multi-pass Relaxation & Collision Resolution
+    for (let iter = 0; iter < 3; iter++) {
+      for (let idx = 0; idx < activeCount; idx++) {
+        const i = activeList[idx];
+        const gx = Math.max(1, Math.min(GW - 2, (mx[i] / CELL) | 0));
+        const gy = Math.max(1, Math.min(GH - 2, (my[i] / CELL) | 0));
+
+        let hitSettled = false;
+
+        for (let dy = -1; dy <= 1; dy++) {
+          const row = (gy + dy) * GW;
+          for (let dx = -1; dx <= 1; dx++) {
+            const cell = row + gx + dx;
+
+            // Check against Settled Marbles (Static immovable pile)
+            let s = settledHead[cell];
+            while (s !== -1) {
+              const ddx = mx[i] - mx[s];
+              const ddy = my[i] - my[s];
+              const d2 = ddx * ddx + ddy * ddy;
+              if (d2 < MIN_DIST_SQ && d2 > 0.00001) {
+                const d = Math.sqrt(d2);
+                const overlap = MIN_DIST - d;
+                const nx = ddx / d;
+                const ny = ddy / d;
+                mx[i] += nx * overlap;
+                my[i] += ny * overlap;
+
+                const vn = mvx[i] * nx + mvy[i] * ny;
+                if (vn < 0) {
+                  if (iter === 0 && -vn > 55 && allowAudio) {
+                    triggerClink(mx[i], my[i], -vn);
+                  }
+                  const restitution = -vn > 90 ? 0.22 : 0.05;
+                  mvx[i] -= (1 + restitution) * vn * nx;
+                  mvy[i] -= (1 + restitution) * vn * ny;
+                  // Slight horizontal roll off peaks
+                  mvx[i] += nx * 14 * DT * 60;
+                  mvx[i] *= 0.80;
+                  mvy[i] *= 0.80;
+                }
+                hitSettled = true;
+              }
+              s = settledNext[s];
+            }
+
+            // Check against other Active Marbles
+            if (iter < 2) {
+              let a = activeHead[cell];
+              while (a !== -1) {
+                if (a > i) {
+                  const ddx = mx[i] - mx[a];
+                  const ddy = my[i] - my[a];
+                  const d2 = ddx * ddx + ddy * ddy;
+                  if (d2 < MIN_DIST_SQ && d2 > 0.00001) {
+                    const d = Math.sqrt(d2);
+                    const overlap = (MIN_DIST - d) * 0.5;
+                    const nx = ddx / d;
+                    const ny = ddy / d;
+                    mx[i] += nx * overlap;
+                    my[i] += ny * overlap;
+                    mx[a] -= nx * overlap;
+                    my[a] -= ny * overlap;
+
+                    const kx = mvx[i] - mvx[a];
+                    const ky = mvy[i] - mvy[a];
+                    const vn = kx * nx + ky * ny;
+                    if (vn < 0) {
+                      if (iter === 0 && -vn > 85 && allowAudio && rand() < 0.35) {
+                        triggerClink(mx[i], my[i], -vn);
+                      }
+                      const imp = vn * 0.58;
+                      mvx[i] -= imp * nx;
+                      mvy[i] -= imp * ny;
+                      mvx[a] += imp * nx;
+                      mvy[a] += imp * ny;
+                    }
+                  }
+                }
+                a = activeNext[a];
+              }
+            }
+          }
+        }
+
+        // Re-clamp walls after collision pushes
+        if (my[i] > FLOOR_Y - R) {
+          my[i] = FLOOR_Y - R;
+          hitSettled = true;
+        }
+        const [wL, wR] = getWalls(my[i]);
+        if (mx[i] < wL + R) mx[i] = wL + R;
+        else if (mx[i] > wR - R) mx[i] = wR - R;
+
+        // Track settling condition on final iteration
+        if (iter === 2) {
+          const spdSq = mvx[i] * mvx[i] + mvy[i] * mvy[i];
+          if (hitSettled && my[i] > 135 && spdSq < 750) {
+            mSettleFrames[i]++;
+          } else if (hitSettled && my[i] > 145) {
+            // Dampen marbles grinding on top of the pile so they find a pocket quickly
+            mvx[i] *= 0.84;
+            mvy[i] *= 0.84;
+            if (spdSq < 2200) mSettleFrames[i]++;
+          } else {
+            mSettleFrames[i] = 0;
+          }
+        }
+      }
+    }
+
+    // 4. Freeze settled marbles into static grid & bake onto offscreen canvas
+    let writeIdx = 0;
+    for (let idx = 0; idx < activeCount; idx++) {
+      const i = activeList[idx];
+      if (mSettleFrames[i] >= 5) {
+        mState[i] = 2;
+        settledCount++;
+        if (my[i] < highestSettledY) highestSettledY = my[i];
+
+        const gx = Math.max(1, Math.min(GW - 2, (mx[i] / CELL) | 0));
+        const gy = Math.max(1, Math.min(GH - 2, (my[i] / CELL) | 0));
+        const cell = gy * GW + gx;
+        settledNext[i] = settledHead[cell];
+        settledHead[cell] = i;
+
+        sCtx.drawImage(sprites[mReg[i]], mx[i] - 8, my[i] - 8);
+      } else {
+        activeList[writeIdx++] = i;
+      }
+    }
+    activeCount = writeIdx;
+  }
+
+  // Helper to trace the glass vessel path
+  function traceVesselOutline(c, offset = 0) {
+    c.beginPath();
+    for (let y = 30; y <= FLOOR_Y; y += 6) {
+      const [wL] = getWalls(y);
+      if (y === 30) c.moveTo(wL - offset, y);
+      else c.lineTo(wL - offset, y);
+    }
+    const [bL, bR] = getWalls(FLOOR_Y);
+    c.lineTo(bL - offset, FLOOR_Y + offset);
+    c.lineTo(bR + offset, FLOOR_Y + offset);
+    for (let y = FLOOR_Y; y >= 30; y -= 6) {
+      const [, wR] = getWalls(y);
+      c.lineTo(wR + offset, y);
+    }
+  }
+
+  function formatNum(n) {
+    return n.toLocaleString('en-US');
+  }
+
+  // Parse ?t=SECONDS parameter
+  const urlParams = new URLSearchParams(window.location.search);
+  const startOffset = parseFloat(urlParams.get('t')) || 0;
+  let simTime = 0;
+  let lastPerf = performance.now();
+
+  // Fast-forward if ?t= is provided
+  if (startOffset > 0) {
+    const target = startOffset % window.DUR;
+    while (simTime < target) {
+      simTime += DT;
+      stepPhysics(simTime, false);
+    }
+  }
+
+  function render(now) {
+    let dt = (now - lastPerf) / 1000;
+    lastPerf = now;
+    if (dt > 0.1 || dt < 0) dt = DT;
+
+    const targetTime = ((now / 1000) + startOffset) % window.DUR;
+    if (targetTime < simTime - 0.5) {
+      // Loop occurred
+      resetSimulation();
+      simTime = 0;
+    }
+
+    let steps = 0;
+    while (simTime < targetTime && steps < 8) {
+      simTime += DT;
+      stepPhysics(simTime, true);
+      steps++;
+    }
+
+    // 1. Background
+    ctx.fillStyle = '#070a10';
+    ctx.fillRect(0, 0, 1280, 720);
+
+    const bgGrad = ctx.createRadialGradient(VCX, 400, 40, VCX, 400, 620);
+    bgGrad.addColorStop(0, '#142038');
+    bgGrad.addColorStop(0.55, '#090e18');
+    bgGrad.addColorStop(1, '#04060b');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, 1280, 720);
+
+    // Subtle background measurement grid behind vessel
+    ctx.strokeStyle = 'rgba(120, 170, 255, 0.04)';
+    ctx.lineWidth = 1;
+    for (let x = 460; x <= 1220; x += 40) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 720); ctx.stroke();
+    }
+    for (let y = 40; y < 720; y += 40) {
+      ctx.beginPath(); ctx.moveTo(460, y); ctx.lineTo(1220, y); ctx.stroke();
+    }
+
+    // 2. Vessel Back Glass & Volume Scale Lines
+    ctx.save();
+    traceVesselOutline(ctx, 0);
+    ctx.fillStyle = 'rgba(18, 30, 52, 0.38)';
+    ctx.fill();
+
+    // Calibrated population level lines inside the glass
+    const popMarks = [
+      { label: '8B', y: 274 },
+      { label: '6B', y: 373 },
+      { label: '4B', y: 472 },
+      { label: '2B', y: 572 }
+    ];
+    ctx.font = '600 11px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'right';
+    for (const pm of popMarks) {
+      const [wL, wR] = getWalls(pm.y);
+      ctx.strokeStyle = 'rgba(160, 210, 255, 0.13)';
+      ctx.setLineDash([4, 6]);
+      ctx.beginPath();
+      ctx.moveTo(wL + 8, pm.y);
+      ctx.lineTo(wR - 8, pm.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = 'rgba(160, 210, 255, 0.45)';
+      ctx.fillText(pm.label, wL - 10, pm.y + 4);
+    }
+    ctx.restore();
+
+    // 3. Draw Baked Settled Marbles
+    ctx.drawImage(settledCanvas, 0, 0);
+
+    // 4. Draw Active Falling Marbles
+    for (let idx = 0; idx < activeCount; idx++) {
+      const i = activeList[idx];
+      ctx.drawImage(sprites[mReg[i]], mx[i] - 8, my[i] - 8);
+    }
+
+    // 5. Draw Collision Sparks
+    for (let s = 0; s < MAX_SPARKS; s++) {
+      if (spLife[s] > 0) {
+        ctx.fillStyle = `rgba(255, 255, 255, ${spLife[s] * 0.85})`;
+        ctx.beginPath();
+        ctx.arc(spX[s], spY[s], 2.2 + (1 - spLife[s]) * 5, 0, Math.PI * 2);
+        ctx.fill();
+        spLife[s] -= 0.08;
+      }
+    }
+
+    // 6. Vessel Front Glass Rim & Specular Reflections
+    ctx.save();
+    traceVesselOutline(ctx, 3);
+    ctx.strokeStyle = 'rgba(130, 195, 255, 0.45)';
+    ctx.lineWidth = 3.5;
+    ctx.stroke();
+
+    traceVesselOutline(ctx, 0);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+
+    // Left & Right vertical glass shine
+    const shineGrad = ctx.createLinearGradient(0, 200, 0, 650);
+    shineGrad.addColorStop(0, 'rgba(255,255,255,0)');
+    shineGrad.addColorStop(0.2, 'rgba(255,255,255,0.09)');
+    shineGrad.addColorStop(0.8, 'rgba(255,255,255,0.09)');
+    shineGrad.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = shineGrad;
+    ctx.fillRect(VCX - 320, 200, 12, 440);
+    ctx.fillRect(VCX + 302, 200, 6, 440);
+    ctx.restore();
+
+    // 7. Determine Active Country for HUD
+    let curCountry = countries[0];
+    for (let c = 0; c < countries.length; c++) {
+      if (simTime >= countries[c].startT) {
+        curCountry = countries[c];
+      } else {
+        break;
+      }
+    }
+    const isFinished = spawnedCursor >= N && activeCount < 15;
+
+    // Top Nozzle Drop Label
+    if (spawnedCursor < N && simTime >= 1.1) {
+      const regInfo = REGIONS[curCountry.reg];
+      ctx.save();
+      ctx.font = '700 15px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = regInfo.glow;
+      ctx.fillText(`${curCountry.name.toUpperCase()}  •  +${formatNum(curCountry.pop)}`, VCX, 20);
+      ctx.restore();
+    }
+
+    // ========================================================================
+    // 8. LEFT DASHBOARD HUD (x: 36..446)
+    // ========================================================================
+    ctx.save();
+    // Main HUD Card
+    ctx.fillStyle = 'rgba(11, 16, 26, 0.84)';
+    ctx.strokeStyle = 'rgba(100, 150, 230, 0.22)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(34, 28, 412, 664, 14);
+    ctx.fill();
+    ctx.stroke();
+
+    // Header
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '800 24px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillText('WORLD POPULATION 2024', 56, 66);
+
+    ctx.fillStyle = '#7fa3d4';
+    ctx.font = '600 13px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillText('1 MARBLE = 1,000,000 PEOPLE   •   8,144 MARBLES', 56, 88);
+
+    // Divider
+    ctx.strokeStyle = 'rgba(100, 150, 230, 0.16)';
+    ctx.beginPath(); ctx.moveTo(56, 104); ctx.lineTo(424, 104); ctx.stroke();
+
+    // Big Counter
+    ctx.fillStyle = '#8fa8c8';
+    ctx.font = '700 11px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillText('TOTAL MARBLES DROPPED', 56, 126);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '800 44px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillText(formatNum(spawnedCursor), 56, 170);
+
+    ctx.fillStyle = '#5c789e';
+    ctx.font = '600 20px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillText('/ 8,144', 202, 170);
+
+    // Exact Population Equivalent
+    const peopleCount = spawnedCursor * 1000000;
+    ctx.fillStyle = '#4cd4ff';
+    ctx.font = '700 15px "SF Mono", Consolas, monospace';
+    ctx.fillText(`${formatNum(peopleCount)} people`, 56, 195);
+
+    // Current Country Spotlight Box
+    const spotReg = REGIONS[curCountry.reg];
+    ctx.fillStyle = 'rgba(20, 30, 48, 0.9)';
+    ctx.strokeStyle = spotReg.color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(56, 212, 368, 84, 10);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = spotReg.glow;
+    ctx.font = '700 11px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillText(isFinished ? 'SIMULATION COMPLETE — ALL COUNTRIES DROPPED' : `NOW DROPPING  •  ${spotReg.name.toUpperCase()}`, 72, 234);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '800 24px -apple-system, BlinkMacSystemFont, sans-serif';
+    const dispName = isFinished ? 'World Total (2024 UN Data)' : curCountry.name;
+    ctx.fillText(dispName, 72, 263);
+
+    ctx.fillStyle = '#a9c1e0';
+    ctx.font = '600 14px -apple-system, BlinkMacSystemFont, sans-serif';
+    const dispSub = isFinished
+      ? '8,144,000,000 People across 195+ Nations'
+      : `+${formatNum(curCountry.pop)} Marbles (${formatNum(curCountry.pop)}M People)`;
+    ctx.fillText(dispSub, 72, 284);
+
+    // Region Breakdown Bars
+    ctx.fillStyle = '#8fa8c8';
+    ctx.font = '700 11px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillText('POPULATION BY REGION (MILLIONS)', 56, 322);
+
+    const maxRegPop = 4800; // Asia ~4785M
+    for (let r = 0; r < 6; r++) {
+      const ry = 336 + r * 32;
+      const reg = REGIONS[r];
+      const count = regCounts[r];
+
+      // Color dot
+      ctx.fillStyle = reg.color;
+      ctx.beginPath();
+      ctx.arc(64, ry + 7, 5, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Name
+      ctx.fillStyle = '#d5e3f7';
+      ctx.font = '600 13px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(reg.name, 78, ry + 11);
+
+      // Value
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '700 13px "SF Mono", Consolas, monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText(`${formatNum(count)}M`, 424, ry + 11);
+
+      // Progress Bar Track
+      ctx.fillStyle = 'rgba(255,255,255,0.07)';
+      ctx.beginPath();
+      ctx.roundRect(78, ry + 16, 346, 5, 2.5);
+      ctx.fill();
+
+      // Progress Bar Fill
+      const fillW = Math.max(2, (count / maxRegPop) * 346);
+      ctx.fillStyle = reg.color;
+      ctx.beginPath();
+      ctx.roundRect(78, ry + 16, fillW, 5, 2.5);
+      ctx.fill();
+    }
+
+    // Recent / Upcoming Feed (Top populous nations)
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#8fa8c8';
+    ctx.font = '700 11px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillText('COUNTRY DROP STREAM (SMALLEST → LARGEST)', 56, 544);
+
+    const curId = curCountry.id;
+    const startIdx = Math.max(0, Math.min(countries.length - 4, curId - 2));
+    for (let k = 0; k < 4; k++) {
+      const cItem = countries[startIdx + k];
+      const fy = 562 + k * 22;
+      const isCur = cItem.id === curId && !isFinished;
+      const isDone = cItem.id < curId || isFinished;
+
+      ctx.fillStyle = isCur ? '#ffffff' : (isDone ? '#7892b5' : '#435670');
+      ctx.font = isCur ? '700 13px -apple-system, sans-serif' : '500 13px -apple-system, sans-serif';
+      ctx.textAlign = 'left';
+      const prefix = isCur ? '▶ ' : (isDone ? '✓ ' : '• ');
+      ctx.fillText(prefix + cItem.name, 58, fy);
+
+      ctx.textAlign = 'right';
+      ctx.fillStyle = isCur ? REGIONS[cItem.reg].glow : (isDone ? '#93accf' : '#435670');
+      ctx.fillText(`${formatNum(cItem.pop)}M`, 424, fy);
+    }
+
+    // Acoustic Collision Equalizer Strip at bottom of HUD
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#8fa8c8';
+    ctx.font = '700 10px -apple-system, BlinkMacSystemFont, sans-serif';
+    const soundStatus = (audioCtx && audioCtx.state === 'running') ? 'LIVE SYNTHESIS' : 'SYNCED TO IMPACT';
+    ctx.fillText(`COLLISION ACOUSTICS (${soundStatus})`, 56, 654);
+
+    const barCount = 46;
+    const barW = 368 / barCount;
+    for (let b = 0; b < barCount; b++) {
+      const val = audioWaveforms[b];
+      audioWaveforms[b] *= 0.84; // Decay
+      const bh = Math.max(2, val * 20);
+      ctx.fillStyle = val > 0.4 ? '#4cd4ff' : 'rgba(110, 175, 255, 0.45)';
+      ctx.fillRect(56 + b * barW, 678 - bh, barW - 2, bh);
+    }
+    ctx.restore();
+
+    // Finale Banner Overlay when all 8,144 marbles are in the vessel
+    if (simTime > 41.2) {
+      const fade = Math.min(1, (simTime - 41.2) / 0.8);
+      ctx.save();
+      ctx.globalAlpha = fade;
+      ctx.fillStyle = 'rgba(8, 13, 22, 0.88)';
+      ctx.strokeStyle = 'rgba(120, 190, 255, 0.5)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(VCX - 240, 130, 480, 92, 14);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '800 28px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.fillText('8,144 MARBLES  •  8.14 BILLION PEOPLE', VCX, 170);
+
+      ctx.fillStyle = '#82c8ff';
+      ctx.font = '600 15px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.fillText('India (1,442) + China (1,419) alone account for 35.1% of the vessel', VCX, 200);
+      ctx.restore();
+    }
+
+    requestAnimationFrame(render);
+  }
+
+  requestAnimationFrame(render);
+})();
+</script>
+</body>
+</html>

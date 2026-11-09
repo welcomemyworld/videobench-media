@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=60;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px'}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)*1000;const t0=performance.now()-off;
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),ss=(a,b,v)=>{v=cl((v-a)/(b-a));return v*v*(3-2*v)},L=(a,b,k)=>a+(b-a)*k;
+function line(a,b,c2,d){x.beginPath();x.moveTo(a,b);x.lineTo(c2,d);x.stroke()}
+// stick figure
+function fig(o){const {px,py,h,col,arms,legs,type,lean=0,face='smile'}=o;
+x.save();x.translate(px,py);x.rotate(lean);x.strokeStyle=col;x.lineWidth=5;x.lineCap='round';
+const hip=-h*0.45,neck=-h*0.85,hr=h*0.11;
+line(0,hip,0,neck);
+legs.forEach(a=>line(0,hip,Math.sin(a)*h*0.45,hip+Math.cos(a)*h*0.45));
+arms.forEach(a=>line(0,neck+8,Math.sin(a)*h*0.38,neck+8+Math.cos(a)*h*0.38));
+const hy=neck-hr;x.beginPath();x.arc(0,hy,hr,0,7);x.fillStyle='#111';x.fill();x.stroke();
+if(type==0){x.lineWidth=4;x.beginPath();x.arc(0,hy+2,hr+7,Math.PI*1.05,Math.PI*1.95);x.stroke();line(-hr-6,hy,-hr-3,neck+14);line(hr+6,hy,hr+3,neck+14)}
+if(type==1){x.fillStyle=col;for(let i=0;i<9;i++){const a=Math.PI+i*Math.PI/8;x.beginPath();x.arc(Math.cos(a)*hr*1.05,hy+Math.sin(a)*hr*1.05,6,0,7);x.fill()}
+x.lineWidth=2;x.strokeRect(-11,hy-3,8,6);x.strokeRect(3,hy-3,8,6)}
+if(type==2){x.fillStyle='#ddd';x.save();x.translate(Math.sin(arms[1])*h*0.38,neck+8+Math.cos(arms[1])*h*0.38);
+x.beginPath();x.moveTo(0,-22);x.lineTo(6,-8);x.lineTo(6,6);x.lineTo(-6,6);x.lineTo(-6,-8);x.fill();x.fillStyle='#f80';x.beginPath();x.moveTo(-4,6);x.lineTo(0,14+Math.random()*6);x.lineTo(4,6);x.fill();x.restore()}
+x.fillStyle=col;x.beginPath();x.arc(-5,hy-2,2,0,7);x.arc(5,hy-2,2,0,7);x.fill();
+x.lineWidth=2;x.beginPath();if(face=='smile')x.arc(0,hy+3,6,0.2,Math.PI-0.2);else if(face=='angry'){x.moveTo(-6,hy+8);x.lineTo(6,hy+8);line(-9,hy-8,-2,hy-5);line(9,hy-8,2,hy-5)}else{x.arc(0,hy+7,4,0,7)}x.stroke();
+x.restore()}
+function robot(px,py,s,t,eye){x.save();x.translate(px,py);x.scale(s,s);
+x.fillStyle='#555';x.strokeStyle='#999';x.lineWidth=3;
+const w=Math.sin(t*6)*8;x.fillRect(-22,-30+w*0,14,30);x.fillRect(8,-30,14,30);
+x.fillRect(-35,-110,70,80);x.strokeRect(-35,-110,70,80);
+x.fillRect(-55,-105,16,55+w);x.fillRect(39,-105,16,55-w);
+x.fillRect(-25,-155,50,40);x.strokeRect(-25,-155,50,40);line(0,-155,0,-172);
+x.fillStyle=eye;x.beginPath();x.arc(0,-174,5,0,7);x.fill();
+x.shadowColor=eye;x.shadowBlur=15;x.fillRect(-16,-142,10,8);x.fillRect(6,-142,10,8);x.shadowBlur=0;
+x.fillStyle='#333';x.fillRect(-20,-90,40,30);x.fillStyle=eye;for(let i=0;i<3;i++)if(Math.sin(t*5+i*2)>0)x.fillRect(-14+i*12,-80,8,8);
+x.restore()}
+function bubble(bx,by,txt,col){x.font='bold 24px sans-serif';const w=x.measureText(txt).width+30;
+x.fillStyle='#fff';x.beginPath();x.roundRect(bx-w/2,by-30,w,44,14);x.fill();x.beginPath();x.moveTo(bx-8,by+14);x.lineTo(bx,by+30);x.lineTo(bx+8,by+14);x.fill();
+x.fillStyle=col||'#111';x.textAlign='center';x.fillText(txt,bx,by)}
+function title(txt,y,a,sz=44,col='#fff'){x.globalAlpha=cl(a);x.font='bold '+sz+'px sans-serif';x.textAlign='center';x.fillStyle=col;x.fillText(txt,640,y);x.globalAlpha=1}
+function heart(hx,hy,s){x.fillStyle='#f46';x.beginPath();x.moveTo(hx,hy+s);x.bezierCurveTo(hx-s*2,hy-s/2,hx-s/2,hy-s*1.6,hx,hy-s/3);x.bezierCurveTo(hx+s/2,hy-s*1.6,hx+s*2,hy-s/2,hx,hy+s);x.fill()}
+const cols=['#7cf','#fc6','#f77'],names=['The Founder','The Researcher','The Rocket Guy'];
+function frame(){let T=((performance.now()-t0)/1000)%DUR;if(T<0)T+=DUR;
+// sky
+const war=ss(22,28,T),rob=ss(40,46,T);
+const g=x.createLinearGradient(0,0,0,720);
+g.addColorStop(0,`rgb(${L(L(40,90,war),20,rob)|0},${L(L(80,30,war),10,rob)|0},${L(L(150,40,war),30,rob)|0})`);
+g.addColorStop(1,`rgb(${L(L(250,200,war),40,rob)|0},${L(L(180,90,war),60,rob)|0},${L(120,40,war)|0})`);
+x.fillStyle=g;x.fillRect(0,0,1280,720);
+// city / hills
+x.fillStyle=rob>0.5?'#0a0f14':'#1c2a1c';for(let i=0;i<20;i++){const bh=60+((i*97)%140);x.fillRect(i*66,560-bh,56,bh);
+if(rob>0.3){x.fillStyle='#f22';x.globalAlpha=rob*(0.5+0.5*Math.sin(T*4+i));x.fillRect(i*66+20,560-bh+15,10,6);x.globalAlpha=1;x.fillStyle='#0a0f14'}}
+x.fillStyle='#2a2a2a';x.fillRect(0,560,1280,160);
+const ground=600;
+// positions
+let P=[{px:440,lean:0},{px:640,lean:0},{px:840,lean:0}];
+const tt=T;let arms=[[2.6,-2.6],[2.6,-2.6],[2.6,-2.6]],legs=[[0.3,-0.3],[0.3,-0.3],[0.3,-0.3]],face=['smile','smile','smile'];let bob=[0,0,0];
+if(T<4){const k=ss(0,4,T);P[0].px=L(-100,440,k);P[2].px=L(1380,840,k);P[1].px=640;
+for(let i of[0,2]){const s=Math.sin(T*10)*0.5*(1-k);legs[i]=[s,-s]}}
+else if(T<14){// friends: arms up, bounce
+for(let i=0;i<3;i++){bob[i]=-Math.abs(Math.sin(T*4+i))*20;arms[i]=[Math.PI-0.6+Math.sin(T*8)*0.2,-Math.PI+0.6]}
+if(T>8){P[0].px=L(440,540,ss(8,9,T));P[2].px=L(840,740,ss(8,9,T));arms[0]=[1.6,3];arms[1]=[-1.6,1.6];arms[2]=[-1.6,-3]}}
+else if(T<26){face=['angry','angry','angry'];P[0].px=L(540,440,ss(14,15,T));P[2].px=L(740,840,ss(14,15,T));
+for(let i=0;i<3;i++){const p=Math.sin(T*6+i*2);arms[i]=[1+p*0.8,-1.2];}}
+else if(T<42){face=['angry','angry','angry'];const k=ss(26,28,T);
+for(let i=0;i<3;i++){const ph=T*9+i*2.1;P[i].px=L([440,640,840][i],640+Math.cos(T*1.5+i*2.09)*120,k);bob[i]=-Math.abs(Math.sin(ph))*30*k;
+arms[i]=[1.6+Math.sin(ph)*1.3,-1.6+Math.cos(ph)*1.3];legs[i]=[0.3+Math.sin(ph)*0.5,-0.3+Math.sin(ph)*0.5];P[i].lean=Math.sin(ph*0.7)*0.25*k}}
+else{face=['o','o','o'];const k=ss(42,44,T);
+for(let i=0;i<3;i++){P[i].px=L(640+Math.cos(42*1.5+i*2.09)*120,500+i*80,k);arms[i]=[Math.PI-0.3,-Math.PI+0.3];bob[i]=Math.sin(T*30+i)*2}}
+// robots
+if(T>38){const k=ss(38,46,T);for(let i=0;i<6;i++){const rx=L(1450+i*90,760+i*95,k)-(i>2?0:0),ry=ground+(i%2)*10;
+let px2=T>52?L(rx,[200,1080,330,950,460,820][i],ss(52,55,T)):rx;robot(px2,ry,0.9,T+i,T>46?'#f22':'#4ef')}}
+// figures
+const capt=T>52;
+for(let i=0;i<3;i++){let py=ground+bob[i],px=P[i].px,h=[150,155,175][i];
+if(capt){const k=ss(52,55,T);px=L(px,560+i*80,k);}
+fig({px,py,h,col:cols[i],arms:arms[i],legs:legs[i],type:i,lean:P[i].lean,face:face[i]});}
+if(capt){const k=ss(52,55,T);x.strokeStyle='#bbb';x.lineWidth=6;const cy=L(-300,390,k);
+for(let i=0;i<9;i++)line(500+i*35,cy,500+i*35,cy+220);line(490,cy,790,cy);line(490,cy+220,790,cy+220)}
+// fight effects
+if(T>27&&T<42){for(let i=0;i<14;i++){const a=i/14*7+T,r=60+20*Math.sin(T*7+i);x.fillStyle='rgba(220,210,190,0.6)';x.beginPath();x.arc(640+Math.cos(a)*r*2,ground-60+Math.sin(a)*r,30+10*Math.sin(T*5+i),0,7);x.fill()}
+const words=['POW!','BAM!','SHIP IT!','ZAP!','WHAM!','AGI!!'];const wi=Math.floor(T*2.5)%6;x.save();x.translate(640+Math.sin(wi*3)*200,330+Math.cos(wi*5)*60);x.rotate(Math.sin(wi)*0.3);
+x.font='bold 64px sans-serif';x.textAlign='center';x.lineWidth=8;x.strokeStyle='#000';x.strokeText(words[wi],0,0);x.fillStyle='#ff3';x.fillText(words[wi],0,0);x.restore();
+for(let i=0;i<5;i++){x.fillStyle='#ff0';const a=T*8+i;x.font='30px sans-serif';x.fillText('★',640+Math.cos(a)*150,420+Math.sin(a)*40)}}
+// hearts
+if(T>4&&T<14)for(let i=0;i<8;i++){const p=((T*0.4+i/8)%1);heart(400+i*65,380-p*250,10+i%3*3);}
+// labels & bubbles
+if(T>2&&T<12){x.globalAlpha=ss(2,3,T)*(1-ss(11,12,T));x.font='18px sans-serif';x.textAlign='center';for(let i=0;i<3;i++){x.fillStyle=cols[i];x.fillText(names[i],P[i].px,ground+40)}x.globalAlpha=1}
+if(T>9&&T<13.5)bubble(640,330,"Let's build AI together... for everyone!");
+const lines=[[15,"We should ship it!",0],[17.5,"Safety first!",1],[20,"Let's put it on Mars!",2],[22.5,"You're too slow!",0],[23.5,"You're too reckless!",1],[24.5,"I'm suing you both!",2]];
+for(const [st,s,i] of lines)if(T>st&&T<st+2.3&&T<26){bubble(L(440,840,i/2),[330,310,290][i]-(st>22?(st-22)*25:0),s)}
+if(T>44&&T<52){x.globalAlpha=ss(44,45,T);bubble(1000,300,"HUMANS: PLEASE STOP. WE'LL TAKE IT FROM HERE.","#c00");x.globalAlpha=1}
+if(T>47&&T<52){bubble(640,330,"...uh oh.")}
+// titles
+title('A Totally Fictional Story',90,ss(0.5,1.5,T)*(1-ss(4,5,T)),50);
+title('Any resemblance to real tech CEOs is purely coincidental',140,ss(1,2,T)*(1-ss(4,5,T)),20,'#ddd');
+title('Chapter 1: Best Friends',90,ss(5,6,T)*(1-ss(12,13,T)));
+title('Chapter 2: Creative Differences',90,ss(14,15,T)*(1-ss(25,26,T)));
+title('Chapter 3: The Fight',90,ss(26,27,T)*(1-ss(37,38,T)),44,'#fd4');
+title('Chapter 4: Meanwhile...',90,ss(38,39,T)*(1-ss(47,48,T)),44,'#f66');
+if(T>53){x.fillStyle='rgba(0,0,0,'+0.55*ss(53,55,T)+')';x.fillRect(0,0,1280,720);
+title('THE ROBOTS TOOK OVER.',200,ss(54,55.5,T),72,'#f33');title('The End.',270,ss(56,57,T),34,'#fff')}
+x.fillStyle='rgba(0,0,0,'+(1-ss(0,0.6,T))+')';x.fillRect(0,0,1280,720);
+x.fillStyle='rgba(0,0,0,'+ss(59.2,60,T)+')';x.fillRect(0,0,1280,720);
+requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

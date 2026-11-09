@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Token Bucket Rate Limiter</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#0b1020}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=40;
+const cv=document.getElementById('c'),g=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const C=5,R=1; // capacity, refill tokens/sec
+// deterministic request schedule
+const req=[];
+for(let t=2;t<11;t+=1.6)req.push(t);
+for(let i=0;i<9;i++)req.push(14+i*0.18);
+for(let t=21;t<32;t+=0.5)req.push(t);
+for(let t=33.5;t<38;t+=1.7)req.push(t);
+const ev=[];{let lv=C,last=0;for(const t of req){lv=Math.min(C,lv+(t-last)*R);last=t;const ok=lv>=1;if(ok)lv-=1;ev.push({t,ok});}}
+function tokensAt(t){let lv=C,last=0;for(const e of ev){if(e.t>t)break;lv=Math.min(C,lv+(e.t-last)*R);last=e.t;if(e.ok)lv-=1;}return Math.min(C,lv+(t-last)*R);}
+const caps=[[0,"A bucket holds up to 5 tokens. It refills at 1 token per second."],
+[2,"Each request must take one token to pass. Slow traffic: always a token waiting."],
+[12,"A burst arrives! Saved-up tokens let the first 5 through instantly…"],
+[15.2,"…then the bucket is empty. Extra requests are rejected (HTTP 429)."],
+[19,"Bucket refills while idle — capacity = max burst size."],
+[21,"Sustained 2 req/s > refill rate 1/s: long-run throughput is capped at the refill rate."],
+[33,"Traffic calms down. The bucket refills, ready for the next burst."]];
+function caption(t){let c=caps[0][1],s=0;for(const k of caps)if(t>=k[0]){c=k[1];s=k[0];}return [c,s];}
+const ease=x=>x<0?0:x>1?1:x*x*(3-2*x);
+const GX=560; // gate x
+function rr(x,y,w,h,r){g.beginPath();g.roundRect(x,y,w,h,r);}
+function frame(t){
+ g.clearRect(0,0,1280,720);
+ const bg=g.createLinearGradient(0,0,0,720);bg.addColorStop(0,'#0e1630');bg.addColorStop(1,'#070a14');g.fillStyle=bg;g.fillRect(0,0,1280,720);
+ g.textAlign='center';g.fillStyle='#fff';g.font='bold 34px sans-serif';g.fillText('Token Bucket Rate Limiter',640,50);
+ const [cap,cs]=caption(t);g.globalAlpha=ease((t-cs)/0.5);g.font='22px sans-serif';g.fillStyle='#cfe0ff';g.fillText(cap,640,88);g.globalAlpha=1;
+ // client & server
+ rr(60,250,140,110,14);g.fillStyle='#1c2a4f';g.fill();g.strokeStyle='#5d7bd8';g.lineWidth=2;g.stroke();
+ g.fillStyle='#fff';g.font='bold 20px sans-serif';g.fillText('Clients',130,300);g.font='15px sans-serif';g.fillStyle='#9fb3e6';g.fillText('requests',130,325);
+ rr(1080,250,140,110,14);g.fillStyle='#173b2c';g.fill();g.strokeStyle='#3fd38a';g.stroke();
+ g.fillStyle='#fff';g.font='bold 20px sans-serif';g.fillText('Server',1150,300);g.font='15px sans-serif';g.fillStyle='#9fe6c0';g.fillText('protected',1150,325);
+ g.strokeStyle='#26345e';g.setLineDash([6,8]);g.beginPath();g.moveTo(200,305);g.lineTo(1080,305);g.stroke();g.setLineDash([]);
+ // bucket
+ const lv=tokensAt(t),bx=GX,by=200,bw=150,bh=210;
+ // faucet
+ g.fillStyle='#55618a';g.fillRect(bx-10,118,90,16);g.fillRect(bx-10,118,16,40);
+ if(lv<C-1e-6){const ph=(t*R)%1;g.fillStyle='#ffd34d';g.beginPath();g.arc(bx-2,160+ph*(by+bh-30-160)*0.6,6,0,7);g.fill();}
+ g.font='14px sans-serif';g.fillStyle='#9fb3e6';g.fillText('+1 token / s',bx+120,132);
+ g.beginPath();g.moveTo(bx-bw/2,by);g.lineTo(bx-bw/2+12,by+bh);g.lineTo(bx+bw/2-12,by+bh);g.lineTo(bx+bw/2,by);
+ g.fillStyle='rgba(120,150,255,0.08)';g.fill();g.strokeStyle='#8fa6ff';g.lineWidth=3;g.stroke();
+ for(let i=0;i<C;i++){const f=Math.max(0,Math.min(1,lv-i)),y=by+bh-22-i*38;
+  g.strokeStyle='rgba(255,211,77,0.25)';g.lineWidth=2;g.beginPath();g.ellipse(bx,y,48,14,0,0,7);g.stroke();
+  if(f>0){g.save();g.beginPath();g.rect(bx-50,y-16,100*f,32);g.clip();g.fillStyle='#ffd34d';g.beginPath();g.ellipse(bx,y,48,14,0,0,7);g.fill();g.fillStyle='#b8901f';g.beginPath();g.ellipse(bx,y,30,7,0,0,7);g.fill();g.restore();}}
+ g.fillStyle='#fff';g.font='bold 20px sans-serif';g.fillText(lv.toFixed(2)+' / '+C+' tokens',bx,by+bh+30);
+ // packets
+ let acc=0,rej=0;
+ for(const e of ev){const d=t-e.t;if(d>=0){e.ok?acc++:rej++;}
+  if(d<-1.2||d>2.2)continue;let x,y=305,col='#7fa8ff',a=1;
+  if(d<0){x=200+(GX-90-200)*ease((d+1.2)/1.2);}
+  else if(e.ok){x=GX+90+(1080-GX-90)*ease(d/1.6);col='#3fd38a';a=d>1.6?Math.max(0,1-(d-1.6)/0.4):1;}
+  else{x=GX-90-d*40;y=305+d*d*90;col='#ff5a6a';a=Math.max(0,1-d/2.2);}
+  g.globalAlpha=a;rr(x-16,y-12,32,24,6);g.fillStyle=col;g.fill();
+  if(d>=0&&d<1.4){g.font='bold 15px sans-serif';g.fillStyle=col;g.fillText(e.ok?'−1 token ✓':'429 ✗',e.ok?GX+130:GX-140,e.ok?280:y-20);}
+  g.globalAlpha=1;}
+ // counters
+ g.font='bold 22px sans-serif';g.textAlign='left';g.fillStyle='#3fd38a';g.fillText('Accepted: '+acc,60,420);
+ g.fillStyle='#ff5a6a';g.fillText('Rejected: '+rej,60,452);
+ g.textAlign='right';g.fillStyle='#9fb3e6';g.font='18px sans-serif';g.fillText('t = '+t.toFixed(1)+' s',1220,420);
+ g.textAlign='center';
+ // chart
+ const cx=80,cy=500,cw=1120,ch=170;
+ g.fillStyle='rgba(255,255,255,0.03)';g.fillRect(cx,cy,cw,ch);g.strokeStyle='#33416e';g.lineWidth=1;
+ for(let i=0;i<=C;i++){const y=cy+ch-i/C*ch;g.beginPath();g.moveTo(cx,y);g.lineTo(cx+cw,y);g.stroke();g.fillStyle='#6f7fb0';g.font='12px sans-serif';g.fillText(i,cx-14,y+4);}
+ g.fillStyle='#9fb3e6';g.font='14px sans-serif';g.textAlign='left';g.fillText('tokens in bucket over time',cx+6,cy-8);g.textAlign='center';
+ g.strokeStyle='#ffd34d';g.lineWidth=2.5;g.beginPath();
+ const N=600;for(let i=0;i<=N;i++){const tt=i/N*DUR;if(tt>t)break;const x=cx+tt/DUR*cw,y=cy+ch-tokensAt(tt)/C*ch;i?g.lineTo(x,y):g.moveTo(x,y);}g.stroke();
+ for(const e of ev){if(e.t>t)continue;const x=cx+e.t/DUR*cw;g.fillStyle=e.ok?'#3fd38a':'#ff5a6a';g.fillRect(x-1.5,cy+ch+4,3,10);}
+ const px=cx+t/DUR*cw;g.strokeStyle='rgba(255,255,255,0.5)';g.beginPath();g.moveTo(px,cy);g.lineTo(px,cy+ch);g.stroke();
+}
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t'))||0;let st=null;
+function loop(now){if(st===null)st=now;frame(((now-st)/1000+off)%DUR);requestAnimationFrame(loop);}
+window.renderAt=t=>frame(((t%DUR)+DUR)%DUR);
+requestAnimationFrame(loop);
+</script></body></html>

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Pure function of time</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+const DUR=28;window.DUR=DUR;
+const BPM=120,BEAT=0.5;
+const cv=document.getElementById('c'),X=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)||0;
+const t0=performance.now();
+// closed-form underdamped spring step response
+function spring(t,w=14,z=0.35){if(t<=0)return 0;const wd=w*Math.sqrt(1-z*z);return 1-Math.exp(-z*w*t)*(Math.cos(wd*t)+z*w/wd*Math.sin(wd*t));}
+const cl=(v,a,b)=>Math.max(a,Math.min(b,v));
+const ease=t=>{t=cl(t,0,1);return t*t*(3-2*t)};
+function rr(x,y,w,h,r){X.beginPath();X.roundRect(x,y,w,h,r);}
+function txt(s,x,y,sz,c,al='center',wt='600'){X.font=wt+' '+sz+'px system-ui,Segoe UI,Helvetica,Arial';X.fillStyle=c;X.textAlign=al;X.textBaseline='middle';X.fillText(s,x,y);}
+const steps=[
+["STEP 1","Pick a royalty-free track ~120 BPM"],
+["STEP 2","8–12 UI states: button, loader, toggle, chart, palette"],
+["STEP 3","One HTML file. Every style computed in seek(t)"],
+["STEP 4","Springs as closed-form math"],
+["STEP 5","numpy finds the beats"],
+["STEP 6","4 subframes → ffmpeg tmix → 60fps blur"],
+["STEP 7","One frame per beat first, then full render"]];
+// scenes, 4 beats (2s) each -> 7 bars=14s, then repeat with math recap
+function bg(t,beatPh){
+ const g=X.createRadialGradient(640,360,50,640,360,800);
+ g.addColorStop(0,'#141a2e');g.addColorStop(1,'#04050a');X.fillStyle=g;X.fillRect(0,0,1280,720);
+ X.strokeStyle='rgba(120,150,255,'+(0.05+0.1*Math.exp(-beatPh*6))+')';X.lineWidth=1;
+ for(let x=0;x<=1280;x+=40){X.beginPath();X.moveTo(x,0);X.lineTo(x,720);X.stroke();}
+ for(let y=0;y<=720;y+=40){X.beginPath();X.moveTo(0,y);X.lineTo(1280,y);X.stroke();}
+}
+function card(cx,cy,w,h,s){X.save();X.translate(cx,cy);X.scale(s,s);rr(-w/2,-h/2,w,h,24);X.fillStyle='#0f1424';X.fill();X.strokeStyle='#2c3760';X.lineWidth=2;X.stroke();X.restore();}
+function scene(i,lt,t){ // lt local time 0..2
+ const cx=640,cy=380;const s=spring(lt,12,0.4);
+ X.save();X.globalAlpha=cl(lt*4,0,1)*cl((2-lt)*6,0,1);
+ card(cx,cy,620,300,0.85+0.15*s);
+ const b=Math.floor(lt/BEAT),bp=lt-b*BEAT;const hit=spring(bp,22,0.3);
+ if(i==0){ // waveform + beat markers
+  X.strokeStyle='#7aa2ff';X.lineWidth=2;X.beginPath();
+  for(let k=0;k<520;k++){const x=380+k,ph=(k/520)*4+lt;const env=Math.exp(-((ph%1))*5);const y=cy+Math.sin(k*0.9+t*20)*60*env*Math.sin(k*0.13);k?X.lineTo(x,y):X.moveTo(x,y);}X.stroke();
+  for(let k=0;k<4;k++){const x=380+k*130;X.fillStyle=k<=b?'#ff5d8f':'#333b5c';X.fillRect(x-2,cy-110,4,220);}
+  txt('120 BPM',cx,cy+120,22,'#cfd8ff');
+ }else if(i==1){ // button press, toggle, loader
+  const pr=1-0.12*(1-hit)*(b%2==0?1:0);
+  X.save();X.translate(cx-170,cy);X.scale(pr,pr);rr(-90,-32,180,64,32);X.fillStyle='#5b7cff';X.fill();txt('Render',0,0,24,'#fff');X.restore();
+  const on=spring(lt-0.5,16,0.45);rr(cx-10,cy-24,96,48,24);X.fillStyle=`rgb(${40+20*on},${50+150*on},${90-20*on})`;X.fill();
+  X.beginPath();X.arc(cx+14+48*on,cy,18,0,7);X.fillStyle='#fff';X.fill();
+  X.strokeStyle='#ff5d8f';X.lineWidth=6;X.lineCap='round';X.beginPath();const a=t*8;X.arc(cx+200,cy,30,a,a+1+Math.sin(t*4)*0.8+1);X.stroke();
+ }else if(i==2){ // seek(t) code
+  const lines=['function seek(t){','  const s = spring(t - beat[i]);','  el.style.transform =','    `scale(${1+0.1*s})`;','}  // no transitions, no timers'];
+  lines.forEach((l,k)=>{const a=cl((lt-k*0.2)*4,0,1);X.globalAlpha=a;txt(l,cx-270+20*(1-a),cy-90+k*44,22,k==4?'#6c7aa8':'#cfe0ff','left','500');});
+ }else if(i==3){ // spring plot
+  X.strokeStyle='#333b5c';X.beginPath();X.moveTo(360,cy+80);X.lineTo(920,cy+80);X.stroke();
+  X.strokeStyle='#7aff c8'.replace(' ','');X.strokeStyle='#5dffc0';X.lineWidth=3;X.beginPath();
+  const n=Math.floor(cl(lt/1.5,0,1)*540);for(let k=0;k<=n;k++){const y=cy+80-spring(k/540*1.2,14,0.3)*140;k?X.lineTo(370+k,y):X.moveTo(370+k,y);}X.stroke();
+  txt('x(t) = 1 − e^(−ζωt)(cos ω_d t + …)',cx,cy-110,22,'#cfd8ff','center','500');
+ }else if(i==4){ // onset peaks
+  for(let k=0;k<32;k++){const pk=k%4==0;const hgt=(pk?150:30+((k*37)%50))*ease(lt*2-k/40);const x=380+k*16;X.fillStyle=pk?'#ff5d8f':'#3b4a80';X.fillRect(x,cy+90-hgt,10,hgt);}
+  txt('onset_detect → peaks',cx,cy-115,22,'#cfd8ff');
+ }else if(i==5){ // subframes blending
+  for(let k=0;k<4;k++){X.globalAlpha=0.3;const x=cx-150+k*30+lt*40;X.beginPath();X.arc(x,cy,40,0,7);X.fillStyle='#5b7cff';X.fill();}
+  X.globalAlpha=1;txt('4 × subframes → tmix=frames=4',cx,cy+100,22,'#cfd8ff');
+ }else{ // beat contact sheet
+  for(let k=0;k<28;k++){const r=Math.floor(k/7),c=k%7;const a=ease(lt*3-k*0.08);X.globalAlpha=a;rr(380+c*76,cy-110+r*58,64,46,8);X.fillStyle=k<lt*14?'#2a3a70':'#161c33';X.fill();txt(''+(k+1),412+c*76,cy-87+r*58,16,'#9fb2ff');}
+ }
+ X.restore();
+}
+function draw(t){
+ const beat=t/BEAT,bp=(t%BEAT);bg(t,bp);
+ const half=t<14;const lt14=t%14;const i=Math.floor(lt14/2),lt=lt14-i*2;
+ if(half||true){
+  const s=steps[i];const ts=spring(lt,12,0.5);
+  X.globalAlpha=cl(lt*4,0,1);
+  txt(s[0],640,92-20*(1-ts),20,'#ff5d8f','center','800');
+  txt(s[1],640,135,32,'#ffffff','center','700');X.globalAlpha=1;
+  scene(i,lt,t);
+ }
+ if(!half){ // math recap overlay in second pass, lower band
+  const a=ease((t-14)*2)*ease((28-t)*3);X.globalAlpha=a*0.95;
+  rr(240,590,800,80,16);X.fillStyle='rgba(10,12,24,0.85)';X.fill();
+  const k=Math.floor((t-14)/4.7);const m=['120 BPM × 7 bars = 28 beats = 14 s','14 s × 60 fps × 4 subframes','= 3,360 browser renders'][Math.min(k,2)];
+  txt(m,640,630,28,k==2?'#5dffc0':'#cfd8ff','center','700');X.globalAlpha=1;
+ } else txt('every frame is a pure function of time',640,640,22,'#6c7aa8','center','500');
+ // beat dots
+ for(let k=0;k<28;k++){const cur=Math.floor(t/BEAT)%28===k;X.beginPath();X.arc(640-27*14+k*28,690,cur?6+4*Math.exp(-bp*8):3,0,7);X.fillStyle=cur?'#ff5d8f':(k<(t/BEAT)%28?'#5b7cff':'#2a3150');X.fill();}
+ txt('t = '+t.toFixed(3)+'s',1240,30,16,'#55608a','right','500');
+ txt('beat '+(Math.floor(beat)%28+1)+'/28',40,30,16,'#55608a','left','500');
+ // beat flash
+ X.fillStyle='rgba(255,93,143,'+0.08*Math.exp(-bp*10)+')';X.fillRect(0,0,1280,720);
+}
+window.seek=draw;
+function loop(){const t=(((performance.now()-t0)/1000+off)%DUR+DUR)%DUR;draw(t);requestAnimationFrame(loop);}
+requestAnimationFrame(loop);
+</script></body></html>

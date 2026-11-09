@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orbe — Seu dia em movimento</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:#000;overflow:hidden}body{display:grid;place-items:center}#stage{position:relative;width:1280px;height:720px;flex:none;transform-origin:center}canvas{display:block;width:1280px;height:720px}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="film" width="1280" height="720" aria-label="Vídeo vertical Orbe: simulação de gastos em mercado, posto de gasolina e restaurante."></canvas></div>
+<script>
+window.DUR=32;
+const canvas=document.getElementById('film'),ctx=canvas.getContext('2d');
+const stage=document.getElementById('stage');
+function resize(){stage.style.transform=`scale(${Math.min(innerWidth/1280,innerHeight/720)})`}
+addEventListener('resize',resize);resize();
+const offset=Number(new URLSearchParams(location.search).get('t'))||0;
+const W=450,H=800,green='#c6f875',white='#f4f5ee',muted='#939e9b';
+const clamp=x=>Math.max(0,Math.min(1,x));
+const ease=x=>1-Math.pow(1-clamp(x),3);
+const smooth=x=>{x=clamp(x);return x*x*(3-2*x)};
+const money=n=>'R$ '+n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const shops=[
+ {name:'Mercado',category:'COMPRAS DO DIA',headline:['O essencial','para sua rotina.'],amount:128.90,time:'09:12',color:'#c6f875',detail:'Frutas, pão e boas escolhas.',type:0},
+ {name:'Posto de gasolina',category:'PRÓXIMA PARADA',headline:['Energia para','seguir em frente.'],amount:100,time:'12:48',color:'#a4c8ff',detail:'Um tanque. Novos caminhos.',type:1},
+ {name:'Restaurante',category:'HORA DE UMA PAUSA',headline:['Um bom momento.','Mais um gasto.'],amount:58.50,time:'19:35',color:'#f2bda5',detail:'O sabor de encerrar o dia.',type:2}
+];
+function rr(x,y,w,h,r=16,fill,stroke){ctx.beginPath();ctx.roundRect(x,y,w,h,r);if(fill){ctx.fillStyle=fill;ctx.fill()}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.stroke()}}
+function text(s,x,y,size=16,color=white,weight=400,align='left'){
+ ctx.fillStyle=color;ctx.font=`${weight} ${size}px Arial, sans-serif`;ctx.textAlign=align;ctx.textBaseline='alphabetic';ctx.fillText(s,x,y);
+}
+function line(x1,y1,x2,y2,color,width=1){ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.stroke()}
+function circle(x,y,r,color,stroke){ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);if(color){ctx.fillStyle=color;ctx.fill()}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1.4;ctx.stroke()}}
+function orbitMark(x,y,size,color=green){
+ ctx.save();ctx.translate(x,y);ctx.strokeStyle=color;ctx.lineWidth=size*.1;
+ ctx.beginPath();ctx.ellipse(0,0,size*.45,size*.27,-.65,0,Math.PI*2);ctx.stroke();
+ circle(size*.31,-size*.25,size*.095,color);circle(0,0,size*.105,color);ctx.restore();
+}
+function icon(type,x,y,size,col){
+ ctx.save();ctx.translate(x,y);ctx.scale(size/60,size/60);
+ ctx.strokeStyle=col;ctx.lineWidth=3;ctx.lineCap='round';ctx.lineJoin='round';
+ if(type===0){
+  ctx.beginPath();ctx.moveTo(-25,-17);ctx.lineTo(-17,-17);ctx.lineTo(-10,12);ctx.lineTo(17,12);ctx.lineTo(24,-9);ctx.lineTo(-15,-9);ctx.stroke();
+  circle(-6,22,3,col);circle(15,22,3,col);line(-1,-7,-1,6,col,2);line(10,-7,10,6,col,2);
+ }else if(type===1){
+  rr(-21,-24,30,47,5,null,col);rr(-15,-17,18,13,2,null,col);
+  line(-26,24,14,24,col,3);ctx.beginPath();ctx.moveTo(9,-9);ctx.bezierCurveTo(30,-7,17,21,29,17);ctx.lineTo(29,-10);ctx.lineTo(20,-20);ctx.stroke();
+ }else{
+  circle(3,2,19,null,col);circle(3,2,12,null,col);line(-25,-22,-25,25,col,3);
+  line(-31,-22,-31,-9,col,2);line(-19,-22,-19,-9,col,2);line(-31,-9,-19,-9,col,2);
+  line(30,-22,30,25,col,3);
+ }ctx.restore();
+}
+function reveal(p,fn,dy=20){ctx.save();ctx.globalAlpha*=ease(p);ctx.translate(0,dy*(1-ease(p)));fn();ctx.restore()}
+function background(t){
+ ctx.fillStyle='#0b1211';ctx.fillRect(0,0,W,H);
+ const g=ctx.createRadialGradient(320+Math.sin(t*.3)*60,230,0,240,280,470);
+ g.addColorStop(0,'#1b3026');g.addColorStop(.65,'#101b17');g.addColorStop(1,'#0b1211');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+ ctx.save();ctx.globalAlpha=.12;
+ for(let i=0;i<4;i++){
+  ctx.strokeStyle='#70816b';ctx.lineWidth=.6;
+  ctx.beginPath();ctx.ellipse(470,320,150+i*65,260+i*50,-.32+t*.008,0,Math.PI*2);ctx.stroke();
+ }
+ ctx.restore();
+}
+function header(t){
+ orbitMark(43,48,29);
+ text('orbe',66,57,31,white,600);
+ circle(337,47,3.5,green);text('SEU DIA',350,51,10,muted,600);
+ line(28,81,422,81,'#ffffff16');
+}
+function footer(t,caption='SIMULAÇÃO ILUSTRATIVA'){
+ text(caption,28,756,9,'#6f7c75',500);
+ text('ORBE',422,756,9,'#6f7c75',600,'right');
+ rr(28,774,394,2,1,'#ffffff12');
+ rr(28,774,394*(t/window.DUR),2,1,green);
+}
+function intro(s){
+ reveal(s/.7,()=>{
+  text('UM DIA COM ORBE',28,126,11,green,700);
+  ['Cada gasto.','Uma história.'].forEach((v,i)=>text(v,28,183+i*56,49,white,600));
+  text('Uma nova',28,295,49,white,600);text('perspectiva.',28,351,49,green,600);
+ });
+ const p=ease((s-.5)/1);
+ ctx.save();ctx.globalAlpha=p;
+ const cx=225,cy=509;
+ ctx.strokeStyle='#c6f87524';ctx.lineWidth=1;
+ ctx.beginPath();ctx.ellipse(cx,cy,160,96,-.13,0,Math.PI*2);ctx.stroke();
+ ctx.beginPath();ctx.ellipse(cx,cy,109,72,.32,0,Math.PI*2);ctx.stroke();
+ const glow=ctx.createRadialGradient(cx,cy,0,cx,cy,105);glow.addColorStop(0,'#c6f87522');glow.addColorStop(1,'#c6f87500');
+ ctx.fillStyle=glow;ctx.fillRect(cx-110,cy-110,220,220);
+ circle(cx,cy,55,'#14221b','#c6f87545');orbitMark(cx,cy,65);
+ const positions=[[90,460],[363,479],[255,611]];
+ positions.forEach((pos,i)=>{
+  let x=pos[0],y=pos[1]+Math.sin(s*1.4+i*2)*5;
+  rr(x-33,y-33,66,66,20,'#1b2922','#ffffff15');icon(i,x,y,35,shops[i].color);
+ });
+ ctx.restore();
+ reveal((s-1.25)/.8,()=>{
+  text('Mercado. Posto. Restaurante.',225,685,17,white,500,'center');
+  text('Sua rotina acontece em cada escolha.',225,712,13,muted,400,'center');
+ });
+}
+function sceneIllustration(type,s,color){
+ const x=28,y=266,w=394,h=178;
+ rr(x,y,w,h,22,'#17241d','#ffffff10');
+ ctx.save();ctx.beginPath();ctx.roundRect(x,y,w,h,22);ctx.clip();
+ ctx.strokeStyle='#ffffff08';
+ for(let i=0;i<8;i++)line(28,285+i*23,422,285+i*23,'#ffffff05');
+ const dy=Math.sin(s*1.8)*2;
+ ctx.translate(0,dy);
+ if(type===0){
+  rr(103,294,246,129,9,'#233b2b');
+  rr(114,305,224,31,5,color);
+  text('MERCADO',226,326,14,'#23341d',700,'center');
+  for(let i=0;i<7;i++)rr(114+i*32,337,32,14,0,i%2?'#89aa56':color);
+  rr(124,365,80,58,3,'#102017');rr(216,365,55,58,3,'#102017');rr(283,365,53,58,3,'#102017');
+  line(245,365,245,423,'#4d6853',2);
+  for(let i=0;i<5;i++){circle(138+i*12,388+Math.sin(i)*3,6,i%2?'#de9973':green)}
+  rr(130,402,67,7,2,'#556945');
+  circle(304,381,7,'#c6f87555');circle(320,381,7,'#c6f87555');
+ }else if(type===1){
+  rr(90,296,266,22,6,color);rr(106,318,8,106,2,'#658575');rr(331,318,8,106,2,'#658575');
+  text('POSTO',225,311,11,'#203345',700,'center');
+  rr(141,344,61,80,8,'#263e48');rr(151,355,41,26,3,'#101e24');
+  text('100,00',171,373,11,color,600,'center');
+  rr(153,391,35,7,2,color);
+  ctx.beginPath();ctx.moveTo(202,367);ctx.bezierCurveTo(234,362,209,422,236,415);ctx.lineTo(236,367);ctx.strokeStyle=color;ctx.lineWidth=4;ctx.stroke();
+  rr(257,372,73,34,8,'#466359');rr(270,358,42,24,8,'#466359');
+  rr(277,362,27,13,3,'#1a2a25');circle(272,408,9,'#091411',color);circle(313,408,9,'#091411',color);
+ }else{
+  rr(107,293,236,133,10,'#3b3028');rr(118,307,214,27,5,color);text('RESTAURANTE',225,325,13,'#463428',700,'center');
+  for(let i=0;i<3;i++){
+   rr(122+i*74,347,59,58,8,'#17251d');
+   ctx.beginPath();ctx.moveTo(132+i*74,394);ctx.lineTo(172+i*74,355);ctx.strokeStyle='#ffffff0e';ctx.lineWidth=3;ctx.stroke();
+  }
+  rr(144,407,162,7,2,'#947b61');line(158,414,158,430,'#947b61',4);line(292,414,292,430,'#947b61',4);
+  circle(184,398,10,'#ddccb6');circle(263,398,10,'#ddccb6');
+  ctx.strokeStyle='#f2bda555';ctx.lineWidth=2;
+  for(let i=0;i<2;i++){ctx.beginPath();ctx.moveTo(207+i*13,397);ctx.bezierCurveTo(194+i*13,387,216+i*13,383,206+i*13,374);ctx.stroke()}
+ }
+ line(73,427,378,427,'#ffffff1d');
+ ctx.restore();
+ rr(43,281,33,33,10,'#0b1511');icon(type,59.5,297.5,20,color);
+}
+function spend(s,i){
+ const d=shops[i],confirmed=s>2.7;
+ reveal(s/.55,()=>{
+  text(`0${i+1} / 03  ·  ${d.category}`,28,122,10,d.color,700);
+  d.headline.forEach((v,j)=>text(v,28,173+j*44,37,white,600));
+  text(d.detail,28,245,14,muted);
+ });
+ reveal((s-.2)/.6,()=>sceneIllustration(i,s,d.color),28);
+ reveal((s-.45)/.6,()=>{
+  rr(28,465,394,145,20,'#edf1e7');
+  icon(i,57,493,27,'#304333');
+  text(d.name,80,498,17,'#263b2d',600);
+  text(d.time,402,497,12,'#6e7e70',400,'right');
+  const p=ease((s-.95)/1.6);
+  text(money(d.amount*p),48,556,43,'#122519',600);
+  circle(51,585,3.5,confirmed?'#426a30':'#aeb69c');
+  text(confirmed?'Gasto registrado na simulação':'Simulando gasto…',63,589,11,'#617059',500);
+  if(confirmed){
+   const q=clamp((s-2.7)/.6);ctx.save();ctx.globalAlpha=1-q;
+   rr(28-q*8,465-q*8,394+q*16,145+q*16,20,null,d.color);ctx.restore();
+  }
+ });
+ reveal((s-.9)/.6,()=>{
+  text('ACUMULADO DO DIA',28,647,10,muted,600);
+  let prev=shops.slice(0,i).reduce((a,b)=>a+b.amount,0);
+  let total=prev+d.amount*ease((s-.95)/1.6);
+  text(money(total),422,648,22,white,500,'right');
+  const bw=120;
+  shops.forEach((q,k)=>{
+   let active=k<=i;
+   rr(28+k*137,672,bw,49,12,active?'#23352a':'#ffffff04',active?'#ffffff0b':null);
+   icon(k,47+k*137,696,20,active?q.color:'#445149');
+   text(['Mercado','Posto','Restaurante'][k],64+k*137,700,10,active?white:'#657066',500);
+  });
+ });
+}
+function summary(s){
+ reveal(s/.6,()=>{
+  text('SEU DIA, EM PERSPECTIVA',28,124,11,green,700);
+  text('Três paradas.',28,179,40,white,600);
+  text('Um só olhar.',28,225,40,green,600);
+ });
+ reveal((s-.2)/.6,()=>{
+  rr(28,265,394,155,22,'#c6f875');
+  text('TOTAL DOS GASTOS SIMULADOS',48,298,10,'#476036',700);
+  text(money(287.4*ease((s-.3)/1.1)),48,358,49,'#182c14',600);
+  text('Um retrato da sua rotina.',48,393,14,'#405b31');
+  orbitMark(384,298,27,'#3e5c2f');
+ });
+ shops.forEach((d,i)=>reveal((s-.65-i*.16)/.55,()=>{
+  const y=446+i*79;
+  rr(28,y,394,68,15,'#19271f','#ffffff0b');
+  rr(42,y+13,42,42,12,'#ffffff06');icon(i,63,y+34,26,d.color);
+  text(d.name,97,y+29,15,white,500);text(d.time,97,y+49,11,muted);
+  text(money(d.amount),404,y+37,17,white,600,'right');
+ }));
+ reveal((s-1.3)/.7,()=>text('Cada escolha compõe o seu dia.',225,719,15,muted,400,'center'));
+}
+function end(s){
+ reveal(s/.8,()=>{
+  const glow=ctx.createRadialGradient(225,266,0,225,266,155);
+  glow.addColorStop(0,'#c6f87522');glow.addColorStop(1,'#c6f87500');ctx.fillStyle=glow;ctx.fillRect(40,90,370,350);
+  ctx.strokeStyle='#c6f87533';ctx.lineWidth=1;
+  ctx.beginPath();ctx.ellipse(225,258,130,86,-.4+s*.035,0,Math.PI*2);ctx.stroke();
+  orbitMark(225,258,122);
+  text('Sua rotina.',225,413,46,white,600,'center');
+  text('Seu Orbe.',225,469,46,green,600,'center');
+  text('Conheça uma nova perspectiva.',225,515,16,muted,400,'center');
+ });
+ reveal((s-.8)/.65,()=>{
+  rr(46,572,358,63,32,green);
+  text('Conheça o Orbe',211,611,19,'#192a14',700,'center');
+  line(344,603,362,603,'#192a14',2);
+  line(356,597,362,603,'#192a14',2);line(356,609,362,603,'#192a14',2);
+  text('lp.meuorbe.com.br',225,674,18,white,500,'center');
+ });
+}
+const segments=[{start:0,end:4.5,draw:intro},{start:4.5,end:10.5,draw:s=>spend(s,0)},{start:10.5,end:16.5,draw:s=>spend(s,1)},{start:16.5,end:22.5,draw:s=>spend(s,2)},{start:22.5,end:27.5,draw:summary},{start:27.5,end:32,draw:end}];
+let start;
+function frame(now){
+ if(start===undefined)start=now;
+ const t=((now-start)/1000+offset)%window.DUR;
+ ctx.setTransform(1,0,0,1,0,0);ctx.globalAlpha=1;ctx.fillStyle='#000';ctx.fillRect(0,0,1280,720);
+ ctx.save();ctx.translate(437.5,0);ctx.scale(.9,.9);
+ ctx.beginPath();ctx.rect(0,0,W,H);ctx.clip();
+ background(t);header(t);
+ const seg=segments.find(a=>t>=a.start&&t<a.end)||segments[0],s=t-seg.start;
+ const fadeOut=s>seg.end-seg.start-.3?1-smooth((s-(seg.end-seg.start-.3))/.3):1;
+ ctx.save();ctx.globalAlpha=fadeOut;seg.draw(s);ctx.restore();
+ footer(t);
+ if(t>31.7){ctx.fillStyle=`rgba(11,18,17,${smooth((t-31.7)/.3)})`;ctx.fillRect(0,0,W,H)}
+ ctx.restore();
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

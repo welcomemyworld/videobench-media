@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flowdesk 2.0 Launch</title>
+<!-- Note: external assets cannot be loaded here and real brands are trademarked, so this launch film uses a fictional SaaS ("Flowdesk") with all visuals drawn procedurally. -->
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=30;
+const cv=document.getElementById('c'),x=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),T0=parseFloat(q.get('t')||0)||0,start=performance.now();
+const F='-apple-system,"Segoe UI",Helvetica,Arial,sans-serif';
+const cl=v=>Math.max(0,Math.min(1,v));
+const eo=v=>1-Math.pow(1-cl(v),3);
+const eb=v=>{v=cl(v);const c=1.7;return 1+(c+1)*Math.pow(v-1,3)+c*Math.pow(v-1,2)};
+const ph=(t,a,b)=>cl((t-a)/(b-a));
+function rr(X,Y,w,h,r){x.beginPath();x.roundRect(X,Y,w,h,r);}
+function txt(s,X,Y,size,col,w=700,al='center',a=1){x.globalAlpha=a;x.fillStyle=col;x.font=w+' '+size+'px '+F;x.textAlign=al;x.textBaseline='middle';x.fillText(s,X,Y);x.globalAlpha=1;}
+function grad(c1,c2,X,Y,w,h){const g=x.createLinearGradient(X,Y,X+w,Y+h);g.addColorStop(0,c1);g.addColorStop(1,c2);return g;}
+const P1='#7c5cff',P2='#22d3ee',P3='#ff5ca8';
+function logo(X,Y,s,a=1,rot=0){x.save();x.globalAlpha=a;x.translate(X,Y);x.rotate(rot);x.scale(s,s);
+ rr(-40,-40,80,80,22);x.fillStyle=grad(P1,P2,-40,-40,80,80);x.fill();
+ x.strokeStyle='#fff';x.lineWidth=9;x.lineCap='round';
+ x.beginPath();x.moveTo(-18,-14);x.bezierCurveTo(0,-30,6,4,22,-12);x.stroke();
+ x.beginPath();x.moveTo(-18,10);x.bezierCurveTo(0,-6,6,28,22,12);x.globalAlpha*=.6;x.stroke();x.restore();}
+function bg(t){const g=x.createRadialGradient(640,360,0,640,360,800);g.addColorStop(0,'#14112a');g.addColorStop(1,'#05050b');x.fillStyle=g;x.fillRect(0,0,1280,720);
+ for(let i=0;i<3;i++){const a=t*.3+i*2.1,bx=640+Math.cos(a)*380,by=360+Math.sin(a*1.3)*200;const r=x.createRadialGradient(bx,by,0,bx,by,420);
+ r.addColorStop(0,[P1,P2,P3][i]+'33');r.addColorStop(1,'#0000');x.fillStyle=r;x.fillRect(0,0,1280,720);}
+ x.strokeStyle='rgba(255,255,255,.035)';x.lineWidth=1;const o=(t*20)%40;
+ for(let i=-40;i<1320;i+=40){x.beginPath();x.moveTo(i+o,0);x.lineTo(i+o,720);x.stroke();}
+ for(let j=-40;j<760;j+=40){x.beginPath();x.moveTo(0,j+o);x.lineTo(1280,j+o);x.stroke();}}
+function win(X,Y,w,h,a=1){x.save();x.globalAlpha=a;x.shadowColor='rgba(0,0,0,.6)';x.shadowBlur=40;x.shadowOffsetY=20;rr(X,Y,w,h,16);x.fillStyle='#16151f';x.fill();x.shadowColor='transparent';
+ x.strokeStyle='rgba(255,255,255,.1)';x.stroke();rr(X,Y,w,36,[16,16,0,0]);x.fillStyle='#1d1c28';x.fill();
+ ['#ff5f57','#febc2e','#28c840'].forEach((c,i)=>{x.beginPath();x.arc(X+20+i*18,Y+18,5.5,0,7);x.fillStyle=c;x.fill();});x.restore();}
+function cursor(X,Y,click){x.save();x.translate(X,Y);if(click>0){x.beginPath();x.arc(0,0,10+click*25,0,7);x.strokeStyle='rgba(124,92,255,'+(1-click)+')';x.lineWidth=3;x.stroke();}
+ x.beginPath();x.moveTo(0,0);x.lineTo(0,22);x.lineTo(6,17);x.lineTo(11,27);x.lineTo(15,25);x.lineTo(10,15);x.lineTo(17,15);x.closePath();x.fillStyle='#fff';x.fill();x.strokeStyle='#000';x.lineWidth=1.5;x.stroke();x.restore();}
+function kicker(s,t,a,Y=90){const p=eo(ph(t,a,a+.6));const w=x.measureText?0:0;x.font='700 15px '+F;const tw=x.measureText(s).width+36;
+ x.globalAlpha=p;rr(640-tw/2,Y-16+(1-p)*15,tw,32,16);x.fillStyle='rgba(124,92,255,.18)';x.fill();x.strokeStyle='rgba(124,92,255,.6)';x.stroke();x.globalAlpha=1;
+ txt(s,640,Y+(1-p)*15,15,'#c9bcff',700,'center',p);}
+function headline(s,t,a,Y,size=52){const words=s.split(' ');x.font='800 '+size+'px '+F;let tot=x.measureText(s).width,cx=640-tot/2;
+ words.forEach((w,i)=>{const p=eo(ph(t,a+i*.08,a+i*.08+.5));const ww=x.measureText(w+' ').width;txt(w,cx,Y+(1-p)*30,size,'#fff',800,'left',p);cx+=ww;});}
+// Scenes
+function s1(t){ // logo reveal
+ const p=eb(ph(t,.2,1.1));logo(640,330-eo(ph(t,1.6,2.3))*40,p*1.3,cl(t*3),(1-p)*-1);
+ for(let i=0;i<12;i++){const a=i/12*6.283,r=eo(ph(t,.3,1.4))*160;x.globalAlpha=1-ph(t,.6,1.5);x.beginPath();x.arc(640+Math.cos(a)*r,330+Math.sin(a)*r,4,0,7);x.fillStyle=[P1,P2,P3][i%3];x.fill();}x.globalAlpha=1;
+ const q2=eo(ph(t,1.6,2.3));txt('Flowdesk',640,400+(1-q2)*20,64,'#fff',800,'center',q2);
+ txt('2.0',780,372+(1-q2)*20,0,'#fff');
+ const q3=eo(ph(t,2.2,2.9));txt('Work, finally in flow.',640,460,26,'#a9a6c6',500,'center',q3);}
+function s2(t){ // problem
+ kicker('THE PROBLEM',t,.1);headline('Too many tabs. Too many tools.',t,.3,150,50);
+ const names=['Email','Chat','Docs','Sheets','Tasks','Calendar','Wiki','Tickets'];
+ names.forEach((n,i)=>{const p=eb(ph(t,.5+i*.12,1.1+i*.12));const ox=200+(i%4)*270+Math.sin(t*2+i)*14,oy=290+Math.floor(i/4)*190+Math.cos(t*1.7+i)*10;
+  x.save();x.translate(ox,oy);x.rotate(Math.sin(i*3)*.12+Math.sin(t+i)*.04);x.scale(p,p);win(-110,-70,220,140);
+  txt(n,0,-6,22,'#fff',700);for(let k=0;k<2;k++){rr(-80,22+k*16,160-k*50,7,4);x.fillStyle='rgba(255,255,255,.12)';x.fill();}
+  const nb=Math.floor(3+i*7%23);x.beginPath();x.arc(100,-62,15,0,7);x.fillStyle=P3;x.fill();txt(nb+'',100,-62,13,'#fff',800);x.restore();});
+ const f=ph(t,4.2,5);if(f>0){x.fillStyle='rgba(5,5,11,'+f+')';x.fillRect(0,0,1280,720);}}
+const cols=[['To do',['Brand refresh','Q3 roadmap','User interviews']],['In progress',['Onboarding v2','Pricing page']],['Done',['API docs','Billing fix']]];
+function s3(t){ // kanban
+ kicker('ONE WORKSPACE',t,.1,60);headline('Plan everything in one place.',t,.2,110,44);
+ const p=eo(ph(t,.4,1.2));x.save();x.translate(0,(1-p)*80);const W=980,X=150,Y=160;win(X,Y,W,500,p);x.globalAlpha=p;
+ rr(X,Y+36,180,464,[0,0,0,16]);x.fillStyle='#12111a';x.fill();logo(X+30,Y+66,.3);txt('Flowdesk',X+52,Y+66,15,'#fff',700,'left');
+ ['Home','My tasks','Projects','Inbox','Flow AI'].forEach((s,i)=>{if(i==2){rr(X+12,Y+96+i*36,156,30,8);x.fillStyle='rgba(124,92,255,.25)';x.fill();}txt(s,X+28,Y+111+i*36,14,i==2?'#fff':'#8d8aa8',500,'left');});
+ const mt=ph(t,2.4,4.2),move=eo(mt);
+ cols.forEach((c,ci)=>{const cx=X+200+ci*255;txt(c[0],cx,Y+66,14,'#a9a6c6',700,'left');txt(''+(c[1].length+(ci==2?(move>.99?1:0):0)-(ci==1&&move>.99?1:0)),cx+120,Y+66,13,'#666',700,'left');
+  c[1].forEach((s,k)=>{if(ci==1&&k==0&&mt>0)return;const ap=eb(ph(t,.8+ci*.15+k*.1,1.3+ci*.15+k*.1));card(cx,Y+86+k*86,s,ci,ap);});});
+ const sx=X+200+255,sy=Y+86,ex=X+200+510,ey=Y+86+2*86;
+ if(mt>0){const cx=sx+(ex-sx)*move,cy=sy+(ey-sy)*move-Math.sin(move*3.14)*40;x.save();x.translate(cx+115,cy+36);x.rotate(Math.sin(move*3.14)*.06);card(-115,-36,'Onboarding v2',move>.99?2:1,1,true);x.restore();}
+ let cxp,cyp;if(t<2.4){const k=eo(ph(t,1.4,2.4));cxp=900-(900-(sx+150))*k;cyp=620-(620-(sy+40))*k;}else{cxp=sx+150+(ex-sx)*move;cyp=sy+40+(ey-sy)*move-Math.sin(move*3.14)*40;}
+ cursor(cxp,cyp,t>2.3&&t<2.7?ph(t,2.3,2.7):0);x.restore();
+ if(move>.99){const c=eo(ph(t,4.3,4.8));for(let i=0;i<14;i++){const a=i*.45,r=c*70;x.globalAlpha=1-c;x.fillStyle=[P1,P2,P3][i%3];x.fillRect(ex+115+Math.cos(a)*r,ey+160+Math.sin(a)*r,6,6);}x.globalAlpha=1;}}
+function card(X,Y,s,ci,a,lift){x.save();x.globalAlpha*=a;if(lift){x.shadowColor='rgba(124,92,255,.5)';x.shadowBlur=30;}rr(X,Y,230,72,10);x.fillStyle='#211f2e';x.fill();x.shadowColor='transparent';x.strokeStyle=lift?P1:'rgba(255,255,255,.08)';x.stroke();
+ rr(X+14,Y+14,44,6,3);x.fillStyle=[P3,'#febc2e','#28c840'][ci];x.fill();txt(s,X+14,Y+38,15,'#fff',600,'left');
+ x.beginPath();x.arc(X+206,Y+50,9,0,7);x.fillStyle=[P1,P2,P3][s.length%3];x.fill();rr(X+14,Y+54,70,5,3);x.fillStyle='rgba(255,255,255,.1)';x.fill();x.restore();}
+function s4(t){ // AI
+ kicker('NEW · FLOW AI',t,.1,60);headline('Describe it. Flow AI plans it.',t,.2,110,44);
+ const p=eo(ph(t,.4,1));x.globalAlpha=p;const prompt='Plan our product launch for next Friday';const n=Math.floor(cl((t-1)/1.6)*prompt.length);
+ x.save();x.shadowColor=P1;x.shadowBlur=30+Math.sin(t*4)*10;rr(240,170,800,64,32);x.fillStyle='#1a1826';x.fill();x.restore();
+ x.globalAlpha=p;rr(240,170,800,64,32);x.strokeStyle=grad(P1,P2,240,0,800,0);x.lineWidth=2;x.stroke();x.lineWidth=1;
+ txt('✦',276,202,22,P2,700);txt(prompt.slice(0,n)+(Math.floor(t*3)%2&&n<prompt.length?'|':''),300,202,20,'#fff',500,'left');
+ rr(976,180,48,44,22);x.fillStyle=grad(P1,P2,976,180,48,44);x.fill();txt('→',1000,202,22,'#fff',700);x.globalAlpha=1;
+ const tasks=[['Finalize launch copy','Mon','Marketing'],['Record demo video','Tue','Product'],['Prep press kit','Wed','PR'],['QA release build','Thu','Eng'],['Ship & announce 🚀','Fri','All hands']];
+ tasks.forEach((tk,i)=>{const a=3+i*.28,pp=eo(ph(t,a,a+.5));if(pp<=0)return;const Y=260+i*72;x.globalAlpha=pp;x.save();x.translate((1-pp)*-40,0);
+  rr(240,Y,800,60,12);x.fillStyle='rgba(255,255,255,.04)';x.fill();x.strokeStyle='rgba(255,255,255,.08)';x.stroke();
+  const ck=ph(t,a+.4,a+.7);x.beginPath();x.arc(272,Y+30,11,0,7);x.strokeStyle=P2;x.lineWidth=2;x.stroke();if(ck>0){x.beginPath();x.moveTo(266,Y+30);x.lineTo(271,Y+35);x.lineTo(279,Y+25);x.globalAlpha=pp*ck;x.stroke();x.globalAlpha=pp;}x.lineWidth=1;
+  txt(tk[0],300,Y+30,18,'#fff',600,'left');rr(820,Y+17,100,26,13);x.fillStyle='rgba(124,92,255,.2)';x.fill();txt(tk[2],870,Y+30,13,'#c9bcff',600);txt(tk[1],1010,Y+30,15,'#8d8aa8',600,'right');x.restore();});x.globalAlpha=1;}
+function s5(t){ // stats
+ kicker('WHY TEAMS SWITCH',t,.1,110);headline('Less busywork. More shipping.',t,.2,170,48);
+ const st=[[3,'x','faster planning',P1],[42,'%','fewer meetings',P2],[10,'k+','teams on board',P3]];
+ st.forEach((s,i)=>{const a=.6+i*.2,p=eb(ph(t,a,a+.6)),X=260+i*380,Y=400;x.save();x.translate(X,Y);x.scale(p,p);
+  rr(-160,-110,320,220,20);x.fillStyle='rgba(255,255,255,.04)';x.fill();x.strokeStyle=s[3]+'88';x.stroke();
+  const v=Math.round(s[0]*eo(ph(t,a+.2,a+1.6)));x.font='800 76px '+F;txt(v+s[1],0,-20,76,'#fff',800);
+  txt(s[2],0,50,18,'#a9a6c6',500);rr(-60,80,120,4,2);x.fillStyle=s[3];x.fill();x.restore();});
+ const sp=eo(ph(t,2.4,3.4));txt('“We replaced five tools with Flowdesk in a week.”',640,600,22,'#e7e5f5',500,'center',sp);txt('— Head of Ops, a fast-growing startup',640,636,15,'#8d8aa8',500,'center',sp);}
+function s6(t){ // CTA
+ const p=eb(ph(t,.1,.9));logo(640,250,p*1.1,1);
+ const q1=eo(ph(t,.5,1.1));txt('Flowdesk 2.0',640,360+(1-q1)*20,72,'#fff',800,'center',q1);
+ const q2=eo(ph(t,.9,1.5));txt('Available today. Free for teams up to 10.',640,425,24,'#a9a6c6',500,'center',q2);
+ const q3=eb(ph(t,1.3,2));x.save();x.translate(640,510);x.scale(q3,q3);x.shadowColor=P1;x.shadowBlur=30+Math.sin(t*4)*12;rr(-150,-30,300,60,30);x.fillStyle=grad(P1,P2,-150,0,300,0);x.fill();x.restore();
+ if(q3>.3)txt('Start free  →',640,510,22,'#fff',700,'center',cl(q3));
+ txt('flowdesk.app',640,590,18,'#6f6c8c',600,'center',eo(ph(t,1.8,2.4)));}
+const scenes=[[0,4,s1],[4,9,s2],[9,15,s3],[15,21,s4],[21,25.5,s5],[25.5,30,s6]];
+function frame(){const t=((performance.now()-start)/1000+T0)%DUR;bg(t);
+ for(const [a,b,f] of scenes){if(t>=a-.01&&t<b){const lt=t-a,out=ph(t,b-.4,b),inn=ph(t,a,a+.3);
+  x.save();const s=1+out*.06;x.translate(640,360);x.scale(s,s);x.translate(-640,-360);x.globalAlpha=1;f(lt);x.restore();
+  if(out>0||inn<1){x.fillStyle='rgba(5,5,11,'+Math.max(out,a>0?1-inn:0)+')';x.fillRect(0,0,1280,720);}}}
+ // progress bar & vignette
+ const v=x.createRadialGradient(640,360,300,640,360,800);v.addColorStop(0,'#0000');v.addColorStop(1,'rgba(0,0,0,.55)');x.fillStyle=v;x.fillRect(0,0,1280,720);
+ x.fillStyle=grad(P1,P2,0,0,1280,0);x.fillRect(0,716,1280*t/DUR,4);
+ requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

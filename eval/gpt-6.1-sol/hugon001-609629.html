@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mentis — L’esprit libre</title>
+<style>
+*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#000}body{display:flex;align-items:center;justify-content:center}canvas{display:block;width:min(100vw,177.7778vh);height:min(56.25vw,100vh)}
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+window.DUR=15;
+const c=document.getElementById('stage'),g=c.getContext('2d');
+const W=1280,H=720,TAU=Math.PI*2;
+const mint='#c9ff70',white='#f5f6ee',muted='#92998f',violet='#a993ff';
+const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const ease=v=>1-Math.pow(1-clamp(v),3);
+const smooth=v=>{v=clamp(v);return v*v*(3-2*v)};
+const lerp=(a,b,v)=>a+(b-a)*v;
+const rand=n=>{let x=Math.sin(n*127.1+311.7)*43758.5453;return x-Math.floor(x)};
+let T=0;
+function rr(x,y,w,h,r=16){g.beginPath();g.roundRect(x,y,w,h,r)}
+function box(x,y,w,h,r,fill,stroke){rr(x,y,w,h,r);if(fill){g.fillStyle=fill;g.fill()}if(stroke){g.strokeStyle=stroke;g.lineWidth=1;g.stroke()}}
+function text(s,x,y,size=20,color=white,weight=500,align='left'){
+g.fillStyle=color;g.font=`${weight} ${size}px Arial, Helvetica, sans-serif`;g.textAlign=align;g.textBaseline='alphabetic';g.fillText(s,x,y);
+}
+function line(x1,y1,x2,y2,color,width=1){g.beginPath();g.moveTo(x1,y1);g.lineTo(x2,y2);g.strokeStyle=color;g.lineWidth=width;g.stroke()}
+function circle(x,y,r,color){g.beginPath();g.arc(x,y,r,0,TAU);g.fillStyle=color;g.fill()}
+function pill(label,x,y,w,color=mint,bg='#202b1b'){box(x,y,w,30,15,bg);text(label,x+w/2,y+20,12,color,700,'center')}
+function mark(x,y,s,color=mint){
+g.save();g.translate(x,y);g.scale(s/100,s/100);g.lineCap='round';g.lineJoin='round';
+g.strokeStyle=color;g.lineWidth=11;
+g.beginPath();g.moveTo(-34,29);g.lineTo(-34,-26);g.lineTo(0,9);g.lineTo(34,-26);g.lineTo(34,29);g.stroke();
+g.restore();
+}
+function arrow(x,y,s=18,color=mint){line(x-s*.55,y+s*.55,x+s*.55,y-s*.55,color,2);line(x-s*.4,y-s*.55,x+s*.55,y-s*.55,color,2);line(x+s*.55,y-s*.55,x+s*.55,y+s*.4,color,2)}
+function glow(x,y,r,color){
+let gr=g.createRadialGradient(x,y,0,x,y,r);gr.addColorStop(0,color);gr.addColorStop(1,'transparent');g.fillStyle=gr;g.fillRect(x-r,y-r,r*2,r*2)
+}
+function icon(kind,x,y,color=mint,s=20){
+g.save();g.translate(x,y);g.strokeStyle=color;g.lineWidth=1.7;g.lineCap='round';g.lineJoin='round';
+if(kind==='spark'){g.beginPath();g.moveTo(0,-s/2);g.quadraticCurveTo(1,-1,s/2,0);g.quadraticCurveTo(1,1,0,s/2);g.quadraticCurveTo(-1,1,-s/2,0);g.quadraticCurveTo(-1,-1,0,-s/2);g.stroke()}
+if(kind==='check'){g.beginPath();g.moveTo(-s/3,0);g.lineTo(-1,s/4);g.lineTo(s/3,-s/4);g.stroke()}
+if(kind==='plus'){line(-s/3,0,s/3,0,color,1.7);line(0,-s/3,0,s/3,color,1.7)}
+if(kind==='grid'){for(let a=0;a<2;a++)for(let b=0;b<2;b++)box(-8+a*10,-8+b*10,6,6,1,null,color)}
+g.restore()
+}
+function title(lines,x,y,size,u,color=white){
+lines.forEach((s,i)=>{
+let p=ease((u-.1-i*.1)/.7);
+g.save();g.beginPath();g.rect(x-3,y+i*(size+3)-size-10,660,size+15);g.clip();
+g.globalAlpha*=p;text(s,x,y+i*(size+3)+(1-p)*size,size,color,800);g.restore()
+})
+}
+function eyebrow(s,x,y,u){g.save();g.globalAlpha*=ease(u/.4);line(x,y-5,x+25,y-5,mint,2);text(s,x+38,y,12,mint,700);g.restore()}
+function feature(s,x,y,u,delay=1){g.save();let p=ease((u-delay)/.5);g.globalAlpha*=p;g.translate(0,(1-p)*15);icon('check',x+11,y-5,mint,16);text(s,x+34,y,17,'#c8cfc2',500);g.restore()}
+const noise=document.createElement('canvas');noise.width=320;noise.height=180;
+const ng=noise.getContext('2d'),nd=ng.createImageData(320,180);
+for(let i=0;i<nd.data.length;i+=4){let v=rand(i)*255;nd.data[i]=nd.data[i+1]=nd.data[i+2]=v;nd.data[i+3]=15}ng.putImageData(nd,0,0);
+function background(t){
+g.fillStyle='#080b09';g.fillRect(0,0,W,H);
+glow(960+Math.sin(t*.4)*100,300,530,'rgba(109,148,69,.13)');
+glow(330+Math.cos(t*.3)*100,610,480,'rgba(93,67,149,.12)');
+g.strokeStyle='rgba(205,236,185,.035)';g.lineWidth=1;
+for(let x=0;x<W;x+=80)line(x,95,x,650,'rgba(205,236,185,.035)');
+for(let y=95;y<650;y+=80)line(0,y,W,y,'rgba(205,236,185,.035)');
+for(let i=0;i<45;i++){let x=(rand(i+10)*W+t*(4+rand(i)*10))%W,y=115+rand(i+100)*510;circle(x,y,rand(i+200)*1.5+.4,`rgba(211,244,185,${.12+rand(i)*.15})`)}
+g.save();g.globalAlpha=.35;g.drawImage(noise,0,0,W,H);g.restore();
+}
+function chrome(t){
+mark(83,54,35);text('mentis',112,64,30,white,700);
+const labels=['L’ESPRIT LIBRE','CAPTUREZ L’INSTANT','RELIEZ VOS IDÉES','TROUVEZ VOTRE ÉLAN','ET CE N’EST QUE LE DÉBUT'];
+text(labels[Math.min(4,Math.floor(t/3))],1208,59,11,'#b8c2b0',700,'right');
+line(72,88,1208,88,'#262c24');
+text('PENSER MIEUX. ALLER PLUS LOIN.',72,673,10,'#9da894',700);
+text('MENTIS / LANCEMENT',1208,673,10,'#9da894',700,'right');
+for(let i=0;i<5;i++){let x=510+i*55;box(x,669,42,3,2,'#30372c');let v=clamp((t-i*3)/3);if(v>0)box(x,669,Math.max(1,42*v),3,2,mint)}
+}
+function orbit(x,y,u,final=false){
+g.save();g.translate(x,y);
+let p=ease(u/.8);g.scale(.65+.35*p,.65+.35*p);g.globalAlpha*=p;
+glow(0,0,260,'rgba(187,255,103,.12)');
+for(let i=0;i<3;i++){
+g.save();g.rotate(T*(.13+i*.045)+i*.7);
+g.scale(1,.64+i*.1);g.beginPath();g.arc(0,0,175+i*27,.05,TAU-.5);g.strokeStyle=i===1?'rgba(173,146,255,.45)':'rgba(199,255,122,.25)';g.lineWidth=i===1?1.5:1;g.stroke();
+let a=T*(.4+i*.13)+i*2;
+circle(Math.cos(a)*(175+i*27),Math.sin(a)*(175+i*27),i===1?5:3,i===1?violet:mint);g.restore()
+}
+g.save();g.rotate(Math.sin(T*.7)*.07);
+g.shadowBlur=65;g.shadowColor='rgba(161,223,75,.24)';
+let grad=g.createLinearGradient(-90,-90,90,100);grad.addColorStop(0,'#38462a');grad.addColorStop(.5,'#182015');grad.addColorStop(1,'#0d120b');
+box(-91,-91,182,182,43,grad,'#536747');g.shadowBlur=0;
+box(-83,-83,166,166,36,null,'rgba(233,255,214,.08)');mark(0,1,128);
+g.restore();
+for(let i=0;i<16;i++){let a=i/16*TAU+T*.07;line(Math.cos(a)*248,Math.sin(a)*248,Math.cos(a)*253,Math.sin(a)*253,'#46523d',1)}
+if(!final){
+g.save();g.translate(-170,-136+Math.sin(T*1.4)*6);box(-51,-20,124,40,20,'#191d25','#4a435f');icon('spark',-29,0,violet,17);text('Une idée',-13,5,14,white,600);g.restore();
+g.save();g.translate(146,140+Math.cos(T*1.1)*7);box(-61,-20,130,40,20,'#242f1a','#4a6134');icon('check',-39,0,mint,17);text('Un déclic',-21,5,14,white,600);g.restore()
+}
+g.restore()
+}
+function appShell(x,y,w,h,u,label='Votre espace'){
+let p=ease(u/.6);
+g.save();g.translate(x+(1-p)*100,y+(1-p)*30);g.globalAlpha*=p;g.rotate((1-p)*.06);
+g.shadowColor='rgba(0,0,0,.5)';g.shadowBlur=45;g.shadowOffsetY=22;
+box(0,0,w,h,25,'#111710','#3a4433');g.shadowBlur=0;g.shadowOffsetY=0;
+box(7,7,w-14,h-14,20,'#141a12','#242d20');
+circle(24,25,3,'#526348');circle(35,25,3,'#374130');circle(46,25,3,'#374130');
+text('mentis',w/2,30,13,'#a4b19a',700,'center');
+line(8,46,w-8,46,'#2b3525');
+mark(30,75,24);text(label,52,81,17,white,600);
+box(w-42,61,26,26,13,'#c9ff70');text('M',w-29,79,11,'#172010',700,'center');
+}
+function shellEnd(){g.restore()}
+function cursor(x,y,active){
+g.save();g.translate(x,y);g.shadowColor='#000';g.shadowBlur=8;
+g.beginPath();g.moveTo(0,0);g.lineTo(0,20);g.lineTo(5,15);g.lineTo(11,25);g.lineTo(16,22);g.lineTo(10,13);g.lineTo(18,12);g.closePath();g.fillStyle=white;g.fill();g.shadowBlur=0;g.strokeStyle='#0a1007';g.lineWidth=1.5;g.stroke();
+if(active>0){g.beginPath();g.arc(0,0,9+active*25,0,TAU);g.strokeStyle=`rgba(201,255,112,${1-active})`;g.lineWidth=2;g.stroke()}g.restore()
+}
+function scene0(u){
+eyebrow('BIENVENUE DANS VOTRE PROCHAIN ÉLAN',74,191,u);
+title(['Vos idées.','Sans limites.'],70,301,88,u);
+g.save();g.globalAlpha*=ease((u-.7)/.5);text('Moins de bruit. Plus de possibilités.',75,465,23,'#b8c2b0');g.restore();
+let p=ease((u-1)/.6);g.save();g.globalAlpha*=p;box(74,513,229,48,24,mint);text('Voici Mentis',97,544,17,'#16200d',700);arrow(274,537,15,'#16200d');g.restore();
+orbit(955,366,u);
+text('01 / UNE NOUVELLE PERSPECTIVE',75,612,10,'#67755e',700);
+}
+function capture(u){
+eyebrow('01 — CAPTURER',74,182,u);
+title(['Une pensée.','Mille possibles.'],70,283,69,u);
+g.save();g.globalAlpha*=ease((u-.6)/.5);text('Attrapez l’idée avant qu’elle ne s’envole.',75,429,21,'#b8c2b0');g.restore();
+feature('Notes, inspirations, petits déclics.',75,490,u,.8);
+feature('Tout commence au même endroit.',75,527,u,1);
+appShell(735,124,470,494,u,'Vos idées');
+text('Bonjour, vous.',25,128,27,white,700);text('Qu’avez-vous en tête aujourd’hui ?',25,155,13,'#a2af96');
+let typed='Créer quelque chose d’inoubliable.';
+box(23,179,424,100,15,'#202a1a','#516d37');
+text(typed.slice(0,Math.floor(clamp((u-.4)/.85)*typed.length)),40,212,16,white,500);
+if(u<1.4&&Math.sin(T*12)>0)line(40+Math.min(typed.length,Math.floor(clamp((u-.4)/.85)*typed.length))*7.8,198,40+Math.min(typed.length,Math.floor(clamp((u-.4)/.85)*typed.length))*7.8,216,mint,1);
+icon('plus',44,251,'#9fac93',18);pill('Capturer',338,235,94,mint,'#354826');
+let p=ease((u-1.1)/.45);
+g.save();g.globalAlpha*=p;g.translate(0,(1-p)*15);
+box(23,296,424,69,13,'#211e2c','#484056');icon('spark',47,320,violet,20);
+text('L’idée prend forme.',67,325,15,white,600);text('Un espace pour votre prochain grand projet.',40,347,12,'#b1a9c4');g.restore();
+text('VOTRE COLLECTION',25,397,10,'#8e9f80',700);
+for(let i=0;i<3;i++){let x=24+i*145;box(x,414,134,55,10,i===0?'#29381c':'#1c2418');text(['Projet créatif','À explorer','Inspirations'][i],x+11,437,12,white,600);text(['1 nouvelle idée','6 pistes','12 notes'][i],x+11,456,10,'#91a283')}
+shellEnd();
+let cp=ease((u-.8)/.45);cursor(lerp(1152,1130,cp),lerp(441,375,cp),u>1.2&&u<1.55?(u-1.2)/.35:0);
+}
+function organize(u){
+eyebrow('02 — CONNECTER',74,182,u);
+title(['Tout','s’aligne.'],70,294,89,u);
+g.save();g.globalAlpha*=ease((u-.5)/.5);text('Vos idées trouvent leur place.',75,438,22,'#b8c2b0');g.restore();
+feature('Reliez les points.',75,495,u,.8);feature('Faites émerger le prochain pas.',75,532,u,1);
+appShell(715,124,490,494,u,'Votre constellation');
+text('Un projet. Une vision.',24,130,25,white,700);
+pill('Vue d’ensemble',24,149,123);
+let cx=246,cy=294;
+let nodes=[{x:77,y:248,s:'Inspirations',sub:'Le point de départ',col:violet},{x:379,y:226,s:'Les idées',sub:'Explorer sans limites',col:mint},{x:118,y:392,s:'Prochain pas',sub:'Donner vie au projet',col:mint},{x:365,y:388,s:'Objectif',sub:'Créer un impact',col:violet}];
+nodes.forEach((n,i)=>{
+let p=ease((u-.25-i*.12)/.6),nx=lerp(cx,n.x,p),ny=lerp(cy,n.y,p);
+line(cx,cy,nx,ny,'#47543b',1);
+let a=(T*.55+i*.22)%1;circle(lerp(cx,nx,a),lerp(cy,ny,a),2,n.col);
+g.save();g.globalAlpha*=p;box(nx-67,ny-29,134,60,12,n.col===mint?'#24311a':'#252031',n.col===mint?'#496435':'#5b4a75');
+text(n.s,nx,ny-3,13,white,700,'center');text(n.sub,nx,ny+17,9,'#aeb5a6',500,'center');g.restore()
+});
+glow(cx,cy,85,'rgba(201,255,112,.1)');box(cx-47,cy-47,94,94,23,'#c9ff70');mark(cx,cy-6,49,'#233514');text('MON PROJET',cx,cy+29,9,'#233514',700,'center');
+line(24,443,466,443,'#2d3826');icon('spark',35,464,mint,15);text('De l’intuition à l’action.',53,469,13,'#bbc9af');
+shellEnd();
+let p=ease((u-1.3)/.6);g.save();g.globalAlpha*=p;g.translate(0,(1-p)*12);
+box(640,528,293,58,16,'#c9ff70');icon('check',663,557,'#21320f',20);text('Votre prochain pas est prêt.',683,562,15,'#21320f',700);g.restore()
+}
+function focus(u){
+eyebrow('03 — AVANCER',74,182,u);
+title(['Passez à','l’essentiel.'],70,291,77,u);
+g.save();g.globalAlpha*=ease((u-.6)/.4);text('Une intention. Toute votre attention.',75,443,21,'#b8c2b0');g.restore();
+feature('Coupez le bruit.',75,501,u,.8);feature('Retrouvez votre rythme.',75,537,u,1);
+appShell(755,124,430,494,u,'Mode concentration');
+pill('VOTRE MOMENT',141,111,149);
+const cx=215,cy=268,r=111;
+glow(cx,cy,150,'rgba(190,255,95,.075)');
+g.beginPath();g.arc(cx,cy,r,0,TAU);g.strokeStyle='#303d26';g.lineWidth=6;g.stroke();
+let progress=.70+clamp(u/3)*.17;
+g.beginPath();g.arc(cx,cy,r,-Math.PI/2,-Math.PI/2+TAU*progress);g.strokeStyle=mint;g.lineWidth=6;g.lineCap='round';g.stroke();
+let a=-Math.PI/2+TAU*progress;circle(cx+Math.cos(a)*r,cy+Math.sin(a)*r,6,white);
+for(let i=0;i<60;i++){let z=i/60*TAU;line(cx+Math.cos(z)*97,cy+Math.sin(z)*97,cx+Math.cos(z)*(i%5===0?89:94),cy+Math.sin(z)*(i%5===0?89:94),'#647451',1)}
+const sec=25-Math.floor(u);text('24:'+String(sec).padStart(2,'0'),cx,cy+12,56,white,700,'center');text('RESPIRER. CRÉER. AVANCER.',cx,cy+40,9,'#98ad84',700,'center');
+text('Donner vie à mon projet',cx,413,18,white,600,'center');
+box(127,435,176,35,18,'#26361c');text('Dans votre bulle',215,458,12,mint,600,'center');
+for(let i=0;i<3;i++){let hh=8+Math.sin(T*4+i*.8)*5;box(283+i*5,451-hh/2,2,hh,1,mint)}
+shellEnd();
+}
+function ending(u){
+let p=ease(u/.6);
+g.save();g.globalAlpha*=p;
+orbit(981,354,u,true);
+eyebrow('L’ESPRIT LIBRE. LE CHAMP DES POSSIBLES.',74,193,u);
+title(['C’est votre','moment.'],70,299,87,u);
+g.save();g.globalAlpha*=ease((u-.7)/.5);text('Faites place à ce qui compte.',76,463,25,'#b8c2b0');g.restore();
+let q=ease((u-.9)/.5);g.save();g.globalAlpha*=q;g.translate(0,(1-q)*20);
+box(75,507,258,55,28,mint);text('Découvrez Mentis',99,542,18,'#1b2b0d',700);arrow(305,535,18,'#1b2b0d');g.restore();
+g.save();g.globalAlpha*=ease((u-1.2)/.5);text('Vos idées. Votre élan. Votre app.',76,603,14,'#95a588');g.restore();
+g.restore();
+}
+const scenes=[scene0,capture,organize,focus,ending];
+function transitionFlash(t){
+for(let k=1;k<5;k++){
+let d=t-k*3;if(Math.abs(d)<.22){
+let v=1-Math.abs(d)/.22;g.save();g.globalAlpha=v*.16;
+for(let i=0;i<12;i++){let x=(i*130+t*1300)%1450-100;g.fillStyle=i%3===0?violet:mint;g.fillRect(x,110+(i%5)*90,1+v*2,200)}
+g.restore();
+}
+}
+}
+const offset=Number(new URLSearchParams(location.search).get('t'))||0;
+let start;
+function frame(now){
+if(start===undefined)start=now;
+T=(((now-start)/1000+offset)%15+15)%15;
+background(T);
+let idx=Math.floor(T/3),u=T-idx*3;
+const blend=.38;
+if(idx>0&&u<blend){
+let p=smooth(u/blend);
+g.save();g.globalAlpha=1-p;g.translate(-p*100,0);scenes[idx-1](3+u);g.restore();
+g.save();g.globalAlpha=p;g.translate((1-p)*110,0);scenes[idx](u);g.restore()
+}else if(idx===0&&u<.26&&(now-start)>260){
+let p=smooth(u/.26);g.save();g.globalAlpha=1-p;ending(3);g.restore();g.save();g.globalAlpha=p;scene0(u);g.restore()
+}else scenes[idx](u);
+transitionFlash(T);
+chrome(T);
+requestAnimationFrame(frame)
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>ChatSoon</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=15;
+const cv=document.getElementById('c'),x=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)||0;
+const t0=performance.now()-off*1000;
+const cl=v=>Math.max(0,Math.min(1,v)),ease=v=>{v=cl(v);return v<.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2};
+const back=v=>{v=cl(v);const c=1.7;return 1+(c+1)*Math.pow(v-1,3)+c*Math.pow(v-1,2)};
+function rr(X,Y,w,h,r){x.beginPath();x.roundRect(X,Y,w,h,r);}
+function txt(s,X,Y,sz,col,al,wt){x.font=(wt||'600')+' '+sz+'px system-ui,Segoe UI,Helvetica,Arial';x.fillStyle=col;x.textAlign=al||'center';x.textBaseline='middle';x.fillText(s,X,Y);}
+function bg(t){const g=x.createLinearGradient(0,0,1280,720);g.addColorStop(0,'#1a1040');g.addColorStop(1,'#0a2a4a');x.fillStyle=g;x.fillRect(0,0,1280,720);
+for(let i=0;i<30;i++){const px=(i*197+t*20*(1+i%3))%1380-50,py=(i*131)%720+Math.sin(t+i)*20;x.fillStyle='rgba(140,180,255,'+(0.05+0.05*(i%3))+')';x.beginPath();x.arc(px,py,3+i%5*3,0,7);x.fill();}}
+function logo(cx,cy,s,a){x.save();x.globalAlpha=a;x.translate(cx,cy);x.scale(s,s);
+const g=x.createLinearGradient(-60,-60,60,60);g.addColorStop(0,'#7b5cff');g.addColorStop(1,'#29d3ff');x.fillStyle=g;
+rr(-60,-50,120,90,30);x.fill();x.beginPath();x.moveTo(-30,35);x.lineTo(-40,62);x.lineTo(0,38);x.fill();
+x.strokeStyle='#fff';x.lineWidth=7;x.lineCap='round';x.beginPath();x.arc(0,-5,26,0,7);x.stroke();
+const tt=(performance.now()-t0)/1000;x.beginPath();x.moveTo(0,-5);x.lineTo(0,-22);x.moveTo(0,-5);x.lineTo(14*Math.cos(tt*2),-5+14*Math.sin(tt*2));x.stroke();x.restore();}
+function phone(cx,cy,a,msgs,t,head){x.save();x.globalAlpha=a;x.fillStyle='#0d0d18';rr(cx-160,cy-300,320,600,40);x.fill();x.strokeStyle='#333';x.lineWidth=4;x.stroke();
+x.fillStyle='#f4f5fb';rr(cx-148,cy-288,296,576,30);x.fill();
+x.fillStyle='#6b55f5';rr(cx-148,cy-288,296,70,{upperLeft:30,upperRight:30});x.fill();txt(head,cx,cy-252,20,'#fff');
+msgs.forEach((m,i)=>{const p=back((t-m.t)*3);if(p<=0)return;const w=m.w,X=m.me?cx+135-w:cx-135,Y=cy-200+i*72;
+x.save();x.globalAlpha=a*cl(p);x.translate(X+(m.me?w:0),Y+25);x.scale(p,p);x.translate(-(m.me?w:0),-25);
+x.fillStyle=m.c||(m.me?'#6b55f5':'#fff');rr(0,0,w,50,20);x.fill();txt(m.s,w/2,25,16,m.me||m.c?'#fff':'#222');x.restore();});x.restore();}
+function frame(){let t=((performance.now()-t0)/1000)%DUR;bg(t);
+// Scene1 0-3 logo
+if(t<3.6){const a=cl(t*2)*cl((3.6-t)*2);logo(640,300,back(t*1.2)*1.4,a);x.globalAlpha=a;txt('ChatSoon',640,440,72,'#fff','center','800');txt('@ChatSoonApp',640,500,28,'#9fd8ff');x.globalAlpha=1;}
+// Scene2 3.3-7.5 schedule
+else if(t<7.8){const l=t-3.3,a=cl(l*2)*cl((7.8-t)*2);
+phone(900,370,a,[{s:'Happy birthday Mia! 🎉',w:230,me:1,t:.6}],l,'Mia');
+const p=ease((l-1.3)*2);x.globalAlpha=a*p;x.fillStyle='#fff';rr(780,400-20*(1-p),240,140,20);x.fill();txt('⏰ Send at',900,430,18,'#333');txt('Tomorrow 00:00',900,470,24,'#6b55f5','center','800');
+x.fillStyle='#29d3ff';rr(830,495,140,32,16);x.fill();txt('Schedule',900,511,16,'#fff');
+x.globalAlpha=a;txt('1. Write now',120,280,56,'#fff','left','800');x.globalAlpha=a*cl(l-1.5);txt('2. Pick the perfect time',120,360,40,'#9fd8ff','left');
+x.globalAlpha=a*cl(l-2.5);txt('Never forget a message again.',120,430,28,'#c9c3ff','left','400');x.globalAlpha=1;}
+// Scene3 7.5-11.5 delivery
+else if(t<11.8){const l=t-7.5,a=cl(l*2)*cl((11.8-t)*2);
+const h=Math.floor(23+cl(l/1.5)),mm=h>=24?'00':String(Math.floor(57+cl(l/1.5)*2.99)).padStart(2,'0');
+x.globalAlpha=a;txt('3. ChatSoon sends it',120,280,56,'#fff','left','800');
+txt((h>=24?'00':'23')+':'+mm,120,380,90,'#29d3ff','left','800');txt('even while you sleep 😴',120,460,30,'#c9c3ff','left','400');
+phone(900,370,a,[{s:'Happy birthday Mia! 🎉',w:230,me:1,t:1.6},{s:'Aww you remembered! ❤️',w:230,t:2.4},{s:'Right at midnight?!',w:180,t:2.9}],l,'Mia');x.globalAlpha=1;}
+// Scene4 CTA
+else{const l=t-11.5,a=cl(l*2)*cl((15-t)*3);logo(640,230,back(l*1.5),a);x.globalAlpha=a;
+txt('Say it now. Send it soon.',640,370,56,'#fff','center','800');
+const p=back((l-.6)*2);x.save();x.translate(640,470);x.scale(p,p);const g=x.createLinearGradient(-170,0,170,0);g.addColorStop(0,'#7b5cff');g.addColorStop(1,'#29d3ff');x.fillStyle=g;rr(-170,-35,340,70,35);x.fill();txt('Get ChatSoon',0,0,28,'#fff','center','800');x.restore();
+x.globalAlpha=a*cl(l-1);txt('Follow @ChatSoonApp',640,560,26,'#9fd8ff');x.globalAlpha=1;}
+requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

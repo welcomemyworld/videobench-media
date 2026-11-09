@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>10xColleges — Your next chapter</title>
+<style>
+*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#000}body{display:grid;place-items:center}#stage{width:min(100vw,177.777778vh);height:min(56.25vw,100vh);position:relative}canvas{display:block;width:100%;height:100%}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="film" width="2560" height="1440"></canvas></div>
+<script>
+window.DUR=40;
+const c=document.getElementById('film'),g=c.getContext('2d');
+const W=1280,H=720,ORANGE='#ff6535',INK='#172b28',PAPER='#f5f3eb',MUTED='#71817a',TEAL='#23675b';
+const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const ease=v=>{v=clamp(v);return v*v*(3-2*v)};
+const out=v=>1-Math.pow(1-clamp(v),3);
+const offset=Number(new URLSearchParams(location.search).get('t'))||0;
+const origin=performance.now();
+function rect(x,y,w,h,col,r=0){g.fillStyle=col;g.beginPath();g.roundRect(x,y,w,h,r);g.fill()}
+function line(x,y,X,Y,col,width=1){g.strokeStyle=col;g.lineWidth=width;g.beginPath();g.moveTo(x,y);g.lineTo(X,Y);g.stroke()}
+function circle(x,y,r,col){g.fillStyle=col;g.beginPath();g.arc(x,y,r,0,Math.PI*2);g.fill()}
+function text(s,x,y,size=20,col=INK,weight=400,align='left'){g.fillStyle=col;g.font=`${weight} ${size}px Arial, sans-serif`;g.textAlign=align;g.textBaseline='alphabetic';g.fillText(s,x,y)}
+function spaced(s,x,y,size=11,col=MUTED,space=2){g.font=`600 ${size}px Arial, sans-serif`;g.fillStyle=col;g.textAlign='left';for(const a of s){g.fillText(a,x,y);x+=g.measureText(a).width+space}}
+function pill(s,x,y,w,col=INK,bg='#e8ece3'){rect(x,y,w,27,bg,14);text(s,x+w/2,y+18,11,col,600,'center')}
+function arrow(x,y,col=INK,size=19){line(x,y,x+size,y,col,2);line(x+size-6,y-6,x+size,y,col,2);line(x+size-6,y+6,x+size,y,col,2)}
+function mark(x,y,s=1,col=ORANGE){g.save();g.translate(x,y);g.scale(s,s);rect(0,0,36,36,col,10);line(9,11,16,18,PAPER,3);line(9,25,16,18,PAPER,3);line(20,11,27,18,PAPER,3);line(20,25,27,18,PAPER,3);g.restore()}
+function brand(x=64,y=37,col=INK){mark(x,y,.85);text('10xColleges',x+43,y+24,23,col,700)}
+function texture(dark=false){g.save();g.globalAlpha=dark?.065:.11;for(let i=0;i<270;i++){let x=(i*331+17)%1280,y=(i*179+33)%720;rect(x,y,1,1,dark?'#fff':INK)}g.restore()}
+function grid(bg=PAPER){rect(0,0,W,H,bg);texture(bg===INK)}
+function reveal(t,start,x,y,fn,delay=.55){const p=out((t-start)/delay);g.save();g.globalAlpha=p;g.translate(x,y+(1-p)*22);fn(p);g.restore()}
+function footer(n,dark=false){let col=dark?'#91a49a':MUTED;spaced('10XCOLLEGES / A NEW CHAPTER',64,686,9,col,1.7);text(String(n).padStart(2,'0')+' / 06',1216,686,11,col,500,'right')}
+function icon(type,x,y,col=MUTED){
+g.save();g.translate(x,y);g.strokeStyle=col;g.lineWidth=1.7;
+if(type===0){g.beginPath();g.arc(7,7,5,0,7);g.stroke();line(11,11,16,16,col,1.7)}
+if(type===1){g.beginPath();g.moveTo(3,2);g.lineTo(13,2);g.lineTo(13,16);g.lineTo(8,12);g.lineTo(3,16);g.closePath();g.stroke()}
+if(type===2){g.strokeRect(1,3,14,12);line(1,7,15,7,col,1.7);line(5,0,5,5,col,1.7);line(11,0,11,5,col,1.7)}
+g.restore()
+}
+function campus(x,y,w,h,variant=0){
+g.save();g.beginPath();g.roundRect(x,y,w,h,10);g.clip();
+const skies=['#c7d9ca','#c6dadd','#e4d3bd'];rect(x,y,w,h,skies[variant%3]);
+circle(x+w*.8,y+h*.24,h*.14,'#fff0c4');
+for(let i=0;i<4;i++){g.fillStyle='#ffffff50';g.beginPath();g.ellipse(x+w*(.1+i*.3),y+h*(.16+(i%2)*.08),w*.12,h*.025,0,0,7);g.fill()}
+g.fillStyle=['#9bb6a0','#9daeb2','#b4b894'][variant%3];g.beginPath();g.moveTo(x,y+h*.65);g.bezierCurveTo(x+w*.25,y+h*.35,x+w*.55,y+h*.56,x+w,y+h*.36);g.lineTo(x+w,y+h);g.lineTo(x,y+h);g.fill();
+rect(x,y+h*.76,w,h*.24,'#739783');
+let bx=x+w*.25,by=y+h*.36,bw=w*.54,bh=h*.47;
+if(variant===1){
+rect(bx,by,bw,bh,'#345b60');for(let k=0;k<6;k++)rect(bx+bw*.03+k*bw*.16,by+bh*.04,bw*.115,bh*.9,'#a8c6c1');
+line(bx,by+bh*.32,bx+bw,by+bh*.32,'#647e7a',3);line(bx,by+bh*.65,bx+bw,by+bh*.65,'#647e7a',3);
+}else{
+rect(bx,by,bw,bh,variant===0?'#dbbb8c':'#e6ded0');
+g.fillStyle=variant===0?'#b87d50':'#8c9990';g.beginPath();g.moveTo(bx-w*.04,by);g.lineTo(bx+bw/2,by-h*.19);g.lineTo(bx+bw+w*.04,by);g.closePath();g.fill();
+for(let a=0;a<5;a++)for(let b=0;b<2;b++){let wx=bx+bw*.09+a*bw*.175,wy=by+bh*.16+b*bh*.36;rect(wx,wy,bw*.08,bh*.22,'#54716b',2)}
+rect(bx+bw*.44,by+bh*.6,bw*.13,bh*.4,'#405b50',4);
+}
+g.fillStyle='#d8cfad';g.beginPath();g.moveTo(bx+bw*.42,y+h*.8);g.lineTo(bx+bw*.6,y+h*.8);g.lineTo(x+w*.78,y+h);g.lineTo(x+w*.18,y+h);g.fill();
+for(let i=0;i<5;i++){let tx=x+w*(.06+i*.22),ty=y+h*(.67+(i%2)*.14);if(i===2)continue;rect(tx-2,ty-10,4,h*.22,'#5c6650');circle(tx,ty-h*.1,h*.13,i%2?'#416e57':'#60866a');circle(tx+h*.055,ty-h*.07,h*.09,'#547d5c')}
+g.restore()
+}
+const schools=['Redwood University','North Coast College','Meridian Institute'];
+const towns=['A greener place to grow','Big ideas. Coastal energy.','A different way forward'];
+function card(x,y,w,h,k,t=0,chosen=false){
+g.save();g.shadowColor='#172b2817';g.shadowBlur=20;g.shadowOffsetY=8;rect(x,y,w,h,'#fff',16);g.restore();
+campus(x+10,y+10,w-20,h*.51,k);
+text(schools[k],x+17,y+h*.51+39,17,INK,700);
+text(towns[k],x+17,y+h*.51+60,11,MUTED);
+pill(['Residential','City campus','Creative focus'][k],x+17,y+h-45,112);
+circle(x+w-27,y+29,15,chosen?ORANGE:'#ffffffdd');
+if(chosen){line(x+w-33,y+29,x+w-28,y+34,'#fff',2);line(x+w-28,y+34,x+w-21,y+25,'#fff',2)}else icon(1,x+w-35,y+21,INK);
+}
+function browser(active,t){
+let x=64,y=163,w=1152,h=482;
+g.save();g.shadowColor='#172b2815';g.shadowBlur=30;g.shadowOffsetY=10;rect(x,y,w,h,'#fff',16);g.restore();
+rect(x,y,w,43,'#e5e9e1',16);rect(x,y+23,w,20,'#e5e9e1');
+for(let i=0;i<3;i++)circle(x+21+i*15,y+22,3.5,i===0?'#e39a83':'#b5c0b7');
+rect(x+405,y+10,340,23,'#f5f7f1',6);text('10xColleges / your workspace',x+575,y+26,10,MUTED,500,'center');
+rect(x,y+43,184,h-43,'#f3f5ef');rect(x,y+h-18,184,18,'#f3f5ef',16);
+mark(x+21,y+65,.65);text('Your next chapter',x+54,y+82,12,INK,700);
+const names=['Discover','Shortlist','Your plan'];
+names.forEach((s,i)=>{let Y=y+125+i*45;if(i===active)rect(x+12,Y-19,160,35,'#e0e9df',8);icon(i,x+25,Y-11,i===active?TEAL:MUTED);text(s,x+54,Y+2,12,i===active?TEAL:MUTED,i===active?700:500)});
+line(x+22,y+h-84,x+162,y+h-84,'#dfe5db');
+circle(x+33,y+h-49,13,'#d7e1d2');text('A',x+33,y+h-45,11,TEAL,700,'center');text('Your workspace',x+54,y+h-45,11,MUTED);
+text('ILLUSTRATIVE PRODUCT EXPERIENCE',x+w-20,y+h-13,8,'#a0aaa2',500,'right');
+return {x:x+207,y:y+65,w:w-231,h:h-86}
+}
+function header(k,title,sub,t){
+brand();spaced(k,1216,55,10,MUTED,1.6); // right-side label replaced with aligned positioning below
+rect(1000,25,230,42,PAPER);
+text(k,1216,55,11,MUTED,600,'right');
+reveal(t,.1,64,126,()=>text(title,0,0,44,INK,700));
+text(sub,1216,122,13,MUTED,400,'right');
+}
+function intro(t){
+grid();brand();text('INTRODUCING',1216,56,11,MUTED,600,'right');
+g.save();g.translate(940,365);g.strokeStyle='#dee3d8';g.lineWidth=1;
+for(let i=0;i<3;i++){g.beginPath();g.arc(0,0,135+i*65,0,7);g.stroke()}
+for(let i=0;i<10;i++){let a=i*.628+t*.07;circle(Math.cos(a)*263,Math.sin(a)*263,3,i%3===0?ORANGE:'#aab9a6')}
+g.restore();
+reveal(t,.2,64,211,()=>spaced('LESS SEARCHING. MORE POSSIBILITY.',0,0,11,TEAL,2));
+reveal(t,.4,60,315,()=>text('Big futures.',0,0,82,INK,700));
+reveal(t,.65,60,406,()=>text('Start here.',0,0,82,INK,700));
+reveal(t,1.15,65,460,()=>text('Find the college that feels like you.',0,0,22,MUTED));
+reveal(t,1.6,65,507,()=>{rect(0,0,211,51,ORANGE,26);text('Meet 10xColleges',23,32,16,'#fff',700);arrow(173,26,'#fff',15)});
+let p=out((t-.35)/1.25);
+g.save();g.globalAlpha=p;g.translate(847+(1-p)*100,198+Math.sin(t*.8)*7);g.rotate(.07);card(0,0,278,333,1,t);g.restore();
+g.save();g.globalAlpha=p;g.translate(718-(1-p)*55,305+Math.sin(t*.9+2)*5);g.rotate(-.09);card(0,0,258,302,0,t,true);g.restore();
+reveal(t,2.2,1036,566,()=>{rect(-28,-25,144,53,INK,12);text('Your next chapter',44,7,11,PAPER,600,'center')});
+footer(1)
+}
+function discover(t){
+grid();header('01 / DISCOVER','A world of possibilities.','Start with what matters to you.',t);
+let b=browser(0,t);
+text('Find your fit',b.x,b.y+24,23,INK,700);
+rect(b.x+400,b.y+2,490,36,'#f3f5ef',8);icon(0,b.x+413,b.y+12);text('Search colleges, places, possibilities…',b.x+440,b.y+25,12,MUTED);
+const tags=['All colleges','Creative arts','Engineering','Near a city'];
+tags.forEach((s,i)=>pill(s,b.x+i*125,b.y+44,116,i===1&&t>2?PAPER:TEAL,i===1&&t>2?TEAL:'#eaf0e6'));
+text('A few places to begin',b.x,b.y+106,13,MUTED,500);text('Explore your possibilities',b.x+888,b.y+106,11,MUTED,400,'right');
+for(let k=0;k<3;k++)reveal(t,.35+k*.16,b.x+k*301,b.y+123,()=>card(0,0,282,268,k,t,k===1&&t>3.6));
+if(t>3.3){let q=out((t-3.3)/.7);g.save();g.globalAlpha=q;rect(922,591+(1-q)*10,269,36,INK,10);circle(940,609,4,ORANGE);text('One possibility. One step closer.',955,613,11,PAPER,500);g.restore()}
+footer(2)
+}
+function shortlist(t){
+grid();header('02 / SHORTLIST','See what sets them apart.','Your choices. Side by side.',t);
+let b=browser(1,t);text('Your shortlist',b.x,b.y+23,23,INK,700);pill('3 possibilities',b.x+757,b.y+2,127,TEAL,'#e7eee1');
+const xs=[b.x,b.x+302,b.x+604];
+for(let k=0;k<3;k++){
+reveal(t,.2+k*.14,xs[k],b.y+43,()=>{
+rect(0,0,283,342,'#f7f8f3',12);campus(9,9,265,103,k);
+text(schools[k],16,139,16,INK,700);text('AT A GLANCE',16,161,9,MUTED,600);
+const labels=['Setting','Explore','Campus feel'];
+const values=[['College town','Science & discovery','Open spaces'],['Coastal city','Ideas & innovation','Connected'],['Urban neighborhood','Design & technology','Hands-on']];
+for(let i=0;i<3;i++){line(16,175+i*44,267,175+i*44,'#e0e6db');text(labels[i],16,194+i*44,11,MUTED);text(values[k][i],267,194+i*44,11,INK,600,'right')}
+rect(16,306,251,25,k===1?TEAL:'#e6ecdf',6);text(k===1?'Added to your plan':'Explore college',141.5,323,11,k===1?PAPER:TEAL,600,'center');
+});
+}
+footer(3)
+}
+function plan(t){
+grid();header('03 / YOUR PLAN','Make your next move.','Turn possibility into a plan.',t);
+let b=browser(2,t);text('Your next chapter, organized.',b.x,b.y+25,23,INK,700);text('A little clarity goes a long way.',b.x,b.y+49,12,MUTED);
+rect(b.x,b.y+72,548,299,'#f5f7f0',12);text('Your path forward',b.x+22,b.y+104,16,INK,700);
+const tasks=['Explore your possibilities','Build your shortlist','Get to know your favorites','Prepare for what’s next'];
+let progress=clamp((t-.8)/3.8)*3;
+for(let i=0;i<4;i++){let Y=b.y+141+i*56;let done=progress>=i+.25;
+if(i<3)line(b.x+35,Y+12,b.x+35,Y+45,'#d9e2d4',2);
+circle(b.x+35,Y,12,done?TEAL:'#e2e8dc');
+if(done){line(b.x+30,Y,b.x+34,Y+4,PAPER,2);line(b.x+34,Y+4,b.x+41,Y-4,PAPER,2)}else text(String(i+1),b.x+35,Y+4,10,MUTED,600,'center');
+text(tasks[i],b.x+60,Y+4,14,done?INK:MUTED,done?600:400);
+pill(done?'Complete':'Up next',b.x+432,Y-13,93,done?TEAL:MUTED,done?'#e0ecdd':'#e9eee4');
+}
+rect(b.x+570,b.y+72,315,299,INK,12);
+spaced('ONE STEP AT A TIME',b.x+594,b.y+104,10,'#a9c3b4',1.5);
+text('Your future.',b.x+594,b.y+151,32,PAPER,700);text('In focus.',b.x+594,b.y+188,32,PAPER,700);
+let pp=ease(progress/3);
+rect(b.x+594,b.y+216,267,5,'#3b5148',3);rect(b.x+594,b.y+216,267*pp,5,ORANGE,3);
+text('More clarity with every step.',b.x+594,b.y+250,13,'#a9bfb1');
+rect(b.x+594,b.y+270,267,66,'#284239',9);circle(b.x+618,b.y+302,10,ORANGE);arrow(b.x+612,b.y+302,PAPER,12);text('Keep moving forward',b.x+640,b.y+306,13,PAPER,600);
+footer(4)
+}
+function codeScene(t){
+grid(INK);brand(64,37,PAPER);text('BEHIND THE LAUNCH',1216,55,11,'#a7b9ab',600,'right');
+reveal(t,.15,64,150,()=>spaced('NOT CAPTURED. CREATED.',0,0,11,'#a7c7ae',2));
+reveal(t,.35,60,243,()=>text('7,867 frames.',0,0,67,PAPER,700));
+reveal(t,.6,60,323,()=>text('All drawn by code.',0,0,57,PAPER,700));
+reveal(t,1,64,377,()=>text('Nothing was screen-recorded.',0,0,22,'#a8bdb0'));
+reveal(t,2.5,64,510,()=>{rect(0,0,527,83,'#233e34',12);rect(0,0,4,83,ORANGE,2);text('Want a change?',23,32,18,PAPER,600);text('Edit the script.',23,61,18,ORANGE,600);arrow(463,43,ORANGE,27)});
+const x=682,y=147;
+rect(x,y,534,447,'#0d201b',14);
+rect(x,y,534,40,'#284137',14);rect(x,y+23,534,17,'#284137');
+for(let i=0;i<3;i++)circle(x+19+i*14,y+20,3,i===0?ORANGE:'#638071');
+text('launch.js',x+267,y+25,11,'#c0d1c3',500,'center');
+const rows=[
+['const',' brand = "10xColleges";'],
+['const',' frames = 7867;'],
+['',''],
+['function',' drawFrame(time) {'],
+['','  drawPossibility(time);'],
+['','  drawYourNextChapter(time);'],
+['','  drawEveryPixel(time);'],
+['','}'],
+['',''],
+['//',' A change is a script edit.']
+];
+let appear=clamp((t-.4)/1.4);
+g.save();g.beginPath();g.rect(x,y+40,534,191*appear);g.clip();
+rows.forEach((r,i)=>{let Y=y+65+i*17;text(String(i+1).padStart(2,'0'),x+20,Y,10,'#536f60');text(r[0],x+52,Y,12,r[0]==='//'?'#678e77':ORANGE,600);g.font='600 12px Arial';text(r[1],x+52+g.measureText(r[0]).width,Y,12,r[0]==='//'?'#678e77':'#c0d1c3',500)});
+g.restore();
+line(x+20,y+247,x+514,y+247,'#2c463a');
+spaced('PROCEDURAL FRAME PREVIEW',x+22,y+271,9,'#7e9e88',1.3);
+let q=out((t-.7)/1.2);
+for(let k=0;k<12;k++){
+let X=x+22+(k%4)*124,Y=y+289+Math.floor(k/4)*45;
+g.save();g.globalAlpha=q*(.55+.45*Math.sin(t*1.1+k*.2)**2);rect(X,Y,113,35,'#e8ece0',4);
+rect(X+5,Y+5,3,3,ORANGE,1);rect(X+12,Y+5,33,3,'#42624d',1);
+for(let j=0;j<3;j++){rect(X+6+j*35,Y+13,30,16,['#abc2a9','#90b2ac','#cebea0'][j],2);rect(X+9+j*35,Y+17,20,12,'#54776b',1)}
+g.restore()
+}
+footer(5,true)
+}
+function outro(t){
+grid(INK);
+const p=out(t/1.1);
+g.save();g.globalAlpha=.26;
+for(let i=0;i<7;i++){g.strokeStyle=i%2?'#426248':'#829167';g.lineWidth=1;g.beginPath();g.ellipse(640,350,265+i*64,102+i*27,-.16+t*.015,0,7);g.stroke()}
+g.restore();
+reveal(t,.2,614,126,()=>mark(0,0,1.45));
+reveal(t,.4,640,307,()=>text('10xColleges',0,0,97,PAPER,700,'center'));
+reveal(t,.7,640,367,()=>text('Your next chapter starts here.',0,0,27,'#b6c7b7',400,'center'));
+reveal(t,1.15,492,421,()=>{rect(0,0,296,56,ORANGE,28);text('Meet your possibilities',33,35,17,PAPER,700);arrow(247,28,PAPER,18)});
+reveal(t,1.7,640,560,()=>spaced('BUILT FOR THE JOURNEY AHEAD.',-155,0,11,'#819b85',1.5));
+text('NOT SCREEN-RECORDED. SCRIPT-CREATED.',640,666,10,'#6f8a77',500,'center');
+}
+const scenes=[intro,discover,shortlist,plan,codeScene,outro],starts=[0,6,14,22,29,35,40];
+function render(){
+const t=((performance.now()-origin)/1000+offset)%window.DUR;
+g.setTransform(2,0,0,2,0,0);g.globalAlpha=1;g.clearRect(0,0,W,H);
+let i=0;while(i<5&&t>=starts[i+1])i++;
+let local=t-starts[i],end=starts[i+1],mix=ease((t-(end-.5))/.5);
+scenes[i](local);
+if(mix>0){g.save();g.globalAlpha=mix;g.translate((1-mix)*35,0);scenes[(i+1)%6](0);g.restore()}
+requestAnimationFrame(render)
+}
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

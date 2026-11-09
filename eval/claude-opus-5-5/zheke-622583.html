@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Motion</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=30;
+const c=document.getElementById('c'),x=c.getContext('2d'),W=1280,H=720;
+function fit(){const s=Math.min(innerWidth/W,innerHeight/H);c.style.width=W*s+'px';c.style.height=H*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t')||0)||0,t0=performance.now();
+const ease=t=>t<0?0:t>1?1:t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+const cl=(v,a,b)=>Math.max(a,Math.min(b,v));
+const seg=(t,a,b)=>cl((t-a)/(b-a),0,1);
+// particles
+const N=900,P=[];let s=7;const rnd=()=>(s=(s*16807)%2147483647)/2147483647;
+for(let i=0;i<N;i++)P.push({a:rnd()*6.283,r:rnd(),z:rnd(),h:rnd()});
+function text(str,y,size,alpha,spacing,col){
+ x.save();x.globalAlpha=alpha;x.fillStyle=col||'#fff';x.font=`300 ${size}px Helvetica,Arial,sans-serif`;
+ x.textAlign='center';x.textBaseline='middle';
+ if(x.letterSpacing!==undefined){x.letterSpacing=spacing+'px';x.fillText(str,W/2+spacing/2,y);}else x.fillText(str,W/2,y);
+ x.restore();}
+function frame(){
+ let T=((performance.now()-t0)/1000+off)%DUR;
+ x.globalCompositeOperation='source-over';
+ x.fillStyle='rgba(3,3,8,0.35)';x.fillRect(0,0,W,H);
+ const cx=W/2,cy=H/2;
+ // phase weights
+ const p1=ease(seg(T,0,4)),p2=ease(seg(T,7,10)),p3=ease(seg(T,15,18)),p4=ease(seg(T,22,25)),fade=1-ease(seg(T,28,30));
+ x.globalCompositeOperation='lighter';
+ for(let i=0;i<N;i++){
+  const p=P[i];
+  // form A: galaxy spiral
+  const ga=p.a+p.r*6+T*0.3*(1-p.r*.5),gr=40+p.r*300;
+  let ax=cx+Math.cos(ga)*gr,ay=cy+Math.sin(ga)*gr*0.45;
+  // form B: sphere
+  const th=p.a+T*0.5,ph=Math.acos(2*p.z-1);
+  let bx=cx+Math.sin(ph)*Math.cos(th)*220,by=cy+Math.cos(ph)*220,bz=Math.sin(ph)*Math.sin(th);
+  // form C: wave grid
+  const gx=(i%45)/44,gy=Math.floor(i/45)/20;
+  let cx2=120+gx*1040,cy2=200+gy*320+Math.sin(gx*8+T*2)*40*Math.cos(gy*5+T);
+  // form D: torus knot
+  const u=p.a+T*0.4,k=2,m=3,rr=120+60*Math.cos(m*u);
+  let dx=cx+rr*Math.cos(k*u),dy=cy+rr*Math.sin(k*u)*0.9+50*Math.sin(m*u)*0.3;
+  // blend
+  let px=ax,py=ay;
+  px+=(bx-px)*p2;py+=(by-py)*p2;
+  px+=(cx2-px)*p3;py+=(cy2-py)*p3;
+  px+=(dx-px)*p4;py+=(dy-py)*p4;
+  // intro: burst from center
+  const ii=ease(cl(p1*1.4-p.h*.4,0,1));
+  px=cx+(px-cx)*ii;py=cy+(py-cy)*ii;
+  const hue=(200+p.h*120+T*12+p3*80)%360;
+  const sz=(1.2+p.z*2)*(1+p2*(1-p3)*bz*.6);
+  x.fillStyle=`hsla(${hue},90%,${55+p.z*20}%,${0.55*fade*ii})`;
+  x.beginPath();x.arc(px,py,Math.max(.4,sz),0,6.283);x.fill();
+ }
+ // glow core
+ const gl=x.createRadialGradient(cx,cy,0,cx,cy,260);
+ gl.addColorStop(0,`hsla(${220+T*10},90%,60%,${0.06*fade})`);gl.addColorStop(1,'rgba(0,0,0,0)');
+ x.fillStyle=gl;x.fillRect(0,0,W,H);
+ x.globalCompositeOperation='source-over';
+ // titles
+ const tA=seg(T,2,3.5)*(1-seg(T,6,7));
+ text('MOTION',H/2-10,96,tA,40*(1-ease(seg(T,2,6)))+18);
+ text('IS A LANGUAGE',H/2+60,18,tA*.7,12);
+ const tB=seg(T,10,11)*(1-seg(T,13.5,14.5));
+ text('FORM',100,28,tB,26);text('every point remembers where it has been',H-90,16,tB*.6,4);
+ const tC=seg(T,18,19)*(1-seg(T,21,22));
+ text('RHYTHM',100,28,tC,26);text('time, made visible',H-90,16,tC*.6,4);
+ const tD=seg(T,25,26)*(1-seg(T,28.5,29.5));
+ text('FLOW',100,28,tD,26);text('designed in a single file of light',H-90,16,tD*.6,4);
+ // letterbox lines
+ x.fillStyle='#000';const lb=40*ease(seg(T,0,2));x.fillRect(0,0,W,lb);x.fillRect(0,H-lb,W,lb);
+ // timeline
+ x.fillStyle='rgba(255,255,255,.25)';x.fillRect(80,H-lb/2-1,(W-160)*(T/DUR),1);
+ requestAnimationFrame(frame);}
+x.fillStyle='#000';x.fillRect(0,0,W,H);
+requestAnimationFrame(frame);
+</script></body></html>

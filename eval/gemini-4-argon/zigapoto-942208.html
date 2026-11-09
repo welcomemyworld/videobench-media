@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Agentic Analytics</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  #stage {
+    width: 1280px; height: 720px;
+    box-shadow: 0 0 50px rgba(0, 240, 255, 0.15);
+    background: #06070b;
+  }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+window.DUR = 24;
+const W = 1280, H = 720;
+const canvas = document.getElementById('stage');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+  canvas.style.transform = `scale(${s})`;
+}
+window.addEventListener('resize', resize);
+resize();
+
+const urlParams = new URLSearchParams(window.location.search);
+const startOffset = parseFloat(urlParams.get('t')) || 0;
+
+// --- Web Audio API Synthesizer (128 BPM Tech-House Beat) ---
+let audioCtx = null;
+let lastStep = -1;
+
+function initAudio() {
+  if (audioCtx) return;
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  } catch (e) {}
+}
+window.addEventListener('pointerdown', initAudio);
+window.addEventListener('keydown', initAudio);
+initAudio();
+
+function playStep(step) {
+  if (!audioCtx || audioCtx.state !== 'running') return;
+  const now = audioCtx.currentTime;
+
+  // Kick on 0, 4, 8, 12
+  if (step % 4 === 0) {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.frequency.setValueAtTime(130, now);
+    osc.frequency.exponentialRampToValueAtTime(35, now + 0.14);
+    gain.gain.setValueAtTime(0.6, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(now); osc.stop(now + 0.25);
+  }
+  // Off-beat Arp / Bass
+  const notes = [110, 130.81, 146.83, 164.81, 196.00, 220, 261.63, 146.83];
+  if (step % 2 === 1) {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(notes[(step >> 1) % notes.length], now);
+    gain.gain.setValueAtTime(0.12, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(now); osc.stop(now + 0.12);
+  }
+}
+
+// --- Easing & Math Utilities ---
+const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+const lerp = (a, b, t) => a + (b - a) * clamp(t, 0, 1);
+const easeOutCubic = t => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
+const easeInOutCubic = t => {
+  t = clamp(t, 0, 1);
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+};
+const easeOutBack = t => {
+  t = clamp(t, 0, 1);
+  const c1 = 1.70158, c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+};
+
+// --- Procedural Data ---
+const chaosCards = Array.from({ length: 18 }, (_, i) => ({
+  x: (Math.sin(i * 73.1) * 0.5 + 0.5) * 1000 + 140,
+  y: (Math.cos(i * 29.7) * 0.5 + 0.5) * 520 + 100,
+  w: 220 + (i % 3) * 40,
+  h: 130 + (i % 2) * 35,
+  rot: Math.sin(i * 12) * 0.15,
+  title: ['SELECT * FROM users_v2', 'ERR: Timeout 504', 'ROAS Decline -18%', 'NullPointer in ETL', 'Unindexed Join', 'Churn Cohort #42'][i % 6],
+  color: i % 3 === 0 ? '#ff2a85' : (i % 2 === 0 ? '#00f0ff' : '#7000ff')
+}));
+
+const agentTasks = [
+  { name: 'SQL Query Agent', desc: 'Scanning 1.4B rows in Snowflake...', col: '#00f0ff', icon: 'DB' },
+  { name: 'Anomaly Detector', desc: 'Found friction in Checkout Step 3', col: '#ff2a85', icon: 'AI' },
+  { name: 'Root Cause Engine', desc: 'iOS v16.4 Safari Payment Bug', col: '#a855f7', icon: 'RC' },
+  { name: 'Action Synthesizer', desc: 'Patch deployed & Slack alerted', col: '#10b981', icon: 'GO' }
+];
+
+const particles = Array.from({ length: 65 }, (_, i) => ({
+  x: (i * 97) % W,
+  y: (i * 53) % H,
+  s: (i % 3) + 1,
+  vx: (i % 2 === 0 ? 1 : -1) * (15 + (i % 20)),
+  vy: -10 - (i % 25)
+}));
+
+// --- Drawing Helpers ---
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, r);
+}
+
+function drawBackground(t, beatPulse) {
+  const grad = ctx.createRadialGradient(W/2, H/2, 50, W/2, H/2, 800);
+  grad.addColorStop(0, '#101426');
+  grad.addColorStop(1, '#05060a');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Perspective Grid
+  ctx.save();
+  ctx.strokeStyle = `rgba(0, 240, 255, ${0.06 + beatPulse * 0.04})`;
+  ctx.lineWidth = 1;
+  const step = 64;
+  const ox = (t * 30) % step;
+  const oy = (t * 15) % step;
+  for (let x = ox; x < W; x += step) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+  for (let y = oy; y < H; y += step) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+  ctx.restore();
+
+  // Floating Ambient Particles
+  ctx.fillStyle = 'rgba(0, 240, 255, 0.35)';
+  for (const p of particles) {
+    const px = (p.x + p.vx * t + W * 10) % W;
+    const py = (p.y + p.vy * t + H * 10) % H;
+    ctx.beginPath();
+    ctx.arc(px, py, p.s, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawWaveform(t, beatPulse) {
+  ctx.save();
+  const bars = 48;
+  const bw = 10;
+  const gap = 6;
+  const startX = (W - bars * (bw + gap)) / 2;
+  for (let i = 0; i < bars; i++) {
+    const dist = Math.abs(i - bars / 2) / (bars / 2);
+    const wave = Math.sin(t * 12 + i * 0.45) * 0.5 + 0.5;
+    const h = (1 - dist * 0.7) * (8 + wave * 22 + beatPulse * 18);
+    ctx.fillStyle = i % 2 === 0 ? 'rgba(0, 240, 255, 0.45)' : 'rgba(255, 42, 133, 0.45)';
+    roundRect(startX + i * (bw + gap), H - 18 - h, bw, h, 3);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// --- Scene 1: Chaos of Legacy BI (0 - 4s) ---
+function sceneChaos(t, beat) {
+  const collapse = easeInOutCubic((t - 3.2) / 0.8);
+
+  chaosCards.forEach((c, i) => {
+    const appear = easeOutBack((t - i * 0.08) / 0.45);
+    if (appear <= 0) return;
+
+    const cx = lerp(c.x, W / 2, collapse);
+    const cy = lerp(c.y, H / 2, collapse);
+    const scale = appear * (1 - collapse * 0.85);
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(c.rot + Math.sin(t * 3 + i) * 0.03);
+    ctx.scale(scale, scale);
+
+    ctx.fillStyle = 'rgba(16, 20, 36, 0.88)';
+    ctx.strokeStyle = c.color;
+    ctx.lineWidth = 2;
+    roundRect(-c.w / 2, -c.h / 2, c.w, c.h, 10);
+    ctx.fill();
+    ctx.stroke();
+
+    // Fake header dots
+    ctx.fillStyle = c.color;
+    ctx.beginPath(); ctx.arc(-c.w/2 + 16, -c.h/2 + 16, 4, 0, Math.PI*2); ctx.fill();
+    ctx.font = 'bold 12px monospace';
+    ctx.fillText(c.title, -c.w/2 + 28, -c.h/2 + 20);
+
+    // Fake mini chart
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.beginPath();
+    for (let x = -c.w/2 + 16; x < c.w/2 - 16; x += 20) {
+      const y = Math.sin(x * 0.1 + t * 5 + i) * 22 + 12;
+      if (x === -c.w/2 + 16) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  });
+
+  // Big Punchy Overlay Title
+  const textScale = easeOutBack(t / 0.5) * (1 - collapse);
+  if (textScale > 0.01) {
+    ctx.save();
+    ctx.translate(W / 2, H / 2);
+    ctx.scale(textScale + beat * 0.03, textScale + beat * 0.03);
+
+    ctx.fillStyle = 'rgba(5, 6, 10, 0.85)';
+    ctx.strokeStyle = '#ff2a85';
+    ctx.lineWidth = 3;
+    roundRect(-420, -95, 840, 190, 20);
+    ctx.fill(); ctx.stroke();
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '900 58px sans-serif';
+    ctx.fillText('DROWNING IN DASHBOARDS?', 0, -10);
+
+    ctx.fillStyle = '#ff2a85';
+    ctx.font = 'bold 28px monospace';
+    ctx.fillText('STATIC CHARTS SHOW WHAT. NEVER WHY.', 0, 48);
+    ctx.restore();
+  }
+}
+
+// --- Scene 2: The Prompt & Agent Awakening (4 - 9s) ---
+function scenePrompt(t, beat) {
+  const lt = t - 4.0;
+  const enter = easeOutCubic(lt / 0.6);
+  const exit = easeInOutCubic((lt - 4.3) / 0.7);
+
+  ctx.save();
+  ctx.translate(W / 2, H / 2 - exit * 240);
+  ctx.scale(enter * (1 - exit * 0.35), enter * (1 - exit * 0.35));
+
+  // Glowing Command Bar
+  const barW = 860, barH = 84;
+  ctx.shadowColor = '#00f0ff';
+  ctx.shadowBlur = 25 + beat * 15;
+  ctx.fillStyle = '#0d1222';
+  ctx.strokeStyle = '#00f0ff';
+  ctx.lineWidth = 2.5;
+  roundRect(-barW / 2, -barH / 2, barW, barH, 42);
+  ctx.fill(); ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Sparkle Icon
+  ctx.fillStyle = '#00f0ff';
+  ctx.beginPath();
+  ctx.arc(-barW / 2 + 45, 0, 14 + beat * 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Typewriter Prompt
+  const promptStr = "Why did enterprise conversion drop 18% in EU yesterday?";
+  const chars = Math.floor(clamp((lt - 0.4) / 2.2, 0, 1) * promptStr.length);
+  const visibleStr = promptStr.slice(0, chars);
+
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '600 25px sans-serif';
+  ctx.fillText(visibleStr + (lt % 0.5 < 0.25 ? '|' : ''), -barW / 2 + 80, 9);
+
+  // Subtitle
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#00f0ff';
+  ctx.font = 'bold 18px monospace';
+  ctx.fillText('ASK IN PLAIN ENGLISH. AUTONOMOUS AGENTS DO THE REST.', 0, -68);
+
+  // Spawning Agent Nodes below
+  if (lt > 2.4) {
+    const nodeT = (lt - 2.4) / 1.8;
+    const angles = [-2.2, -0.75, 0.75, 2.2];
+    angles.forEach((ang, idx) => {
+      const p = easeOutBack(nodeT * 1.4 - idx * 0.15);
+      if (p <= 0) return;
+      const nx = ang * 155 * p;
+      const ny = 155 * p;
+
+      ctx.strokeStyle = 'rgba(0, 240, 255, 0.45)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(0, barH / 2); ctx.lineTo(nx, ny); ctx.stroke();
+
+      ctx.fillStyle = '#11182f';
+      ctx.strokeStyle = agentTasks[idx].col;
+      roundRect(nx - 85, ny - 28, 170, 56, 12);
+      ctx.fill(); ctx.stroke();
+
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.fillText(agentTasks[idx].name, nx, ny + 5);
+    });
+  }
+
+  ctx.restore();
+}
+
+// --- Scene 3: Multi-Agent Swarm Investigation (9 - 15s) ---
+function sceneSwarm(t, beat) {
+  const lt = t - 9.0;
+  const fadeOut = 1 - easeInOutCubic((lt - 5.3) / 0.7);
+  ctx.save();
+  ctx.globalAlpha = fadeOut;
+
+  // Title banner
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#00f0ff';
+  ctx.font = 'bold 18px monospace';
+  ctx.fillText('AGENTIC WORKFLOW // AUTONOMOUS ROOT-CAUSE SWARM', W / 2, 54);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '900 38px sans-serif';
+  ctx.fillText('HYPOTHESIS -> SQL -> PYTHON -> INSIGHT', W / 2, 96);
+
+  // Central Brain Hub
+  const cx = W / 2, cy = H / 2 + 25;
+
+  // Connecting Synapses & Data Packets
+  const positions = [
+    { x: 250, y: 230 },
+    { x: 1030, y: 230 },
+    { x: 250, y: 540 },
+    { x: 1030, y: 540 }
+  ];
+
+  positions.forEach((pos, idx) => {
+    const appear = easeOutBack((lt - idx * 0.25) / 0.6);
+    if (appear <= 0) return;
+
+    const px = lerp(cx, pos.x, appear);
+    const py = lerp(cy, pos.y, appear);
+
+    // Beam
+    ctx.strokeStyle = agentTasks[idx].col;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(px, py); ctx.stroke();
+
+    // Moving pulse packet
+    const pkt = (lt * 1.6 + idx * 0.25) % 1;
+    const kx = lerp(cx, px, pkt);
+    const ky = lerp(cy, py, pkt);
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(kx, ky, 6, 0, Math.PI * 2); ctx.fill();
+
+    // Agent Card
+    const cw = 330, ch = 125;
+    ctx.fillStyle = 'rgba(13, 18, 34, 0.92)';
+    ctx.strokeStyle = agentTasks[idx].col;
+    ctx.lineWidth = 2;
+    roundRect(px - cw / 2, py - ch / 2, cw, ch, 14);
+    ctx.fill(); ctx.stroke();
+
+    // Badge
+    ctx.fillStyle = agentTasks[idx].col;
+    roundRect(px - cw / 2 + 16, py - ch / 2 + 18, 44, 44, 10);
+    ctx.fill();
+    ctx.fillStyle = '#05060a';
+    ctx.font = '900 18px monospace';
+    ctx.fillText(agentTasks[idx].icon, px - cw / 2 + 38, py - ch / 2 + 46);
+
+    // Text
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 20px sans-serif';
+    ctx.fillText(agentTasks[idx].name, px - cw / 2 + 74, py - ch / 2 + 38);
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '15px monospace';
+    ctx.fillText(agentTasks[idx].desc, px - cw / 2 + 74, py - ch / 2 + 64);
+
+    // Progress Bar inside Card
+    const prog = clamp((lt - idx * 0.4 - 0.5) / 2.2, 0, 1);
+    ctx.fillStyle = 'rgba(255,255,255,0.1)';
+    roundRect(px - cw / 2 + 16, py + ch / 2 - 28, cw - 32, 10, 5);
+    ctx.fill();
+    ctx.fillStyle = agentTasks[idx].col;
+    roundRect(px - cw / 2 + 16, py + ch / 2 - 28, (cw - 32) * prog, 10, 5);
+    ctx.fill();
+    ctx.textAlign = 'center';
+  });
+
+  // Central Core Node
+  const coreR = 72 + beat * 10;
+  ctx.shadowColor = '#00f0ff';
+  ctx.shadowBlur = 30;
+  ctx.fillStyle = '#090d1a';
+  ctx.strokeStyle = '#00f0ff';
+  ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(cx, cy, coreR, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Rotating ring
+  ctx.strokeStyle = '#ff2a85';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(cx, cy, coreR - 12, lt * 3, lt * 3 + Math.PI * 1.3);
+  ctx.stroke();
+
+  ctx.fillStyle = '#fff';
+  ctx.font = '900 22px sans-serif';
+  ctx.fillText('NEXUS', cx, cy - 4);
+  ctx.fillStyle = '#00f0ff';
+  ctx.font = 'bold 13px monospace';
+  ctx.fillText('ORCHESTRATOR', cx, cy + 16);
+
+  ctx.restore();
+}
+
+// --- Scene 4: Automated Browser & Live Dashboard Fix (15 - 20s) ---
+function sceneDashboard(t, beat) {
+  const lt = t - 15.0;
+  const enter = easeOutCubic(lt / 0.6);
+  const exit = easeInOutCubic((lt - 4.3) / 0.7);
+
+  ctx.save();
+  ctx.translate(W / 2, H / 2);
+  ctx.scale(enter * (1 - exit * 0.2), enter * (1 - exit * 0.2));
+  ctx.globalAlpha = 1 - exit;
+
+  const bw = 1040, bh = 560;
+  const bx = -bw / 2, by = -bh / 2;
+
+  // Browser Window Frame
+  ctx.fillStyle = '#0c101d';
+  ctx.strokeStyle = 'rgba(0, 240, 255, 0.4)';
+  ctx.lineWidth = 2;
+  roundRect(bx, by, bw, bh, 16);
+  ctx.fill(); ctx.stroke();
+
+  // Top Chrome Bar
+  ctx.fillStyle = '#161c30';
+  roundRect(bx, by, bw, 46, { tl: 16, tr: 16, bl: 0, br: 0 });
+  ctx.fill();
+
+  ['#ff5f56', '#ffbd2e', '#27c93f'].forEach((col, i) => {
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.arc(bx + 26 + i * 22, by + 23, 6, 0, Math.PI * 2); ctx.fill();
+  });
+
+  // URL Bar
+  ctx.fillStyle = '#090c15';
+  roundRect(bx + 110, by + 10, 480, 26, 6);
+  ctx.fill();
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#64748b';
+  ctx.font = '13px monospace';
+  ctx.fillText('https://app.nexus.ai/autonomous-remediation', bx + 125, by + 28);
+
+  // Left Panel: Revenue Recovery Curve
+  const gx = bx + 36, gy = by + 76, gw = 610, gh = 445;
+  ctx.fillStyle = '#111729';
+  roundRect(gx, gy, gw, gh, 12);
+  ctx.fill();
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 22px sans-serif';
+  ctx.fillText('EU Enterprise Checkout Conversion', gx + 24, gy + 40);
+
+  const fixed = lt > 2.3;
+  ctx.fillStyle = fixed ? '#10b981' : '#ff2a85';
+  ctx.font = 'bold 15px monospace';
+  ctx.fillText(fixed ? 'STATUS: AUTO-PATCHED (+24.8% RECOVERY)' : 'STATUS: ANOMALY DETECTED (-18.2%)', gx + 24, gy + 66);
+
+  // Animated Chart Curve
+  const fixProg = easeOutCubic((lt - 2.3) / 1.2);
+  ctx.strokeStyle = fixed ? '#10b981' : '#00f0ff';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  for (let i = 0; i <= 30; i++) {
+    const px = gx + 30 + (i / 30) * (gw - 60);
+    let normY = 0.45 + Math.sin(i * 0.5) * 0.08;
+    if (i > 18) {
+      const drop = 0.38;
+      const recovery = -0.22;
+      normY += lerp(drop, recovery, fixProg);
+    }
+    const py = gy + 120 + normY * (gh - 170);
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+
+  // Right Panel: Action Card & Auto-remediation
+  const rx = gx + gw + 24, ry = gy, rw = 334, rh = gh;
+  ctx.fillStyle = '#111729';
+  roundRect(rx, ry, rw, rh, 12);
+  ctx.fill();
+
+  ctx.fillStyle = '#00f0ff';
+  ctx.font = 'bold 14px monospace';
+  ctx.fillText('ROOT CAUSE IDENTIFIED', rx + 24, ry + 38);
+
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 20px sans-serif';
+  ctx.fillText('Stripe Webhook Timeout', rx + 24, ry + 70);
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = '15px sans-serif';
+  ctx.fillText('EU-West gateway latency spiked', rx + 24, ry + 100);
+  ctx.fillText('after v4.18 release at 02:14 UTC.', rx + 24, ry + 122);
+
+  // Metric Box
+  ctx.fillStyle = '#19223c';
+  roundRect(rx + 24, ry + 150, rw - 48, 95, 10);
+  ctx.fill();
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = '13px monospace';
+  ctx.fillText('RECOVERED ARR IMPACT', rx + 40, ry + 178);
+  ctx.fillStyle = '#10b981';
+  ctx.font = '900 34px sans-serif';
+  const arrVal = Math.floor(lerp(0, 142000, fixProg));
+  ctx.fillText(`+$${arrVal.toLocaleString()}`, rx + 40, ry + 222);
+
+  // Deploy Fix Button
+  const btnY = ry + 340;
+  const isClicked = lt > 2.1;
+  ctx.fillStyle = isClicked ? '#10b981' : '#ff2a85';
+  ctx.shadowColor = isClicked ? '#10b981' : '#ff2a85';
+  ctx.shadowBlur = 15 + beat * 10;
+  roundRect(rx + 24, btnY, rw - 48, 58, 12);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '900 18px sans-serif';
+  ctx.fillText(isClicked ? '✓ REROUTED & RESOLVED' : 'AUTONOMOUS FIX READY', rx + rw / 2, btnY + 35);
+
+  // Playwright Automated Cursor
+  const curProg = easeInOutCubic(clamp((lt - 0.8) / 1.3, 0, 1));
+  const curX = lerp(0, rx + rw / 2 + 40, curProg);
+  const curY = lerp(180, btnY + 32, curProg);
+
+  // Click ripple
+  if (lt > 2.05 && lt < 2.6) {
+    const rip = (lt - 2.05) / 0.55;
+    ctx.strokeStyle = `rgba(255,255,255,${1 - rip})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(curX, curY, rip * 55, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  // Draw Cursor Pointer
+  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(curX, curY);
+  ctx.lineTo(curX + 12, curY + 26);
+  ctx.lineTo(curX + 18, curY + 18);
+  ctx.lineTo(curX + 28, curY + 16);
+  ctx.closePath();
+  ctx.fill(); ctx.stroke();
+
+  ctx.restore();
+}
+
+// --- Scene 5: Outro & Brand Reveal (20 - 24s) ---
+function sceneOutro(t, beat) {
+  const lt = t - 20.0;
+  const scale = easeOutBack(lt / 0.7);
+
+  ctx.save();
+  ctx.translate(W / 2, H / 2);
+  ctx.scale(scale, scale);
+
+  // Glowing Hexagon Logo
+  const r = 64 + beat * 8;
+  ctx.shadowColor = '#00f0ff';
+  ctx.shadowBlur = 35;
+  ctx.strokeStyle = '#00f0ff';
+  ctx.fillStyle = '#0b1021';
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const a = (i * Math.PI) / 3 - Math.PI / 2 + lt * 0.4;
+    const x = Math.cos(a) * r;
+    const y = Math.sin(a) * r - 110;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '900 74px sans-serif';
+  ctx.fillText('NEXUS // AI', 0, 10);
+
+  ctx.fillStyle = '#00f0ff';
+  ctx.font = 'bold 26px monospace';
+  ctx.fillText('AGENTIC ANALYTICS FOR MODERN DATA TEAMS', 0, 58);
+
+  // Pill CTA
+  ctx.fillStyle = '#ff2a85';
+  roundRect(-210, 96, 420, 62, 31);
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '900 22px sans-serif';
+  ctx.fillText('DEPLOY YOUR AGENTS ->', 0, 135);
+
+  ctx.restore();
+}
+
+// --- Main Render Loop ---
+function render(now) {
+  const rawSec = now / 1000 + startOffset;
+  const t = rawSec % window.DUR;
+
+  // 128 BPM Beat Sync
+  const bps = 128 / 60;
+  const beatPos = (t * bps) % 1;
+  const beatPulse = Math.pow(1 - beatPos, 3);
+
+  const currentStep = Math.floor(t * bps * 4);
+  if (currentStep !== lastStep) {
+    lastStep = currentStep;
+    playStep(currentStep);
+  }
+
+  drawBackground(t, beatPulse);
+
+  if (t < 4.0) {
+    sceneChaos(t, beatPulse);
+  } else if (t < 9.0) {
+    scenePrompt(t, beatPulse);
+  } else if (t < 15.0) {
+    sceneSwarm(t, beatPulse);
+  } else if (t < 20.0) {
+    sceneDashboard(t, beatPulse);
+  } else {
+    sceneOutro(t, beatPulse);
+  }
+
+  drawWaveform(t, beatPulse);
+  requestAnimationFrame(render);
+}
+
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Alignment</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background-color: #000;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  canvas {
+    width: 1280px;
+    height: 720px;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    background: #050508;
+  }
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+const DUR = 60;
+window.DUR = DUR;
+
+let t_offset = 0;
+const params = new URLSearchParams(window.location.search);
+if (params.has('t')) t_offset = parseFloat(params.get('t')) || 0;
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+const P = {
+  idle:    { b:0, h:0, la1:0.2, la2:0.1, ra1:-0.2, ra2:-0.1, ll1:0.1, ll2:0, rl1:-0.1, rl2:0 },
+  reachR:  { b:0.1, h:-0.1, la1:1.2, la2:1.5, ra1:1.4, ra2:1.5, ll1:0.1, ll2:0, rl1:-0.1, rl2:0 },
+  reachL:  { b:-0.1, h:0.1, la1:-1.4, la2:-1.5, ra1:-1.2, ra2:-1.5, ll1:0.1, ll2:0, rl1:-0.1, rl2:0 },
+  reachU:  { b:0, h:-0.2, la1:2.8, la2:3.1, ra1:-2.8, ra2:-3.1, ll1:0.1, ll2:0, rl1:-0.1, rl2:0 },
+  pointR:  { b:0.1, h:-0.1, la1:0.2, la2:0.5, ra1:1.5, ra2:1.5, ll1:0.1, ll2:0, rl1:-0.1, rl2:0 },
+  pointL:  { b:-0.1, h:0.1, la1:-1.5, la2:-1.5, ra1:-0.2, ra2:-0.5, ll1:0.1, ll2:0, rl1:-0.1, rl2:0 },
+  windR:   { b:0.2, h:0.1, la1:1.0, la2:1.0, ra1:-0.6, ra2:-1.2, ll1:0.3, ll2:0, rl1:-0.2, rl2:0 },
+  punchR:  { b:-0.3, h:-0.1, la1:0.5, la2:2.0, ra1:1.5, ra2:1.5, ll1:-0.2, ll2:0, rl1:0.3, rl2:0 },
+  windL:   { b:-0.2, h:-0.1, la1:0.6, la2:1.2, ra1:-1.0, ra2:-1.0, ll1:0.2, ll2:0, rl1:-0.3, rl2:0 },
+  punchL:  { b:0.3, h:0.1, la1:-1.5, la2:-1.5, ra1:-0.5, ra2:-2.0, ll1:0.3, ll2:0, rl1:-0.2, rl2:0 },
+  scared:  { b:-0.2, h:-0.5, la1:2.5, la2:3.0, ra1:-2.5, ra2:-3.0, ll1:0.2, ll2:0, rl1:-0.2, rl2:0 },
+  dead:    { b:1.2, h:0.4, la1:0.6, la2:0.2, ra1:0.9, ra2:0.6, ll1:0.8, ll2:1.4, rl1:0.5, rl2:1.1 }
+};
+
+function lerpPose(p1, p2, t) {
+    let res = {};
+    for (let k in p1) res[k] = p1[k] + (p2[k] - p1[k]) * t;
+    return res;
+}
+function ease(t) { t = Math.max(0, Math.min(1, t)); return t*t*(3-2*t); }
+
+function renderStickman(ctx, x, y, scale, type, a, color) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.fillStyle = '#111';
+
+    let hip = {x: 0, y: 0};
+    let sh = {x: Math.sin(a.b)*40, y: -Math.cos(a.b)*40};
+    let neck = {x: sh.x, y: sh.y - 5};
+    let head = {x: sh.x + Math.sin(a.b + a.h)*15, y: sh.y - 15 - Math.cos(a.b + a.h)*15};
+    
+    let lk = {x: hip.x + Math.sin(a.ll1)*25, y: hip.y + Math.cos(a.ll1)*25};
+    let lf = {x: lk.x + Math.sin(a.ll2)*25, y: lk.y + Math.cos(a.ll2)*25};
+    let rk = {x: hip.x + Math.sin(a.rl1)*25, y: hip.y + Math.cos(a.rl1)*25};
+    let rf = {x: rk.x + Math.sin(a.rl2)*25, y: rk.y + Math.cos(a.rl2)*25};
+
+    let le = {x: sh.x + Math.sin(a.la1)*20, y: sh.y + Math.cos(a.la1)*20};
+    let lh = {x: le.x + Math.sin(a.la2)*20, y: le.y + Math.cos(a.la2)*20};
+    let re = {x: sh.x + Math.sin(a.ra1)*20, y: sh.y + Math.cos(a.ra1)*20};
+    let rh = {x: re.x + Math.sin(a.ra2)*20, y: re.y + Math.cos(a.ra2)*20};
+
+    ctx.beginPath(); ctx.moveTo(hip.x, hip.y); ctx.lineTo(sh.x, sh.y); ctx.stroke(); 
+    ctx.beginPath(); ctx.moveTo(neck.x, neck.y); ctx.lineTo(head.x, head.y); ctx.stroke(); 
+    ctx.beginPath(); ctx.moveTo(hip.x, hip.y); ctx.lineTo(lk.x, lk.y); ctx.lineTo(lf.x, lf.y); ctx.stroke(); 
+    ctx.beginPath(); ctx.moveTo(hip.x, hip.y); ctx.lineTo(rk.x, rk.y); ctx.lineTo(rf.x, rf.y); ctx.stroke(); 
+    ctx.beginPath(); ctx.moveTo(sh.x, sh.y); ctx.lineTo(le.x, le.y); ctx.lineTo(lh.x, lh.y); ctx.stroke(); 
+    ctx.beginPath(); ctx.moveTo(sh.x, sh.y); ctx.lineTo(re.x, re.y); ctx.lineTo(rh.x, rh.y); ctx.stroke(); 
+
+    ctx.beginPath();
+    let hr = 12;
+    if (type === 2) ctx.rect(head.x - hr, head.y - hr, hr*2, hr*2);
+    else ctx.arc(head.x, head.y, hr, 0, Math.PI*2);
+    ctx.fill(); ctx.stroke();
+
+    ctx.save();
+    ctx.translate(head.x, head.y);
+    ctx.rotate(a.b + a.h);
+    if (type === 0) {
+        ctx.beginPath(); ctx.arc(0, -2, hr, Math.PI, 0); ctx.stroke();
+        ctx.beginPath(); ctx.arc(-5, 0, 3, 0, Math.PI*2); ctx.arc(5, 0, 3, 0, Math.PI*2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-2, 0); ctx.lineTo(2, 0); ctx.stroke();
+    } else if (type === 1) {
+        ctx.beginPath();
+        for(let i=0; i<5; i++) ctx.arc(-hr + i*(hr*2/4), -hr+2, 4, Math.PI, 0);
+        ctx.stroke();
+        ctx.strokeRect(-8, -2, 6, 5); ctx.strokeRect(2, -2, 6, 5);
+        ctx.beginPath(); ctx.moveTo(-2, 0); ctx.lineTo(2, 0); ctx.stroke();
+    } else if (type === 2) {
+        ctx.beginPath(); ctx.rect(-hr, -hr, hr*2, 5); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.arc(2, 4, 4, 0, Math.PI); ctx.stroke();
+    }
+    ctx.restore();
+    ctx.restore();
+}
+
+function drawRobot(ctx, x, scale, reveal, scan, t) {
+    ctx.save();
+    ctx.translate(x, 600);
+    ctx.scale(scale, scale);
+    
+    ctx.strokeStyle = `rgba(120, 130, 150, ${reveal})`;
+    ctx.fillStyle = `rgba(40, 45, 55, ${reveal})`;
+    ctx.lineWidth = 8;
+    ctx.lineJoin = 'miter';
+    
+    ctx.beginPath(); ctx.moveTo(-30, 0); ctx.lineTo(-30, -120); ctx.lineTo(0, -200); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(30, 0); ctx.lineTo(30, -120); ctx.lineTo(0, -200); ctx.stroke();
+    ctx.fillRect(-45, -400, 90, 200); ctx.strokeRect(-45, -400, 90, 200);
+    ctx.beginPath(); ctx.moveTo(-45, -380); ctx.lineTo(-90, -250); ctx.lineTo(-70, -100); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(45, -380); ctx.lineTo(90, -250); ctx.lineTo(70, -100); ctx.stroke();
+    ctx.fillRect(-35, -480, 70, 75); ctx.strokeRect(-35, -480, 70, 75);
+    
+    if (reveal > 0) {
+        let glow = Math.min(1, reveal * 3);
+        ctx.shadowBlur = 25 * glow;
+        ctx.shadowColor = '#f00';
+        ctx.fillStyle = `rgba(255, 40, 40, ${glow})`;
+        ctx.fillRect(-28, -455, 56, 12);
+        ctx.shadowBlur = 0;
+    }
+    
+    if (scan > 0) {
+        let grad = ctx.createLinearGradient(0, -440, 0, 0);
+        grad.addColorStop(0, `rgba(255, 0, 0, ${0.5 * scan})`);
+        grad.addColorStop(1, `rgba(255, 0, 0, 0)`);
+        ctx.fillStyle = grad;
+        ctx.beginPath(); ctx.moveTo(-8, -440); ctx.lineTo(8, -440); ctx.lineTo(60, 0); ctx.lineTo(-60, 0); ctx.fill();
+        let sy = -440 + ((t * 300) % 440);
+        ctx.strokeStyle = `rgba(255, 100, 100, ${scan})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(-40, sy); ctx.lineTo(40, sy); ctx.stroke();
+    }
+    ctx.restore();
+}
+
+function drawBubble(x, y, txt, pulse) {
+    ctx.save();
+    ctx.fillStyle = '#fff';
+    let s = 0.8 + pulse * 0.3;
+    ctx.translate(x, y);
+    ctx.scale(s, s);
+    ctx.fillRect(-25, -35, 50, 30);
+    ctx.beginPath(); ctx.moveTo(-5, -5); ctx.lineTo(5, -5); ctx.lineTo(0, 5); ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(txt, 0, -20);
+    ctx.restore();
+}
+
+function drawImpact(x, y, t) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(t * 10);
+    ctx.strokeStyle = '#ff0';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    for(let i=0; i<8; i++) {
+        let a = i * Math.PI / 4;
+        let r = (i%2===0) ? 25 : 10;
+        ctx.moveTo(Math.cos(a)*5, Math.sin(a)*5);
+        ctx.lineTo(Math.cos(a)*r, Math.sin(a)*r);
+    }
+    ctx.stroke();
+    ctx.restore();
+}
+
+function drawProjectiles(t) {
+    ctx.save();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#0ff';
+    for(let i=0; i<5; i++) {
+        let px = ((t * 400 + i * 250) % 1200) + 40;
+        let py = 450 + Math.sin(i * 10 + t * 5) * 50;
+        ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px - 30, py); ctx.stroke();
+        ctx.fillStyle = '#fff'; ctx.fillRect(px, py-2, 4, 4);
+    }
+    ctx.strokeStyle = '#f0f';
+    for(let i=0; i<4; i++) {
+        let px = 1240 - ((t * 500 + i * 300) % 1200);
+        let py = 500 + Math.cos(i * 5 + t * 4) * 40;
+        ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + 30, py); ctx.stroke();
+        ctx.fillStyle = '#fff'; ctx.fillRect(px-4, py-2, 4, 4);
+    }
+    ctx.restore();
+}
+
+function drawDust(x, y, t) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(200,200,200,0.3)';
+    for(let i=0; i<4; i++) {
+        let px = x + Math.sin(t*10 + i)*30;
+        let py = y - Math.abs(Math.cos(t*8 + i*2))*15;
+        ctx.beginPath(); ctx.arc(px, py, 5 + i*3, 0, Math.PI*2); ctx.fill();
+    }
+    ctx.restore();
+}
+
+function drawShadow(x, y) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.beginPath(); ctx.ellipse(x, y, 25, 5, 0, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+}
+
+let activeTexts = [];
+function addText(txt, start, end, y, size, color, t) {
+    if (t >= start && t <= end) activeTexts.push({txt, start, end, y, size, color, t});
+}
+function renderTexts() {
+    for (let o of activeTexts) {
+        let alpha = Math.min(1, (o.t - o.start)*3, (o.end - o.t)*3);
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, alpha);
+        ctx.font = `bold ${o.size}px sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        let w = ctx.measureText(o.txt).width;
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(640 - w/2 - 20, o.y - o.size/2 - 10, w + 40, o.size + 20);
+        ctx.fillStyle = o.color;
+        ctx.fillText(o.txt, 640, o.y);
+        ctx.restore();
+    }
+}
+
+let startTime = null;
+
+function draw() {
+    let now = performance.now();
+    if (!startTime) startTime = now;
+    let t = ((now - startTime) / 1000) + t_offset;
+    t = t % DUR;
+    
+    activeTexts = [];
+    ctx.fillStyle = '#050508';
+    ctx.fillRect(0, 0, 1280, 720);
+    
+    let s1Pose = P.idle, s2Pose = P.idle, s3Pose = P.idle;
+    let s1X = 500, s2X = 640, s3X = 780;
+    let stickColor = '#eee';
+    let orbAlpha = 0, orbColor = '#ffc864', orbScale = 1;
+    let bgGlow = '#ffc864', bgGlowAlpha = 0;
+    
+    let camScale = 1, camX = 0, camY = 0, shakeX = 0, shakeY = 0;
+    let pivotX = 640, pivotY = 360;
+    
+    // ================= SCENE 1: 0 - 12 =================
+    if (t < 12) {
+        let p = t / 12;
+        bgGlowAlpha = 0.15; orbAlpha = 1;
+        camScale = 1 + p * 0.05;
+        s1X = 500; s2X = 640; s3X = 780;
+        
+        if (t < 3) {
+            let e = ease(t / 3);
+            s1Pose = lerpPose(P.idle, P.reachR, e);
+            s2Pose = lerpPose(P.idle, P.reachU, e);
+            s3Pose = lerpPose(P.idle, P.reachL, e);
+        } else {
+            let pulse = Math.sin(t * 3) * 0.05;
+            s1Pose = lerpPose(P.reachR, P.idle, pulse + 0.05);
+            s2Pose = lerpPose(P.reachU, P.idle, pulse + 0.05);
+            s3Pose = lerpPose(P.reachL, P.idle, pulse + 0.05);
+            orbScale = 1 + Math.sin(t * 3) * 0.1;
+            if (t > 9) {
+                orbColor = '#8ff';
+                if (Math.random() > 0.8) camX += Math.random() * 8;
+            }
+        }
+        addText("In the beginning...", 1, 5, 640, 32, '#fff', t);
+        addText("...there was a shared vision.", 6, 11, 640, 32, '#fff', t);
+    }
+    
+    // ================= SCENE 2: 12 - 26 =================
+    else if (t < 26) {
+        let lt = t - 12;
+        bgGlow = '#48f'; bgGlowAlpha = 0.1;
+        orbAlpha = 1 - ease(lt / 2);
+        camScale = 1.05 + (lt / 14) * 0.15;
+        camY = (lt / 14) * 30;
+        
+        let close = ease(lt / 4);
+        s1X = 500 + close * 40; s2X = 640; s3X = 780 - close * 40;
+        
+        if (lt < 4) {
+            let e = ease(lt / 4);
+            s1Pose = lerpPose(P.reachR, P.pointR, e);
+            s2Pose = lerpPose(P.reachU, P.pointR, e);
+            s3Pose = lerpPose(P.reachL, P.pointL, e);
+        } else {
+            let agitate = (Math.sin(lt * 8) + 1) / 2;
+            s1Pose = lerpPose(P.idle, P.pointR, agitate);
+            s2Pose = lerpPose(P.pointL, P.pointR, (Math.sin(lt*5)+1)/2);
+            s3Pose = lerpPose(P.idle, P.pointL, agitate);
+        }
+        addText("But differing philosophies emerged.", 14, 19, 640, 32, '#fff', t);
+        addText("Tensions rose.", 20, 25, 640, 32, '#fff', t);
+    }
+    
+    // ================= SCENE 3: 26 - 44 =================
+    else if (t < 44) {
+        let lt = t - 26;
+        bgGlow = '#f20'; bgGlowAlpha = 0.1 + Math.abs(Math.sin(lt * 10)) * 0.15;
+        shakeX = (Math.random() - 0.5) * 15; shakeY = (Math.random() - 0.5) * 15;
+        camScale = 1.2 + Math.sin(lt * 2) * 0.05;
+        s1X = 480; s2X = 640; s3X = 800;
+        
+        let f1 = (Math.sin(lt * 12) + 1) / 2;
+        let f2 = (Math.sin(lt * 12 + Math.PI) + 1) / 2;
+        let f3 = (Math.sin(lt * 10) + 1) / 2;
+        
+        s1Pose = lerpPose(P.windR, P.punchR, f1);
+        s2Pose = lerpPose(P.punchL, P.punchR, f2);
+        s3Pose = lerpPose(P.windL, P.punchL, f3);
+        
+        addText("The battle for the future of AI.", 28, 34, 640, 32, '#fff', t);
+        addText("Distracted by the conflict...", 36, 42, 640, 32, '#fff', t);
+    }
+    
+    // ================= SCENE 4: 44 - 60 =================
+    else {
+        let lt = t - 44;
+        bgGlowAlpha = 0; stickColor = '#888';
+        camScale = 1.2;
+        s1X = 480; s2X = 640; s3X = 800;
+        
+        let endLt = 18;
+        let lastS1 = lerpPose(P.windR, P.punchR, (Math.sin(endLt * 12) + 1) / 2);
+        let lastS2 = lerpPose(P.punchL, P.punchR, (Math.sin(endLt * 12 + Math.PI) + 1) / 2);
+        let lastS3 = lerpPose(P.windL, P.punchL, (Math.sin(endLt * 10) + 1) / 2);
+        
+        let defeat = ease((lt - 8) / 2);
+        if (lt < 8) {
+            let sc = ease(lt / 1);
+            s1Pose = lerpPose(lastS1, P.scared, sc);
+            s2Pose = lerpPose(lastS2, P.scared, sc);
+            s3Pose = lerpPose(lastS3, P.scared, sc);
+        } else {
+            s1Pose = lerpPose(P.scared, P.dead, defeat);
+            s2Pose = lerpPose(P.scared, P.dead, defeat);
+            s3Pose = lerpPose(P.scared, P.dead, defeat);
+        }
+        
+        if (lt > 14) {
+            let z = ease((lt - 14) / 2);
+            camScale = 1.2 + z * 5;
+            pivotY = 360 + (54 - 360) * z;
+        }
+        
+        addText("...they didn't notice the silence.", 45, 50, 640, 32, '#fff', t);
+        addText("The machines succeeded.", 52, 57, 640, 36, '#faa', t);
+        addText("Totally not based on real events.", 57, 60, 690, 18, '#888', t);
+    }
+    
+    // --- CAMERA ---
+    ctx.save();
+    ctx.translate(640 + camX + shakeX, 360 + camY + shakeY);
+    ctx.scale(camScale, camScale);
+    ctx.translate(-pivotX, -pivotY);
+    
+    // --- WORLD ---
+    if (bgGlowAlpha > 0) {
+        let r=255, g=200, b=100;
+        if(bgGlow==='#48f'){r=68;g=136;b=255;}
+        if(bgGlow==='#f20'){r=255;g=34;b=0;}
+        let grad = ctx.createRadialGradient(640, 450, 0, 640, 450, 600);
+        grad.addColorStop(0, `rgba(${r},${g},${b},${bgGlowAlpha})`);
+        grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+        ctx.fillStyle = grad; ctx.fillRect(0,0,1280,720);
+    }
+    
+    ctx.strokeStyle = '#222'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, 600); ctx.lineTo(1280, 600); ctx.stroke();
+    
+    if (orbAlpha > 0) {
+        ctx.save();
+        ctx.globalAlpha = orbAlpha;
+        ctx.translate(640, 450); ctx.scale(orbScale, orbScale);
+        ctx.shadowBlur = 40; ctx.shadowColor = orbColor;
+        ctx.fillStyle = orbColor; ctx.beginPath(); ctx.arc(0,0,30,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0,0,15,0,Math.PI*2); ctx.fill();
+        ctx.restore();
+    }
+    
+    if (t >= 44) {
+        let lt = t - 44;
+        let rev = ease((lt - 2)/4);
+        let scn = ease((lt - 6)/2);
+        drawRobot(ctx, 350, 1.1, rev, scn, t);
+        drawRobot(ctx, 640, 1.2, rev, scn, t);
+        drawRobot(ctx, 930, 1.1, rev, scn, t);
+        
+        let vig = ctx.createRadialGradient(640, 360, 200, 640, 360, 800);
+        vig.addColorStop(0, 'rgba(0,0,0,0)');
+        vig.addColorStop(1, `rgba(50,0,0,${0.6 * rev})`);
+        ctx.fillStyle = vig; ctx.fillRect(0, 0, 1280, 720);
+    }
+    
+    if (t >= 12 && t < 26) {
+        let lt = t - 12;
+        if (lt >= 4) {
+            let ag = (Math.sin(lt * 8) + 1) / 2;
+            drawBubble(s1X, 420, ag > 0.6 ? "?!" : "...", ag);
+            drawBubble(s2X, 400, "!!!", (Math.sin(lt*5)+1)/2);
+            drawBubble(s3X, 420, ag > 0.6 ? "?!" : "...", ag);
+        }
+    }
+    if (t >= 26 && t < 44) {
+        let lt = t - 26;
+        if ((Math.sin(lt * 12) + 1) / 2 > 0.9) drawImpact(560, 480, lt);
+        if ((Math.sin(lt * 10) + 1) / 2 > 0.9) drawImpact(720, 480, lt);
+        drawProjectiles(t);
+        drawDust(s1X, 600, t); drawDust(s2X, 600, t); drawDust(s3X, 600, t);
+    }
+    
+    drawShadow(s1X, 600); drawShadow(s2X, 600); drawShadow(s3X, 600);
+    renderStickman(ctx, s1X, 550, 1, 0, s1Pose, stickColor);
+    renderStickman(ctx, s2X, 547.5, 1.05, 1, s2Pose, stickColor);
+    renderStickman(ctx, s3X, 550, 1, 2, s3Pose, stickColor);
+    
+    ctx.restore();
+    
+    if (t >= 59.5) {
+        ctx.fillStyle = `rgba(200, 0, 0, ${ease((t - 59.5) / 0.5)})`;
+        ctx.fillRect(0, 0, 1280, 720);
+    }
+    
+    renderTexts();
+    requestAnimationFrame(draw);
+}
+
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

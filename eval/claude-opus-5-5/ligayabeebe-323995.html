@@ -1,0 +1,44 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>10xColleges Launch</title><style>html,body{margin:0;background:#000;height:100%;overflow:hidden}canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+const DUR=36;window.DUR=DUR;
+const cv=document.getElementById('c'),x=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px'}addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)||0;const t0=performance.now()-off*1000;
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));const E=v=>{v=cl(v);return v<.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2};
+const seg=(t,a,b)=>cl((t-a)/(b-a));
+const P=[];for(let i=0;i<140;i++)P.push({x:Math.random()*1280,y:Math.random()*720,z:Math.random()*2+.3,p:Math.random()*6});
+function txt(s,X,Y,sz,c,a,al='center',w='700'){x.globalAlpha=cl(a);x.fillStyle=c;x.font=w+' '+sz+'px Helvetica,Arial,sans-serif';x.textAlign=al;x.textBaseline='middle';x.fillText(s,X,Y);x.globalAlpha=1}
+function fade(t,a,b){return seg(t,a,a+.6)*(1-seg(t,b-.6,b))}
+const unis=['Stanford','MIT','UCLA','Michigan','NYU','Duke','Rice','Purdue','Emory','Cornell','Tufts','Brown'];
+function bg(t){const g=x.createRadialGradient(640,360,50,640,360,800);g.addColorStop(0,'#0f1640');g.addColorStop(1,'#03040c');x.fillStyle=g;x.fillRect(0,0,1280,720);
+for(const p of P){const yy=(p.y-t*12*p.z+7200)%720;x.globalAlpha=.25+.25*Math.sin(t+p.p);x.fillStyle='#8fb4ff';x.fillRect((p.x+t*4*p.z)%1280,yy,p.z,p.z)}x.globalAlpha=1}
+function logo(cx,cy,s,a){x.save();x.globalAlpha=cl(a);x.translate(cx,cy);x.scale(s,s);
+const g=x.createLinearGradient(-60,-60,60,60);g.addColorStop(0,'#5b8cff');g.addColorStop(1,'#b45bff');x.fillStyle=g;x.beginPath();x.roundRect(-60,-60,120,120,28);x.fill();
+x.fillStyle='#fff';x.font='900 60px Helvetica,Arial';x.textAlign='center';x.textBaseline='middle';x.fillText('10x',0,4);x.restore()}
+function frame(t){bg(t);
+// Scene1 0-6: counter of frames
+let a=fade(t,0,6);if(a>0){const n=Math.floor(7867*E(seg(t,.3,4.5)));txt(n.toLocaleString('en-US'),640,320,150,'#fff',a,'center','900');txt('frames',640,420,34,'#8fa6d8',a,'center','400');
+txt('Every one of them drawn by code.',640,500,30,'#c8d4ff',a*seg(t,3.5,4.3),'center','400')}
+// Scene2 6-12: code lines
+a=fade(t,6,12);if(a>0){const L=['const frame = draw(t);','logo(cx, cy, scale);','for (const u of colleges) match(u);','text("10xColleges", 640, 360);','export DUR = 36;','// no screen recording.'];
+x.globalAlpha=a;x.fillStyle='#0a0f26';x.beginPath();x.roundRect(240,170,800,380,16);x.fill();x.strokeStyle='#2a3a80';x.stroke();
+['#ff5f57','#febc2e','#28c840'].forEach((c,i)=>{x.fillStyle=c;x.beginPath();x.arc(270+i*22,195,6,0,7);x.fill()});
+L.forEach((l,i)=>{const k=cl((t-6.4)*8-i*5,0,l.length);txt(String(i+1),280,250+i*45,20,'#4a5a90',a,'right','400');txt(l.slice(0,k),300,250+i*45,24,i==5?'#6b7bb0':'#9fc3ff',a,'left','400')});
+txt('Want a change? Edit a script.',640,610,30,'#fff',a*seg(t,10,10.7))}
+// Scene3 12-18: logo reveal
+a=fade(t,12,18.5);if(a>0){const s=E(seg(t,12,13.5));x.save();x.globalAlpha=a*.4;x.strokeStyle='#7a8cff';for(let i=0;i<3;i++){x.beginPath();x.arc(640,300,90+((t-12)*80+i*70)%220,0,7);x.stroke()}x.restore();
+logo(640,300,s*1.3,a);txt('10xColleges',640,450,72,'#fff',a*seg(t,13.3,14),'center','900');txt('Find your college. 10x faster.',640,520,30,'#b9c6ff',a*seg(t,14.2,15))}
+// Scene4 18-26: matching demo
+a=fade(t,18.5,26.5);if(a>0){txt('Tell us who you are.',640,90,40,'#fff',a);
+const tags=['GPA 3.8','Robotics','Pacific coast','Aid needed'];tags.forEach((g,i)=>{const p=seg(t,19+i*.3,19.5+i*.3);x.globalAlpha=a*p;x.fillStyle='#1d2a6a';x.beginPath();x.roundRect(250+i*200,140,180,44,22);x.fill();txt(g,340+i*200,162,20,'#cfe0ff',a*p,'center','600')});
+unis.forEach((u,i)=>{const col=i%4,row=i/4|0,X=220+col*280,Y=260+row*120;const p=seg(t,20.5+i*.08,21+i*.08);const sc=[97,95,92,88,90,86,84,93,81,89,83,87][i];const hl=t>23&&sc>=92;
+x.globalAlpha=a*p;x.fillStyle=hl?'#3b3fae':'#121a44';x.beginPath();x.roundRect(X-120,Y-45,240,90,14);x.fill();if(hl){x.strokeStyle='#9b7bff';x.lineWidth=2;x.stroke()}
+txt(u,X-100,Y-12,24,'#fff',a*p,'left');x.fillStyle='#26306a';x.fillRect(X-100,Y+18,200,6);x.fillStyle=hl?'#b45bff':'#5b8cff';x.fillRect(X-100,Y+18,200*sc/100*E(seg(t,21.5,23)),6);txt(Math.round(sc*E(seg(t,21.5,23)))+'%',X+100,Y-12,20,'#9fb0ff',a*p,'right')});
+txt('Your top matches, in seconds.',640,655,30,'#fff',a*seg(t,23.5,24.2))}
+// Scene5 26-31: stats
+a=fade(t,26.5,31.5);if(a>0){[['4,000+','colleges'],['10x','faster research'],['1','application hub']].forEach((s,i)=>{const p=E(seg(t,26.8+i*.4,27.6+i*.4));txt(s[0],290+i*350,330-20*(1-p),88,'#fff',a*p,'center','900');txt(s[1],290+i*350,410,26,'#9fb0ff',a*p,'center','400')})}
+// Scene6 31-36: end card
+a=fade(t,31.5,36.2);if(a>0){logo(640,270,1,a);txt('10xColleges',640,400,64,'#fff',a,'center','900');txt('Launching today.',640,470,32,'#b9c6ff',a*seg(t,32.3,33));
+txt('Made with 7,867 frames of code.',640,640,18,'#5a6aa0',a*seg(t,33,33.8),'center','400')}
+}
+function loop(){const t=((performance.now()-t0)/1000)%DUR;frame(t);requestAnimationFrame(loop)}requestAnimationFrame(loop);
+</script></body></html>

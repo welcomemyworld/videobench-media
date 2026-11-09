@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Wie funktioniert eine Dampfmaschine?</title>
+<style>
+html,body{margin:0;padding:0;background:#000;width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}
+canvas{width:min(100vw,177.78vh);height:min(56.25vw,100vh);display:block;background:#0f0e17}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d');
+const W=1280,H=720;canvas.width=W;canvas.height=H;
+window.DUR=36;
+const params=new URLSearchParams(location.search);
+const tOff=parseFloat(params.get('t')||'0');
+const startTime=performance.now()-tOff*1000;
+const FADE=0.9;
+
+const C={bg:'#0f0e17',text:'#fffffe',steam:'#7dd3fc',fire:'#f97316',water:'#3b82f6',metal:'#94a3b8',accent:'#fbbf24',pink:'#f72585',teal:'#4ecdc4',dim:'#4a5568',grid:'rgba(255,255,255,0.07)'};
+
+const TAU=Math.PI*2;
+function ease(t){return t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2}
+function lerp(a,b,t){return a+(b-a)*t}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+function circDist(a,b){const d=Math.abs(a-b);return Math.min(d,window.DUR-d)}
+function drawText(text,x,y,size,color,align='center',font='Georgia,"Times New Roman",serif'){
+  ctx.font=size+'px '+font;ctx.fillStyle=color;ctx.textAlign=align;ctx.textBaseline='middle';ctx.fillText(text,x,y);
+}
+function drawArrow(x1,y1,x2,y2,color,lw=2){
+  const dx=x2-x1,dy=y2-y1,len=Math.hypot(dx,dy),ang=Math.atan2(dy,dx);
+  ctx.strokeStyle=color;ctx.lineWidth=lw;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+  const hs=10+len*0.04;
+  ctx.fillStyle=color;ctx.beginPath();
+  ctx.moveTo(x2,y2);ctx.lineTo(x2-hs*Math.cos(ang-0.4),y2-hs*Math.sin(ang-0.4));
+  ctx.lineTo(x2-hs*Math.cos(ang+0.4),y2-hs*Math.sin(ang+0.4));ctx.closePath();ctx.fill();
+}
+function drawLabel(text,x,y,color,tx,ty,lineW=2){
+  drawText(text,tx,ty,17,color);
+  drawArrow(x,y,tx-(tx>x?40:-40),ty,color,lineW);
+}
+function drawSteamParticles(x,y,count,time,spreadX,riseH,alpha,sizeMin=5,sizeMax=14){
+  for(let i=0;i<count;i++){
+    const seed=i*137.7;const speed=0.12+(i%7)*0.035;const cyc=riseH/(80*speed);
+    const t=((time/cyc+seed/997)%1);const a=alpha*Math.sin(t*Math.PI);
+    const px=x+Math.sin(seed+time*1.8)*spreadX*(0.3+0.7*Math.sin(t*Math.PI));
+    const py=y-t*riseH;const r=sizeMin+(sizeMax-sizeMin)*Math.abs(Math.sin(seed*3));
+    ctx.beginPath();ctx.arc(px,py,r,0,TAU);ctx.fillStyle=`rgba(125,211,252,${a})`;ctx.fill();
+  }
+}
+function drawWaterBubbles(x,y,w,h,time){
+  for(let i=0;i<14;i++){
+    const seed=i*91.3,speed=0.25+(i%5)*0.12,t=((time/speed+seed/991)%1);
+    const bx=x+8+(seed%(w-16)),by=y-t*h,a=Math.sin(t*Math.PI)*0.5;
+    ctx.beginPath();ctx.arc(bx,by,3+(i%3)*2,0,TAU);ctx.fillStyle=`rgba(255,255,255,${a*0.6})`;ctx.fill();
+  }
+}
+function drawFire(x,y,w,h,time){
+  const fl=Math.sin(time*8)*4+Math.sin(time*13)*2.5;
+  for(let i=0;i<5;i++){
+    const fx=x+i*w/4+(i%2)*8,fh=h*(0.55+0.45*Math.abs(Math.sin(time*5+i*1.7)));
+    ctx.beginPath();ctx.moveTo(fx-w/6,y);
+    ctx.quadraticCurveTo(fx-w/6+fl/2,y-fh*0.6,fx,y-fh);
+    ctx.quadraticCurveTo(fx+w/6-fl/2,y-fh*0.6,fx+w/6,y);
+    ctx.fillStyle=i%2===0?'rgba(249,115,22,0.85)':'rgba(251,191,36,0.7)';ctx.fill();
+  }
+}
+function drawGrid(){
+  const spacing=40;
+  for(let x=spacing/2;x<W;x+=spacing)for(let y=spacing/2;y<H;y+=spacing){
+    ctx.beginPath();ctx.arc(x,y,1,0,TAU);ctx.fillStyle=C.grid;ctx.fill();
+  }
+}
+function drawCylinderShape(x,y,w,h,wallW=6){
+  ctx.fillStyle='#1e1a2e';ctx.fillRect(x,y,w,h);
+  ctx.strokeStyle=C.metal;ctx.lineWidth=wallW;ctx.strokeRect(x-wallW,y-wallW,w+wallW*2,h+wallW*2);
+}
+function drawFlywheel(cx,cy,R,angle,crankR,time){
+  const metal='#a8b8c8';
+  ctx.beginPath();ctx.arc(cx,cy,R,0,TAU);ctx.strokeStyle=metal;ctx.lineWidth=12;ctx.stroke();
+  ctx.beginPath();ctx.arc(cx,cy,R-16,0,TAU);ctx.strokeStyle=metal;ctx.lineWidth=4;ctx.stroke();
+  for(let i=0;i<6;i++){
+    const a=angle+i*TAU/6;
+    ctx.beginPath();ctx.moveTo(cx+Math.cos(a)*22,cy+Math.sin(a)*22);
+    ctx.lineTo(cx+Math.cos(a)*(R-14),cy+Math.sin(a)*(R-14));
+    ctx.strokeStyle=metal;ctx.lineWidth=5;ctx.stroke();
+  }
+  ctx.beginPath();ctx.arc(cx,cy,22,0,TAU);ctx.fillStyle=metal;ctx.fill();
+  const px=cx+Math.cos(angle)*crankR,py=cy+Math.sin(angle)*crankR;
+  ctx.beginPath();ctx.arc(px,py,13,0,TAU);ctx.fillStyle=C.pink;ctx.fill();
+  ctx.strokeStyle=C.pink;ctx.lineWidth=6;ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(px,py);ctx.stroke();
+  return{px,py};
+}
+function drawCrosshead(x,y){
+  ctx.fillStyle='#2a3145';ctx.fillRect(x-18,y-14,36,28);
+  ctx.strokeStyle=C.metal;ctx.lineWidth=2;ctx.strokeRect(x-18,y-14,36,28);
+  ctx.fillStyle=C.metal;ctx.fillRect(x-4,y-20,8,40);
+}
+
+const scenes=[
+  {start:0,dur:5,
+   draw:(t,a)=>{
+     if(a<=0)return;
+     ctx.save();ctx.globalAlpha=a;
+     drawSteamParticles(W/2,H+20,28,t,80,H*0.7,0.6);
+     const ti=ease(clamp(t/1.2,0,1));
+     drawText('Wie funktioniert eine',W/2,H/2-70,44,C.text);
+     drawText('Dampfmaschine?',W/2,H/2-10,64,C.steam);
+     ctx.strokeStyle=C.accent;ctx.lineWidth=2;ctx.beginPath();
+     ctx.moveTo(W/2-200*ti,H/2+60);ctx.lineTo(W/2+200*ti,H/2+60);ctx.stroke();
+     if(t>1.5)drawText('Ein Erklärvideo',W/2,H/2+105,24,C.dim);
+     ctx.restore();
+   }},
+  {start:5,dur:7,
+   draw:(t,a)=>{
+     if(a<=0)return;
+     ctx.save();ctx.globalAlpha=a;
+     drawText('Das Grundprinzip',W/2,50,34,C.text);
+     // vertical cylinder
+     const cx=600,cyTop=200,cyBot=480,cw=160;
+     drawCylinderShape(cx-cw/2,cyTop,cw,cyBot-cyTop);
+     // water level
+     const waterTop=410;
+     ctx.fillStyle=`rgba(59,130,246,0.45)`;
+     ctx.fillRect(cx-cw/2+3,waterTop,cw-6,cyBot-waterTop-3);
+     ctx.fillStyle=C.water;ctx.fillRect(cx-cw/2+3,waterTop+4,cw-6,cyBot-waterTop-7);
+     // wavy surface
+     ctx.beginPath();ctx.moveTo(cx-cw/2+3,waterTop+4);
+     for(let x=cx-cw/2+3;x<=cx+cw/2-3;x+=4){
+       ctx.lineTo(x,waterTop+4+Math.sin(x*0.06+t*3)*2.5);
+     }
+     ctx.lineTo(cx+cw/2-3,cyBot);ctx.lineTo(cx-cw/2+3,cyBot);ctx.closePath();
+     ctx.fillStyle=`rgba(59,130,246,0.8)`;ctx.fill();
+     drawWaterBubbles(cx-cw/2+10,waterTop+6,cw-20,waterTop-cyTop,t);
+     // fire
+     drawFire(cx-55,cyBot,110,70,t);
+     // piston
+     const pY=lerp(380,270,ease(clamp(t/5,0,1)));
+     const pH=26;
+     ctx.fillStyle='#cbd5e1';ctx.fillRect(cx-cw/2+10,pY,cw-20,pH);
+     ctx.fillStyle=C.metal;ctx.fillRect(cx-4,cyTop-40,8,55);
+     // steam
+     drawSteamParticles(cx,pY-pH-5,16,t,cw*0.35,90,0.55,3,9);
+     // push arrows
+     drawArrow(cx,cyTop+20,cx,pY-pH/2,C.steam,3);
+     // labels
+     drawLabel('Wasser',cx-cw/2-15,365,C.water,cx-cw/2-110,365);
+     drawLabel('Feuer',cx,cyBot+70,C.fire,cx,cyBot+110);
+     drawLabel('Dampf',cx+cw/2+10,cyTop+10,C.steam,cx+cw/2+100,cyTop+10);
+     drawLabel('Kolben',cx+cw/2-5,pY+13,C.text,cx+cw/2+110,pY+13);
+     ctx.restore();
+   }},
+  {start:12,dur:8,
+   draw:(t,a)=>{
+     if(a<=0)return;
+     ctx.save();ctx.globalAlpha=a;
+     drawText('Zylinder und Schieberventil',W/2,50,34,C.text);
+     const cy=360,cl=300,cr=980,ch=100;
+     const w=2*Math.PI/6;
+     const px=640+150*Math.sin(w*t);
+     const vx=640+105*Math.sin(w*t+Math.PI/2);
+     // cylinder
+     drawCylinderShape(cl,cy-ch/2,cr-cl,ch);
+     // steam in pipe
+     ctx.strokeStyle=C.dim;ctx.lineWidth=6;ctx.beginPath();
+     ctx.moveTo(640,cy-ch/2-20);ctx.lineTo(640,cy-ch/2-70);ctx.stroke();
+     drawText('Dampfzufuhr',640,cy-ch/2-98,18,C.steam);
+     // valve block
+     ctx.fillStyle='#2a3145';ctx.fillRect(vx-70,cy-ch/2-58,140,52);
+     ctx.strokeStyle=C.metal;ctx.lineWidth=3;ctx.strokeRect(vx-70,cy-ch/2-58,140,52);
+     ctx.fillStyle=C.steam;ctx.fillRect(vx-25,cy-ch/2-58,50,8);
+     // ports
+     ctx.fillStyle='#1e1a2e';ctx.fillRect(380,cy-ch/2-12,50,12);
+     ctx.fillRect(850,cy-ch/2-12,50,12);
+     ctx.strokeStyle=C.metal;ctx.lineWidth=2;ctx.strokeRect(380,cy-ch/2-12,50,12);ctx.strokeRect(850,cy-ch/2-12,50,12);
+     // steam side (left or right of piston)
+     const steamLeft=Math.cos(w*t+Math.PI/2)>0;
+     const steamW=Math.abs(px-(steamLeft?350:930));
+     const steamX=steamLeft?350:px;
+     ctx.fillStyle=`rgba(125,211,252,${0.25+0.1*Math.sin(w*t)})`;
+     if(steamLeft)ctx.fillRect(steamX,cy-ch/2+5,px-350,ch-10);
+     else ctx.fillRect(px,cy-ch/2+5,930-px,ch-10);
+     // exhaust side
+     const exhX=steamLeft?px:350;
+     const exhW=steamLeft?930-px:px-350;
+     ctx.fillStyle=`rgba(148,163,184,${0.2+0.1*Math.cos(w*t)})`;
+     ctx.fillRect(exhX,cy-ch/2+5,exhW,ch-10);
+     // piston
+     ctx.fillStyle='#cbd5e1';ctx.fillRect(px-8,cy-ch/2+8,16,ch-16);
+     ctx.fillStyle=C.metal;ctx.fillRect(px-4,cy-ch/2-5,8,10);
+     // piston rod
+     ctx.strokeStyle=C.metal;ctx.lineWidth=6;ctx.beginPath();ctx.moveTo(px+8,cy);ctx.lineTo(930,cy);ctx.stroke();
+     // arrows
+     if(steamLeft){drawArrow(640,cy-ch/2-70,400,cy-ch/2+20,C.steam,3);drawArrow(900,cy-ch/2+20,980,cy-ch/2+20,C.dim,2);}
+     else{drawArrow(640,cy-ch/2-70,880,cy-ch/2+20,C.steam,3);drawArrow(380,cy-ch/2+20,340,cy-ch/2+20,C.dim,2);}
+     // labels
+     drawLabel('Kolben',px,cy-30,C.text,px+20,cy-80);
+     drawLabel('Schieber',vx,cy-ch/2-58,C.pink,vx+20,cy-ch/2-110);
+     drawLabel('Zylinder',(cl+cr)/2,cy+ch/2+40,C.metal,(cl+cr)/2,cy+ch/2+85);
+     ctx.restore();
+   }},
+  {start:20,dur:10,
+   draw:(t,a)=>{
+     if(a<=0)return;
+     ctx.save();ctx.globalAlpha=a;
+     drawText('Doppeltwirkende Dampfmaschine',W/2,48,34,C.text);
+     const w=2*Math.PI/5;
+     const th=w*t;
+     const fcx=950,fcy=360,R=130,crankR=55,L=210;
+     const cpx=fcx+Math.cos(th)*crankR,cpy=fcy+Math.sin(th)*crankR;
+     const pxCalc=fcx+crankR*Math.cos(th)-Math.sqrt(L*L-crankR*crankR*Math.sin(th)*Math.sin(th));
+     const px=pxCalc;
+     const cylX=550,cylY=310,cylW=240,cylH=100;
+     drawCylinderShape(cylX,cylY,cylW,cylH);
+     // piston
+     const ppx=px-60;
+     ctx.fillStyle='#cbd5e1';ctx.fillRect(ppx-8,cylY+8,16,cylH-16);
+     // piston rod
+     ctx.strokeStyle=C.metal;ctx.lineWidth=6;ctx.beginPath();ctx.moveTo(ppx+8,fcy);ctx.lineTo(px,fcy);ctx.stroke();
+     // cylinder head right
+     ctx.fillStyle=C.metal;ctx.fillRect(cylX+cylW-4,cylY-12,8,cylH+24);
+     // crosshead
+     drawCrosshead(px,fcy);
+     // connecting rod
+     ctx.strokeStyle=C.accent;ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(px,fcy);ctx.lineTo(cpx,cpy);ctx.stroke();
+     // flywheel
+     const fp=drawFlywheel(fcx,fcy,R,th,crankR,t);
+     // slide valve on top of cylinder
+     const vxValve=cylX+cylW/2+70*Math.sin(th+Math.PI/2);
+     ctx.fillStyle='#2a3145';ctx.fillRect(vxValve-55,cylY-75,110,48);
+     ctx.strokeStyle=C.metal;ctx.lineWidth=3;ctx.strokeRect(vxValve-55,cylY-75,110,48);
+     ctx.fillStyle=C.steam;ctx.fillRect(vxValve-20,cylY-75,40,7);
+     // steam pipe
+     ctx.strokeStyle=C.dim;ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(cylX+cylW/2,cylY-27);ctx.lineTo(cylX+cylW/2,cylY-75);ctx.stroke();
+     // steam indicators
+     const sL=Math.cos(th+Math.PI/2)>0;
+     const sAreaW=Math.abs(ppx-(sL?cylX+10:cylX+cylW-10));
+     const sAreaX=sL?cylX+10:ppx;
+     ctx.fillStyle=`rgba(125,211,252,${0.22+0.08*Math.sin(th)})`;
+     if(sL)ctx.fillRect(sAreaX,cylY+6,ppx-cylX-10,cylH-12);
+     else ctx.fillRect(ppx,cylY+6,cylX+cylW-10-ppx,cylH-12);
+     // steam arrows within cylinder
+     if(sL)drawArrow(cylX+cylW/2,cylY-27,cylX+90,cylY+30,C.steam,2);
+     else drawArrow(cylX+cylW/2,cylY-27,cylX+cylW-30,cylY+30,C.steam,2);
+     // motion arrows
+     drawArrow(fcx-40,fcy-R-20,fcx+40,fcy-R-20,C.accent,2);
+     ctx.fillStyle=C.accent;ctx.beginPath();ctx.arc(fcx+40,fcy-R-20,4,0,TAU);ctx.fill();
+     // labels
+     drawLabel('Schwungrad',fcx+R-10,fcy-R,C.accent,fcx+R+30,fcy-R-20);
+     drawLabel('Kurbelwelle',cpx,cpy+20,C.pink,cpx+25,cpy+50);
+     drawLabel('Pleuelstange',(px+cpx)/2,(fcy+cpy)/2-20,C.accent,(px+cpx)/2+70,(fcy+cpy)/2-35);
+     drawLabel('Kreuzkopf',px,fcy-30,C.metal,px+30,fcy-60);
+     drawLabel('Zylinder',cylX+cylW/2,cylY+cylH+60,C.metal,cylX+cylW/2,cylY+cylH+100);
+     drawLabel('Schieber',vxValve,cylY-75,C.pink,vxValve+25,cylY-125);
+     drawLabel('Kolbenstange',(ppx+px)/2,fcy+40,C.metal,(ppx+px)/2-40,fcy+75);
+     ctx.restore();
+   }},
+  {start:30,dur:6,
+   draw:(t,a)=>{
+     if(a<=0)return;
+     ctx.save();ctx.globalAlpha=a;
+     drawText('Zusammenfassung',W/2,55,36,C.text);
+     const items=[
+       {x:270,y:260,icon:'heat',text:'Wasser erhitzen → Dampf entsteht',color:C.fire},
+       {x:640,y:260,icon:'piston',text:'Dampf expandiert → Kolben bewegt sich',color:C.steam},
+       {x:1010,y:260,icon:'fly',text:'Kolbenstange → Schwungrad → Drehbewegung',color:C.accent}
+     ];
+     items.forEach((it,i)=>{
+       const dt=clamp((t-i*1.2)/0.6,0,1);
+       if(dt<=0)return;
+       const easeDt=ease(dt);
+       ctx.globalAlpha=a*easeDt;
+       // icon circle
+       ctx.beginPath();ctx.arc(it.x,it.y-50,42,0,TAU);ctx.fillStyle='#1e1a2e';ctx.fill();
+       ctx.strokeStyle=it.color;ctx.lineWidth=3;ctx.stroke();
+       if(it.icon==='heat'){
+         drawFire(it.x-20,it.y-40,40,55,t);
+       }else if(it.icon==='piston'){
+         ctx.fillStyle=C.metal;ctx.fillRect(it.x-25,it.y-55,50,40);
+         ctx.fillStyle='#cbd5e1';ctx.fillRect(it.x-16,it.y-48,32,8);
+         drawArrow(it.x,it.y-15,it.x,it.y-35,C.steam,2);
+       }else{
+         drawFlywheel(it.x,it.y-50,30,t*3,15,t);
+       }
+       drawText(it.text,it.x,it.y+30,20,C.text,'center',it.x>900?'Arial, sans-serif':'Georgia, "Times New Roman", serif');
+       ctx.globalAlpha=a;
+     });
+     if(t>4.5){
+       drawText('Das ist das Prinzip der Dampfmaschine!',W/2,H-70,28,C.accent);
+     }
+     ctx.restore();
+   }}
+];
+
+function drawScene(t){
+  drawGrid();
+  for(let i=0;i<scenes.length;i++){
+    const s=scenes[i];
+    const d=circDist(t,s.start+s.dur/2);
+    const half=s.dur/2;
+    const alpha=clamp((half+FADE-d)/FADE,0,1);
+    if(alpha<=0.01)continue;
+    let lt=t-s.start;
+    if(lt>window.DUR/2)lt-=window.DUR;
+    if(lt<-window.DUR/2)lt+=window.DUR;
+    s.draw(lt,alpha);
+  }
+}
+
+function frame(){
+  const now=performance.now();
+  const gt=((now-startTime)/1000)%window.DUR;
+  ctx.fillStyle=C.bg;ctx.fillRect(0,0,W,H);
+  drawScene(gt);
+  requestAnimationFrame(frame);
+}
+frame();
+</script>
+</body>
+</html>

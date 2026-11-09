@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>SuperLaunch</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#s{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}</style></head>
+<body><canvas id="s" width="1280" height="720"></canvas>
+<script>
+window.DUR=30;
+const c=document.getElementById('s'),x=c.getContext('2d');
+function fit(){const k=Math.min(innerWidth/1280,innerHeight/720);c.style.transform=`scale(${k}) translate(-50%,-50%)`;c.style.left='50%';c.style.top='50%';c.style.transformOrigin='0 0';c.style.transform=`translate(-50%,-50%) scale(${k})`;c.style.transformOrigin='50% 50%'}
+fit();addEventListener('resize',fit);
+const G='#39ff14',F='Helvetica Neue,Arial,sans-serif';
+const off=parseFloat(new URLSearchParams(location.search).get('t')||0);const t0=performance.now()-off*1000;
+const cl=v=>Math.max(0,Math.min(1,v)),eo=v=>1-Math.pow(1-cl(v),4),eio=v=>{v=cl(v);return v<.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2};
+function R(i){const s=Math.sin(i*127.1+311.7)*43758.5;return s-Math.floor(s)}
+const tasks=['Landing page','Waitlist','Pricing','Analytics','Launch emails','Press kit','Onboarding','Payments','Changelog','Social posts'];
+function txt(s,X,Y,sz,col,al,w){x.font=(w||700)+' '+sz+'px '+F;x.fillStyle=col;x.textAlign=al||'left';x.textBaseline='middle';x.fillText(s,X,Y)}
+function type(s,p){return s.slice(0,Math.floor(s.length*cl(p)))}
+function grid(a){x.strokeStyle=`rgba(57,255,20,${a})`;x.lineWidth=1;for(let i=0;i<=1280;i+=64){x.beginPath();x.moveTo(i,0);x.lineTo(i,720);x.stroke()}for(let j=0;j<=720;j+=64){x.beginPath();x.moveTo(0,j);x.lineTo(1280,j);x.stroke()}}
+function wipe(t,at){const p=(t-at)/0.7;if(p<0||p>1)return;const e=eio(p);x.fillStyle=G;x.fillRect(-200+e*1700-300,0,300,720);x.fillStyle='#000';}
+function frame(){
+const t=((performance.now()-t0)/1000)%DUR;
+x.fillStyle='#000';x.fillRect(0,0,1280,720);
+grid(.05);
+if(t<5){ // idea
+ const s='Every big launch starts as a messy idea.';
+ const p=(t-.5)/2.5;const str=type(s,p);txt(str,140,360,52,'#fff');
+ x.font='700 52px '+F;const w=x.measureText(str).width;
+ if(Math.floor(t*3)%2==0){x.fillStyle=G;x.fillRect(146+w,330,6,60)}
+ txt('01 — THE IDEA',140,280,16,G,'left',600);
+}else if(t<11){ // chaos
+ const lt=t-5;
+ txt('02 — THE CHAOS',140,90,16,G,'left',600);
+ txt(type('Ten tools. Fifty tabs. Zero launch date.',lt/1.5),140,140,40,'#fff');
+ tasks.forEach((n,i)=>{const a=eo(lt*1.5-i*.12);const px=160+R(i)*900+Math.sin(lt*2+i)*20*(1+lt*.3),py=240+R(i+9)*400+Math.cos(lt*1.7+i*2)*18*(1+lt*.3);
+  x.save();x.globalAlpha=a;x.translate(px,py);x.rotate((R(i+3)-.5)*.5+Math.sin(lt+i)*.08*lt);
+  x.strokeStyle='#555';x.lineWidth=2;x.strokeRect(-90,-24,180,48);txt(n,0,0,20,'#aaa','center',500);x.restore()});
+ for(let k=0;k<30;k++){x.strokeStyle='rgba(255,255,255,.08)';x.beginPath();x.moveTo(R(k)*1280,R(k+1)*720);x.lineTo(R(k+2)*1280,R(k+3)*720);x.stroke()}
+}else if(t<17){ // order
+ const lt=t-11;
+ txt('03 — SUPERLAUNCH',140,90,16,G,'left',600);
+ txt('One workspace. Every launch task, in order.',140,140,38,'#fff','left',700);
+ tasks.forEach((n,i)=>{const col=i%2,row=i>>1;const tx=160+col*500,ty=230+row*86;
+  const sx=160+R(i)*900,sy=240+R(i+9)*400;const e=eio((lt-.2-i*.08)/1);
+  const px=sx+(tx-sx)*e,py=sy+(ty-sy)*e;
+  const done=lt>2+i*.25;
+  x.strokeStyle=done?G:'#555';x.lineWidth=2;x.strokeRect(px,py-26,440,52);
+  x.strokeRect(px+16,py-10,20,20);
+  if(done){x.fillStyle=G;x.fillRect(px+16,py-10,20,20);x.strokeStyle='#000';x.lineWidth=3;x.beginPath();x.moveTo(px+20,py);x.lineTo(px+25,py+6);x.lineTo(px+33,py-6);x.stroke()}
+  txt(n,px+52,py,22,done?'#fff':'#999','left',600)});
+ const pr=cl((lt-2)/2.6);x.fillStyle='#222';x.fillRect(160,680,940,6);x.fillStyle=G;x.fillRect(160,680,940*pr,6);
+ txt(Math.round(pr*100)+'% READY',1120,683,16,G,'left',700);
+}else if(t<23){ // launch day
+ const lt=t-17;
+ txt('04 — LAUNCH DAY',140,90,16,G,'left',600);
+ txt('Ship in days, not months.',140,140,46,'#fff');
+ const p=eo(lt/4.5);
+ x.strokeStyle=G;x.lineWidth=4;x.shadowColor=G;x.shadowBlur=18;x.beginPath();
+ let lx=160,ly=600;for(let i=0;i<=100*p;i++){const u=i/100;lx=160+u*960;ly=600-Math.pow(u,2.2)*360-Math.sin(u*30)*8*u;i?x.lineTo(lx,ly):x.moveTo(lx,ly)}
+ x.stroke();x.shadowBlur=0;x.fillStyle=G;x.beginPath();x.arc(lx,ly,8,0,7);x.fill();
+ txt(Math.round(p*12480).toLocaleString('en-US')+' signups',lx-10,ly-40,28,'#fff','right',800);
+ x.strokeStyle='#333';x.lineWidth=1;x.beginPath();x.moveTo(160,600);x.lineTo(1120,600);x.stroke();
+ ['MON','TUE','WED','THU','FRI'].forEach((d,i)=>txt(d,160+i*240,625,14,'#666','center',600));
+}else{ // logo
+ const lt=t-23;
+ const e=eo(lt/1.2);
+ x.fillStyle=G;x.fillRect(640-260*e,420,520*e,6);
+ x.save();x.beginPath();x.rect(0,250,1280,160);x.clip();
+ txt('Super',640-8,330+(1-e)*120,110,'#fff','right',900);
+ txt('Launch',640+8,330+(1-e)*120,110,G,'left',900);x.restore();
+ x.globalAlpha=eo((lt-1.2)/1);txt('The launch OS for founders who ship.',640,480,28,'#ccc','center',500);
+ x.globalAlpha=eo((lt-2.4)/1);txt('Plan  •  Build  •  Launch  •  Grow',640,530,18,G,'center',700);
+ x.globalAlpha=eo((lt-3.6)/1);txt('Launch like you mean it.',640,610,22,'#fff','center',700);x.globalAlpha=1;
+ x.globalAlpha=cl((lt-6.3)/.7);x.fillStyle='#000';x.fillRect(0,0,1280,720);x.globalAlpha=1;
+}
+[5,11,17,23].forEach(a=>wipe(t,a-.35));
+// frame corners
+x.strokeStyle=G;x.lineWidth=2;[[30,30,1,1],[1250,30,-1,1],[30,690,1,-1],[1250,690,-1,-1]].forEach(([a,b,i,j])=>{x.beginPath();x.moveTo(a,b+20*j);x.lineTo(a,b);x.lineTo(a+20*i,b);x.stroke()});
+requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

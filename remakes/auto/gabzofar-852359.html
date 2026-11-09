@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Kirocast — Product Film</title>
+<style>
+html,body{margin:0;height:100%;background:#000;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
+</style></head><body><canvas id="c"></canvas>
+<script>
+// Default: 16:9 (1280x720 stage, record at 1920x1080). Add ?format=vertical for 9:16 (720x1280 stage, record at 1080x1920). Same timeline.
+const Q=new URLSearchParams(location.search);
+const V=Q.get('format')==='vertical';
+const W=V?720:1280,H=V?1280:720;
+window.DUR=60;
+const cv=document.getElementById('c'),x=cv.getContext('2d');
+cv.width=W;cv.height=H;
+function fit(){const k=Math.min(innerWidth/W,innerHeight/H);cv.style.width=W*k+'px';cv.style.height=H*k+'px'}
+addEventListener('resize',fit);fit();
+const t0=performance.now()-(parseFloat(Q.get('t'))||0)*1000;
+const F='-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",Helvetica,Arial,sans-serif';
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const eo=v=>1-Math.pow(1-cl(v),3);
+const eio=v=>{v=cl(v);return v<.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2};
+const win=(t,s,e,f=.7)=>cl((t-s)/f)*cl((e-t)/f);
+const S=Math.min(W,H)/720,CX=W/2,CY=H/2;
+function rr(X,Y,w,h,r){x.beginPath();x.roundRect(X,Y,w,h,r)}
+function txt(s,X,Y,sz,col,wt=600,al='center',a=1){x.globalAlpha=a;x.fillStyle=col;x.font=`${wt} ${sz}px ${F}`;x.textAlign=al;x.textBaseline='middle';x.fillText(s,X,Y);x.globalAlpha=1}
+function grad(X,Y,w,h){const g=x.createLinearGradient(X,Y,X+w,Y+h);g.addColorStop(0,'#ff5a5f');g.addColorStop(.5,'#b44cff');g.addColorStop(1,'#3b82ff');return g}
+function logo(X,Y,s,t){
+ x.save();x.translate(X,Y);x.scale(s,s);
+ x.shadowColor='rgba(150,80,255,.6)';x.shadowBlur=60;
+ rr(-60,-60,120,120,30);x.fillStyle=grad(-60,-60,120,120);x.fill();x.shadowBlur=0;
+ rr(-60,-60,120,120,30);x.strokeStyle='rgba(255,255,255,.35)';x.lineWidth=2;x.stroke();
+ const p=1+.08*Math.sin(t*4);
+ x.beginPath();x.arc(0,0,30,0,7);x.strokeStyle='#fff';x.lineWidth=8;x.stroke();
+ x.beginPath();x.arc(0,0,14*p,0,7);x.fillStyle='#fff';x.fill();
+ // spark
+ x.translate(34,-34);x.rotate(t);x.fillStyle='#fff';x.beginPath();
+ for(let i=0;i<8;i++){const r=i%2?4:13,a=i*Math.PI/4;x.lineTo(Math.cos(a)*r,Math.sin(a)*r)}x.fill();
+ x.restore();
+}
+function bg(t){
+ x.fillStyle='#05050a';x.fillRect(0,0,W,H);
+ const cols=['rgba(255,80,110,','rgba(160,70,255,','rgba(50,120,255,'];
+ for(let i=0;i<3;i++){
+  const X=CX+Math.cos(t*.15+i*2.1)*W*.35,Y=CY+Math.sin(t*.12+i*1.7)*H*.35,R=Math.max(W,H)*.5;
+  const g=x.createRadialGradient(X,Y,0,X,Y,R);g.addColorStop(0,cols[i]+'.18)');g.addColorStop(1,cols[i]+'0)');
+  x.fillStyle=g;x.fillRect(0,0,W,H);
+ }
+}
+function macwin(X,Y,w,h,a,t,rec){
+ x.globalAlpha=a;
+ x.shadowColor='rgba(0,0,0,.6)';x.shadowBlur=50*S;x.shadowOffsetY=20*S;
+ rr(X,Y,w,h,14*S);x.fillStyle='#16161d';x.fill();x.shadowBlur=0;x.shadowOffsetY=0;
+ x.strokeStyle='rgba(255,255,255,.12)';x.lineWidth=1;x.stroke();
+ rr(X,Y,w,30*S,[14*S,14*S,0,0]);x.fillStyle='#22222b';x.fill();
+ ['#ff5f57','#febc2e','#28c840'].forEach((c,i)=>{x.beginPath();x.arc(X+(18+i*18)*S,Y+15*S,5.5*S,0,7);x.fillStyle=c;x.fill()});
+ // content: fake code editor
+ const lh=18*S,n=Math.floor((h-50*S)/lh);
+ for(let i=0;i<n;i++){
+  const ind=((i*7)%4)*16*S,len=(60+((i*53)%170))*S*(w/700);
+  rr(X+20*S+ind,Y+44*S+i*lh,Math.min(len,w-60*S-ind),7*S,4);
+  x.fillStyle=['#7c8cff','#ff7a90','#9aa0b4','#c38bff'][i%4];x.globalAlpha=a*.55;x.fill();x.globalAlpha=a;
+ }
+ if(rec>0){
+  x.globalAlpha=a*rec;
+  rr(X+w-110*S,Y+6*S,96*S,18*S,9*S);x.fillStyle='rgba(255,60,70,.18)';x.fill();
+  x.beginPath();x.arc(X+w-98*S,Y+15*S,4.5*S,0,7);x.fillStyle=Math.sin(t*6)>0?'#ff3b47':'#7a1d22';x.fill();
+  const s=Math.max(0,t-15);txt('REC 00:'+String(Math.floor(s)).padStart(2,'0'),X+w-88*S,Y+15.5*S,10*S,'#ff8a92',700,'left',a*rec);
+ }
+ x.globalAlpha=1;
+}
+function cursor(X,Y,s){x.save();x.translate(X,Y);x.scale(s,s);x.beginPath();x.moveTo(0,0);x.lineTo(0,22);x.lineTo(6,16);x.lineTo(11,26);x.lineTo(15,24);x.lineTo(10,15);x.lineTo(18,15);x.closePath();x.fillStyle='#fff';x.strokeStyle='#000';x.lineWidth=1.5;x.fill();x.stroke();x.restore()}
+const TR=['“Let’s open the settings panel…”','“Now enable the API toggle here.”','“Copy the key and paste it in.”','“Run the build — it passes.”'];
+const CH=['00:00  Setup','00:12  API settings','00:27  Build & test'];
+function frame(){
+ const t=((performance.now()-t0)/1000)%DUR;
+ bg(t);
+ // Scene 1: logo intro 0-6
+ let a=win(t,.2,6);
+ if(a>0){const k=eo((t-.2)/1.4);logo(CX,CY-40*S,S*(.6+.4*k)*(1+.03*(t-.2)/6),t);txt('Kirocast',CX,CY+70*S,52*S,'#fff',700,'center',a*eo((t-1)/1))}
+ // Scene 2: tagline 6-14
+ a=win(t,6.2,14);
+ if(a>0){const lines=V?['The macOS','screen recorder','built for AI.']:['The macOS screen recorder','built for AI.'];
+  lines.forEach((l,i)=>{const k=eo((t-6.4-i*.5)/1);txt(l,CX,CY+(i-(lines.length-1)/2)*62*S+(1-k)*30*S,(V?52:54)*S,i==lines.length-1?'#d8b4ff':'#fff',700,'center',a*k)});
+  txt('Record. Understand. Share with AI.',CX,CY+(lines.length*34+40)*S,20*S,'#9a9ab0',500,'center',a*eo((t-8.5)/1));}
+ // Scenes 3-4: window recording 14-34
+ a=win(t,14,34);
+ if(a>0){
+  const m=eio((t-24)/1.5);
+  let ww=V?620:820,wh=V?420:480,wx=CX-ww/2,wy=CY-wh/2-(V?60:0);
+  if(V){wy-=m*230}else{wx-=m*200;ww-=m*120;wh-=m*80;wy+=m*40}
+  const rec=cl((t-16)/.5);
+  macwin(wx,wy,ww,wh,a*eo((t-14)/1),t,rec);
+  if(t<24.5){ // selection frame
+   const k=eo((t-15)/1.2);x.setLineDash([8,6]);x.strokeStyle=`rgba(255,90,100,${a*k})`;x.lineWidth=2;
+   rr(wx-8,wy-8,ww+16,wh+16,18*S);x.stroke();x.setLineDash([]);
+   const p=(t-14)/10;cursor(wx+ww*(.2+.6*Math.sin(p*5)**2),wy+wh*(.3+.5*p),S*1.1);
+  }
+  txt(t<24?'One click. Crisp 60 fps capture.':'AI understands every frame.',CX,V?H-120*S+0:H-60*S,(V?32:28)*S,'#fff',650,'center',a*cl(t<24?(t-17)/.8:(t-25)/.8)*cl(t<24?(24-t)/.5:1));
+  // AI panel
+  const pa=a*cl((t-25)/.8);
+  if(pa>0){
+   let px=V?CX-310:wx+ww+40,py=V?wy+wh+30:CY-210,pw=V?620:400,ph=V?470:420;
+   x.globalAlpha=pa;rr(px,py+(1-eo((t-25)/1))*30,pw,ph,16);x.fillStyle='rgba(30,28,44,.85)';x.fill();x.strokeStyle='rgba(180,120,255,.35)';x.stroke();x.globalAlpha=1;
+   txt('✦ Transcript',px+22,py+30,18,'#d8b4ff',700,'left',pa);
+   TR.forEach((s,i)=>{const st=26+i*1.4,n=Math.floor(cl((t-st)/1.2)*s.length);if(t>st)txt(s.slice(0,n),px+22,py+66+i*32,V?20:15.5,'#e8e8f0',500,'left',pa)});
+   txt('✦ Chapters',px+22,py+210,18,'#d8b4ff',700,'left',pa*cl((t-30)/.6));
+   CH.forEach((s,i)=>{const k=cl((t-30.3-i*.5)/.6);if(k>0){x.globalAlpha=pa*k;rr(px+22,py+238+i*44,pw-44,34,10);x.fillStyle='rgba(255,255,255,.07)';x.fill();x.globalAlpha=1;txt(s,px+36+(1-k)*20,py+255+i*44,V?19:15,'#fff',600,'left',pa*k)}});
+  }
+ }
+ // Scene 5: export to AI 34-44
+ a=win(t,34.2,44);
+ if(a>0){
+  txt('Ready for any AI.',CX,(V?260:110)*S/S,(V?54:48),'#fff',700,'center',a*eo((t-34.4)/1));
+  txt('Export video, transcript & context as Markdown in one step.',CX,V?330:160,V?18:20,'#9a9ab0',500,'center',a*eo((t-35)/1));
+  const fx=V?CX:CX-300,fy=V?560:CY+60;
+  x.globalAlpha=a;rr(fx-90,fy-110,180,220,16);x.fillStyle='#1d1b2a';x.fill();x.strokeStyle=grad(fx-90,fy-110,180,220);x.lineWidth=3;x.stroke();x.globalAlpha=1;
+  txt('kirocast.md',fx,fy+80,17,'#fff',650,'center',a);
+  for(let i=0;i<5;i++){x.globalAlpha=a*.6;rr(fx-65,fy-85+i*24,(130-i*17%60),8,4);x.fillStyle='#b48cff';x.fill()}x.globalAlpha=1;
+  const tg=['Agent','Chat','Code'];
+  tg.forEach((l,i)=>{
+   const bx=V?CX+(i-1)*210:CX+250,by=V?900:CY-90+i*120+0,k=eo((t-36.5-i*.4)/.8);
+   for(let j=0;j<6;j++){const p=((t*.6+j/6+i*.13)%1);if(t>36){const qx=fx+(bx-fx)*p,qy=fy+(by-fy)*p-Math.sin(p*Math.PI)*60;x.beginPath();x.arc(qx,qy,3.5,0,7);x.fillStyle=`rgba(200,150,255,${a*k*Math.sin(p*Math.PI)})`;x.fill()}}
+   x.globalAlpha=a*k;rr(bx-85,by-34,170,68,34);x.fillStyle='rgba(255,255,255,.08)';x.fill();x.strokeStyle='rgba(255,255,255,.25)';x.lineWidth=1.5;x.stroke();x.globalAlpha=1;
+   txt('✦ AI '+l,bx,by,20,'#fff',650,'center',a*k);
+  });
+ }
+ // Scene 6: features 44-52
+ a=win(t,44.2,52.2);
+ if(a>0){
+  const f=[['4K · 60fps','Pristine capture'],['On-device','Private by design'],['AI Transcripts','Searchable & timed'],['Markdown','LLM-ready export']];
+  const cw=V?300:270,chh=V?260:200,g=24,cols=V?2:4,rows=V?2:1;
+  const ox=CX-(cols*cw+(cols-1)*g)/2,oy=CY-(rows*chh+(rows-1)*g)/2+(V?40:30);
+  txt('Everything you need.',CX,oy-(V?90:70),V?46:44,'#fff',700,'center',a*eo((t-44.3)/1));
+  f.forEach((c,i)=>{const k=eo((t-44.8-i*.25)/.9),X=ox+(i%cols)*(cw+g),Y=oy+Math.floor(i/cols)*(chh+g)+(1-k)*40;
+   x.globalAlpha=a*k;rr(X,Y,cw,chh,20);x.fillStyle='rgba(255,255,255,.06)';x.fill();x.strokeStyle='rgba(255,255,255,.14)';x.lineWidth=1;x.stroke();
+   rr(X+24,Y+24,44,44,12);x.fillStyle=grad(X+24,Y+24,44,44);x.fill();x.globalAlpha=1;
+   txt(c[0],X+24,Y+chh-70,V?30:26,'#fff',700,'left',a*k);txt(c[1],X+24,Y+chh-36,V?18:16,'#9a9ab0',500,'left',a*k)});
+ }
+ // Scene 7: end card 52-60
+ a=win(t,52.4,59.6);
+ if(a>0){const k=eo((t-52.4)/1.2);logo(CX,CY-90,.9*(.8+.2*k),t);
+  txt('Kirocast',CX,CY+30,64,'#fff',700,'center',a*k);
+  txt('The macOS screen recorder built for AI.',CX,CY+90,V?22:24,'#c9c9d8',500,'center',a*eo((t-53.4)/1));
+  const b=eo((t-54.4)/1);x.globalAlpha=a*b;rr(CX-130,CY+135,260,52,26);x.fillStyle='#fff';x.fill();x.globalAlpha=1;
+  txt('Download for Mac',CX,CY+161,19,'#000',700,'center',a*b);}
+ // fade to black at loop
+ const fb=Math.max(cl(1-t/.5),cl((t-59.5)/.5));if(fb>0){x.fillStyle=`rgba(0,0,0,${fb})`;x.fillRect(0,0,W,H)}
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></body></html>

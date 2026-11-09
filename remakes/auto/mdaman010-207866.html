@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Miniature Middle-earth</title>
+<style>
+html,body{margin:0;background:#000;overflow:hidden;height:100%}
+#st{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+canvas{position:absolute;left:0;top:0;width:1280px;height:720px}
+</style></head><body>
+<div id="st"><canvas id="g" width="1280" height="720"></canvas><canvas id="o" width="1280" height="720"></canvas></div>
+<script>
+window.DUR=60;
+const st=document.getElementById('st');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);st.style.transform=`scale(${s}) translate(-50%,-50%)`;st.style.left='50%';st.style.top='50%';st.style.transform=`translate(-50%,-50%) scale(${s})`;st.style.transformOrigin='center'}
+fit();addEventListener('resize',fit);
+const gl=document.getElementById('g').getContext('webgl',{preserveDrawingBuffer:true,antialias:true});
+const ox=document.getElementById('o').getContext('2d');
+// ---------- noise / terrain ----------
+const hs=(i,j)=>{const s=Math.sin(i*127.1+j*311.7)*43758.5453;return s-Math.floor(s)};
+function vn(x,z){const i=Math.floor(x),j=Math.floor(z),fx=x-i,fz=z-j,u=fx*fx*(3-2*fx),v=fz*fz*(3-2*fz);
+const a=hs(i,j),b=hs(i+1,j),c=hs(i,j+1),d=hs(i+1,j+1);return a+(b-a)*u+(c-a)*v+(a-b-c+d)*u*v}
+function fbm(x,z){let s=0,a=.5,f=1;for(let k=0;k<4;k++){s+=a*vn(x*f,z*f);f*=2.1;a*=.5}return s}
+const MC=[68,30];
+function H(x,z){
+let n=fbm(x*.05+10,z*.05+10),y=1.2+n*4;
+const mx=x+25+6*Math.sin(z*.05);y+=Math.exp(-mx*mx/40)*(14+n*10)*Math.exp(-Math.pow((z+25)/45,4));
+y+=Math.exp(-(z-56)*(z-56)/25)*Math.exp(-Math.pow((x-12)/30,4))*(12+n*6);
+const d=Math.hypot(x-MC[0],(z-MC[1])*1.1);
+let ring=Math.exp(-(d-22)*(d-22)/12)*(12+n*6);ring*=1-Math.exp(-((x-62)**2+(z-8)**2)/18);y+=ring;
+if(d<22)y=y*.5+.8;
+const dd=Math.hypot(x-68,z-32);y+=15*Math.pow(Math.max(0,1-dd/11),1.2);if(dd<1.5)y-=1.5;
+y+=20*Math.exp(-((x-35)**2+(z+62)**2)/60);
+y-=Math.max(0,-72-x)*.5;
+if(z>-70&&z<62){const rx=x-(18+5*Math.sin(z*.06));y-=4.5*Math.exp(-rx*rx/5)}
+y-=4*Math.exp(-((x-40)**2/30+(z+47)**2/12));
+y-=3*Math.exp(-((x-48)**2+(z-8)**2)/40);
+return y}
+const WL=.4,gy=(x,z)=>Math.max(H(x,z),WL);
+// ---------- geometry ----------
+const P=[],N=[],C=[],Mt=[];
+function tri(a,b,c,col,m){const u=[b[0]-a[0],b[1]-a[1],b[2]-a[2]],v=[c[0]-a[0],c[1]-a[1],c[2]-a[2]];
+let n=[u[1]*v[2]-u[2]*v[1],u[2]*v[0]-u[0]*v[2],u[0]*v[1]-u[1]*v[0]];const l=Math.hypot(...n)||1;n=n.map(q=>q/l);
+if(n[1]<-.0001&&m!=1){} for(const p of[a,b,c]){P.push(...p);N.push(...n);C.push(...col);Mt.push(m||0)}}
+function quad(a,b,c,d,col,m){tri(a,b,c,col,m);tri(a,c,d,col,m)}
+function box(x,y,z,w,h,d,col,m){const X=[x-w/2,x+w/2],Y=[y,y+h],Z=[z-d/2,z+d/2];
+const p=(i,j,k)=>[X[i],Y[j],Z[k]];
+quad(p(0,1,0),p(0,1,1),p(1,1,1),p(1,1,0),col,m);quad(p(0,0,1),p(1,0,1),p(1,1,1),p(0,1,1),col,m);
+quad(p(1,0,0),p(0,0,0),p(0,1,0),p(1,1,0),col,m);quad(p(1,0,1),p(1,0,0),p(1,1,0),p(1,1,1),col,m);
+quad(p(0,0,0),p(0,0,1),p(0,1,1),p(0,1,0),col,m)}
+function cyl(x,y,z,r,h,s,col,m,r2){r2=r2??r;for(let i=0;i<s;i++){const a=i/s*6.283,b=(i+1)/s*6.283;
+const A=[x+Math.cos(a)*r,y,z+Math.sin(a)*r],B=[x+Math.cos(b)*r,y,z+Math.sin(b)*r],A2=[x+Math.cos(a)*r2,y+h,z+Math.sin(a)*r2],B2=[x+Math.cos(b)*r2,y+h,z+Math.sin(b)*r2];
+quad(A,A2,B2,B,col,m);tri([x,y+h,z],B2,A2,col,m)}}
+function cone(x,y,z,r,h,s,col,m){for(let i=0;i<s;i++){const a=i/s*6.283,b=(i+1)/s*6.283;
+tri([x+Math.cos(a)*r,y,z+Math.sin(a)*r],[x,y+h,z],[x+Math.cos(b)*r,y,z+Math.sin(b)*r],col,m)}}
+// terrain
+const G=140,R=100,stp=2*R/G;
+function tcol(x,y,z){const n=hs(Math.floor(x*2),Math.floor(z*2));const d=Math.hypot(x-MC[0],(z-MC[1])*1.1);
+if(y<WL+.5)return[.76,.7,.5];if(d<25)return y>9?[.25,.15,.12]:[.22+n*.05,.14,.1];
+if(y>14)return[.95,.95,1];if(y>8)return[.45+n*.08,.43+n*.08,.4];
+if(z>-50&&z<-10&&x>8&&x<32)return[.06,.2+n*.06,.08];
+return[.25+n*.1,.45+n*.12,.18]}
+const hv=[];for(let i=0;i<=G;i++){hv[i]=[];for(let j=0;j<=G;j++)hv[i][j]=H(-R+i*stp,-R+j*stp)}
+for(let i=0;i<G;i++)for(let j=0;j<G;j++){const x=-R+i*stp,z=-R+j*stp;
+const a=[x,hv[i][j],z],b=[x,hv[i][j+1],z+stp],c=[x+stp,hv[i+1][j+1],z+stp],d=[x+stp,hv[i+1][j],z];
+tri(a,b,c,tcol(x,(a[1]+b[1]+c[1])/3,z),0);tri(a,c,d,tcol(x,(a[1]+c[1]+d[1])/3,z),0)}
+// water plane
+const WG=60;for(let i=0;i<WG;i++)for(let j=0;j<WG;j++){const s=2*R/WG,x=-R+i*s,z=-R+j*s;
+quad([x,WL,z],[x,WL,z+s],[x+s,WL,z+s],[x+s,WL,z],[.1,.3,.5],1)}
+// landmarks in journey order
+const L=[["Hobbiton",-62,-8,"hut"],["Bree",-46,-14,"town"],["Weathertop",-38,-3,"ruin"],["Rivendell",-31,-38,"elf"],["Caradhras",-26,-24,"peak"],["Gates of Moria",-21,-2,"gate"],["Lothlórien",-6,8,"gold"],["Amon Hen",20,22,"ruin"],["Argonath",17,17,"stat"],["Fangorn",-8,30,"forest"],["Isengard",-22,40,"orth"],["Helm's Deep",-10,49,"wall"],["Edoras",4,46,"hall"],["Minas Tirith",33,46,"city"],["Osgiliath",21,40,"ruin"],["Minas Morgul",48,38,"morgul"],["Dead Marshes",48,8,"marsh"],["Black Gate",62,8,"bgate"],["Mount Doom",68,32,"doom"],["Barad-dûr",80,24,"barad"],["Dol Guldur",8,-14,"morgul"],["Mirkwood",20,-30,"forest"],["Erebor",35,-55,"erebor"],["Grey Havens",-82,-6,"havens"]];
+const W=[.85,.82,.75],DK=[.12,.1,.12],WIN=[1,.75,.3];
+function tree(x,z,s,c){const y=gy(x,z);cyl(x,y,z,.15*s,.6*s,4,[.35,.22,.1]);cone(x,y+.5*s,z,.8*s,2*s,6,c)}
+for(const l of L){const[nm,x,z,t]=l,y=gy(x,z);l.y=y;
+if(t=="hut"){for(let k=0;k<7;k++){const a=k*2.4,r=2+k*.6,hx=x+Math.cos(a)*r,hz=z+Math.sin(a)*r,hy=gy(hx,hz);
+cone(hx,hy-.3,hz,1.2,1.4,8,[.3,.55,.2]);box(hx,hy,hz+1,.4,.4,.1,WIN,3)}tree(x+4,z-3,1.4,[.2,.5,.15]);l.smoke=[x+1,y+1.5,z]}
+if(t=="town"){for(let k=0;k<6;k++){const hx=x+(k%3)*1.8-1.8,hz=z+Math.floor(k/3)*2-1;box(hx,gy(hx,hz),hz,1.2,1,1,[.55,.45,.35]);cone(hx,gy(hx,hz)+1,hz,.95,.8,4,[.4,.25,.15]);box(hx,gy(hx,hz)+.3,hz+.52,.3,.3,.05,WIN,3)}}
+if(t=="ruin"){for(let k=0;k<8;k++){const a=k/8*6.283;cyl(x+Math.cos(a)*1.8,y-.2,z+Math.sin(a)*1.8,.25,1+hs(k,3)*1.6,5,[.6,.58,.55])}}
+if(t=="elf"){for(let k=0;k<4;k++){const hx=x+k*1.3-2,hz=z+(k%2)*1.5;box(hx,gy(hx,hz),hz,1,1.2,1,W);cone(hx,gy(hx,hz)+1.2,hz,.8,.9,6,[.5,.4,.3]);box(hx,gy(hx,hz)+.4,hz+.52,.3,.4,.05,WIN,3)}
+for(let k=0;k<6;k++)tree(x+Math.cos(k)*4,z+Math.sin(k)*4,1,[.2,.45,.2])}
+if(t=="peak"){l.y=gy(x,z);cone(x,l.y-1,z,1.6,2.5,6,[1,1,1])}
+if(t=="gate"){box(x-1.2,y,z,.5,3.5,.5,[.4,.4,.45]);box(x+1.2,y,z,.5,3.5,.5,[.4,.4,.45]);box(x,y+3.2,z,3,.5,.5,[.4,.4,.45]);box(x,y+.2,z+.2,1.8,2.6,.1,[.5,.7,1],3)}
+if(t=="gold"){for(let k=0;k<22;k++){const a=k*2.399,r=Math.sqrt(k)*1.4;tree(x+Math.cos(a)*r,z+Math.sin(a)*r,1.6,[.85,.7,.2])}box(x,y+3,z,.6,.3,.6,[1,.95,.7],3)}
+if(t=="stat"){box(x-1.5,y,z,1,6,1,[.55,.55,.52]);box(x+1.5,y,z,1,6,1,[.55,.55,.52]);cone(x-1.5,y+6,z,.6,.8,4,[.55,.55,.52]);cone(x+1.5,y+6,z,.6,.8,4,[.55,.55,.52])}
+if(t=="forest"){for(let k=0;k<45;k++){const a=k*2.399,r=Math.sqrt(k)*1.3;tree(x+Math.cos(a)*r,z+Math.sin(a)*r,1.2,[.08,.28+hs(k,1)*.1,.1])}}
+if(t=="orth"){cyl(x,y,z,4,.6,16,[.3,.3,.3]);cyl(x,y,z,1,8,6,DK,0,.6);cone(x-.4,y+8,z,.3,1.2,4,DK);cone(x+.4,y+8,z,.3,1.2,4,DK);box(x,y+6,z+.8,.3,.4,.1,[1,.4,.1],3);l.smoke=[x+3,y+.5,z];}
+if(t=="wall"){for(let k=0;k<6;k++)box(x-3+k*1.2,y,z+Math.abs(k-2.5)*.4,1.25,1.6,.6,[.6,.6,.58]);cyl(x,y,z-2,1.2,3,8,[.62,.6,.58]);box(x,y+1.5,z-.8,.3,.3,.1,WIN,3)}
+if(t=="hall"){box(x,y+1,z,2,1.2,3,[.55,.35,.2]);quad([x-1.2,y+2.2,z-1.6],[x,y+3.2,z-1.6],[x,y+3.2,z+1.6],[x-1.2,y+2.2,z+1.6],[.85,.65,.2]);quad([x+1.2,y+2.2,z+1.6],[x,y+3.2,z+1.6],[x,y+3.2,z-1.6],[x+1.2,y+2.2,z-1.6],[.85,.65,.2]);cyl(x,y-.5,z,3,1.5,10,[.4,.5,.25]);box(x,y+1.3,z+1.52,.5,.5,.05,WIN,3)}
+if(t=="city"){for(let k=0;k<7;k++)cyl(x,y+k*1.1,z,5-k*.6,1.1,20,k%2?[.95,.95,.95]:[.85,.85,.88]);cyl(x,y+7.7,z,.3,3,6,W);for(let k=0;k<10;k++){const a=k*.63;box(x+Math.cos(a)*3.7,y+2.3,z+Math.sin(a)*3.7,.25,.25,.25,WIN,3)}}
+if(t=="morgul"){cyl(x,y,z,1,6,6,[.25,.3,.28],0,.5);cone(x,y+6,z,.6,1.5,6,[.25,.3,.28]);box(x,y+4.5,z+.75,.4,.5,.1,[.4,1,.6],3);box(x,y+.5,z,3,.8,3,[.2,.22,.2])}
+if(t=="marsh"){for(let k=0;k<14;k++){const a=k*2.4,r=1+k*.4;box(x+Math.cos(a)*r,WL,z+Math.sin(a)*r,.2,.25,.2,[.5,1,.8],3)}}
+if(t=="bgate"){box(x,y,z,6,4,1,[.1,.08,.08]);box(x-3.5,y,z,1.4,6,1.4,[.1,.08,.08]);box(x+3.5,y,z,1.4,6,1.4,[.1,.08,.08]);box(x,y+2.5,z+.55,.6,.3,.05,[1,.3,.1],3)}
+if(t=="doom"){l.y=H(x,z);cyl(x,l.y,z,1.6,.6,10,[1,.4,.1],2);for(let k=0;k<3;k++){const a=k*2.1+.5;for(let s=0;s<8;s++){const r=2+s*1.1,px=x+Math.cos(a)*r,pz=z+Math.sin(a)*r;box(px,H(px,pz)-.1,pz,.7,.3,.7,[1,.4,.1],2)}}l.smoke=[x,l.y+1,z]}
+if(t=="barad"){box(x,y,z,3,4,3,DK);box(x,y+4,z,2,6,2,DK);box(x,y+10,z,1.2,5,1.2,DK);cone(x-.6,y+15,z,.4,2,4,DK);cone(x+.6,y+15,z,.4,2,4,DK);box(x,y+15.6,z,.5,.9,.5,[1,.45,.05],3);l.smoke=[x,y+16,z]}
+if(t=="erebor"){l.y=gy(x,z+5);box(x,gy(x,z+6),z+6,2,3,1,[.4,.4,.45]);box(x,gy(x,z+6)+.2,z+6.55,1,2,.05,WIN,3)}
+if(t=="havens"){cyl(x+3,gy(x+3,z),z,.6,5,8,W);cone(x+3,gy(x+3,z)+5,z,.8,1.5,8,[.5,.6,.8]);for(let k=0;k<3;k++){const bx=x-3-k*2,bz=z+k*1.5-1.5;box(bx,WL,bz,2.4,.4,.7,W);box(bx,WL+.4,bz,.12,2,.12,W);tri([bx,WL+.6,bz],[bx,WL+2.4,bz],[bx+1.1,WL+.8,bz],[1,1,1])}}
+}
+// stars
+const SP=[];for(let i=0;i<500;i++){const a=hs(i,7)*6.283,b=Math.acos(hs(i,9));SP.push([Math.cos(a)*Math.sin(b)*300,Math.cos(b)*300+20,Math.sin(a)*Math.sin(b)*300,.5+hs(i,4)*1.5])}
+// ---------- GL ----------
+function sh(t,s){const o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);return o}
+function prog(v,f){const p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,v));gl.attachShader(p,sh(gl.FRAGMENT_SHADER,f));gl.linkProgram(p);return p}
+const P1=prog(`attribute vec3 p,n,c;attribute float m;uniform mat4 M;uniform float T;varying vec3 vc,vn,vp;varying float vm;
+void main(){vec3 q=p;if(m>.5&&m<1.5)q.y+=sin(q.x*.4+T*1.5)*.08+cos(q.z*.5+T*1.2)*.08;vp=q;vn=n;vc=c;vm=m;gl_Position=M*vec4(q,1.);}`,
+`precision mediump float;uniform vec3 S,SC,SK,E;uniform float T,NI;varying vec3 vc,vn,vp;varying float vm;
+void main(){vec3 n=normalize(vn);if(!gl_FrontFacing)n=-n;float d=max(dot(n,S),0.);vec3 col=vc*(SK*.45+vec3(.04,.04,.08)+SC*d);
+float dist=length(E-vp);
+if(vm>.5&&vm<1.5){n=normalize(vec3(sin(vp.x*1.3+T*2.)*.08,1.,cos(vp.z*1.7+T*1.6)*.08));vec3 v=normalize(E-vp);
+float fr=pow(1.-max(dot(n,v),0.),3.);float sp=pow(max(dot(reflect(-S,n),v),0.),60.);
+col=mix(vec3(.04,.16,.28)*(SK+SC*.4),SK*.9+vec3(.02,.03,.06),fr)+SC*sp*1.5;}
+else if(vm>1.5&&vm<2.5){col=vec3(1.,.35,.05)*(1.3+.5*sin(T*3.+vp.x*2.+vp.z*1.7));}
+else if(vm>2.5){col=vc*(.35+NI*1.6)+col*.3;}
+float f=1.-exp(-dist*.005);col=mix(col,SK,f*.75);gl_FragColor=vec4(col,1.);}`);
+const P2=prog(`attribute vec3 p;attribute vec4 c;attribute float s;uniform mat4 M;varying vec4 vc;
+void main(){gl_Position=M*vec4(p,1.);gl_PointSize=s*700./gl_Position.w;vc=c;}`,
+`precision mediump float;varying vec4 vc;void main(){float r=length(gl_PointCoord-.5);if(r>.5)discard;gl_FragColor=vec4(vc.rgb,vc.a*smoothstep(.5,.1,r));}`);
+function buf(a,sz,pr,nm){const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(a),gl.STATIC_DRAW);return{b,sz,l:gl.getAttribLocation(pr,nm)}}
+const mb=[buf(P,3,P1,'p'),buf(N,3,P1,'n'),buf(C,3,P1,'c'),buf(Mt,1,P1,'m')],VC=P.length/3;
+const pbuf=gl.createBuffer();const pl=['p','c','s'].map(n=>gl.getAttribLocation(P2,n));
+const U=(p,n)=>gl.getUniformLocation(p,n);
+// ---------- math ----------
+function persp(f,a,n,fr){const t=1/Math.tan(f/2);return[t/a,0,0,0,0,t,0,0,0,0,(fr+n)/(n-fr),-1,0,0,2*fr*n/(n-fr),0]}
+function look(e,c){let z=[e[0]-c[0],e[1]-c[1],e[2]-c[2]],l=Math.hypot(...z);z=z.map(v=>v/l);
+let x=[z[2],0,-z[0]];l=Math.hypot(...x);x=x.map(v=>v/l);const y=[z[1]*x[2]-z[2]*x[1],z[2]*x[0]-z[0]*x[2],z[0]*x[1]-z[1]*x[0]];
+const dt=a=>-(a[0]*e[0]+a[1]*e[1]+a[2]*e[2]);return[x[0],y[0],z[0],0,x[1],y[1],z[1],0,x[2],y[2],z[2],0,dt(x),dt(y),dt(z),1]}
+function mul(a,b){const r=[];for(let i=0;i<4;i++)for(let j=0;j<4;j++){let s=0;for(let k=0;k<4;k++)s+=a[k*4+j]*b[i*4+k];r[i*4+j]=s}return r}
+const ss=x=>x<=0?0:x>=1?1:x*x*(3-2*x),mix=(a,b,t)=>a.map((v,i)=>v+(b[i]-v)*t);
+// ---------- loop ----------
+const q=new URLSearchParams(location.search),T0=performance.now()-(parseFloat(q.get('t'))||0)*1000;
+gl.enable(gl.DEPTH_TEST);
+function frame(){
+const t=((performance.now()-T0)/1000)%DUR;
+// sun & sky
+const ang=t/DUR*6.283*2-.6+1.0,sy=Math.sin(ang);const S=[Math.cos(ang)*.8,sy,.45];const sl=Math.hypot(...S);S.forEach((v,i)=>S[i]=v/sl);
+const day=ss(sy*2.5+.4),dusk=Math.exp(-sy*sy*25);
+let SK=mix([.02,.03,.08],[.5,.68,.9],day);SK=mix(SK,[.85,.45,.3],dusk*.55);
+let SC=mix([.12,.15,.3],[1.05,1,.9],day);SC=mix(SC,[1,.55,.3],dusk*.5);const NI=1-day;
+const LS=SC.map(v=>v);const SD=sy>-.05?S:[-S[0]*.3,.6,.3];
+// camera
+const tour=(t-5)/50*(L.length-1),ci=Math.max(0,Math.min(L.length-2,Math.floor(tour))),cf=ss(Math.max(0,Math.min(1,(tour-ci)*1.6-.3)));
+const A=L[ci],B=L[ci+1];let tg=[A[1]+(B[1]-A[1])*cf,A.y+(B.y-A.y)*cf+1,A[2]+(B[2]-A[2])*cf];
+const oa=t*.18+.5,rr=20+6*Math.sin(t*.3);let eye=[tg[0]+Math.cos(oa)*rr,tg[1]+9+3*Math.sin(t*.21),tg[2]+Math.sin(oa)*rr];
+const ov=1-ss((t-1)/4)+ss((t-55)/4.5);const oe=[Math.sin(t*.05)*60,110,150];
+eye=mix(eye,oe,ov);tg=mix(tg,[5,0,5],ov);
+const gh=gy(eye[0],eye[2])+3;if(eye[1]<gh)eye[1]=gh;
+const M=mul(persp(.85,16/9,.5,800),look(eye,tg));
+gl.viewport(0,0,1280,720);gl.clearColor(...SK,1);gl.clear(16640);
+gl.useProgram(P1);gl.disable(gl.BLEND);
+mb.forEach(o=>{gl.bindBuffer(gl.ARRAY_BUFFER,o.b);gl.enableVertexAttribArray(o.l);gl.vertexAttribPointer(o.l,o.sz,gl.FLOAT,false,0,0)});
+gl.uniformMatrix4fv(U(P1,'M'),false,M);gl.uniform1f(U(P1,'T'),t);gl.uniform1f(U(P1,'NI'),NI);
+gl.uniform3fv(U(P1,'S'),SD);gl.uniform3fv(U(P1,'SC'),sy>-.05?LS:[.15,.18,.32]);gl.uniform3fv(U(P1,'SK'),SK);gl.uniform3fv(U(P1,'E'),eye);
+gl.drawArrays(gl.TRIANGLES,0,VC);mb.forEach(o=>gl.disableVertexAttribArray(o.l));
+// particles
+const D=[];
+for(const s of SP)D.push(s[0],s[1],s[2],1,1,.95,NI*.9,s[3]);
+const sun=[S[0]*280,S[1]*280,S[2]*280];if(sy>-.1)D.push(...sun,1,.9,.6,1,40);else D.push(-sun[0],-sun[1]+40,-sun[2],.9,.92,1,1,22);
+L.forEach((l,li)=>{if(!l.smoke)return;const s=l.smoke,dk=l[3]!="hut";
+for(let k=0;k<45;k++){const a=(t*.12+k/45+li*.13)%1,j=hs(k,li);
+const c=l[3]=="doom"?[.25,.2,.2]:dk?[.15,.14,.14]:[.8,.8,.8];
+D.push(s[0]+a*a*14+Math.sin(j*9+t)*a*2,s[1]+a*(dk?16:6),s[2]+(j-.5)*a*5,c[0]*(.5+day*.6),c[1]*(.5+day*.6),c[2]*(.5+day*.6),(1-a)*.55,(.5+a*(dk?4:1.6)));}
+if(l[3]=="doom")for(let k=0;k<30;k++){const a=(t*.5+k/30)%1,j=hs(k,5);D.push(s[0]+(j-.5)*3*a,s[1]+a*6,s[2]+(hs(k,6)-.5)*3*a,1,.5,.1,1-a,.25)}});
+gl.useProgram(P2);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false);
+gl.bindBuffer(gl.ARRAY_BUFFER,pbuf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(D),gl.DYNAMIC_DRAW);
+[[0,3,0],[1,4,12],[2,1,28]].forEach(([i,n,o])=>{gl.enableVertexAttribArray(pl[i]);gl.vertexAttribPointer(pl[i],n,gl.FLOAT,false,32,o)});
+gl.uniformMatrix4fv(U(P2,'M'),false,M);gl.drawArrays(gl.POINTS,0,D.length/8);gl.depthMask(true);
+// overlay
+ox.clearRect(0,0,1280,720);
+const cur=cf<.5?A:B,lf=1-ov;
+const pr=v=>{const x=M[0]*v[0]+M[4]*v[1]+M[8]*v[2]+M[12],y=M[1]*v[0]+M[5]*v[1]+M[9]*v[2]+M[13],w=M[3]*v[0]+M[7]*v[1]+M[11]*v[2]+M[15];return w>0?[(x/w*.5+.5)*1280,(.5-y/w*.5)*720]:null};
+ox.textAlign='center';
+if(lf>.01){const pp=pr([cur[1],cur.y+(cur[3]=="barad"?18:cur[3]=="city"?11:7),cur[2]]);const al=lf*(1-Math.abs(cf-.5)*0+0)*(Math.abs(cf-.5)>.35?(.5-Math.abs(cf-.5))/.15*0+1:1);
+if(pp&&pp[0]>60&&pp[0]<1220&&pp[1]>40&&pp[1]<560){ox.globalAlpha=lf*.85;ox.strokeStyle='#f3e2b0';ox.beginPath();ox.moveTo(pp[0],pp[1]);ox.lineTo(pp[0],pp[1]-30);ox.stroke();
+ox.font='italic 20px Georgia,serif';ox.fillStyle='#f6ead0';ox.fillText(cur[0],pp[0],pp[1]-38)}
+ox.globalAlpha=lf;const g=ox.createLinearGradient(0,600,0,720);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,0,0,.6)');ox.fillStyle=g;ox.fillRect(0,600,1280,120);
+ox.font='34px Georgia,serif';ox.fillStyle='#f3e2b0';ox.fillText(cur[0],640,670);
+ox.font='14px Georgia,serif';ox.fillStyle='#cdbf9a';ox.fillText(`Landmark ${L.indexOf(cur)+1} of 24`,640,694)}
+ox.globalAlpha=Math.max(ss((4-t)/1.5),ss((t-56)/2));
+if(ox.globalAlpha>.01){ox.font='52px Georgia,serif';ox.fillStyle='#f6e7c0';ox.shadowColor='#000';ox.shadowBlur=12;
+ox.fillText(t<30?'A Miniature Middle-earth':'There and Back Again',640,330);ox.font='italic 20px Georgia,serif';ox.fillText('a procedural journey across twenty-four landmarks',640,370);ox.shadowBlur=0}
+ox.globalAlpha=.7;ox.textAlign='left';ox.font='14px Georgia,serif';ox.fillStyle='#e8dcc0';
+ox.fillText(day>.6?'☀ Day':dusk>.5?'◐ Twilight':'☾ Night',24,34);ox.globalAlpha=1;
+requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

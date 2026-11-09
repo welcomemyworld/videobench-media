@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8"><title>卡点下坠球</title>
+<style>html,body{margin:0;background:#000;overflow:hidden;height:100%}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(100vw,177.78vh);height:min(56.25vw,100vh)}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+const W=1280,H=720,cv=document.getElementById('c'),g=cv.getContext('2d');
+const SC=[
+ {name:'♪ 帕赫贝尔《D大调卡农》',bpm:100,bg:['#1a0f2e','#3b1d4f'],col:[255,190,90],kind:'key',lines:{3:'哎哟！',8:'优雅，必须优雅',14:'我的发型！',19:'卡农=卡着弹？'}},
+ {name:'♪ 莫扎特《土耳其进行曲》',bpm:138,bg:['#2a0606','#5a1a0a'],col:[255,80,60],kind:'drum',lines:{4:'太快了吧！！',11:'我晕…@_@',18:'谁调的速度？',24:'停不下来啊'}},
+ {name:'♪ 贝多芬《月光奏鸣曲》',bpm:72,bg:['#020a1e','#0b2a4a'],col:[120,200,255],kind:'stone',lines:{2:'终于慢下来了…',7:'好浪漫…',11:'等等，下面是…？'}}
+];
+const SL=12;window.DUR=SL*3;
+const D=12,F=820,L=norm([0.5,1,0.35]);
+function norm(v){const l=Math.hypot(...v);return v.map(a=>a/l)}
+function rnd(i){const x=Math.sin(i*127.1+311.7)*43758.5453;return x-Math.floor(x)}
+SC.forEach((s,si)=>{s.beat=60/s.bpm;s.n=Math.floor(SL/s.beat);s.p=[];
+ for(let i=0;i<=s.n;i++){const a=i*(si==1?1.3:0.85),r=3.2+Math.sin(i*0.7)*0.8;
+  s.p.push([Math.cos(a)*r,-i*(si==1?1.1:1.7),Math.sin(a)*r]);}
+ s.deco=[];for(let i=0;i<40;i++)s.deco.push([(rnd(i+si*99)-.5)*30,-rnd(i*3+si)*s.n*1.8+4,(rnd(i*7+si)-.5)*30,0.3+rnd(i*5)*0.6]);
+});
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)||0;const t0=performance.now();
+let cam,tg,cy,sy,cp,sp;
+function proj(x,y,z){let dx=x-tg[0],dy=y-tg[1],dz=z-tg[2];
+ let x1=dx*cy-dz*sy,z1=dx*sy+dz*cy;let y1=dy*cp-z1*sp,z2=dy*sp+z1*cp+D;
+ return [W/2+x1*F/z2,H/2-y1*F/z2,z2];}
+const FACES=[[[0,4,6,2],[-1,0,0]],[[1,3,7,5],[1,0,0]],[[0,1,5,4],[0,-1,0]],[[2,6,7,3],[0,1,0]],[[0,2,3,1],[0,0,-1]],[[4,5,7,6],[0,0,1]]];
+function box(items,c,s,base,glow){const v=[];for(let i=0;i<8;i++)v.push([c[0]+((i&1)?s[0]:-s[0]),c[1]+((i>>1&1)?s[1]:-s[1]),c[2]+((i>>2&1)?s[2]:-s[2])]);
+ for(const [f,n] of FACES){const ce=[0,1,2].map(k=>(v[f[0]][k]+v[f[2]][k])/2);
+  if(n[0]*(cam[0]-ce[0])+n[1]*(cam[1]-ce[1])+n[2]*(cam[2]-ce[2])<=0)continue;
+  const pts=f.map(i=>proj(...v[i]));if(pts.some(p=>p[2]<0.5))continue;
+  const sh=0.35+0.65*Math.max(0,n[0]*L[0]+n[1]*L[1]+n[2]*L[2]);
+  const col=base.map((b,k)=>Math.min(255,b*sh+glow[k]));
+  items.push({z:pts.reduce((a,p)=>a+p[2],0)/4,d:()=>{g.beginPath();pts.forEach((p,i)=>i?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1]));g.closePath();
+   g.fillStyle=`rgb(${col.map(Math.round)})`;g.fill();if(glow[0]+glow[1]+glow[2]>60){g.strokeStyle=`rgba(${glow.map(a=>Math.min(255,a*2)|0)},0.9)`;g.lineWidth=2;g.stroke();}}});}}
+function ballAt(s,lt){const i=Math.min(s.n-1,Math.floor(lt/s.beat)),u=lt/s.beat-i;
+ const a=s.p[i],b=s.p[i+1],h=1.6;
+ if(lt<0)return{pos:[a[0],a[1]+0.5+3*(-lt),a[2]],i:0,u:0};
+ return{pos:[a[0]+(b[0]-a[0])*u,a[1]+0.5+(b[1]-a[1])*u+h*4*u*(1-u),a[2]+(b[2]-a[2])*u],i,u};}
+function frame(){let T=((performance.now()-t0)/1000+off)%DUR;const si=Math.floor(T/SL),s=SC[si];let lt=T-si*SL;
+ const B=ballAt(s,Math.min(lt,s.n*s.beat-0.001));
+ // ending humor in last scene
+ tg=[B.pos[0]*0.6,B.pos[1]-0.5,B.pos[2]*0.6];
+ const yaw=T*0.25+si*2,pitch=-0.42-0.08*Math.sin(T*0.5);cy=Math.cos(yaw);sy=Math.sin(yaw);cp=Math.cos(pitch);sp=Math.sin(pitch);
+ cam=[tg[0]-D*cp*sy,tg[1]-D*sp,tg[2]-D*cp*cy];
+ const bt=lt/s.beat,pulse=Math.exp(-(bt%1)*4);
+ const gr=g.createLinearGradient(0,0,0,H);gr.addColorStop(0,s.bg[1]);gr.addColorStop(1,s.bg[0]);g.fillStyle=gr;g.fillRect(0,0,W,H);
+ g.fillStyle=`rgba(${s.col},${0.05+0.08*pulse})`;g.beginPath();g.arc(W/2,H/2,300+60*pulse,0,7);g.fill();
+ for(let i=0;i<80;i++){g.fillStyle=`rgba(255,255,255,${0.2+0.5*rnd(i+si)})`;g.fillRect(rnd(i*3.1)*W,(rnd(i*5.7)*H+T*20*(1+rnd(i)))%H,2,2);}
+ const items=[];
+ s.deco.forEach((d,k)=>{const on=(Math.floor(bt)%4)==(k%4);box(items,[d[0],d[1],d[2]],[d[3],d[3],d[3]],[40,40,60],on?s.col.map(c=>c*0.4*pulse):[0,0,0]);});
+ s.p.forEach((p,i)=>{const dt=lt-i*s.beat;let gl=dt>=0?Math.exp(-dt*3)*1.3+0.25:0;
+  const glow=s.col.map(c=>c*gl);
+  if(s.kind=='key'){box(items,[p[0],p[1],p[2]],[0.9,0.18,0.45],[225,220,210],glow);box(items,[p[0]+0.3,p[1]+0.22,p[2]],[0.15,0.06,0.3],[20,20,25],[0,0,0]);}
+  else if(s.kind=='drum'){box(items,[p[0],p[1]-0.25,p[2]],[0.6,0.35,0.6],[150,30,30],glow);box(items,[p[0],p[1]+0.12,p[2]],[0.65,0.04,0.65],[230,220,200],glow);}
+  else box(items,[p[0],p[1]-0.1,p[2]],[0.7+0.2*rnd(i),0.25,0.6],[70,80,100],glow);});
+ // tea cup at end of scene 3
+ const last=s.p[s.n];if(si==2){box(items,[last[0],last[1]-0.6,last[2]],[1.2,0.1,1.2],[240,240,240],[0,0,0]);box(items,[last[0],last[1]-0.2,last[2]],[0.8,0.4,0.8],[230,120,140],[30,20,20]);}
+ const bp=proj(...B.pos);let sq=1;const ph=bt%1;if(lt>0&&ph<0.12)sq=1-0.35*(1-ph/0.12);
+ items.push({z:bp[2]-0.1,d:()=>{const r=0.5*F/bp[2];g.save();g.translate(bp[0],bp[1]+r*(1-sq));g.scale(1/Math.sqrt(sq),sq);
+  const rg=g.createRadialGradient(-r*0.35,-r*0.35,r*0.1,0,0,r);rg.addColorStop(0,'#fff');rg.addColorStop(0.3,'#ffd34d');rg.addColorStop(1,'#a8500a');
+  g.fillStyle=rg;g.beginPath();g.arc(0,0,r,0,7);g.fill();
+  const nx=s.p[Math.min(s.n,B.i+1)],np=proj(...nx);let ex=Math.max(-1,Math.min(1,(np[0]-bp[0])/200)),ey=Math.max(-1,Math.min(1,(np[1]-bp[1])/200));
+  for(const sx of[-1,1]){g.fillStyle='#fff';g.beginPath();g.ellipse(sx*r*0.32,-r*0.15,r*0.2,r*0.25*(ph<0.12&&lt>0?0.3:1),0,0,7);g.fill();
+   g.fillStyle='#111';if(si==1&&B.i>9&&B.i<16){g.strokeStyle='#111';g.lineWidth=2;g.beginPath();for(let a=0;a<12;a+=0.4)g.lineTo(sx*r*0.32+Math.cos(a+T*9)*a*r*0.012,-r*0.15+Math.sin(a+T*9)*a*r*0.012);g.stroke();}
+   else{g.beginPath();g.arc(sx*r*0.32+ex*r*0.08,-r*0.15+ey*r*0.1,r*0.09,0,7);g.fill();}}
+  g.strokeStyle='#5a2a00';g.lineWidth=2;g.beginPath();if(ph<0.15&&lt>0)g.arc(0,r*0.35,r*0.13,0,7);else g.arc(0,r*0.2,r*0.2,0.2,Math.PI-0.2);g.stroke();g.restore();}});
+ items.sort((a,b)=>b.z-a.z).forEach(it=>it.d());
+ // sparks
+ if(lt>0&&B.i<s.n){const hp=proj(...s.p[B.i]),age=(bt%1)*s.beat;for(let k=0;k<14;k++){const a=rnd(k+B.i*13)*6.28,v=80+rnd(k*2+B.i)*160;
+  g.fillStyle=`rgba(${s.col},${Math.max(0,1-age*2.5)})`;g.beginPath();g.arc(hp[0]+Math.cos(a)*v*age,hp[1]-Math.abs(Math.sin(a))*v*age+300*age*age,3,0,7);g.fill();}}
+ // speech bubble
+ const ln=s.lines[B.i]||s.lines[B.i-1];let txt=ln;if(si==2&&lt>s.n*s.beat-0.3)txt='落进奶茶…完美收工 ☕';
+ if(txt){g.font='bold 28px sans-serif';const w=g.measureText(txt).width+30,bx=Math.min(W-w-20,Math.max(20,bp[0]+40)),by=Math.max(20,bp[1]-110);
+  g.fillStyle='rgba(255,255,255,0.95)';g.beginPath();g.roundRect(bx,by,w,50,14);g.fill();g.beginPath();g.moveTo(bx+20,by+50);g.lineTo(bx+5,by+70);g.lineTo(bx+45,by+50);g.fill();
+  g.fillStyle='#222';g.fillText(txt,bx+15,by+35);}
+ // HUD
+ const fade=Math.min(1,lt/0.6,(SL-lt)/0.5);g.fillStyle=`rgba(0,0,0,${1-Math.max(0,fade)})`;g.fillRect(0,0,W,H);
+ g.font='bold 34px sans-serif';g.fillStyle='rgba(255,255,255,0.92)';g.fillText(s.name,40,60);
+ g.font='20px sans-serif';g.fillStyle=`rgba(${s.col},0.9)`;g.fillText(`第 ${si+1} 幕 · ${s.bpm} BPM · 第 ${Math.min(s.n,Math.max(0,Math.floor(bt))+1)} 拍`,40,92);
+ for(let k=0;k<4;k++){g.fillStyle=Math.floor(bt)%4==k&&lt>0?`rgb(${s.col})`:'rgba(255,255,255,0.2)';g.beginPath();g.arc(W-150+k*32,60,10+(Math.floor(bt)%4==k?4*pulse:0),0,7);g.fill();}
+ requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

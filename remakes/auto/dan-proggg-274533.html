@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#s{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+canvas{display:block}
+</style></head><body><div id="s"><canvas id="c" width="1280" height="720"></canvas></div><script>
+window.DUR=40;
+const c=document.getElementById('c'),x=c.getContext('2d'),S=document.getElementById('s');
+function fit(){const k=Math.min(innerWidth/1280,innerHeight/720);S.style.transform=`scale(${k}) translate(-50%,-50%)`;S.style.left='50%';S.style.top='50%';S.style.transform=`translate(-50%,-50%) scale(${k})`;}
+fit();addEventListener('resize',fit);
+const q=new URLSearchParams(location.search),T0=parseFloat(q.get('t')||0);const st=performance.now();
+// build list of parts: [x,y,z,w,h,d,color,type]
+const P=[];const H=28.5;
+function box(cx,y,cz,w,h,d,col){P.push({cx,y,cz,w,h,d,col});}
+let y=0;
+box(0,0,0,13,1.2,13,'#8a8478');box(0,1.2,0,11.5,0.4,11.5,'#9c9488');y=1.6;
+for(let f=0;f<5;f++){
+ const s=1-f*0.13,W=7.5*s,h=3.0*s;
+ // posts
+ for(let i=0;i<4;i++)for(let j=0;j<4;j++){if(i>0&&i<3&&j>0&&j<3)continue;
+  box(-W/2+W*i/3,y,-W/2+W*j/3,0.35,h,0.35,'#b23a2a');}
+ // walls
+ box(0,y+0.2,0,W*0.92,h*0.75,W*0.92,'#e8dcc0');
+ box(0,y+h,0,W+0.3,0.3,W+0.3,'#8c2b1f');
+ // brackets
+ for(let k=0;k<4;k++)box(0,y+h+0.3+k*0.25,0,W+0.6+k*0.9,0.25,W+0.6+k*0.9,k%2?'#6b2016':'#a33626');
+ // roof layers
+ const R=W+5.5*s;
+ for(let k=0;k<4;k++){const r=R-k*R*0.18;box(0,y+h+1.3+k*0.22,0,r,0.22,r,k==0?'#2f3a3c':'#3d4a4c');}
+ y+=h+2.2;
+}
+box(0,y,0,1.6,0.6,1.6,'#3d4a4c');
+for(let k=0;k<9;k++)box(0,y+0.6+k*0.55,0,0.9-k*0.03,0.25,0.9-k*0.03,'#c9a24a');
+box(0,y+0.6,0,0.15,5.5,0.15,'#c9a24a');
+const SC=H/(y+6);
+const N=P.length;
+function proj(X,Y,Z,a,cam){const ca=Math.cos(a),sa=Math.sin(a);const rx=X*ca-Z*sa,rz=X*sa+Z*ca;
+ const el=0.35,ce=Math.cos(el),se=Math.sin(el);const yy=Y-cam.ty;const ry=yy*ce-rz*se,dz=yy*se+rz*ce+cam.d;
+ const f=900/dz;return[640+rx*f,400-ry*f,dz];}
+function shade(h,k){const n=parseInt(h.slice(1),16);let r=n>>16,g=n>>8&255,b=n&255;return`rgb(${r*k|0},${g*k|0},${b*k|0})`;}
+function frame(){
+ const t=((performance.now()-st)/1000+T0)%DUR;
+ x.fillStyle='#0b1a2c';x.fillRect(0,0,1280,720);
+ // blueprint grid
+ x.strokeStyle='rgba(120,170,230,0.12)';x.lineWidth=1;
+ for(let i=0;i<1280;i+=32){x.beginPath();x.moveTo(i,0);x.lineTo(i,720);x.stroke();}
+ for(let i=0;i<720;i+=32){x.beginPath();x.moveTo(0,i);x.lineTo(1280,i);x.stroke();}
+ const prog=Math.min(1,Math.max(0,(t-2)/28));const built=prog*N;
+ const solid=Math.min(1,Math.max(0,(t-30)/4));
+ const a=t*0.18+0.6;const cam={ty:y*0.45-(1-prog)*8,d:62-prog*4};
+ const faces=[];
+ for(let i=0;i<N;i++){
+  const p=P[i];const lp=Math.min(1,Math.max(0,built-i));const ghost=lp<=0;
+  const drop=(1-lp)*(1-lp)*6;
+  const x0=p.cx-p.w/2,x1=p.cx+p.w/2,z0=p.cz-p.d/2,z1=p.cz+p.d/2,y0=p.y+(ghost?0:drop),y1=y0+p.h;
+  const V=[[x0,y0,z0],[x1,y0,z0],[x1,y0,z1],[x0,y0,z1],[x0,y1,z0],[x1,y1,z0],[x1,y1,z1],[x0,y1,z1]].map(v=>proj(v[0],v[1],v[2],a,cam));
+  const F=[[0,1,5,4,0.8],[1,2,6,5,0.6],[2,3,7,6,0.8],[3,0,4,7,0.6],[4,5,6,7,1]];
+  for(const f of F){const pts=[V[f[0]],V[f[1]],V[f[2]],V[f[3]]];
+   const cr=(pts[1][0]-pts[0][0])*(pts[2][1]-pts[0][1])-(pts[1][1]-pts[0][1])*(pts[2][0]-pts[0][0]);
+   if(cr>0&&!ghost)continue;
+   faces.push({pts,z:(pts[0][2]+pts[2][2])/2,col:p.col,k:f[4],ghost,lp});}
+ }
+ faces.sort((u,v)=>v.z-u.z);
+ for(const f of faces){x.beginPath();f.pts.forEach((p,i)=>i?x.lineTo(p[0],p[1]):x.moveTo(p[0],p[1]));x.closePath();
+  if(f.ghost){x.strokeStyle='rgba(140,200,255,0.10)';x.stroke();continue;}
+  x.globalAlpha=0.35+0.65*Math.max(solid,f.lp>0.99?0.6:f.lp*0.5);
+  x.fillStyle=shade(f.col,f.k);x.fill();x.globalAlpha=1;
+  x.strokeStyle=f.lp<1?'rgba(255,230,150,0.9)':`rgba(160,210,255,${0.5*(1-solid)+0.05})`;x.stroke();}
+ // UI
+ x.fillStyle='#cfe4ff';x.font='bold 30px sans-serif';x.fillText('FIVE-STORY PAGODA',40,58);
+ x.font='16px monospace';x.fillStyle='#8fb8e8';
+ x.fillText('BLUEPRINT REV.5 — HEIGHT 28.5 m — SCALE 1:100',40,84);
+ const steps=Math.floor(prog*343);
+ x.font='bold 22px monospace';x.fillStyle='#ffd27a';
+ x.fillText(`STEP ${String(steps).padStart(3,'0')} / 343`,40,680);
+ x.fillStyle='#8fb8e8';x.font='16px monospace';
+ x.fillText(`HEIGHT ${(prog*28.5).toFixed(1)} m   JOINTS ${Math.floor(built)}/${N}`,300,680);
+ x.fillRect(40,692,1200*prog,3);x.fillStyle='rgba(143,184,232,0.2)';x.fillRect(40,692,1200,3);
+ // dim line
+ x.strokeStyle='#8fb8e8';x.beginPath();x.moveTo(1200,140);x.lineTo(1200,620);x.stroke();
+ x.fillStyle='#8fb8e8';x.save();x.translate(1220,380);x.rotate(-Math.PI/2);x.fillText('28.5 m',-24,0);x.restore();
+ if(t>33){x.globalAlpha=Math.min(1,(t-33)/1.5)*(t>38?Math.max(0,(40-t)/2):1);x.fillStyle='#fff';x.font='bold 26px sans-serif';
+  x.textAlign='center';x.fillText('No CAD. No Blender. Just a browser.',640,140);x.textAlign='left';x.globalAlpha=1;}
+ requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

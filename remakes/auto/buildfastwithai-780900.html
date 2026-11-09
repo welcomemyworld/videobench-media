@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Bharat — Echoes of a Civilisation</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}
+#hint{position:absolute;bottom:8px;left:0;right:0;text-align:center;color:#888;font:13px sans-serif}
+</style></head><body>
+<canvas id="c" width="1280" height="720"></canvas>
+<div id="hint">Click for music & sound</div>
+<script>
+window.DUR=42;
+const C=document.getElementById('c'),X=C.getContext('2d'),W=1280,H=720;
+function fit(){const s=Math.min(innerWidth/W,innerHeight/H);C.style.width=W*s+'px';C.style.height=H*s+'px'}
+fit();addEventListener('resize',fit);
+const q=new URLSearchParams(location.search);const T0=parseFloat(q.get('t')||'0')||0;
+const start=performance.now()-T0*1000;
+// ---------- AUDIO ----------
+let A=null,master,droneOn=false;
+function initAudio(){
+ if(A){A.resume();return}
+ try{A=new (window.AudioContext||window.webkitAudioContext)()}catch(e){return}
+ master=A.createGain();master.gain.value=0.6;master.connect(A.destination);
+ const f=A.createBiquadFilter();f.type='lowpass';f.frequency.value=900;f.connect(master);
+ [146.83,220,293.66,110].forEach((fr,i)=>{const o=A.createOscillator();o.type='sawtooth';o.frequency.value=fr;o.detune.value=(i-1.5)*4;
+  const g=A.createGain();g.gain.value=0.035;const l=A.createOscillator();l.frequency.value=0.13+i*0.07;const lg=A.createGain();lg.gain.value=0.02;l.connect(lg);lg.connect(g.gain);l.start();
+  o.connect(g);g.connect(f);o.start()});
+ droneOn=true;document.getElementById('hint').style.display='none';
+}
+addEventListener('click',initAudio);addEventListener('keydown',initAudio);
+try{initAudio();if(A&&A.state!=='running'){}}catch(e){}
+function noiseBuf(){const b=A.createBuffer(1,A.sampleRate,A.sampleRate),d=b.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;return b}
+let NB=null;
+function tabla(kind){if(!A||A.state!=='running')return;const t=A.currentTime;
+ const o=A.createOscillator(),g=A.createGain();o.type='sine';
+ if(kind==0){o.frequency.setValueAtTime(140,t);o.frequency.exponentialRampToValueAtTime(70,t+0.25);g.gain.setValueAtTime(0.5,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.4)}
+ else{o.frequency.setValueAtTime(kind==1?587:440,t);g.gain.setValueAtTime(0.18,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.18)}
+ o.connect(g);g.connect(master);o.start(t);o.stop(t+0.5)}
+function sitar(fr){if(!A||A.state!=='running')return;const t=A.currentTime;const o=A.createOscillator(),g=A.createGain(),f=A.createBiquadFilter();
+ o.type='sawtooth';o.frequency.setValueAtTime(fr*0.97,t);o.frequency.linearRampToValueAtTime(fr,t+0.06);f.type='bandpass';f.frequency.value=fr*3;f.Q.value=3;
+ g.gain.setValueAtTime(0.25,t);g.gain.exponentialRampToValueAtTime(0.001,t+1.2);o.connect(f);f.connect(g);g.connect(master);o.start(t);o.stop(t+1.3)}
+function bell(){if(!A||A.state!=='running')return;const t=A.currentTime;[523,1310,2093,2790].forEach((fr,i)=>{const o=A.createOscillator(),g=A.createGain();o.frequency.value=fr;g.gain.setValueAtTime(0.12/(i+1),t);g.gain.exponentialRampToValueAtTime(0.001,t+3);o.connect(g);g.connect(master);o.start(t);o.stop(t+3)})}
+function whoosh(d,fq){if(!A||A.state!=='running')return;if(!NB)NB=noiseBuf();const t=A.currentTime;const s=A.createBufferSource();s.buffer=NB;s.loop=true;const f=A.createBiquadFilter();f.type='bandpass';f.Q.value=1.5;
+ f.frequency.setValueAtTime(fq||300,t);f.frequency.exponentialRampToValueAtTime((fq||300)*6,t+d);const g=A.createGain();g.gain.setValueAtTime(0.001,t);g.gain.linearRampToValueAtTime(0.35,t+d*0.5);g.gain.linearRampToValueAtTime(0.001,t+d);
+ s.connect(f);f.connect(g);g.connect(master);s.start(t);s.stop(t+d)}
+// raga Yaman-ish scale on Sa=293.66
+const SC=[293.66,329.63,369.99,415.3,440,493.88,554.37,587.33];
+const MEL=[0,2,4,3,2,1,0,-1,4,5,7,5,4,3,2,-1];
+let lastStep=-1,lastScene=-1;
+function audioTick(t){
+ const bpm=96,step=Math.floor(t*bpm/60*2);
+ if(step!==lastStep){lastStep=step;const p=step%8;
+  if(p==0||p==3||p==6)tabla(0);else if(p%2==1)tabla(1);else tabla(2);
+  if(step%4==0){const m=MEL[(step/4)%16];if(m>=0)sitar(SC[m])}}
+ const sc=Math.floor(t/8);if(sc!==lastScene){lastScene=sc;whoosh(1.5,200);if(sc==2)bell()}
+ if(t>34.5&&t<34.6&&!window._rk){window._rk=1;whoosh(4,60)} if(t<34)window._rk=0;
+}
+// ---------- HELPERS ----------
+const R=(s=>()=>(s=(s*16807)%2147483647)/2147483647)(7);
+const stars=[...Array(260)].map(()=>[R()*W,R()*H*0.8,R()*1.6+0.3,R()*6]);
+function sky(c1,c2,c3){const g=X.createLinearGradient(0,0,0,H);g.addColorStop(0,c1);g.addColorStop(0.6,c2);g.addColorStop(1,c3);X.fillStyle=g;X.fillRect(0,0,W,H)}
+function drawStars(t,a){X.fillStyle='#fff';for(const s of stars){X.globalAlpha=a*(0.5+0.5*Math.sin(t*2+s[3]));X.fillRect(s[0],s[1],s[2],s[2])}X.globalAlpha=1}
+function ease(x){x=Math.max(0,Math.min(1,x));return x*x*(3-2*x)}
+function caption(title,sub,lt){const a=ease(lt-0.6)*ease(7.6-lt)*1;X.save();X.globalAlpha=a;X.textAlign='center';
+ X.shadowColor='rgba(0,0,0,.8)';X.shadowBlur=14;X.fillStyle='#ffe2a8';X.font='bold 52px Georgia,serif';X.fillText(title,W/2,98+(1-ease(lt-0.6))*20);
+ X.fillStyle='#f3f0e6';X.font='italic 24px Georgia,serif';X.fillText(sub,W/2,140);
+ X.fillStyle='#d9a441';X.fillRect(W/2-90*a,158,180*a,2);X.restore()}
+function sun(x,y,r,c){const g=X.createRadialGradient(x,y,0,x,y,r*4);g.addColorStop(0,c);g.addColorStop(0.25,c);g.addColorStop(0.26,'rgba(255,170,80,.35)');g.addColorStop(1,'rgba(255,120,40,0)');X.fillStyle=g;X.fillRect(x-r*4,y-r*4,r*8,r*8)}
+// ---------- SCENES ----------
+function s0(lt){ // Indus Valley
+ sky('#3b1d3a','#e07a3c','#f6c56b');sun(900,430-lt*6,46,'#fff1c0');
+ X.fillStyle='#8a4b26';X.fillRect(0,500,W,220);
+ for(let i=0;i<14;i++)for(let j=0;j<6;j++){const k=i*6+j,d=ease(lt*1.4-k*0.02);if(d<=0)continue;
+  const x=120+i*75+(j%2)*20,hh=(30+((k*37)%50))*d,y=520+j*22;
+  X.fillStyle=`hsl(${18+j*2},55%,${32+j*5}%)`;X.fillRect(x,y-hh,62,hh);
+  X.strokeStyle='rgba(60,25,10,.5)';X.lineWidth=1;for(let b=y-hh;b<y;b+=7){X.beginPath();X.moveTo(x,b);X.lineTo(x+62,b);X.stroke()}}
+ // Great Bath
+ const gb=ease(lt-2);X.fillStyle=`rgba(70,150,180,${gb})`;X.fillRect(560,640,160,40);X.strokeStyle='#5a2d14';X.lineWidth=6;X.strokeRect(556,636,168,48);
+ // seal: unicorn-ish emblem
+ X.save();X.globalAlpha=ease(lt-3.5)*0.9;X.translate(180,300);X.fillStyle='#d8c7a0';X.fillRect(-60,-60,120,120);X.strokeStyle='#6b5530';X.lineWidth=3;X.strokeRect(-54,-54,108,108);
+ X.fillStyle='#6b5530';X.beginPath();X.ellipse(0,15,32,16,0,0,7);X.fill();X.fillRect(-26,24,5,20);X.fillRect(18,24,5,20);X.beginPath();X.moveTo(26,8);X.lineTo(44,-30);X.lineTo(32,4);X.fill();
+ for(let i=0;i<5;i++)X.fillRect(-38+i*16,-44,8,12);X.restore();
+ caption('Indus Valley · 2500 BCE','Planned cities of brick, drains and the Great Bath',lt)}
+function s1(lt){ // Ashoka
+ sky('#05061a','#141a4a','#2b1b44');drawStars(lt,1);
+ X.save();X.translate(W/2,420);const g=X.createRadialGradient(0,0,0,0,0,260);g.addColorStop(0,'rgba(80,120,255,.35)');g.addColorStop(1,'rgba(0,0,0,0)');X.fillStyle=g;X.fillRect(-300,-300,600,600);
+ X.rotate(lt*0.4);const s=ease(lt*0.6);X.scale(s,s);X.strokeStyle='#3d6bff';X.fillStyle='#3d6bff';X.lineWidth=8;
+ X.beginPath();X.arc(0,0,170,0,7);X.stroke();X.beginPath();X.arc(0,0,22,0,7);X.fill();X.lineWidth=4;
+ for(let i=0;i<24;i++){const a=i*Math.PI/12;X.beginPath();X.moveTo(Math.cos(a)*22,Math.sin(a)*22);X.lineTo(Math.cos(a)*166,Math.sin(a)*166);X.stroke();
+  X.beginPath();X.arc(Math.cos(a+.13)*170,Math.sin(a+.13)*170,5,0,7);X.fill()}X.restore();
+ // pillar silhouettes
+ X.fillStyle='#0a0a18';[[150,1],[1130,1]].forEach(([x])=>{X.fillRect(x-14,330,28,390);X.beginPath();X.ellipse(x,325,40,16,0,0,7);X.fill();
+  X.beginPath();X.arc(x-14,300,18,0,7);X.arc(x+14,300,18,0,7);X.fill();X.beginPath();X.arc(x,288,20,0,7);X.fill()});
+ caption('Vedas, Buddha & Ashoka · 1500–250 BCE','Wisdom, dharma and the wheel of law',lt)}
+function s2(lt){ // Temple
+ sky('#1a0b05','#5a2410','#c2611d');sun(W/2,300,60,'#ffd27a');
+ X.fillStyle='#2a1208';X.fillRect(0,600,W,120);
+ const lv=10,b=ease(lt*0.5)*lv;X.save();X.translate(W/2,600);
+ for(let i=0;i<lv;i++){if(i>b)break;const w=420-i*36,h=34,y=-i*h;const a=Math.min(1,b-i);X.globalAlpha=a;
+  X.fillStyle=i%2?'#3a1a0c':'#4a2410';X.fillRect(-w/2,y-h,w,h);X.fillStyle='#2a1208';for(let k=-w/2+10;k<w/2-10;k+=24)X.fillRect(k,y-h+6,12,h-12)}
+ X.globalAlpha=ease(b-lv+0.5);X.fillStyle='#e0a030';X.beginPath();X.ellipse(0,-lv*34-12,26,16,0,0,7);X.fill();X.fillRect(-3,-lv*34-48,6,26);X.restore();
+ // diyas
+ for(let i=0;i<22;i++){const x=60+i*55,y=650,f=Math.sin(lt*12+i*2)*2;const a=ease(lt*2-i*0.12);if(a<=0)continue;
+  X.globalAlpha=a;const g=X.createRadialGradient(x,y-12,0,x,y-12,30);g.addColorStop(0,'rgba(255,200,80,.8)');g.addColorStop(1,'rgba(255,120,0,0)');X.fillStyle=g;X.fillRect(x-30,y-42,60,60);
+  X.fillStyle='#ffe08a';X.beginPath();X.ellipse(x,y-12+f*0.3,4,9+f,0,0,7);X.fill();X.fillStyle='#8b4a1c';X.beginPath();X.ellipse(x,y,12,5,0,0,Math.PI);X.fill()}X.globalAlpha=1;
+ caption('Golden Age of Temples · 300–1200 CE','Zero, Ayurveda, astronomy — and towers of stone',lt)}
+function taj(sc){X.beginPath();X.moveTo(-170,0);X.lineTo(-170,-150);X.lineTo(170,-150);X.lineTo(170,0);X.fill();
+ X.fillRect(-60,-190,120,40);X.beginPath();X.moveTo(-70,-190);X.bezierCurveTo(-110,-280,-30,-310,0,-340);X.bezierCurveTo(30,-310,110,-280,70,-190);X.fill();X.fillRect(-2,-370,4,32);
+ [-120,120].forEach(x=>{X.beginPath();X.arc(x,-170,22,Math.PI,0);X.fill();X.fillRect(x-22,-170,44,20)});
+ [-250,250].forEach(x=>{X.fillRect(x-9,-260,18,260);X.beginPath();X.arc(x,-262,14,Math.PI,0);X.fill()})}
+function s3(lt){ // Taj
+ sky('#0b1030','#3a3170','#d78aa0');drawStars(lt,0.5);X.fillStyle='#f6f0ff';X.beginPath();X.arc(1050,140,36,0,7);X.fill();
+ const s=0.9+lt*0.02;X.save();X.translate(W/2,480);X.scale(s,s);X.fillStyle='#f2ecf5';taj();
+ X.fillStyle='rgba(120,100,160,.4)';X.fillRect(-170,-150,340,10);X.restore();
+ X.fillStyle='#1d1640';X.fillRect(0,480,W,240);
+ X.save();X.translate(W/2,480);X.scale(s,-s*0.9);X.globalAlpha=0.3;X.fillStyle='#c9b6e8';taj();X.restore();
+ X.strokeStyle='rgba(255,255,255,.12)';for(let i=0;i<30;i++){const y=490+i*8,o=Math.sin(lt*2+i)*30;X.beginPath();X.moveTo(W/2-200+o,y);X.lineTo(W/2+200+o,y);X.stroke()}
+ X.fillStyle='#08061a';X.fillRect(0,690,W,30);for(let i=0;i<W;i+=80){X.beginPath();X.moveTo(i,700);X.lineTo(i+20,560);X.lineTo(i+40,700);X.fill()}
+ caption('The Mughal Era · 1653','The Taj Mahal — a poem in marble',lt)}
+function s4(lt){ // modern
+ sky('#000008','#081028','#10203a');drawStars(lt,1);
+ X.fillStyle='#d9d9e0';X.beginPath();X.arc(1080,150,60,0,7);X.fill();X.fillStyle='rgba(0,0,0,.15)';X.beginPath();X.arc(1060,135,12,0,7);X.arc(1100,170,9,0,7);X.fill();
+ // tricolor ribbons
+ ['#ff9933','#ffffff','#138808'].forEach((c,i)=>{X.strokeStyle=c;X.globalAlpha=0.7;X.lineWidth=14;X.beginPath();
+  for(let x=0;x<=W;x+=20){const y=560+i*16+Math.sin(x*0.008+lt*2)*22;x?X.lineTo(x,y):X.moveTo(x,y)}X.stroke()});X.globalAlpha=1;
+ X.fillStyle='#000080';X.beginPath();X.arc(W/2,576+Math.sin(W/2*0.008+lt*2)*22,7,0,7);X.fill();
+ // rocket
+ const lp=Math.max(0,lt-2.5),y=640-lp*lp*28,x=360+lp*lp*18;X.save();X.translate(x,y);X.rotate(lp*0.06);
+ for(let i=0;i<30;i++){const r=R();X.fillStyle=`rgba(255,${120+r*120|0},40,${0.6*(1-i/30)})`;X.beginPath();X.arc((r-.5)*14,40+i*5+(r*10),8+i*0.6,0,7);X.fill()}
+ X.fillStyle='#eee';X.fillRect(-10,-50,20,90);X.beginPath();X.moveTo(-10,-50);X.lineTo(0,-75);X.lineTo(10,-50);X.fill();X.fillStyle='#ff9933';X.fillRect(-10,-20,20,6);X.fillStyle='#138808';X.fillRect(-10,-8,20,6);
+ X.fillStyle='#bbb';X.fillRect(-20,10,10,30);X.fillRect(10,10,10,30);X.restore();
+ if(lp<1.5){X.fillStyle=`rgba(200,200,210,${0.5-lp/3})`;for(let i=0;i<12;i++){X.beginPath();X.arc(300+i*12,650,30+lp*40,0,7);X.fill()}}
+ caption('Modern Bharat · 1947 → Today','Freedom, democracy, and a journey to the Moon',lt)}
+function s5(lt){ // finale
+ sky('#120518','#3a0f1e','#7a3a10');drawStars(lt,0.6);
+ X.save();X.translate(W/2,330);for(let i=0;i<40;i++){const a=i/40*Math.PI*2+lt*0.3,r=140+Math.sin(lt*2+i)*10;X.fillStyle=`hsla(${30+i*3},90%,60%,.6)`;X.beginPath();X.ellipse(Math.cos(a)*r,Math.sin(a)*r,22,8,a,0,7);X.fill()}
+ for(let i=0;i<16;i++){const a=i/16*Math.PI*2-lt*0.5;X.fillStyle='#ffcc55';X.beginPath();X.ellipse(Math.cos(a)*70,Math.sin(a)*70,30,10,a,0,7);X.fill()}
+ X.fillStyle='#fff3c8';X.beginPath();X.arc(0,0,30,0,7);X.fill();X.restore();
+ const a=ease(lt-0.8);X.globalAlpha=a;X.textAlign='center';X.fillStyle='#ffe2a8';X.font='bold 70px Georgia,serif';X.fillText('भारत · BHARAT',W/2,580);
+ X.fillStyle='#f3e8d0';X.font='italic 26px Georgia,serif';X.fillText('5000 years of an unbroken civilisation',W/2,625);X.globalAlpha=1}
+const S=[s0,s1,s2,s3,s4,s5];
+function frame(){
+ let t=((performance.now()-start)/1000)%window.DUR;
+ const i=Math.min(5,Math.floor(t/8)),lt=t-i*8;
+ X.setTransform(1,0,0,1,0,0);S[i](lt);
+ // vignette + fade
+ const v=X.createRadialGradient(W/2,H/2,H*0.4,W/2,H/2,H*0.95);v.addColorStop(0,'rgba(0,0,0,0)');v.addColorStop(1,'rgba(0,0,0,.6)');X.fillStyle=v;X.fillRect(0,0,W,H);
+ const end=i==5?window.DUR-8:8;const f=Math.max(1-lt/0.6,1-(end-lt)/0.6,0);X.fillStyle=`rgba(0,0,0,${Math.min(1,f)})`;X.fillRect(0,0,W,H);
+ if(droneOn)audioTick(t);
+ requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

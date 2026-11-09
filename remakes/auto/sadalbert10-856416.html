@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#s{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+canvas{width:100%;height:100%;image-rendering:pixelated}
+</style></head><body><div id="s"><canvas id="c" width="320" height="180"></canvas></div>
+<script>
+window.DUR=30;
+const W=320,H=180,c=document.getElementById('c'),x=c.getContext('2d');x.imageSmoothingEnabled=false;
+const st=document.getElementById('s');
+function fit(){const k=Math.min(innerWidth/1280,innerHeight/720);st.style.transform=`scale(${k}) translate(-50%,-50%)`;st.style.left=innerWidth/2+'px';st.style.top=innerHeight/2+'px';st.style.transform=`translate(-50%,-50%) scale(${k})`;st.style.transformOrigin='50% 50%';}
+fit();addEventListener('resize',fit);
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)||0;const t0=performance.now();
+function R(s){return()=>{s=(s*16807)%2147483647;return s/2147483647}}
+function mkCity(seed,n,minH,maxH,base){const r=R(seed),b=[];let px=0;while(px<n){const w=6+r()*14|0,h=minH+r()*(maxH-minH)|0;b.push({x:px,w,h,c:r(),sp:r()<.2,win:[]});
+for(let i=0;i<w*h/10;i++)b[b.length-1].win.push([2+r()*(w-3)|0,3+r()*(h-4)|0,r()]);px+=w+(r()*3|0)}return b}
+const far=mkCity(3,900,20,60),near=mkCity(7,900,30,95);
+const stars=[];{const r=R(11);for(let i=0;i<70;i++)stars.push([r()*W,r()*80,r()])}
+function lerp(a,b,k){return a+(b-a)*k}
+function mix(c1,c2,k){return `rgb(${c1.map((v,i)=>lerp(v,c2[i],k)|0)})`}
+function px(X,Y,w,h,col){x.fillStyle=col;x.fillRect(X|0,Y|0,w|0,h|0)}
+function frame(){
+let t=((performance.now()-t0)/1000+off)%DUR;
+// day->sunset->dusk cycle
+const k=Math.min(1,t/DUR*1.4);const dusk=Math.max(0,(t/DUR-.4)/.6);
+const sky1=[[90,140,220],[250,120,90]],sky2=[[250,200,150],[60,30,90]];
+const g=x.createLinearGradient(0,0,0,110);
+g.addColorStop(0,mix([60,100,200],[20,15,50],dusk));g.addColorStop(.6,mix([240,150,110],[200,70,90],dusk));g.addColorStop(1,mix([255,210,150],[250,130,80],dusk));
+x.fillStyle=g;x.fillRect(0,0,W,120);
+for(const s of stars){if(dusk>s[2]){px(s[0],s[1],1,1,`rgba(255,255,230,${(dusk-s[2])*(.6+.4*Math.sin(t*3+s[0]))})`)}}
+// sun dither
+const sy=60+t/DUR*55;for(let r=16;r>0;r-=2){x.fillStyle=`rgba(255,${200-r*5},${120-r*4},${r==16?.15:.5})`;x.beginPath();x.arc(240,sy,r,0,7);x.fill()}
+// clouds
+for(let i=0;i<5;i++){const cx=((i*90-t*3)%420+420)%420-50,cy=20+i*9;x.fillStyle=mix([255,230,220],[180,90,120],dusk);for(let j=0;j<4;j++)px(cx+j*7,cy-(j%2)*3,14,4)}
+// cities with parallax
+const sc=t*20;
+function city(arr,sp,baseY,col,lightCol,lit){const o=(sc*sp)%900;for(let rep=0;rep<2;rep++)for(const b of arr){const X=b.x-o+rep*900;if(X>W||X+b.w<0)continue;const Y=baseY-b.h;px(X,Y,b.w,b.h,col(b.c));
+if(b.sp){px(X+b.w/2-1,Y-10,2,10,col(b.c));px(X+b.w/2-.5,Y-14,1,4,'#ccc');if(Math.sin(t*4)>0)px(X+b.w/2-.5,Y-15,1,1,'#f33')}
+px(X,Y,1,b.h,'rgba(255,220,180,.15)');
+if(lit)for(const w of b.win){if(w[2]<dusk*1.1)px(X+w[0],Y+w[1],1,1,lightCol)}}}
+city(far,.15,112,c=>mix([120,110,160],[50,40,90],dusk),'#ffd98a',true);
+city(near,.3,118,c=>mix([70+c*30,70+c*20,110],[25,20,50],dusk),'#ffe9a0',true);
+// water
+const wg=x.createLinearGradient(0,118,0,H);wg.addColorStop(0,mix([210,140,120],[90,40,80],dusk));wg.addColorStop(1,mix([40,60,110],[10,10,30],dusk));x.fillStyle=wg;x.fillRect(0,118,W,62);
+for(let i=0;i<60;i++){const yy=120+(i*7%55),xx=((i*53-t*8*(1+yy/180))%W+W)%W;px(xx,yy,3+i%4,1,'rgba(255,220,180,.25)')}
+px(234,sy>118?0:118+ (118-sy)*.3,12,1,'rgba(255,220,150,.4)');
+// bridge: towers & cables
+const bo=(sc*1)%200;
+for(let i=-1;i<3;i++){const tx=i*200-bo+60;
+px(tx,40,8,100,'#a8352a');px(tx+2,40,4,100,'#c4473a');px(tx-2,40,12,4,'#8a2a20');px(tx-2,70,12,3,'#8a2a20');
+for(let s=-1;s<=1;s+=2)for(let j=0;j<100;j+=1){const xx=tx+4+s*j,yy=42+Math.pow(j/100,2)*62;px(xx,yy,1,1,'#b33');if(j%6==0)px(xx,yy,1,130-yy,'rgba(180,60,50,.6)')}}
+// deck
+px(0,130,W,5,'#555');px(0,135,W,3,'#333');px(0,128,W,2,'#888');
+for(let i=0;i<W+20;i+=10)px(i-(sc*1%10),124,1,6,'#999');px(0,124,W,1,'#aaa');
+px(0,138,W,4,'#222');for(let i=0;i<W+16;i+=16)px(i-(sc%16),132,6,1,'#ee5');
+// lamps
+for(let i=0;i<W+80;i+=80){const lx=i-(sc%80);px(lx,104,1,24,'#444');px(lx-2,103,4,2,'#666');if(dusk>.2){x.fillStyle=`rgba(255,220,140,${dusk*.25})`;x.beginPath();x.arc(lx,106,9,0,7);x.fill();px(lx-1,105,2,1,'#ffd')}}
+// pelican on bicycle
+const bx=120,by=128,bob=Math.sin(t*12)*.7,a=t*8;
+function wheel(cx){x.strokeStyle='#111';x.lineWidth=1.5;x.beginPath();x.arc(cx,by-7,7,0,7);x.stroke();for(let i=0;i<4;i++){const an=a+i*.785;px(cx+Math.cos(an)*6,by-7+Math.sin(an)*6,1,1,'#bbb');px(cx-Math.cos(an)*6,by-7-Math.sin(an)*6,1,1,'#bbb')}px(cx-.5,by-7.5,1,1,'#ddd')}
+wheel(bx);wheel(bx+24);
+x.strokeStyle='#2a6ad8';x.lineWidth=1.5;x.beginPath();x.moveTo(bx,by-7);x.lineTo(bx+9,by-7);x.lineTo(bx+7,by-17);x.lineTo(bx,by-7);x.moveTo(bx+9,by-7);x.lineTo(bx+20,by-17);x.lineTo(bx+7,by-17);x.moveTo(bx+20,by-17);x.lineTo(bx+24,by-7);x.moveTo(bx+20,by-17);x.lineTo(bx+19,by-21);x.stroke();
+px(bx+16,by-22,5,1,'#222');px(bx+5,by-19,5,2,'#222');
+// pedals legs
+const p1x=bx+9+Math.cos(a)*3,p1y=by-7+Math.sin(a)*3,p2x=bx+9-Math.cos(a)*3,p2y=by-7-Math.sin(a)*3;
+x.strokeStyle='#f0a020';x.lineWidth=1.2;x.beginPath();x.moveTo(bx+8,by-21+bob);x.lineTo((bx+8+p2x)/2+3,(by-21+p2y)/2);x.lineTo(p2x,p2y);x.stroke();
+// body
+const B=by-27+bob;
+x.fillStyle='#e8e4dc';x.beginPath();x.ellipse(bx+8,B,9,6,-.2,0,7);x.fill();
+x.fillStyle='#fff';x.beginPath();x.ellipse(bx+9,B-1,6,3,-.2,0,7);x.fill();
+x.fillStyle='#9a958c';x.beginPath();x.ellipse(bx+5,B+1,7,3,-.3,0,7);x.fill();px(bx-3,B,4,2,'#333');
+// neck & head
+x.strokeStyle='#eee';x.lineWidth=3;x.beginPath();x.moveTo(bx+13,B-3);x.quadraticCurveTo(bx+11,B-12,bx+15,B-15);x.stroke();
+x.fillStyle='#f5f2ea';x.beginPath();x.arc(bx+16,B-15,3.2,0,7);x.fill();px(bx+16,B-18,3,1,'#f3e7a0');px(bx+17,B-16,1,1,'#111');
+// beak & pouch
+x.fillStyle='#f2b23a';x.beginPath();x.moveTo(bx+18,B-16);x.lineTo(bx+30,B-14);x.lineTo(bx+18,B-14);x.fill();
+x.fillStyle='#e07a40';x.beginPath();x.moveTo(bx+18,B-14);x.quadraticCurveTo(bx+22,B-8+Math.sin(t*6),bx+30,B-14);x.fill();
+// wing arm to handlebar
+x.strokeStyle='#bbb';x.lineWidth=1.5;x.beginPath();x.moveTo(bx+11,B);x.lineTo(bx+19,by-21);x.stroke();
+x.strokeStyle='#f0a020';x.lineWidth=1.2;x.beginPath();x.moveTo(bx+8,by-21+bob);x.lineTo((bx+8+p1x)/2+3,(by-21+p1y)/2);x.lineTo(p1x,p1y);x.stroke();
+// shadow-ish highlight (pseudo 3D rim light)
+px(bx+2,B-5,8,1,'rgba(255,190,130,.6)');
+// vignette + title
+const v=x.createRadialGradient(160,90,60,160,90,200);v.addColorStop(0,'rgba(0,0,0,0)');v.addColorStop(1,'rgba(0,0,0,.5)');x.fillStyle=v;x.fillRect(0,0,W,H);
+const ta=t<5?Math.min(1,t)*Math.min(1,5-t):0;if(ta>0){x.globalAlpha=ta;x.font='bold 12px monospace';x.textAlign='center';x.fillStyle='#000';x.fillText('PELICAN CITY RIDE',161,163);x.fillStyle='#ffe0a0';x.fillText('PELICAN CITY RIDE',160,162);x.globalAlpha=1}
+requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

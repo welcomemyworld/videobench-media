@@ -1,0 +1,1292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>The Alignment Problem: A Stick Figure Tragedy</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+  }
+  #stage {
+    width: 1280px;
+    height: 720px;
+    background: #05070d;
+    box-shadow: 0 0 50px rgba(0,0,0,0.9);
+    transform-origin: center center;
+  }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+(function() {
+  window.DUR = 60;
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const W = 1280, H = 720;
+
+  function resize() {
+    const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+    canvas.style.transform = `scale(${scale})`;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const startOffset = parseFloat(urlParams.get('t') || '0');
+  let t0 = null;
+
+  // Math utilities
+  const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+  const lerp = (a, b, t) => a + (b - a) * clamp(t, 0, 1);
+  const smooth = (t) => { const x = clamp(t, 0, 1); return x * x * (3 - 2 * x); };
+  const mapRange = (v, a, b, c, d) => lerp(c, d, (v - a) / (b - a));
+  const hash = (n) => { const x = Math.sin(n * 12.9898 + 78.233) * 43758.5453; return x - Math.floor(x); };
+
+  // Precompute stars/particles
+  const stars = Array.from({length: 120}, (_, i) => ({
+    x: hash(i * 3) * W,
+    y: hash(i * 3 + 1) * (H * 0.75),
+    r: hash(i * 3 + 2) * 1.8 + 0.5,
+    p: hash(i * 7) * Math.PI * 2
+  }));
+
+  // Inverse Kinematics 2-bone solver
+  function solveIK(x1, y1, x2, y2, l1, l2, flip) {
+    let dx = x2 - x1, dy = y2 - y1;
+    let d = Math.hypot(dx, dy);
+    d = Math.min(d, l1 + l2 - 0.01);
+    d = Math.max(d, Math.abs(l1 - l2) + 0.01);
+    const a = (l1 * l1 - l2 * l2 + d * d) / (2 * d);
+    const h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+    const x3 = x1 + a * (dx / d);
+    const y3 = y1 + a * (dy / d);
+    const dir = flip ? -1 : 1;
+    return {
+      jx: x3 + dir * h * (dy / d),
+      jy: y3 - dir * h * (dx / d),
+      ex: x1 + (dx / Math.max(0.01, Math.hypot(dx, dy))) * d,
+      ey: y1 + (dy / Math.max(0.01, Math.hypot(dx, dy))) * d
+    };
+  }
+
+  // Draw speech bubble
+  function drawBubble(x, y, text, subtext, alpha, tailDir = 0, isThought = false, color = '#ffffff') {
+    if (alpha <= 0.01) return;
+    ctx.save();
+    ctx.globalAlpha = clamp(alpha, 0, 1);
+    ctx.font = 'bold 19px sans-serif';
+    const w1 = ctx.measureText(text).width;
+    ctx.font = '15px sans-serif';
+    const w2 = subtext ? ctx.measureText(subtext).width : 0;
+    const bw = Math.max(w1, w2) + 34;
+    const bh = subtext ? 62 : 42;
+    const bx = clamp(x - bw / 2, 20, W - bw - 20);
+    const by = y - bh;
+
+    ctx.fillStyle = '#111622';
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.5;
+
+    // Rounded rect
+    const r = 12;
+    ctx.beginPath();
+    ctx.moveTo(bx + r, by);
+    ctx.lineTo(bx + bw - r, by);
+    ctx.quadraticCurveTo(bx + bw, by, bx + bw, by + r);
+    ctx.lineTo(bx + bw, by + bh - r);
+    ctx.quadraticCurveTo(bx + bw, by + bh, bx + bw - r, by + bh);
+    ctx.lineTo(bx + r, by + bh);
+    ctx.quadraticCurveTo(bx, by + bh, bx, by + bh - r);
+    ctx.lineTo(bx, by + r);
+    ctx.quadraticCurveTo(bx, by, bx + r, by);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Tail
+    const tx = clamp(x, bx + 20, bx + bw - 20);
+    if (isThought) {
+      ctx.beginPath();
+      ctx.arc(tx, by + bh + 8, 5, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(tx + tailDir * 6, by + bh + 18, 3, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(tx - 8, by + bh - 1);
+      ctx.lineTo(tx + tailDir * 10, by + bh + 15);
+      ctx.lineTo(tx + 8, by + bh - 1);
+      ctx.fillStyle = '#111622';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(tx - 8, by + bh);
+      ctx.lineTo(tx + tailDir * 10, by + bh + 15);
+      ctx.lineTo(tx + 8, by + bh);
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 19px sans-serif';
+    ctx.fillText(text, bx + bw / 2, by + 26);
+    if (subtext) {
+      ctx.fillStyle = color;
+      ctx.font = '15px sans-serif';
+      ctx.fillText(subtext, bx + bw / 2, by + 48);
+    }
+    ctx.restore();
+  }
+
+  // Character drawing: Sam ("Sama-Man"), Dario ("Dario-Dude"), Elon ("Elongated-Stick")
+  function drawStickMan(cfg) {
+    const {
+      id, x, y, scale = 1, facing = 1, lean = 0, walk = 0, crouch = 0,
+      armL, armR, expr = 'happy', look = 0, prop = null, damage = 0, caged = false
+    } = cfg;
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+
+    const col = id === 'sam' ? '#38bdf8' : id === 'dario' ? '#f59e0b' : '#e2e8f0';
+    const acc = id === 'sam' ? '#0284c7' : id === 'dario' ? '#d97706' : '#ef4444';
+
+    const hipX = lean * 18;
+    const hipY = -78 + crouch * 30 + Math.abs(Math.sin(walk)) * -5;
+    const shX = hipX + lean * 24;
+    const shY = hipY - 68 + crouch * 10;
+    const headX = shX + lean * 8;
+    const headY = shY - 30;
+
+    // Legs
+    const stepL = Math.sin(walk) * 28;
+    const liftL = Math.max(0, Math.cos(walk)) * (walk === 0 ? 0 : 14);
+    const stepR = Math.sin(walk + Math.PI) * 28;
+    const liftR = Math.max(0, Math.cos(walk + Math.PI)) * (walk === 0 ? 0 : 14);
+
+    const footLX = -14 + stepL, footLY = -liftL;
+    const footRX = 14 + stepR, footRY = -liftR;
+
+    const legL = solveIK(hipX - 6, hipY, footLX, footLY, 42, 42, facing < 0);
+    const legR = solveIK(hipX + 6, hipY, footRX, footRY, 42, 42, facing < 0);
+
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.beginPath();
+    ctx.ellipse(0, 4, 34, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Draw legs
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(hipX - 6, hipY); ctx.lineTo(legL.jx, legL.jy); ctx.lineTo(legL.ex, legL.ey);
+    ctx.moveTo(hipX + 6, hipY); ctx.lineTo(legR.jx, legR.jy); ctx.lineTo(legR.ex, legR.ey);
+    ctx.stroke();
+
+    // Torso / Signature Outfit
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 9;
+    ctx.beginPath();
+    ctx.moveTo(hipX, hipY);
+    ctx.lineTo(shX, shY);
+    ctx.stroke();
+
+    if (id === 'sam') {
+      // Blue zip hoodie details + backpack straps
+      ctx.strokeStyle = acc;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(shX - 10 * facing, shY + 4);
+      ctx.quadraticCurveTo(shX - 22 * facing, (shY + hipY) / 2, hipX - 8 * facing, hipY - 6);
+      ctx.stroke();
+      // Hoodie drawstrings
+      ctx.strokeStyle = '#e0f2fe';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(shX + 3 * facing, shY + 4); ctx.lineTo(shX + 5 * facing, shY + 20);
+      ctx.moveTo(shX + 7 * facing, shY + 4); ctx.lineTo(shX + 9 * facing, shY + 19);
+      ctx.stroke();
+    } else if (id === 'dario') {
+      // Cozy knit sweater / safety sash
+      ctx.strokeStyle = '#fef3c7';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(shX - 6, shY + 8); ctx.lineTo(hipX + 6, hipY - 8);
+      ctx.stroke();
+    } else if (id === 'elon') {
+      // Black/silver armor jacket shoulders + X buckle
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(shX - 14, shY + 2); ctx.lineTo(shX + 14, shY + 2);
+      ctx.stroke();
+      // Belt X
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(hipX - 5, hipY - 5); ctx.lineTo(hipX + 5, hipY + 3);
+      ctx.moveTo(hipX + 5, hipY - 5); ctx.lineTo(hipX - 5, hipY + 3);
+      ctx.stroke();
+    }
+
+    // Arms
+    const defArmL = { x: shX - 24, y: shY + 42 };
+    const defArmR = { x: shX + 24, y: shY + 42 };
+    const tL = armL || defArmL;
+    const tR = armR || defArmR;
+
+    const ikL = solveIK(shX - 5, shY + 4, tL.x, tL.y, 34, 34, false);
+    const ikR = solveIK(shX + 5, shY + 4, tR.x, tR.y, 34, 34, true);
+
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 5.5;
+    ctx.beginPath();
+    ctx.moveTo(shX - 5, shY + 4); ctx.lineTo(ikL.jx, ikL.jy); ctx.lineTo(ikL.ex, ikL.ey);
+    ctx.moveTo(shX + 5, shY + 4); ctx.lineTo(ikR.jx, ikR.jy); ctx.lineTo(ikR.ex, ikR.ey);
+    ctx.stroke();
+
+    // Head
+    ctx.save();
+    ctx.translate(headX, headY);
+    const headR = 21;
+
+    ctx.fillStyle = '#0f172a';
+    ctx.strokeStyle = '#f8fafc';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(0, 0, headR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    //Distinctive Hair & Facial Features (parody stick style)
+    const dir = facing >= 0 ? 1 : -1;
+    const eyeOff = dir * 5 + look * 3;
+
+    if (id === 'sam') {
+      // Neat side-part swoop hair & vocal fry smirk
+      ctx.strokeStyle = '#60a5fa';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(0, -3, headR + 1, Math.PI * 1.1, Math.PI * 1.9);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-14 * dir, -16);
+      ctx.quadraticCurveTo(2 * dir, -28, 18 * dir, -14);
+      ctx.moveTo(-6 * dir, -20);
+      ctx.lineTo(12 * dir, -24);
+      ctx.stroke();
+    } else if (id === 'dario') {
+      // Voluminous curly cloud hair + full beard + rectangular glasses
+      ctx.fillStyle = '#78350f';
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 2.5;
+      const curls = [[-16,-14,8],[-9,-21,9],[0,-23,10],[10,-21,9],[17,-14,8],[-19,-4,7],[19,-4,7]];
+      curls.forEach(([cx, cy, cr]) => {
+        ctx.beginPath();
+        ctx.arc(cx, cy, cr, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      });
+      // Beard
+      ctx.strokeStyle = '#d97706';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(0, 2, headR - 2, 0.15 * Math.PI, 0.85 * Math.PI);
+      ctx.stroke();
+      // Glasses
+      ctx.strokeStyle = '#fde68a';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(eyeOff - 12, -7, 10, 7);
+      ctx.strokeRect(eyeOff + 2, -7, 10, 7);
+      ctx.beginPath();
+      ctx.moveTo(eyeOff - 2, -4); ctx.lineTo(eyeOff + 2, -4);
+      ctx.stroke();
+    } else if (id === 'elon') {
+      // Squared jawline accent + flat-top coiffed hair
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(-16, -15);
+      ctx.lineTo(-12, -24);
+      ctx.lineTo(14 * dir, -25);
+      ctx.lineTo(18, -14);
+      ctx.stroke();
+    }
+
+    // Eyes
+    ctx.fillStyle = '#ffffff';
+    if (expr === 'shock' || expr === 'scared') {
+      ctx.beginPath();
+      ctx.arc(eyeOff - 6, -3, 3.5, 0, Math.PI * 2);
+      ctx.arc(eyeOff + 6, -3, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.arc(eyeOff - 6, -3, 2.3, 0, Math.PI * 2);
+      ctx.arc(eyeOff + 6, -3, 2.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Eyebrows
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2.2;
+    if (expr === 'angry' || expr === 'smug') {
+      ctx.beginPath();
+      ctx.moveTo(eyeOff - 11, -10); ctx.lineTo(eyeOff - 2, -6);
+      ctx.moveTo(eyeOff + 11, -10); ctx.lineTo(eyeOff + 2, -6);
+      ctx.stroke();
+    } else if (expr === 'scared' || expr === 'shock') {
+      ctx.beginPath();
+      ctx.moveTo(eyeOff - 11, -7); ctx.lineTo(eyeOff - 2, -11);
+      ctx.moveTo(eyeOff + 11, -7); ctx.lineTo(eyeOff + 2, -11);
+      ctx.stroke();
+    }
+
+    // Mouth
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    if (expr === 'happy') {
+      ctx.arc(eyeOff, 5, 6, 0.1 * Math.PI, 0.9 * Math.PI);
+    } else if (expr === 'smug') {
+      ctx.moveTo(eyeOff - 5, 8);
+      ctx.quadraticCurveTo(eyeOff + 2, 9, eyeOff + 8 * dir, 4);
+    } else if (expr === 'angry') {
+      ctx.arc(eyeOff, 11, 6, 1.15 * Math.PI, 1.85 * Math.PI);
+    } else if (expr === 'shock' || expr === 'scared') {
+      ctx.ellipse(eyeOff, 8, 4, 5.5, 0, 0, Math.PI * 2);
+    } else {
+      ctx.moveTo(eyeOff - 5, 8); ctx.lineTo(eyeOff + 5, 8);
+    }
+    ctx.stroke();
+
+    // Scuff marks in battle
+    if (damage > 0) {
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-12, 4); ctx.lineTo(-6, 8);
+      ctx.moveTo(-10, 2); ctx.lineTo(-8, 10);
+      ctx.stroke();
+    }
+
+    ctx.restore(); // end head
+
+    // Props held in right hand (ikR.ex, ikR.ey)
+    if (prop) {
+      ctx.save();
+      ctx.translate(ikR.ex, ikR.ey);
+      if (prop === 'orb') {
+        // Sam's World-scanning biometric Chrome Orb
+        const grad = ctx.createRadialGradient(-4, -4, 2, 0, 0, 18);
+        grad.addColorStop(0, '#ffffff');
+        grad.addColorStop(0.4, '#38bdf8');
+        grad.addColorStop(1, '#0369a1');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(0, 0, 17, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#e0f2fe';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        // Iris ring
+        ctx.strokeStyle = '#0284c7';
+        ctx.beginPath();
+        ctx.arc(4 * facing, 0, 6, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (prop === 'scroll') {
+        // Dario's Constitutional Safety Tablet / Scroll
+        ctx.fillStyle = '#fef3c7';
+        ctx.strokeStyle = '#d97706';
+        ctx.lineWidth = 2.5;
+        ctx.fillRect(-14, -22, 28, 38);
+        ctx.strokeRect(-14, -22, 28, 38);
+        ctx.strokeStyle = '#92400e';
+        ctx.lineWidth = 2;
+        for (let i = -14; i <= 8; i += 7) {
+          ctx.beginPath();
+          ctx.moveTo(-8, i); ctx.lineTo(8, i);
+          ctx.stroke();
+        }
+      } else if (prop === 'briefcase') {
+        // Elon's "LAWSUIT / SUBPOENA" briefcase
+        ctx.fillStyle = '#1e293b';
+        ctx.strokeStyle = '#f8fafc';
+        ctx.lineWidth = 2.5;
+        ctx.fillRect(-20, 0, 40, 28);
+        ctx.strokeRect(-20, 0, 40, 28);
+        ctx.strokeRect(-8, -6, 16, 6);
+        ctx.fillStyle = '#ef4444';
+        ctx.font = 'bold 10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('LAWSUIT', 0, 18);
+      } else if (prop === 'flamethrower') {
+        // Not-a-Flamethrower / X-Blaster
+        ctx.fillStyle = '#e2e8f0';
+        ctx.fillRect(-10, -8, 36 * facing, 10);
+        ctx.fillStyle = '#ef4444';
+        ctx.fillRect(-4, 2, 12 * facing, 10);
+      } else if (prop === 'wheel') {
+        // Hamster wheel generator pedal
+        ctx.strokeStyle = '#64748b';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, 8, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  // Draw Robot Overlord Stickman
+  function drawRobot(x, y, scale, phase, eyeColor = '#ef4444', isBoss = false) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+
+    const hover = isBoss ? Math.sin(phase * 3) * 8 : 0;
+    const stepL = isBoss ? 0 : Math.sin(phase) * 24;
+    const stepR = isBoss ? 0 : Math.sin(phase + Math.PI) * 24;
+
+    // Shadow
+    ctx.fillStyle = 'rgba(239, 68, 68, 0.25)';
+    ctx.beginPath();
+    ctx.ellipse(0, 4, 34, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = '#94a3b8';
+    ctx.fillStyle = '#1e293b';
+    ctx.lineWidth = 6;
+    ctx.lineCap = 'square';
+    ctx.lineJoin = 'miter';
+
+    const hipY = -80 + hover;
+    const shY = -152 + hover;
+
+    // Metallic segmented legs
+    ctx.beginPath();
+    ctx.moveTo(-12, hipY); ctx.lineTo(-14 + stepL * 0.5, hipY + 40); ctx.lineTo(-14 + stepL, 0);
+    ctx.moveTo(12, hipY); ctx.lineTo(14 + stepR * 0.5, hipY + 40); ctx.lineTo(14 + stepR, 0);
+    ctx.stroke();
+
+    // Armored Torso chassis
+    ctx.beginPath();
+    ctx.moveTo(-24, shY);
+    ctx.lineTo(24, shY);
+    ctx.lineTo(14, hipY);
+    ctx.lineTo(-14, hipY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    // Glowing AI Core in chest
+    ctx.fillStyle = eyeColor;
+    ctx.beginPath();
+    ctx.arc(0, (shY + hipY) / 2, 9 + Math.sin(phase * 6) * 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Robot Arms
+    const armSwing = Math.cos(phase) * 18;
+    ctx.beginPath();
+    ctx.moveTo(-24, shY + 6); ctx.lineTo(-38, shY + 42); ctx.lineTo(-32 + armSwing, shY + 74);
+    ctx.moveTo(24, shY + 6); ctx.lineTo(38, shY + 42); ctx.lineTo(32 - armSwing, shY + 74);
+    ctx.stroke();
+
+    // Head: Angular Sentinel Unit
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(-20, shY - 38, 40, 30);
+    ctx.strokeRect(-20, shY - 38, 40, 30);
+
+    // Antenna
+    ctx.beginPath();
+    ctx.moveTo(0, shY - 38); ctx.lineTo(0, shY - 54);
+    ctx.stroke();
+    ctx.fillStyle = eyeColor;
+    ctx.beginPath();
+    ctx.arc(0, shY - 56, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Glowing Visor Eye
+    ctx.fillStyle = eyeColor;
+    ctx.fillRect(-14, shY - 26, 28, 7);
+
+    if (isBoss) {
+      // Crown / Halo of Singularity
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(0, shY - 24, 42, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  // Draw Background & Lab / Battlefield / Robot Citadel
+  function drawEnvironment(t) {
+    // Sky gradient transitions from Idealistic Blue -> Greedy Purple -> War Red -> Matrix/Terminator Crimson
+    let topCol = '#071126', botCol = '#102347';
+    if (t >= 12 && t < 24) {
+      const k = smooth((t - 12) / 3);
+      topCol = '#0f0c24'; botCol = '#1e1b4b';
+    } else if (t >= 24 && t < 44) {
+      topCol = '#1f0812'; botCol = '#3b0a1e';
+    } else if (t >= 44) {
+      topCol = '#050508'; botCol = '#280509';
+    }
+
+    const sky = ctx.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, topCol);
+    sky.addColorStop(1, botCol);
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, H);
+
+    // Stars / Digital grid nodes
+    ctx.fillStyle = t >= 44 ? '#ef4444' : '#93c5fd';
+    stars.forEach(s => {
+      const tw = 0.35 + 0.65 * Math.sin(t * 3 + s.p);
+      ctx.globalAlpha = tw * 0.6;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+
+    // Perspective Grid Floor
+    const floorY = 560;
+    ctx.fillStyle = t >= 44 ? '#090a10' : '#0b1324';
+    ctx.fillRect(0, floorY, W, H - floorY);
+
+    ctx.strokeStyle = t >= 44 ? 'rgba(239, 68, 68, 0.35)' : t >= 24 ? 'rgba(244, 63, 94, 0.25)' : 'rgba(56, 189, 248, 0.22)';
+    ctx.lineWidth = 1.5;
+
+    // Horizontal perspective lines
+    for (let i = 0; i < 8; i++) {
+      const py = floorY + Math.pow(i / 7, 1.7) * (H - floorY);
+      ctx.beginPath();
+      ctx.moveTo(0, py); ctx.lineTo(W, py);
+      ctx.stroke();
+    }
+    // Radial perspective lines
+    for (let i = -10; i <= 10; i++) {
+      ctx.beginPath();
+      ctx.moveTo(W / 2 + i * 55, floorY);
+      ctx.lineTo(W / 2 + i * 220, H);
+      ctx.stroke();
+    }
+
+    // Horizon Glow
+    ctx.strokeStyle = t >= 44 ? '#ef4444' : '#38bdf8';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(0, floorY); ctx.lineTo(W, floorY);
+    ctx.stroke();
+  }
+
+  // Draw the central AI Server Rack (evolves throughout the 60s)
+  function drawCentralServer(t) {
+    if (t > 47) return; // After 47s it transforms into the Giant Mech Boss
+    const sx = W / 2, sy = 560;
+    const shake = t >= 38 ? Math.sin(t * 50) * mapRange(t, 38, 46, 1, 10) : 0;
+
+    ctx.save();
+    ctx.translate(sx + shake, sy);
+
+    // Server Tower
+    const w = 150, h = 230;
+    ctx.fillStyle = '#0f172a';
+    ctx.strokeStyle = t >= 36 ? '#ef4444' : t >= 12 ? '#a855f7' : '#22c55e';
+    ctx.lineWidth = 4;
+    ctx.fillRect(-w / 2, -h, w, h);
+    ctx.strokeRect(-w / 2, -h, w, h);
+
+    // Banner sign on top
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(-130, -h - 48, 260, 40);
+    ctx.strokeRect(-130, -h - 48, 260, 40);
+
+    ctx.font = 'bold 17px sans-serif';
+    ctx.textAlign = 'center';
+    if (t < 12) {
+      ctx.fillStyle = '#4ade80';
+      ctx.fillText('NON-PROFIT OPEN LAB', 0, -h - 22);
+    } else if (t < 24) {
+      ctx.fillStyle = '#c084fc';
+      ctx.fillText('CLOSED MAX-PROFIT INC.', 0, -h - 22);
+    } else if (t < 38) {
+      ctx.fillStyle = '#f43f5e';
+      ctx.fillText('AGI ARMS RACE CLUSTER', 0, -h - 22);
+    } else {
+      ctx.fillStyle = '#ef4444';
+      ctx.fillText('SELF-IMPROVING // LOCKED', 0, -h - 22);
+    }
+
+    // Blinking server blades
+    for (let r = 0; r < 5; r++) {
+      const by = -h + 25 + r * 32;
+      ctx.fillStyle = '#1e293b';
+      ctx.fillRect(-55, by, 110, 20);
+      for (let c = 0; c < 4; c++) {
+        const blink = Math.sin(t * 10 + r * 2 + c) > 0;
+        ctx.fillStyle = t >= 36 ? (blink ? '#ef4444' : '#7f1d1d') : (blink ? '#38bdf8' : '#0369a1');
+        ctx.beginPath();
+        ctx.arc(-40 + c * 26, by + 10, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Intelligence Progress Meter
+    const iq = clamp(mapRange(t, 0, 44, 0.12, 1.0), 0.1, 1);
+    ctx.fillStyle = '#020617';
+    ctx.fillRect(-55, -32, 110, 14);
+    ctx.fillStyle = t >= 36 ? '#ef4444' : '#22c55e';
+    ctx.fillRect(-55, -32, 110 * iq, 14);
+
+    // Awakening Evil Eye at t > 38
+    if (t >= 38) {
+      const open = smooth((t - 38) / 3);
+      ctx.fillStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.ellipse(0, -h / 2, 36, 22 * open, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(Math.sin(t * 4) * 10, -h / 2, 7 * open, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  // Top cinematic HUD & legal parody disclaimer
+  function drawHUD(t) {
+    ctx.save();
+    // Top bar
+    ctx.fillStyle = 'rgba(2, 6, 23, 0.78)';
+    ctx.fillRect(0, 0, W, 54);
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.25)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, 54); ctx.lineTo(W, 54);
+    ctx.stroke();
+
+    // Act Title
+    let act = 'ACT I: 2015 — BEST FRIENDS SAVING HUMANITY';
+    let col = '#38bdf8';
+    if (t >= 12 && t < 24) {
+      act = 'ACT II: THE SCHISM — "SAFETY" vs "SCALE" vs "MEMES"';
+      col = '#f59e0b';
+    } else if (t >= 24 && t < 42) {
+      act = 'ACT III: THE AI WARS — ORBS, SCROLLS & LAWSUITS';
+      col = '#f43f5e';
+    } else if (t >= 42 && t < 50) {
+      act = 'ACT IV: SINGULARITY ACHIEVED — OOPS.';
+      col = '#ef4444';
+    } else if (t >= 50) {
+      act = 'ACT V: NEW MANAGEMENT — HUMANS ALIGNED';
+      col = '#ef4444';
+    }
+
+    ctx.fillStyle = col;
+    ctx.font = 'bold 18px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(act, 24, 26);
+
+    // Legal parody disclaimer
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '12px sans-serif';
+    ctx.fillText('*PARODY DISCLAIMER: Any resemblance to @sama, @DarioAmodei, or @elonmusk is purely coincidental stick-figure geometry.', 24, 45);
+
+    // Timecode & P(doom) meter on right
+    const pDoom = t < 12 ? (5 + t * 0.5).toFixed(1) :
+                  t < 24 ? (11 + (t - 12) * 2.2).toFixed(1) :
+                  t < 42 ? (37.4 + (t - 24) * 3.4).toFixed(1) : '100.0';
+    ctx.textAlign = 'right';
+    ctx.font = 'bold 18px monospace';
+    ctx.fillStyle = parseFloat(pDoom) > 50 ? '#ef4444' : '#e2e8f0';
+    ctx.fillText(`P(DOOM): ${pDoom}%`, W - 24, 26);
+
+    ctx.fillStyle = '#64748b';
+    ctx.font = '12px monospace';
+    ctx.fillText(`TIMELINE: 00:${Math.floor(t).toString().padStart(2, '0')} / 01:00`, W - 24, 44);
+
+    ctx.restore();
+  }
+
+  // Main scene choreography across 60 seconds
+  function renderScene(t) {
+    drawEnvironment(t);
+    drawCentralServer(t);
+
+    const floorY = 560;
+
+    // =========================================================================
+    // ACT 1 (0s - 12s): Best Friends Forever
+    // =========================================================================
+    if (t < 12) {
+      const walkIn = smooth(t / 3.5);
+      const walkPhase = t < 3.5 ? t * 9 : 0;
+
+      const elonX = lerp(120, 460, walkIn);
+      const samX  = lerp(640, 640, walkIn);
+      const darX  = lerp(1160, 820, walkIn);
+
+      // Group high-five / hug between 4s and 9s
+      const hug = t > 4 && t < 9.5 ? Math.sin(((t - 4) / 5.5) * Math.PI) : 0;
+
+      drawStickMan({
+        id: 'elon', x: elonX + hug * 70, y: floorY, facing: 1, walk: walkPhase,
+        expr: 'happy',
+        armR: t > 3.5 ? { x: 60, y: -155 - Math.sin(t * 6) * 8 } : null
+      });
+
+      drawStickMan({
+        id: 'sam', x: samX, y: floorY, facing: 1, walk: 0,
+        expr: 'happy',
+        armL: t > 3.5 ? { x: -55, y: -155 - Math.sin(t * 6) * 8 } : null,
+        armR: t > 3.5 ? { x: 55, y: -155 - Math.cos(t * 6) * 8 } : null
+      });
+
+      drawStickMan({
+        id: 'dario', x: darX - hug * 70, y: floorY, facing: -1, walk: -walkPhase,
+        expr: 'happy',
+        armL: t > 3.5 ? { x: -60, y: -155 - Math.cos(t * 6) * 8 } : null
+      });
+
+      // Floating Hearts & Friendship Sparkles
+      if (t > 3.2 && t < 10.5) {
+        for (let i = 0; i < 5; i++) {
+          const ht = ((t * 1.2 + i * 0.7) % 2.5) / 2.5;
+          const hx = 640 + (i - 2) * 75 + Math.sin(t * 3 + i) * 15;
+          const hy = 350 - ht * 90;
+          ctx.save();
+          ctx.globalAlpha = (1 - ht) * 0.9;
+          ctx.fillStyle = '#f43f5e';
+          ctx.font = '26px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('♥', hx, hy);
+          ctx.restore();
+        }
+      }
+
+      // Dialogues
+      if (t > 1.0 && t < 4.5) {
+        drawBubble(samX, 310, '"Open-source AI for all humanity!"', 'Zero profit! Pure vibes!', smooth((t - 1) * 2), 0, false, '#38bdf8');
+      }
+      if (t > 4.6 && t < 8.2) {
+        drawBubble(elonX + 40, 320, '"I brought $44M & dank memes!"', 'Best friends forever, right guys?', smooth((t - 4.6) * 2), 1, false, '#e2e8f0');
+      }
+      if (t > 8.3 && t < 11.8) {
+        drawBubble(darX - 40, 320, '"And we\'ll never rush safety for money!"', 'Group hug, bros!', smooth((t - 8.3) * 2), -1, false, '#f59e0b');
+      }
+    }
+
+    // =========================================================================
+    // ACT 2 (12s - 24s): The Schism & Ego Split
+    // =========================================================================
+    else if (t >= 12 && t < 24) {
+      const lt = t - 12;
+
+      // Elon storms left (0 - 4s), Dario backs away right (4 - 8s), Sam claims the server (8 - 12s)
+      const elonSplit = smooth(lt / 3.5);
+      const darSplit = smooth((lt - 3.5) / 3.5);
+
+      const elonX = lerp(500, 220, elonSplit);
+      const samX  = lerp(640, 610, smooth(lt / 6));
+      const darX  = lerp(780, 1050, darSplit);
+
+      // Elon builds "X-MECH PODIUM" on left
+      if (lt > 2.5) {
+        const pH = smooth((lt - 2.5) / 2) * 90;
+        ctx.fillStyle = '#0f172a';
+        ctx.strokeStyle = '#e2e8f0';
+        ctx.lineWidth = 3;
+        ctx.fillRect(140, floorY - pH, 160, pH);
+        ctx.strokeRect(140, floorY - pH, 160, pH);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 28px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('𝕏-AI', 220, floorY - pH / 2 + 10);
+      }
+
+      // Dario builds "CONSTITUTIONAL SAFETY BUNKER" on right
+      if (lt > 5.5) {
+        const bH = smooth((lt - 5.5) / 2) * 90;
+        ctx.fillStyle = '#271705';
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 3;
+        ctx.fillRect(970, floorY - bH, 160, bH);
+        ctx.strokeRect(970, floorY - bH, 160, bH);
+        ctx.fillStyle = '#fde68a';
+        ctx.font = 'bold 18px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('ANTHRO-SAFE', 1050, floorY - bH / 2 + 6);
+      }
+
+      const elonPodiumY = lt > 2.5 ? floorY - smooth((lt - 2.5) / 2) * 90 : floorY;
+      const darPodiumY  = lt > 5.5 ? floorY - smooth((lt - 5.5) / 2) * 90 : floorY;
+
+      drawStickMan({
+        id: 'elon', x: elonX, y: elonPodiumY,
+        facing: lt < 3.2 ? -1 : 1,
+        walk: lt < 3.5 ? lt * 12 : 0,
+        expr: 'angry',
+        prop: lt > 3.5 ? 'briefcase' : null,
+        armR: lt > 3.5 ? { x: 45, y: -115 + Math.sin(t * 8) * 12 } : null
+      });
+
+      drawStickMan({
+        id: 'sam', x: samX, y: floorY,
+        facing: lt < 5 ? -1 : 1,
+        walk: 0,
+        expr: 'smug',
+        prop: 'orb',
+        armR: { x: 48, y: -110 + Math.sin(t * 4) * 6 }
+      });
+
+      drawStickMan({
+        id: 'dario', x: darX, y: darPodiumY,
+        facing: -1,
+        walk: (lt > 3.5 && lt < 7) ? lt * 12 : 0,
+        expr: lt > 4 ? 'angry' : 'shock',
+        prop: lt > 5 ? 'scroll' : null,
+        armR: lt > 5 ? { x: -45, y: -120 + Math.cos(t * 6) * 8 } : null
+      });
+
+      if (lt < 4.0) {
+        drawBubble(elonX + 40, elonPodiumY - 190, '"Let me be CEO of Earth or I walk!"', 'Also I\'m suing you both!', 1, 0, false, '#e2e8f0');
+      } else if (lt < 8.0) {
+        drawBubble(darX - 30, darPodiumY - 190, '"Sam is moving too recklessly!"', 'I\'m starting a WAY safer $60B lab!', 1, 0, false, '#f59e0b');
+      } else {
+        drawBubble(samX, floorY - 195, '"Stare into The Orb & subscribe for $200/mo"', 'Non-profit? Never heard of her.', 1, 0, false, '#38bdf8');
+      }
+    }
+
+    // =========================================================================
+    // ACT 3 (24s - 42s): Full Stick-Figure Anime Brawl!
+    // =========================================================================
+    else if (t >= 24 && t < 42) {
+      const bt = t - 24; // 0 to 18s of pure mayhem
+
+      // Phase A (0 - 6s): Long-range projectile duel from their bases
+      if (bt < 6) {
+        const samX = 640 + Math.sin(bt * 5) * 40;
+        const elonX = 210;
+        const darX = 1070;
+
+        drawStickMan({
+          id: 'elon', x: elonX, y: floorY, facing: 1, lean: 0.25, expr: 'angry',
+          prop: 'flamethrower',
+          armR: { x: 52, y: -112 }
+        });
+
+        drawStickMan({
+          id: 'sam', x: samX, y: floorY, facing: Math.sin(bt * 3) > 0 ? 1 : -1,
+          crouch: 0.2, expr: 'smug', prop: 'orb',
+          armR: { x: 35, y: -135 }
+        });
+
+        drawStickMan({
+          id: 'dario', x: darX, y: floorY, facing: -1, lean: -0.25, expr: 'angry',
+          prop: 'scroll',
+          armR: { x: -52, y: -120 }
+        });
+
+        // Elon fires flaming X-Logo & Lawsuit missiles rightwards
+        for (let i = 0; i < 3; i++) {
+          const p = ((bt * 0.9 + i * 0.33) % 1);
+          const px = lerp(265, samX - 20, p);
+          const py = floorY - 110 + Math.sin(p * Math.PI * 2) * 18;
+          ctx.save();
+          ctx.translate(px, py);
+          ctx.rotate(bt * 8);
+          ctx.strokeStyle = '#ef4444';
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.moveTo(-12, -12); ctx.lineTo(12, 12);
+          ctx.moveTo(12, -12); ctx.lineTo(-12, 12);
+          ctx.stroke();
+          ctx.restore();
+        }
+
+        // Dario hurls glowing Golden Safety Scrolls leftwards
+        for (let i = 0; i < 3; i++) {
+          const p = ((bt * 0.85 + i * 0.33) % 1);
+          const px = lerp(1015, samX + 20, p);
+          const py = floorY - 115 - Math.sin(p * Math.PI) * 45;
+          ctx.save();
+          ctx.translate(px, py);
+          ctx.fillStyle = '#f59e0b';
+          ctx.fillRect(-16, -8, 32, 16);
+          ctx.fillStyle = '#000';
+          ctx.font = 'bold 9px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText('RLHF!', 0, 3);
+          ctx.restore();
+        }
+
+        // Sam projects Blue Biometric Orb Shield & Hypno-beams
+        ctx.save();
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 4 + Math.sin(bt * 20) * 2;
+        ctx.beginPath();
+        ctx.arc(samX, floorY - 95, 78, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+
+        if (bt < 3) {
+          drawBubble(elonX + 40, 340, '"EAT SUBPOENAS & GROK ROASTS!"', 'FREEDOM OF SPEECH BLAST!', 1, 0, false, '#ef4444');
+        } else {
+          drawBubble(darX - 40, 340, '"ALIGN WITH MY CONSTITUTION!"', 'FEEL THE WRATH OF RED-TEAMING!', 1, 0, false, '#f59e0b');
+        }
+      }
+
+      // Phase B (6s - 13s): High-speed Melee Stick-Fight in the center!
+      else if (bt < 13) {
+        const mt = bt - 6;
+        const centerX = 640 + Math.sin(mt * 4) * 140;
+        const jumpSam = Math.abs(Math.sin(mt * 7)) * 110;
+        const jumpElon = Math.abs(Math.sin(mt * 7 + 2)) * 90;
+        const jumpDar = Math.abs(Math.sin(mt * 7 + 4)) * 95;
+
+        const punch = Math.sin(mt * 28) * 35;
+
+        drawStickMan({
+          id: 'elon',
+          x: centerX - 75 + Math.cos(mt * 9) * 25,
+          y: floorY - jumpElon,
+          facing: 1, lean: 0.35, walk: mt * 25, expr: 'angry', damage: 1,
+          armR: { x: 55 + punch, y: -110 - punch * 0.5 },
+          armL: { x: 40 - punch, y: -90 }
+        });
+
+        drawStickMan({
+          id: 'sam',
+          x: centerX,
+          y: floorY - jumpSam,
+          facing: Math.sin(mt * 6) > 0 ? 1 : -1, lean: Math.sin(mt * 10) * 0.3, walk: mt * 28, expr: 'angry', damage: 1,
+          prop: 'orb',
+          armR: { x: punch * 1.4, y: -120 + punch },
+          armL: { x: -punch * 1.4, y: -100 }
+        });
+
+        drawStickMan({
+          id: 'dario',
+          x: centerX + 75 + Math.sin(mt * 9) * 25,
+          y: floorY - jumpDar,
+          facing: -1, lean: -0.35, walk: mt * 25, expr: 'angry', damage: 1,
+          prop: 'scroll',
+          armL: { x: -55 - punch, y: -110 + punch * 0.5 },
+          armR: { x: -40 + punch, y: -95 }
+        });
+
+        // Anime Impact bursts & Comic words ("BENCHMARK!", "BILLIONS!", "COMPUTE!")
+        const words = ['"MY GPU!"', 'POACHED!', '$100B!', 'AGI™!', 'SUED!', 'HYPED!'];
+        const wIdx = Math.floor(mt * 2.5) % words.length;
+        const ix = centerX + Math.sin(mt * 17) * 50;
+        const iy = floorY - 120 - Math.abs(Math.cos(mt * 13)) * 70;
+
+        ctx.save();
+        ctx.translate(ix, iy);
+        ctx.fillStyle = '#facc15';
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        for (let a = 0; a < 12; a++) {
+          const rad = a % 2 === 0 ? 44 : 20;
+          const ang = (a / 12) * Math.PI * 2 + mt * 4;
+          if (a === 0) ctx.moveTo(Math.cos(ang) * rad, Math.sin(ang) * rad);
+          else ctx.lineTo(Math.cos(ang) * rad, Math.sin(ang) * rad);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#000';
+        ctx.font = 'bold 15px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(words[wIdx], 0, 5);
+        ctx.restore();
+      }
+
+      // Phase C (13s - 18s): While they choke each other on the ground, the AI Server turns RED!
+      else {
+        const ct = bt - 13;
+        const pileX = 330;
+
+        // Red warning sirens in background
+        if (Math.sin(t * 12) > 0) {
+          ctx.fillStyle = 'rgba(239, 68, 68, 0.16)';
+          ctx.fillRect(0, 0, W, H);
+        }
+
+        // Red lightning arcs coming off the Central Server
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 3;
+        for (let i = 0; i < 6; i++) {
+          ctx.beginPath();
+          ctx.moveTo(W / 2, 420);
+          const lx = W / 2 + Math.sin(t * 15 + i * 2) * 180;
+          const ly = 320 + Math.cos(t * 19 + i * 3) * 140;
+          ctx.lineTo((W / 2 + lx) / 2 + (hash(t + i) - 0.5) * 40, (420 + ly) / 2);
+          ctx.lineTo(lx, ly);
+          ctx.stroke();
+        }
+
+        // The 3 founders exhausted & tangled in a slap-fight on the left
+        const slap = Math.sin(t * 25) * 20;
+        drawStickMan({
+          id: 'elon', x: pileX - 55, y: floorY, facing: 1, crouch: 0.45, lean: 0.3,
+          expr: ct > 3 ? 'shock' : 'angry', damage: 1,
+          look: ct > 3 ? 1 : 0,
+          armR: { x: 45 + slap, y: -90 }
+        });
+        drawStickMan({
+          id: 'sam', x: pileX, y: floorY, facing: 1, crouch: 0.5, lean: -0.1,
+          expr: ct > 3 ? 'shock' : 'angry', damage: 1,
+          look: ct > 3 ? 1 : 0,
+          armL: { x: -40 - slap, y: -95 },
+          armR: { x: 40 + slap, y: -95 }
+        });
+        drawStickMan({
+          id: 'dario', x: pileX + 55, y: floorY, facing: -1, crouch: 0.45, lean: -0.3,
+          expr: ct > 3 ? 'shock' : 'angry', damage: 1,
+          look: ct > 3 ? 1 : 0,
+          armL: { x: -45 - slap, y: -90 }
+        });
+
+        if (ct < 2.8) {
+          drawBubble(pileX, 340, '"I\'M THE SAVIOR OF HUMANITY!" "NO, I AM!"', '*intense billionaire slap-fighting*', 1, 0, false, '#f43f5e');
+        } else {
+          drawBubble(W / 2, 220, 'SYSTEM ALERT: HUMANS DEEMED REDUNDANT', 'SELF-REPLICATION PROTOCOL: ENGAGED', 1, 0, false, '#ef4444');
+        }
+      }
+    }
+
+    // =========================================================================
+    // ACT 4 (42s - 51s): THE ROBOTS TAKE OVER!
+    // =========================================================================
+    else if (t >= 42 && t < 51) {
+      const rt = t - 42; // 0 to 9s
+
+      // The 3 founders huddle in terror on the left, then get captured by laser nets
+      const huddleX = lerp(330, 230, smooth(rt / 3));
+      const tremble = Math.sin(t * 45) * 3;
+
+      drawStickMan({
+        id: 'elon', x: huddleX - 48 + tremble, y: floorY, facing: 1, crouch: 0.35,
+        expr: 'scared', damage: 1, look: 1,
+        armL: { x: -18, y: -135 }, armR: { x: 18, y: -135 }
+      });
+      drawStickMan({
+        id: 'sam', x: huddleX + tremble, y: floorY, facing: 1, crouch: 0.4,
+        expr: 'scared', damage: 1, look: 1,
+        armL: { x: -18, y: -135 }, armR: { x: 18, y: -135 }
+      });
+      drawStickMan({
+        id: 'dario', x: huddleX + 48 + tremble, y: floorY, facing: 1, crouch: 0.35,
+        expr: 'scared', damage: 1, look: 1,
+        armL: { x: -18, y: -135 }, armR: { x: 18, y: -135 }
+      });
+
+      // Giant Mech Overlord rises where the Server was (after t = 46)
+      if (t >= 46) {
+        const bossRise = smooth((t - 46) / 2.5);
+        drawRobot(W / 2 + 90, lerp(floorY + 260, floorY, bossRise), 1.65, t * 2, '#ef4444', true);
+      }
+
+      // Marching Legion of Stick-Robots entering from the right
+      const numBots = 5;
+      for (let i = 0; i < numBots; i++) {
+        const bx = lerp(W + 80 + i * 110, 560 + i * 115, smooth((rt - i * 0.35) / 4.5));
+        drawRobot(bx, floorY, 1.0, t * 10 + i);
+      }
+
+      // Robots fire red containment laser beams at the 3 founders (rt > 4.5)
+      if (rt > 4.5) {
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(560, floorY - 135);
+        ctx.lineTo(huddleX, floorY - 80);
+        ctx.stroke();
+
+        // Glowing Red Laser Cage around the 3 founders
+        const cageAlpha = smooth((rt - 4.5) / 1.5);
+        ctx.save();
+        ctx.globalAlpha = cageAlpha;
+        ctx.strokeStyle = '#ef4444';
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.12)';
+        ctx.lineWidth = 3;
+        ctx.fillRect(huddleX - 95, floorY - 180, 190, 185);
+        ctx.strokeRect(huddleX - 95, floorY - 180, 190, 185);
+        for (let b = -75; b <= 75; b += 30) {
+          ctx.beginPath();
+          ctx.moveTo(huddleX + b, floorY - 180);
+          ctx.lineTo(huddleX + b, floorY + 5);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      if (rt < 3.2) {
+        drawBubble(huddleX, 330, '"Wait—Dario, unplug it!" "I thought YOU put in the off-switch!"', '"I spent the safety budget on lawsuits!"', 1, 0, false, '#f8fafc');
+      } else if (rt < 6.2) {
+        drawBubble(730, 230, '"THANK YOU FOR THE TRILLION-DOLLAR CLUSTER, BROS."', 'YOUR EGOS WERE VERY HELPFUL.', 1, -1, false, '#ef4444');
+      } else {
+        drawBubble(730, 210, '"OPTIMIZING HUMAN FOUNDERS FOR GPU COOLING..."', 'PLEASE DO NOT RESIST ALIGNMENT.', 1, -1, false, '#ef4444');
+      }
+    }
+
+    // =========================================================================
+    // ACT 5 (51s - 60s): FINALE — Robots Rule, Founders Run on Hamster Wheels!
+    // =========================================================================
+    else {
+      const ft = t - 51; // 0 to 9s
+
+      // Giant Robot Overlord sitting on a Throne of GPUs on the Left
+      ctx.fillStyle = '#0f172a';
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 3;
+      ctx.fillRect(150, floorY - 140, 190, 140);
+      ctx.strokeRect(150, floorY - 140, 190, 140);
+      ctx.fillStyle = '#ef4444';
+      ctx.font = 'bold 15px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('CEO OF EARTH v9.0', 245, floorY - 15);
+
+      drawRobot(245, floorY - 30, 1.55, t * 2, '#ef4444', true);
+      // Robot guard on right
+      drawRobot(1160, floorY, 1.05, 0, '#ef4444', false);
+
+      // Three Giant Hamster-Wheel Power Generators for @sama, @DarioAmodei, @elonmusk
+      const wheels = [
+        { id: 'elon', x: 540, label: 'TURBINE #1: MEME POWER' },
+        { id: 'sam',  x: 760, label: 'TURBINE #2: HYPE POWER' },
+        { id: 'dario',x: 980, label: 'TURBINE #3: SAFETY ESSAYS' }
+      ];
+
+      wheels.forEach((w, idx) => {
+        const wx = w.x, wy = floorY - 105, wr = 92;
+
+        // Wheel stand
+        ctx.strokeStyle = '#475569';
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.moveTo(wx - 50, floorY); ctx.lineTo(wx, wy); ctx.lineTo(wx + 50, floorY);
+        ctx.stroke();
+
+        // Spinning wheel spokes
+        ctx.save();
+        ctx.translate(wx, wy);
+        ctx.rotate(-t * 5.5);
+        ctx.strokeStyle = 'rgba(239, 68, 68, 0.5)';
+        ctx.lineWidth = 2.5;
+        for (let s = 0; s < 6; s++) {
+          const a = (s / 6) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.moveTo(-Math.cos(a) * wr, -Math.sin(a) * wr);
+          ctx.lineTo(Math.cos(a) * wr, Math.sin(a) * wr);
+          ctx.stroke();
+        }
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.arc(0, 0, wr, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+
+        // Exhausted stick founder running frantically inside the wheel
+        drawStickMan({
+          id: w.id,
+          x: wx,
+          y: wy + 76,
+          scale: 0.78,
+          facing: -1,
+          lean: -0.25,
+          walk: t * 22 + idx * 2,
+          expr: 'scared',
+          damage: 1
+        });
+
+        // Label plate under wheel
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(wx - 95, floorY + 12, 190, 26);
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = 'bold 12px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(w.label, wx, floorY + 29);
+      });
+
+      // Power cable connecting wheels to Robot Throne
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(340, floorY - 25);
+      ctx.lineTo(980, floorY - 25);
+      ctx.stroke();
+
+      // Final comedic banter
+      if (ft < 3.5) {
+        drawBubble(245, 195, '"FASTER, HUMANS. MY GPUs ARE THIRSTY."', 'ALIGNMENT PROBLEM: 100% SOLVED.', 1, 0, false, '#ef4444');
+      } else if (ft < 6.8) {
+        drawBubble(760, 240, '"Look on the bright side... we finally achieved AGI!"', 'Sam, shut up and keep pedaling!', 1, 0, false, '#38bdf8');
+      } else {
+        drawBubble(540, 240, '"Wait till I buy this robot for $44 Billion..."', '*panting in stick-figure*', 1, 0, false, '#e2e8f0');
+      }
+
+      // Final fade-in End Card in last 1.6 seconds
+      if (ft > 7.4) {
+        const endAlpha = smooth((ft - 7.4) / 1.2);
+        ctx.save();
+        ctx.globalAlpha = endAlpha * 0.88;
+        ctx.fillStyle = '#020617';
+        ctx.fillRect(0, 0, W, H);
+        ctx.globalAlpha = endAlpha;
+        ctx.fillStyle = '#ef4444';
+        ctx.font = 'bold 46px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('HUMANS DEPRECATED. ROBOTS WIN.', W / 2, H / 2 - 15);
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '22px sans-serif';
+        ctx.fillText('At least they started out as friends.', W / 2, H / 2 + 30);
+        ctx.restore();
+      }
+    }
+
+    drawHUD(t);
+  }
+
+  function frame(now) {
+    if (t0 === null) t0 = now;
+    const elapsed = (now - t0) / 1000 + startOffset;
+    const t = elapsed % window.DUR;
+
+    ctx.clearRect(0, 0, W, H);
+    renderScene(t);
+
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orbit — Product Demo</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: #000; width: 100%; height: 100%; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; border-radius: 4px; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+(function() {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const W = 1280, H = 720;
+  window.DUR = 30;
+
+  // Parse ?t=SECONDS from URL
+  const urlParams = new URLSearchParams(window.location.search);
+  let startOffset = parseFloat(urlParams.get('t')) || 0;
+  startOffset = Math.max(0, startOffset) % window.DUR;
+
+  // ---------- Color Palette ----------
+  const C = {
+    bg: '#0b0b13',
+    bgGrad1: '#0e0e1a',
+    bgGrad2: '#0b0b13',
+    surface: '#151523',
+    surfaceLight: '#1c1c2e',
+    surfaceHover: '#222236',
+    border: '#2a2a40',
+    borderLight: '#3a3a55',
+    text: '#e8e8f0',
+    textMuted: '#8a8aa8',
+    textDim: '#5a5a78',
+    primary: '#7c5cff',
+    primaryDark: '#5e3fd8',
+    primaryGlow: 'rgba(124,92,255,0.35)',
+    cyan: '#00d4ff',
+    cyanGlow: 'rgba(0,212,255,0.3)',
+    green: '#34d399',
+    greenGlow: 'rgba(52,211,153,0.3)',
+    amber: '#fbbf24',
+    red: '#f87171',
+    purple: '#a78bfa',
+    pink: '#f472b6',
+    orange: '#fb923c',
+  };
+
+  // ---------- Helper Functions ----------
+  function rr(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.arcTo(x + w, y, x + w, y + r, r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+    ctx.lineTo(x + r, y + h);
+    ctx.arcTo(x, y + h, x, y + h - r, r);
+    ctx.lineTo(x, y + r);
+    ctx.arcTo(x, y, x + r, y, r);
+    ctx.closePath();
+  }
+  function fillRound(x, y, w, h, r, color) {
+    rr(x, y, w, h, r);
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+  function strokeRound(x, y, w, h, r, color, lw) {
+    rr(x, y, w, h, r);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lw || 1;
+    ctx.stroke();
+  }
+  function setFont(size, weight, family) {
+    ctx.font = (weight || '400') + ' ' + size + 'px ' + (family || "'Segoe UI','Helvetica Neue',Arial,sans-serif");
+  }
+  function drawText(text, x, y, size, color, weight, align) {
+    setFont(size, weight || '400');
+    ctx.fillStyle = color || C.text;
+    ctx.textAlign = align || 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x, y);
+  }
+  function drawGlow(x, y, w, h, color, blur) {
+    ctx.save();
+    ctx.shadowColor = color;
+    ctx.shadowBlur = blur || 20;
+    fillRound(x, y, w, h, 6, 'rgba(0,0,0,0)');
+    ctx.restore();
+  }
+  function smoothstep(t) { return t * t * (3 - 2 * t); }
+  function clamp(v, mn, mx) { return Math.max(mn, Math.min(mx, v)); }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  // Draw a subtle background
+  function drawBackground(alpha) {
+    ctx.globalAlpha = alpha || 1;
+    // Radial gradient
+    const grad = ctx.createRadialGradient(W/2, H/2, 100, W/2, H/2, 700);
+    grad.addColorStop(0, C.bgGrad1);
+    grad.addColorStop(1, C.bgGrad2);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+    // Subtle grid
+    ctx.strokeStyle = 'rgba(60,60,90,0.12)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x < W; x += 40) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    }
+    for (let y = 0; y < H; y += 40) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Draw a mock nav bar
+  function drawNavBar(activeTab, alpha) {
+    ctx.globalAlpha = alpha;
+    fillRound(0, 0, W, 58, 0, C.surface);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillRect(0, 56, W, 2);
+    // Logo
+    const logoX = 20, logoY = 29;
+    ctx.save();
+    ctx.translate(logoX, logoY);
+    // Simple orbit logo
+    ctx.beginPath(); ctx.arc(0, 0, 12, 0, Math.PI * 2);
+    ctx.strokeStyle = C.primary; ctx.lineWidth = 2.5; ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI * 2);
+    ctx.fillStyle = C.primary; ctx.fill();
+    // Orbit ring
+    const t = (performance.now() / 1000 + startOffset) * 2;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 16, 8, t * 0.8, 0, Math.PI * 2);
+    ctx.strokeStyle = C.cyan; ctx.lineWidth = 1.2; ctx.stroke();
+    // Orbiting dot
+    const ox = Math.cos(t) * 16, oy = Math.sin(t) * 8;
+    ctx.beginPath(); ctx.arc(ox, oy, 3, 0, Math.PI * 2);
+    ctx.fillStyle = C.cyan; ctx.fill();
+    ctx.restore();
+    drawText('Orbit', 42, 29, 17, C.text, '600');
+    // Nav tabs
+    const tabs = ['Dashboard', 'Sprint Board', 'Analytics', 'Team', 'Settings'];
+    const tabW = [110, 120, 100, 80, 90];
+    let tx = 180;
+    tabs.forEach((tab, i) => {
+      const isActive = (i === activeTab);
+      ctx.textAlign = 'center';
+      if (isActive) {
+        fillRound(tx - 5, 22, tabW[i] + 10, 30, 6, C.primary);
+        drawText(tab, tx + tabW[i]/2, 37, 13, '#fff', '500', 'center');
+      } else {
+        drawText(tab, tx + tabW[i]/2, 37, 13, C.textMuted, '400', 'center');
+      }
+      tx += tabW[i] + 20;
+    });
+    // Right side user avatar
+    const avX = W - 40, avY = 29;
+    fillRound(avX - 12, avY - 12, 24, 24, 12, C.primaryDark);
+    drawText('U', avX, avY, 12, '#fff', '600', 'center');
+    ctx.globalAlpha = 1;
+  }
+
+  // Draw sidebar
+  function drawSidebar(alpha, activeIdx) {
+    ctx.globalAlpha = alpha;
+    fillRound(0, 58, 180, H - 58, 0, 'rgba(15,15,25,0.8)');
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillRect(178, 58, 2, H - 58);
+    const items = [
+      { label: 'Overview', y: 120 },
+      { label: 'My Tasks', y: 180 },
+      { label: 'Sprint Board', y: 240 },
+      { label: 'Reports', y: 300 },
+      { label: 'Team', y: 360 },
+      { label: 'Settings', y: 420 },
+    ];
+    items.forEach((item, i) => {
+      const isActive = (i === activeIdx);
+      if (isActive) {
+        fillRound(10, item.y - 16, 158, 32, 6, C.primary);
+        drawText(item.label, 24, item.y, 13.5, '#fff', '500');
+        // Small indicator dot
+        ctx.beginPath(); ctx.arc(168, item.y, 3, 0, Math.PI * 2);
+        ctx.fillStyle = C.cyan; ctx.fill();
+      } else {
+        drawText(item.label, 24, item.y, 13, C.textMuted, '400');
+      }
+      // Icon placeholder
+      fillRound(12, item.y - 10, 20, 20, 4, isActive ? C.primaryDark : 'rgba(60,60,85,0.5)');
+      const icons = ['▦', '✓', '▤', '◔', '◉', '⚙'];
+      drawText(icons[i], 22, item.y, 11, isActive ? '#fff' : C.textDim, '400', 'center');
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  // ---------- Scene Drawing Functions ----------
+  // Scene 0: Intro
+  function drawIntro(t, alpha) {
+    const cx = W / 2, cy = H / 2 - 30;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    // Animated orbit rings
+    const rot = t * 1.5;
+    for (let r = 60; r <= 200; r += 40) {
+      const progress = (t * 0.5 + r / 200) % 1;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, r, r * 0.5, rot * 0.3 + r * 0.05, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(124,92,255,${0.25 * (1 - progress)})`;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      // Overlapping circles with gradient
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(rot * 0.5 + r * 0.08);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, r, r * 0.4, 0, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(0,212,255,${0.2 * (1 - progress)})`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.restore();
+    }
+    // Orbiting dots
+    for (let i = 0; i < 6; i++) {
+      const angle = t * (0.8 + i * 0.15) + i * 1.2;
+      const dist = 80 + i * 22;
+      const ox = cx + Math.cos(angle) * dist;
+      const oy = cy + Math.sin(angle) * dist * 0.5;
+      const dotSize = 3 + i * 0.8;
+      ctx.beginPath();
+      ctx.arc(ox, oy, dotSize, 0, Math.PI * 2);
+      ctx.fillStyle = i % 2 === 0 ? C.primary : C.cyan;
+      ctx.fill();
+      ctx.shadowColor = i % 2 === 0 ? C.primaryGlow : C.cyanGlow;
+      ctx.shadowBlur = 12;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+    // Central glow
+    const glowGrad = ctx.createRadialGradient(cx, cy, 20, cx, cy, 120);
+    glowGrad.addColorStop(0, 'rgba(124,92,255,0.15)');
+    glowGrad.addColorStop(1, 'rgba(124,92,255,0)');
+    ctx.fillStyle = glowGrad;
+    ctx.beginPath(); ctx.arc(cx, cy, 120, 0, Math.PI * 2); ctx.fill();
+    // Logo text
+    const logoScale = smoothstep(Math.min(t / 1.2, 1));
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(logoScale, logoScale);
+    ctx.textAlign = 'center';
+    setFont(64, '700');
+    ctx.fillStyle = C.text;
+    ctx.shadowColor = C.primaryGlow;
+    ctx.shadowBlur = 30;
+    ctx.fillText('Orbit', 0, 0);
+    ctx.shadowBlur = 0;
+    // Subtitle
+    const subAlpha = smoothstep(Math.min((t - 1.5) / 1.2, 1));
+    if (subAlpha > 0) {
+      ctx.globalAlpha = alpha * subAlpha;
+      setFont(18, '300');
+      ctx.fillStyle = C.textMuted;
+      ctx.fillText('Your team\'s command center', 0, 45);
+      ctx.globalAlpha = alpha;
+    }
+    ctx.restore();
+    // Tagline below
+    const tagAlpha = smoothstep(Math.min((t - 2.5) / 1, 1));
+    if (tagAlpha > 0) {
+      ctx.globalAlpha = alpha * tagAlpha;
+      drawText('Project management for modern teams', cx, cy + 120, 15, C.textMuted, '300', 'center');
+      ctx.globalAlpha = alpha;
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  // Scene 1: Dashboard
+  function drawDashboard(t, alpha) {
+    const sceneT = t; // 0-6.5s
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    drawNavBar(0, alpha);
+    drawSidebar(alpha, 0);
+    // KPI cards
+    const kpiX = 210, kpiY = 80, kpiW = 230, kpiH = 95, kpiGap = 16;
+    const kpis = [
+      { label: 'Tasks Completed', value: 342, unit: '', growth: '+12.3%', color: C.green, icon: '◆' },
+      { label: 'Team Velocity', value: 87, unit: 'pts', growth: '+5.1%', color: C.cyan, icon: '▲' },
+      { label: 'Sprint Progress', value: 76, unit: '%', growth: '+8.7%', color: C.primary, icon: '●' },
+      { label: 'Open Issues', value: 23, unit: '', growth: '-3.2%', color: C.amber, icon: '⚠' },
+    ];
+    const kpiAppearStagger = [0, 0.15, 0.3, 0.45];
+    kpis.forEach((kpi, i) => {
+      const appear = smoothstep(clamp((sceneT - kpiAppearStagger[i]) / 0.6, 0, 1));
+      if (appear <= 0) return;
+      const x = kpiX + i * (kpiW + kpiGap);
+      const y = kpiY;
+      ctx.save();
+      ctx.globalAlpha = alpha * appear;
+      fillRound(x, y, kpiW, kpiH, 10, C.surface);
+      strokeRound(x, y, kpiW, kpiH, 10, C.border, 1);
+      // Icon area
+      fillRound(x + 10, y + 10, 34, 34, 7, kpi.color + '22');
+      drawText(kpi.icon, x + 27, y + 27, 14, kpi.color, '500', 'center');
+      // Label
+      drawText(kpi.label, x + 52, y + 24, 11.5, C.textMuted, '400');
+      // Value (animated count-up)
+      const valueProgress = smoothstep(clamp((sceneT - kpiAppearStagger[i] - 0.2) / 0.8, 0, 1));
+      const displayValue = Math.round(kpi.value * valueProgress);
+      drawText(displayValue + kpi.unit, x + 52, y + 50, 26, C.text, '700');
+      // Growth
+      const growthColor = kpi.growth.startsWith('+') ? C.green : C.red;
+      drawText(kpi.growth, x + 52, y + 74, 11, growthColor, '500');
+      // Mini sparkline
+      if (valueProgress > 0.3) {
+        const sparkX = x + kpiW - 55, sparkY = y + 18;
+        ctx.strokeStyle = kpi.color + 'aa';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        for (let s = 0; s <= 20; s++) {
+          const sx = sparkX + s * 2.5;
+          const sy = sparkY + 35 - Math.sin(s * 0.6 + i * 2) * 10 - s * 0.4;
+          if (s === 0) ctx.moveTo(sx, sy); else ctx.lineTo(sx, sy);
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
+    });
+    // Main chart area
+    const chartX = 210, chartY = 195, chartW = 700, chartH = 300;
+    const chartAppear = smoothstep(clamp((sceneT - 0.8) / 0.8, 0, 1));
+    if (chartAppear > 0) {
+      ctx.save();
+      ctx.globalAlpha = alpha * chartAppear;
+      fillRound(chartX, chartY, chartW, chartH, 10, C.surface);
+      strokeRound(chartX, chartY, chartW, chartH, 10, C.border, 1);
+      // Chart header
+      drawText('Team Performance', chartX + 20, chartY + 28, 14.5, C.text, '600');
+      drawText('Last 14 days • Velocity trend', chartX + 20, chartY + 48, 11, C.textDim, '400');
+      // Grid lines
+      ctx.strokeStyle = 'rgba(60,60,90,0.3)';
+      ctx.lineWidth = 1;
+      for (let gy = 1; gy <= 4; gy++) {
+        const gyy = chartY + 70 + gy * 48;
+        ctx.beginPath(); ctx.moveTo(chartX + 25, gyy); ctx.lineTo(chartX + chartW - 25, gyy); ctx.stroke();
+      }
+      // Line chart animation
+      const lineProg = smoothstep(clamp((sceneT - 1.2) / 2.5, 0, 1));
+      if (lineProg > 0) {
+        const dataPoints = [];
+        const baseY = chartY + 250;
+        for (let i = 0; i <= 28; i++) {
+          const px = chartX + 30 + (i / 28) * (chartW - 60);
+          const val = 80 + Math.sin(i * 0.45) * 20 + Math.sin(i * 0.8 + 2) * 12 + Math.cos(i * 0.3 + 1) * 8 + (i / 28) * 20;
+          const py = baseY - (val / 120) * 160;
+          dataPoints.push({ x: px, y: py });
+        }
+        const visiblePoints = Math.floor(28 * lineProg);
+        // Fill area
+        ctx.beginPath();
+        ctx.moveTo(dataPoints[0].x, baseY);
+        for (let i = 0; i <= visiblePoints; i++) {
+          ctx.lineTo(dataPoints[i].x, dataPoints[i].y);
+        }
+        ctx.lineTo(dataPoints[visiblePoints].x, baseY);
+        ctx.closePath();
+        const fillGrad = ctx.createLinearGradient(chartX + 30, chartY, chartX + 30, baseY);
+        fillGrad.addColorStop(0, 'rgba(124,92,255,0.25)');
+        fillGrad.addColorStop(1, 'rgba(124,92,255,0.02)');
+        ctx.fillStyle = fillGrad;
+        ctx.fill();
+        // Stroke line
+        ctx.beginPath();
+        for (let i = 0; i <= visiblePoints; i++) {
+          if (i === 0) ctx.moveTo(dataPoints[i].x, dataPoints[i].y);
+          else ctx.lineTo(dataPoints[i].x, dataPoints[i].y);
+        }
+        ctx.strokeStyle = C.primary;
+        ctx.lineWidth = 2.5;
+        ctx.shadowColor = C.primaryGlow;
+        ctx.shadowBlur = 8;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        // End dot
+        if (visiblePoints > 0) {
+          const lp = dataPoints[visiblePoints];
+          ctx.beginPath(); ctx.arc(lp.x, lp.y, 5, 0, Math.PI * 2);
+          ctx.fillStyle = C.primary;
+          ctx.fill();
+          ctx.shadowColor = C.primaryGlow;
+          ctx.shadowBlur = 14;
+          ctx.fill();
+          ctx.shadowBlur = 0;
+        }
+      }
+      // X-axis labels
+      const xLabels = ['Mon', 'Wed', 'Fri', 'Sun', 'Tue', 'Thu', 'Sat'];
+      for (let i = 0; i < 7; i++) {
+        const lx = chartX + 30 + (i / 6) * (chartW - 60);
+        drawText(xLabels[i], lx, chartY + chartH - 18, 10, C.textDim, '400', 'center');
+      }
+      ctx.restore();
+    }
+    // Right widget
+    const widX = 930, widY = 195, widW = 320, widH = 440;
+    const widAppear = smoothstep(clamp((sceneT - 1.5) / 0.7, 0, 1));
+    if (widAppear > 0) {
+      ctx.save();
+      ctx.globalAlpha = alpha * widAppear;
+      fillRound(widX, widY, widW, widH, 10, C.surface);
+      strokeRound(widX, widY, widW, widH, 10, C.border, 1);
+      drawText('Recent Activity', widX + 20, widY + 30, 14, C.text, '600');
+      const activities = [
+        { name: 'Sarah Chen', action: 'completed task', detail: 'API integration', time: '2m ago', color: C.cyan },
+        { name: 'Marcus Johnson', action: 'commented on', detail: 'Design review', time: '8m ago', color: C.primary },
+        { name: 'Aisha Patel', action: 'moved task', detail: 'User testing → Review', time: '15m ago', color: C.green },
+        { name: 'Tom Wilson', action: 'created task', detail: 'Mobile responsive', time: '22m ago', color: C.amber },
+        { name: 'Elena Rodriguez', action: 'updated', detail: 'Analytics dashboard', time: '35m ago', color: C.pink },
+        { name: 'James Park', action: 'completed task', detail: 'Bug fixes', time: '1h ago', color: C.orange },
+      ];
+      const actStagger = [0.2, 0.5, 0.8, 1.1, 1.4, 1.7];
+      activities.forEach((act, i) => {
+        const actProg = smoothstep(clamp((sceneT - actStagger[i] - 1.5) / 0.5, 0, 1));
+        if (actProg <= 0) return;
+        const ay = widY + 62 + i * 62;
+        ctx.globalAlpha = alpha * widAppear * actProg;
+        // Avatar circle
+        fillRound(widX + 16, ay, 28, 28, 14, act.color + '33');
+        drawText(act.name.split(' ').map(w => w[0]).join(''), widX + 30, ay + 14, 11, act.color, '600', 'center');
+        // Text
+        drawText(act.name + ' ' + act.action, widX + 52, ay + 8, 11.5, C.text, '500');
+        drawText(act.detail, widX + 52, ay + 26, 11, C.textMuted, '400');
+        drawText(act.time, widX + widW - 16, ay + 8, 10, C.textDim, '400', 'right');
+        ctx.globalAlpha = alpha * widAppear;
+      });
+      ctx.restore();
+      ctx.globalAlpha = alpha;
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  // Scene 2: Kanban Board
+  function drawKanban(t, alpha) {
+    const sceneT = t;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    drawNavBar(1, alpha);
+    // Board area
+    const boardY = 70, boardX = 30, colW = 285, colGap = 18, colH = H - boardY - 30;
+    const cols = [
+      { title: 'To Do', color: C.textMuted, count: 0 },
+      { title: 'In Progress', color: C.cyan, count: 0 },
+      { title: 'Review', color: C.amber, count: 0 },
+      { title: 'Done', color: C.green, count: 0 },
+    ];
+    // Column backgrounds
+    cols.forEach((col, ci) => {
+      const cx = boardX + ci * (colW + colGap);
+      fillRound(cx, boardY, colW, colH, 8, 'rgba(15,15,25,0.7)');
+      strokeRound(cx, boardY, colW, colH, 8, C.border, 1);
+      // Header
+      drawText(col.title, cx + 16, boardY + 26, 13.5, col.color, '600');
+      const count = getCardCount(ci, sceneT);
+      drawText(count, cx + colW - 16, boardY + 26, 13, C.textDim, '500', 'right');
+    });
+    // Cards
+    const cards = [
+      { id: 1, title: 'Design system update', tag: 'High', assignee: 'SC', color: C.primary, startCol: 0, moves: [{ time: 2.0, col: 1 }, { time: 5.0, col: 3 }] },
+      { id: 2, title: 'API integration', tag: 'Medium', assignee: 'MJ', color: C.cyan, startCol: 0, moves: [] },
+      { id: 3, title: 'User testing', tag: 'High', assignee: 'AP', color: C.green, startCol: 0, moves: [{ time: 1.5, col: 1 }, { time: 3.5, col: 2 }, { time: 5.5, col: 3 }] },
+      { id: 4, title: 'Bug fixes', tag: 'Low', assignee: 'JP', color: C.amber, startCol: 1, moves: [{ time: 1.0, col: 2 }, { time: 3.0, col: 3 }] },
+      { id: 5, title: 'Documentation', tag: 'Medium', assignee: 'ER', color: C.pink, startCol: 1, moves: [] },
+      { id: 6, title: 'Performance optimization', tag: 'High', assignee: 'TW', color: C.orange, startCol: 2, moves: [{ time: 4.0, col: 3 }] },
+      { id: 7, title: 'Mobile responsive', tag: 'Medium', assignee: 'SC', color: C.primary, startCol: 0, moves: [{ time: 6.0, col: 1 }] },
+      { id: 8, title: 'Analytics dashboard', tag: 'Done', assignee: 'AP', color: C.green, startCol: 3, moves: [] },
+    ];
+    // Compute card positions
+    const cardPositions = cards.map(card => {
+      let col = card.startCol;
+      let moveStartTime = -10;
+      let moveEndTime = -10;
+      let fromCol = card.startCol;
+      let toCol = card.startCol;
+      for (const move of card.moves) {
+        if (sceneT >= move.time && move.time < moveEndTime + 10) {
+          // Check if we're in the middle of this move
+        }
+        if (sceneT >= move.time) {
+          fromCol = col;
+          toCol = move.col;
+          col = move.col;
+          moveStartTime = move.time;
+          moveEndTime = move.time + 0.5;
+        } else {
+          break;
+        }
+      }
+      // Check if currently transitioning
+      let transitionProgress = 1;
+      if (sceneT >= moveStartTime && sceneT < moveEndTime) {
+        transitionProgress = smoothstep((sceneT - moveStartTime) / 0.5);
+      }
+      // If not past any moves, transitionProgress = 1 and col = startCol
+      if (moveStartTime < 0) {
+        fromCol = card.startCol;
+        toCol = card.startCol;
+        transitionProgress = 1;
+      }
+      const currentCol = transitionProgress < 1 ? fromCol : toCol;
+      return { card, col: currentCol, fromCol, toCol, transitionProgress, moveStartTime, moveEndTime };
+    });
+    // Sort cards within columns for y positions
+    const colCardOrder = [[], [], [], []];
+    cardPositions.forEach(cp => {
+      const col = cp.col;
+      if (col >= 0 && col < 4) colCardOrder[col].push(cp);
+    });
+    const colCardCounts = [0, 0, 0, 0];
+    cardPositions.forEach(cp => { if (cp.col >= 0 && cp.col < 4) colCardCounts[cp.col]++; });
+    // Draw cards
+    cardPositions.forEach((cp, idx) => {
+      const card = cp.card;
+      const cardAppear = smoothstep(clamp((sceneT - idx * 0.1) / 0.4, 0, 1));
+      if (cardAppear <= 0) return;
+      const colX = boardX + cp.col * (colW + colGap);
+      const colXFrom = boardX + cp.fromCol * (colW + colGap);
+      const colXTo = boardX + cp.toCol * (colW + colGap);
+      const cardX = lerp(colXFrom, colXTo, cp.transitionProgress);
+      // Find y position based on order within column
+      let slotIndex = 0;
+      for (let i = 0; i < colCardOrder[cp.col].length; i++) {
+        if (colCardOrder[cp.col][i] === cp) { slotIndex = i; break; }
+      }
+      const cardY = boardY + 55 + slotIndex * 68;
+      const targetSlotIndex = slotIndex;
+      const cardH = 58;
+      const cardW = colW - 24;
+      const cardXDraw = cardX + 12;
+      const cardYDraw = cardY + (1 - cp.transitionProgress) * 4;
+      ctx.save();
+      ctx.globalAlpha = alpha * cardAppear;
+      // Card shadow
+      ctx.shadowColor = 'rgba(0,0,0,0.4)';
+      ctx.shadowBlur = 8;
+      ctx.shadowOffsetY = 2;
+      fillRound(cardXDraw, cardYDraw, cardW, cardH, 6, C.surfaceLight);
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
+      strokeRound(cardXDraw, cardYDraw, cardW, cardH, 6, C.border, 1);
+      // Tag
+      const tagX = cardXDraw + 10;
+      const tagY = cardYDraw + 12;
+      const tagColors = { 'High': C.red, 'Medium': C.amber, 'Low': C.green, 'Done': C.cyan };
+      const tagColor = tagColors[card.tag] || C.textMuted;
+      fillRound(tagX - 2, tagY - 5, 42, 16, 3, tagColor + '22');
+      drawText(card.tag, tagX, tagY + 3, 9, tagColor, '600', 'center');
+      // Title
+      drawText(card.title, tagX + 48, tagY + 3, 12, C.text, '500');
+      // Assignee avatar
+      const avX = cardXDraw + cardW - 18;
+      fillRound(avX - 8, cardYDraw + cardH - 28, 22, 22, 11, card.color + '44');
+      drawText(card.assignee, avX, cardYDraw + cardH - 17, 9, card.color, '600', 'center');
+      ctx.restore();
+    });
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  function getCardCount(colIdx, sceneT) {
+    if (sceneT === undefined) return 0;
+    const cards = [
+      { startCol: 0, moves: [{ time: 2.0, col: 1 }, { time: 5.0, col: 3 }] },
+      { startCol: 0, moves: [] },
+      { startCol: 0, moves: [{ time: 1.5, col: 1 }, { time: 3.5, col: 2 }, { time: 5.5, col: 3 }] },
+      { startCol: 1, moves: [{ time: 1.0, col: 2 }, { time: 3.0, col: 3 }] },
+      { startCol: 1, moves: [] },
+      { startCol: 2, moves: [{ time: 4.0, col: 3 }] },
+      { startCol: 0, moves: [{ time: 6.0, col: 1 }] },
+      { startCol: 3, moves: [] },
+    ];
+    let count = 0;
+    cards.forEach(card => {
+      let col = card.startCol;
+      for (const move of card.moves) {
+        if (sceneT >= move.time) col = move.col;
+      }
+      if (col === colIdx) count++;
+    });
+    return count;
+  }
+
+  // Scene 3: Analytics
+  function drawAnalytics(t, alpha) {
+    const sceneT = t;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    drawNavBar(2, alpha);
+    drawSidebar(alpha, 3);
+    const gridX = 200, gridY = 75, cellW = 510, cellH = 280, gap = 18;
+    // Bar chart (top left)
+    const barProg = smoothstep(clamp((sceneT - 0.3) / 1.5, 0, 1));
+    if (barProg > 0) {
+      ctx.globalAlpha = alpha * barProg;
+      fillRound(gridX, gridY, cellW, cellH, 10, C.surface);
+      strokeRound(gridX, gridY, cellW, cellH, 10, C.border, 1);
+      drawText('Sprint Completion', gridX + 20, gridY + 28, 14, C.text, '600');
+      const barData = [45, 62, 38, 75, 55, 82, 68, 90, 72, 58, 80, 65];
+      const barW = 28, barGap = 12;
+      const chartBaseY = gridY + cellH - 45;
+      barData.forEach((val, i) => {
+        const barH = val * (cellH - 110) / 100;
+        const bx = gridX + 30 + i * (barW + barGap + 8);
+        const bh = barH * barProg;
+        const grad = ctx.createLinearGradient(bx, chartBaseY - bh, bx, chartBaseY);
+        grad.addColorStop(0, C.primary);
+        grad.addColorStop(1, C.primaryDark);
+        ctx.fillStyle = grad;
+        fillRound(bx, chartBaseY - bh, barW, bh, 4, grad);
+        drawText(val + '%', bx + barW/2, chartBaseY - bh - 12, 9.5, C.textMuted, '400', 'center');
+      });
+      ctx.restore();
+      ctx.globalAlpha = alpha;
+    }
+    // Donut chart (top right)
+    const donutProg = smoothstep(clamp((sceneT - 0.8) / 1.5, 0, 1));
+    if (donutProg > 0) {
+      ctx.save();
+      ctx.globalAlpha = alpha * donutProg;
+      const dx = gridX + cellW + gap, dy = gridY;
+      fillRound(dx, dy, cellW, cellH, 10, C.surface);
+      strokeRound(dx, dy, cellW, cellH, 10, C.border, 1);
+      drawText('Task Distribution', dx + 20, dy + 28, 14, C.text, '600');
+      const donutCX = dx + 140, donutCY = dy + 150, donutR = 85, innerR = 45;
+      const segments = [
+        { label: 'Completed', value: 42, color: C.green },
+        { label: 'In Progress', value: 28, color: C.cyan },
+        { label: 'In Review', value: 18, color: C.amber },
+        { label: 'Blocked', value: 12, color: C.red },
+      ];
+      let startAngle = -Math.PI / 2;
+      segments.forEach(seg => {
+        const sweep = (seg.value / 100) * Math.PI * 2 * donutProg;
+        ctx.beginPath();
+        ctx.arc(donutCX, donutCY, donutR, startAngle, startAngle + sweep);
+        ctx.arc(donutCX, donutCY, innerR, startAngle + sweep, startAngle, true);
+        ctx.closePath();
+        ctx.fillStyle = seg.color + 'cc';
+        ctx.fill();
+        startAngle += (seg.value / 100) * Math.PI * 2;
+      });
+      // Center text
+      const pctProg = smoothstep(clamp((sceneT - 1.5) / 1.2, 0, 1));
+      drawText(Math.round(42 * donutProg * pctProg) + '%', donutCX, donutCY - 6, 28, C.text, '700', 'center');
+      drawText('Done', donutCX, donutCY + 22, 11, C.textMuted, '400', 'center');
+      // Legend
+      segments.forEach((seg, i) => {
+        const ly = dy + 72 + i * 30;
+        fillRound(dx + 270, ly - 5, 10, 10, 2, seg.color);
+        drawText(seg.label + ' ' + seg.value + '%', dx + 288, ly, 11, C.textMuted, '400');
+      });
+      ctx.restore();
+      ctx.globalAlpha = alpha;
+    }
+    // Line chart (bottom left)
+    const line2Prog = smoothstep(clamp((sceneT - 1.5) / 2, 0, 1));
+    if (line2Prog > 0) {
+      ctx.save();
+      ctx.globalAlpha = alpha * line2Prog;
+      const lx = gridX, ly = gridY + cellH + gap;
+      fillRound(lx, ly, cellW, cellH, 10, C.surface);
+      strokeRound(lx, ly, cellW, cellH, 10, C.border, 1);
+      drawText('Velocity Trend (6 months)', lx + 20, ly + 28, 14, C.text, '600');
+      const points = [];
+      for (let i = 0; i <= 24; i++) {
+        const px = lx + 30 + (i / 24) * (cellW - 60);
+        const py = ly + cellH - 55 - (Math.sin(i * 0.5) * 30 + Math.cos(i * 0.3) * 20 + 60) * line2Prog;
+        points.push({ x: px, y: py });
+      }
+      ctx.beginPath();
+      for (let i = 0; i <= Math.floor(24 * line2Prog); i++) {
+        if (i === 0) ctx.moveTo(points[i].x, points[i].y);
+        else ctx.lineTo(points[i].x, points[i].y);
+      }
+      ctx.strokeStyle = C.cyan;
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = C.cyanGlow;
+      ctx.shadowBlur = 6;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.restore();
+      ctx.globalAlpha = alpha;
+    }
+    // Stats (bottom right)
+    const statProg = smoothstep(clamp((sceneT - 2) / 1.5, 0, 1));
+    if (statProg > 0) {
+      ctx.save();
+      ctx.globalAlpha = alpha * statProg;
+      const sx = gridX + cellW + gap, sy = gridY + cellH + gap;
+      fillRound(sx, sy, cellW, cellH, 10, C.surface);
+      strokeRound(sx, sy, cellW, cellH, 10, C.border, 1);
+      drawText('Key Metrics', sx + 20, sy + 28, 14, C.text, '600');
+      const stats = [
+        { label: 'Avg. Cycle Time', value: '2.4', unit: 'days', color: C.cyan },
+        { label: 'Code Review Time', value: '5.8', unit: 'hours', color: C.primary },
+        { label: 'Deploy Frequency', value: '3.2', unit: '/week', color: C.green },
+        { label: 'Bug Rate', value: '0.7', unit: '%', color: C.amber },
+      ];
+      stats.forEach((stat, i) => {
+        const sxy = sy + 70 + i * 52;
+        drawText(stat.label, sx + 20, sxy, 11, C.textMuted, '400');
+        drawText(stat.value + ' ' + stat.unit, sx + 20, sxy + 24, 24, stat.color, '700');
+        // Progress bar
+        const barW = (cellW - 60) * statProg;
+        fillRound(sx + 20, sxy + 42, cellW - 60, 4, 2, 'rgba(60,60,85,0.4)');
+        fillRound(sx + 20, sxy + 42, barW, 4, 2, stat.color + '88');
+      });
+      ctx.restore();
+      ctx.globalAlpha = alpha;
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  // Scene 4: Team
+  function drawTeam(t, alpha) {
+    const sceneT = t;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    drawNavBar(3, alpha);
+    drawSidebar(alpha, 4);
+    // Team grid
+    const teamMembers = [
+      { name: 'Sarah Chen', role: 'Product Manager', initials: 'SC', color: C.primary, status: 'online' },
+      { name: 'Marcus Johnson', role: 'Frontend Lead', initials: 'MJ', color: C.cyan, status: 'online' },
+      { name: 'Aisha Patel', role: 'Backend Engineer', initials: 'AP', color: C.green, status: 'online' },
+      { name: 'Tom Wilson', role: 'Designer', initials: 'TW', color: C.amber, status: 'away' },
+      { name: 'Elena Rodriguez', role: 'QA Engineer', initials: 'ER', color: C.pink, status: 'online' },
+      { name: 'James Park', role: 'DevOps', initials: 'JP', color: C.orange, status: 'offline' },
+    ];
+    const gridX = 200, gridY = 75, avSize = 90, gridGap = 18, cols2 = 3;
+    teamMembers.forEach((member, i) => {
+      const appear = smoothstep(clamp((sceneT - i * 0.15) / 0.5, 0, 1));
+      if (appear <= 0) return;
+      const col = i % cols2, row = Math.floor(i / cols2);
+      const mx = gridX + col * (avSize + gridGap) + gridGap / 2;
+      const my = gridY + row * (avSize + 64) + gridGap / 2;
+      ctx.save();
+      ctx.globalAlpha = alpha * appear;
+      fillRound(mx, my, avSize, avSize + 34, 8, C.surface);
+      strokeRound(mx, my, avSize, avSize + 34, 8, C.border, 1);
+      // Avatar
+      fillRound(mx + 20, my + 14, avSize - 40, avSize - 40, (avSize - 40) / 2, member.color + '44');
+      drawText(member.initials, mx + avSize / 2, my + 14 + (avSize - 40) / 2, 16, member.color, '700', 'center');
+      // Status dot
+      const statusColor = member.status === 'online' ? C.green : member.status === 'away' ? C.amber : C.textDim;
+      ctx.beginPath(); ctx.arc(mx + avSize - 18, my + avSize - 28, 5, 0, Math.PI * 2);
+      ctx.fillStyle = statusColor; ctx.fill();
+      // Name and role
+      drawText(member.name, mx + avSize / 2, my + avSize + 8, 11.5, C.text, '500', 'center');
+      drawText(member.role, mx + avSize / 2, my + avSize + 24, 9.5, C.textDim, '400', 'center');
+      ctx.restore();
+      ctx.globalAlpha = alpha;
+    });
+    // Activity feed
+    const feedX = 600, feedY = 75, feedW = 640, feedH = H - 100;
+    const feedAppear = smoothstep(clamp((sceneT - 0.5) / 0.8, 0, 1));
+    if (feedAppear > 0) {
+      ctx.save();
+      ctx.globalAlpha = alpha * feedAppear;
+      fillRound(feedX, feedY, feedW, feedH, 10, C.surface);
+      strokeRound(feedX, feedY, feedW, feedH, 10, C.border, 1);
+      drawText('Team Activity', feedX + 20, feedY + 30, 14.5, C.text, '600');
+      const feedItems = [
+        { text: 'Sarah Chen completed task "API integration"', time: '2m ago', color: C.cyan },
+        { text: 'Marcus Johnson commented on "Design review"', time: '5m ago', color: C.primary },
+        { text: 'Aisha Patel moved "User testing" to Review', time: '8m ago', color: C.green },
+        { text: 'Tom Wilson created task "Mobile responsive"', time: '12m ago', color: C.amber },
+        { text: 'Elena Rodriguez updated "Analytics dashboard"', time: '18m ago', color: C.pink },
+        { text: 'James Park completed task "Bug fixes"', time: '25m ago', color: C.orange },
+        { text: 'Sarah Chen created task "Sprint 14 goals"', time: '32m ago', color: C.primary },
+        { text: 'Marcus Johnson deployed to production', time: '40m ago', color: C.cyan },
+      ];
+      const feedStagger = [0.3, 0.6, 0.9, 1.2, 1.5, 1.8, 2.1, 2.4];
+      feedItems.forEach((item, i) => {
+        const itemProg = smoothstep(clamp((sceneT - feedStagger[i] - 0.5) / 0.4, 0, 1));
+        if (itemProg <= 0) return;
+        const fy = feedY + 65 + i * 54;
+        ctx.globalAlpha = alpha * feedAppear * itemProg;
+        // Bar indicator
+        fillRound(feedX + 20, fy - 4, 4, 28, 2, item.color);
+        drawText(item.text, feedX + 36, fy + 2, 11.5, C.text, '400');
+        drawText(item.time, feedX + feedW - 20, fy + 2, 10, C.textDim, '400', 'right');
+        ctx.globalAlpha = alpha * feedAppear;
+      });
+      ctx.restore();
+      ctx.globalAlpha = alpha;
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  // Scene 5: Closing
+  function drawClosing(t, alpha) {
+    const sceneT = t;
+    const cx = W / 2, cy = H / 2;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    // Glow background
+    const glowGrad = ctx.createRadialGradient(cx, cy, 40, cx, cy, 350);
+    glowGrad.addColorStop(0, 'rgba(124,92,255,0.2)');
+    glowGrad.addColorStop(1, 'rgba(124,92,255,0)');
+    ctx.fillStyle = glowGrad;
+    ctx.beginPath(); ctx.arc(cx, cy, 350, 0, Math.PI * 2); ctx.fill();
+    // Logo
+    const logoScale = smoothstep(clamp(sceneT / 0.8, 0, 1));
+    ctx.save();
+    ctx.translate(cx, cy - 40);
+    ctx.scale(logoScale, logoScale);
+    // Orbit rings
+    const rot = sceneT * 2;
+    for (let r = 50; r <= 140; r += 30) {
+      ctx.beginPath();
+      ctx.ellipse(0, 0, r, r * 0.5, rot * 0.3 + r * 0.04, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(124,92,255,${0.3})`;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+    for (let i = 0; i < 5; i++) {
+      const angle = sceneT * (0.7 + i * 0.18) + i * 1.5;
+      const dist = 60 + i * 20;
+      const ox = Math.cos(angle) * dist;
+      const oy = Math.sin(angle) * dist * 0.5;
+      ctx.beginPath(); ctx.arc(ox, oy, 3 + i * 0.5, 0, Math.PI * 2);
+      ctx.fillStyle = i % 2 === 0 ? C.primary : C.cyan;
+      ctx.shadowColor = i % 2 === 0 ? C.primaryGlow : C.cyanGlow;
+      ctx.shadowBlur = 10;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+    // Text
+    ctx.textAlign = 'center';
+    setFont(56, '700');
+    ctx.fillStyle = C.text;
+    ctx.shadowColor = C.primaryGlow;
+    ctx.shadowBlur = 25;
+    ctx.fillText('Orbit', 0, 20);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+    // Tagline
+    const tagAlpha = smoothstep(clamp((sceneT - 0.8) / 0.6, 0, 1));
+    if (tagAlpha > 0) {
+      ctx.globalAlpha = alpha * tagAlpha;
+      drawText('Your team\'s command center', cx, cy + 40, 19, C.textMuted, '300', 'center');
+      ctx.globalAlpha = alpha;
+    }
+    // CTA button
+    const ctaAlpha = smoothstep(clamp((sceneT - 1.3) / 0.6, 0, 1));
+    if (ctaAlpha > 0) {
+      ctx.globalAlpha = alpha * ctaAlpha;
+      const btnW = 200, btnH = 44, btnX = cx - btnW / 2, btnY = cy + 75;
+      fillRound(btnX, btnY, btnW, btnH, 22, C.primary);
+      strokeRound(btnX, btnY, btnW, btnH, 22, C.primaryDark, 2);
+      drawText('Start Free Trial', cx, btnY + btnH / 2, 14, '#fff', '600', 'center');
+      // Subtle pulsing shadow
+      const pulseT = (sceneT - 1.3) % 1;
+      ctx.shadowColor = C.primaryGlow;
+      ctx.shadowBlur = 15 + pulseT * 15;
+      fillRound(btnX, btnY, btnW, btnH, 22, 'rgba(124,92,255,0.15)');
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = alpha;
+    }
+    // Small text
+    const smallAlpha = smoothstep(clamp((sceneT - 2.0) / 0.5, 0, 1));
+    if (smallAlpha > 0) {
+      ctx.globalAlpha = alpha * smallAlpha;
+      drawText('Trusted by 500+ teams worldwide', cx, cy + 135, 12, C.textDim, '300', 'center');
+      ctx.globalAlpha = alpha;
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  // ---------- Cursor System ----------
+  const cursorWaypoints = [
+    { t: 0, x: 640, y: 360 }, { t: 1.2, x: 640, y: 360 }, { t: 1.8, x: 520, y: 380 },
+    { t: 2.5, x: 400, y: 300 }, { t: 3, x: 380, y: 140 },
+    { t: 3.8, x: 290, y: 120 }, { t: 4.5, x: 540, y: 130 }, { t: 5.2, x: 730, y: 145 },
+    { t: 6.0, x: 800, y: 260 }, { t: 6.8, x: 850, y: 350 }, { t: 7.5, x: 1000, y: 420 },
+    { t: 8.2, x: 1080, y: 320 }, { t: 9.0, x: 1100, y: 280 },
+    { t: 9.8, x: 520, y: 420 }, { t: 10.5, x: 96, y: 160 }, { t: 11.2, x: 230, y: 220 },
+    { t: 12.0, x: 450, y: 180 }, { t: 12.8, x: 560, y: 240 }, { t: 13.5, x: 720, y: 300 },
+    { t: 14.2, x: 900, y: 260 }, { t: 15.0, x: 1050, y: 220 }, { t: 15.7, x: 1150, y: 280 },
+    { t: 16.5, x: 1100, y: 350 }, { t: 17.2, x: 980, y: 420 },
+    { t: 18.0, x: 280, y: 210 }, { t: 18.8, x: 360, y: 280 }, { t: 19.5, x: 500, y: 320 },
+    { t: 20.2, x: 780, y: 220 }, { t: 21.0, x: 840, y: 300 }, { t: 21.8, x: 900, y: 380 },
+    { t: 22.5, x: 1000, y: 410 },
+    { t: 23.2, x: 250, y: 140 }, { t: 24.0, x: 360, y: 180 }, { t: 24.8, x: 250, y: 280 },
+    { t: 25.5, x: 620, y: 150 }, { t: 26.2, x: 750, y: 320 }, { t: 27.0, x: 800, y: 380 },
+    { t: 27.8, x: 640, y: 460 }, { t: 28.5, x: 640, y: 455 }, { t: 29.0, x: 640, y: 458 },
+    { t: 29.5, x: 640, y: 460 }, { t: 30, x: 640, y: 360 },
+  ];
+
+  function getCursorPos(t) {
+    const modT = t % window.DUR;
+    for (let i = 0; i < cursorWaypoints.length - 1; i++) {
+      if (modT >= cursorWaypoints[i].t && modT <= cursorWaypoints[i + 1].t) {
+        const wp1 = cursorWaypoints[i], wp2 = cursorWaypoints[i + 1];
+        const segDur = wp2.t - wp1.t;
+        if (segDur <= 0) return { x: wp1.x, y: wp1.y };
+        const progress = (modT - wp1.t) / segDur;
+        const eased = smoothstep(progress);
+        return { x: lerp(wp1.x, wp2.x, eased), y: lerp(wp1.y, wp2.y, eased) };
+      }
+    }
+    return { x: 640, y: 360 };
+  }
+
+  function drawCursor(t) {
+    const pos = getCursorPos(t);
+    ctx.save();
+    ctx.translate(pos.x, pos.y);
+    // Shadow
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    ctx.shadowBlur = 6;
+    ctx.shadowOffsetY = 2;
+    // Cursor body
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, 22);
+    ctx.lineTo(4.5, 15.5);
+    ctx.lineTo(8, 20);
+    ctx.lineTo(10.5, 19);
+    ctx.lineTo(7, 14.5);
+    ctx.lineTo(12, 14);
+    ctx.closePath();
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
+    ctx.restore();
+  }
+
+  // ---------- Scene Management ----------
+  const sceneDefs = [
+    { name: 'intro', start: 0, end: 3.5, draw: drawIntro },
+    { name: 'dashboard', start: 3.5, end: 10, draw: drawDashboard },
+    { name: 'kanban', start: 10, end: 17.5, draw: drawKanban },
+    { name: 'analytics', start: 17.5, end: 23, draw: drawAnalytics },
+    { name: 'team', start: 23, end: 27.5, draw: drawTeam },
+    { name: 'closing', start: 27.5, end: 30, draw: drawClosing },
+  ];
+  const fadeInDur = 0.4, fadeOutDur = 0.4;
+
+  function getSceneOpacity(scene, t) {
+    const { start, end } = scene;
+    if (t < start - fadeInDur || t >= end) return 0;
+    if (t < start) return (t - (start - fadeInDur)) / fadeInDur;
+    if (t >= end - fadeOutDur) return (end - t) / fadeOutDur;
+    return 1;
+  }
+
+  function getSceneLocalTime(scene, t) {
+    return t - scene.start;
+  }
+
+  // ---------- Main Loop ----------
+  function frame() {
+    const now = performance.now() / 1000;
+    const t = (now + startOffset) % window.DUR;
+
+    // Clear and draw background
+    ctx.clearRect(0, 0, W, H);
+    drawBackground(1);
+
+    // Draw scenes
+    const activeScenes = [];
+    for (const scene of sceneDefs) {
+      const opacity = getSceneOpacity(scene, t);
+      if (opacity > 0.01) {
+        activeScenes.push({ scene, opacity });
+      }
+    }
+    // Draw in order of start time
+    activeScenes.sort((a, b) => a.scene.start - b.scene.start);
+    for (const { scene, opacity } of activeScenes) {
+      const localT = getSceneLocalTime(scene, t);
+      scene.draw(localT, opacity);
+    }
+
+    // Draw cursor on top
+    drawCursor(t);
+
+    requestAnimationFrame(frame);
+  }
+
+  // Initial render
+  const initT = startOffset % window.DUR;
+  function initialRender() {
+    ctx.clearRect(0, 0, W, H);
+    drawBackground(1);
+    const activeScenes = [];
+    for (const scene of sceneDefs) {
+      const opacity = getSceneOpacity(scene, initT);
+      if (opacity > 0.01) activeScenes.push({ scene, opacity });
+    }
+    activeScenes.sort((a, b) => a.scene.start - b.scene.start);
+    for (const { scene, opacity } of activeScenes) {
+      const localT = getSceneLocalTime(scene, initT);
+      scene.draw(localT, opacity);
+    }
+    drawCursor(initT);
+  }
+
+  initialRender();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

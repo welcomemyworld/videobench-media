@@ -1,0 +1,1103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ocean Dawn Launch</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Segoe UI', Roboto, Helvetica, monospace;
+    user-select: none;
+  }
+  #stage {
+    position: relative;
+    width: 1280px; height: 720px;
+    background: #000; overflow: hidden;
+    box-shadow: 0 0 40px rgba(0,0,0,0.9);
+  }
+  canvas {
+    position: absolute; top: 0; left: 0;
+    width: 1280px; height: 720px;
+    display: block;
+  }
+  #hud { pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="gl" width="1280" height="720"></canvas>
+  <canvas id="hud" width="1280" height="720"></canvas>
+</div>
+<script>
+// ============================================================================
+// CONFIGURATION & TIMING
+// ============================================================================
+window.DUR = 36.0;
+const params = new URLSearchParams(location.search);
+const startOffset = parseFloat(params.get('t') || '0');
+
+function resizeStage() {
+  const s = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+  document.getElementById('stage').style.transform = `scale(${s})`;
+}
+window.addEventListener('resize', resizeStage);
+resizeStage();
+
+// Interactive override support alongside cinematic AI director
+let userYaw = 0, userPitch = 0, isDragging = false, lastX = 0, lastY = 0;
+const stageEl = document.getElementById('stage');
+stageEl.addEventListener('pointerdown', e => { isDragging = true; lastX = e.clientX; lastY = e.clientY; });
+window.addEventListener('pointerup', () => isDragging = false);
+window.addEventListener('pointermove', e => {
+  if (!isDragging) return;
+  userYaw -= (e.clientX - lastX) * 0.005;
+  userPitch = Math.max(-0.5, Math.min(0.8, userPitch + (e.clientY - lastY) * 0.005));
+  lastX = e.clientX; lastY = e.clientY;
+});
+
+// ============================================================================
+// MINI-THREE.JS & WEBGL SETUP (Self-contained, 0 external dependencies)
+// ============================================================================
+const glCanvas = document.getElementById('gl');
+const gl = glCanvas.getContext('webgl', { preserveDrawingBuffer: true, antialias: true, alpha: false });
+const hudCanvas = document.getElementById('hud');
+const ctx = hudCanvas.getContext('2d');
+
+gl.enable(gl.DEPTH_TEST);
+gl.enable(gl.CULL_FACE);
+
+function compileShader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) console.error(gl.getShaderInfoLog(s));
+  return s;
+}
+function createProgram(vs, fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compileShader(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compileShader(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  return p;
+}
+
+// Matrix & Vector Math
+const M4 = {
+  ident: () => new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]),
+  persp: (fov, aspect, near, far) => {
+    const f = 1 / Math.tan(fov / 2), nf = 1 / (near - far);
+    return new Float32Array([f/aspect,0,0,0, 0,f,0,0, 0,0,(far+near)*nf,-1, 0,0,2*far*near*nf,0]);
+  },
+  lookAt: (eye, center, up) => {
+    let zx = eye[0]-center[0], zy = eye[1]-center[1], zz = eye[2]-center[2];
+    let len = Math.hypot(zx,zy,zz); zx/=len; zy/=len; zz/=len;
+    let xx = up[1]*zz - up[2]*zy, xy = up[2]*zx - up[0]*zz, xz = up[0]*zy - up[1]*zx;
+    len = Math.hypot(xx,xy,xz); xx/=len; xy/=len; xz/=len;
+    let yx = zy*xz - zz*xy, yy = zz*xx - zx*xz, yz = zx*xy - zy*xx;
+    return new Float32Array([
+      xx, yx, zx, 0,
+      xy, yy, zy, 0,
+      xz, yz, zz, 0,
+      -(xx*eye[0]+xy*eye[1]+xz*eye[2]), -(yx*eye[0]+yy*eye[1]+yz*eye[2]), -(zx*eye[0]+zy*eye[1]+zz*eye[2]), 1
+    ]);
+  },
+  mul: (a, b) => {
+    const o = new Float32Array(16);
+    for (let i=0; i<4; i++) {
+      for (let j=0; j<4; j++) {
+        o[j*4+i] = a[0*4+i]*b[j*4+0] + a[1*4+i]*b[j*4+1] + a[2*4+i]*b[j*4+2] + a[3*4+i]*b[j*4+3];
+      }
+    }
+    return o;
+  },
+  compose: (x,y,z, rx,ry,rz, sx,sy,sz) => {
+    const cx=Math.cos(rx), sx_=Math.sin(rx), cy=Math.cos(ry), sy_=Math.sin(ry), cz=Math.cos(rz), sz_=Math.sin(rz);
+    return new Float32Array([
+      cy*cz*sx, (cz*sx_*sy_ - cx*sz_)*sx, (cx*cz*sy_ + sx_*sz_)*sx, 0,
+      cy*sz_*sy, (cx*cz + sx_*sy_*sz_)*sy, (-cz*sx_ + cx*sy_*sz_)*sy, 0,
+      -sy_*sz, cy*sx_*sz, cx*cy*sz, 0,
+      x, y, z, 1
+    ]);
+  }
+};
+
+// ============================================================================
+// PROCEDURAL GEOMETRY BUILDER
+// ============================================================================
+class GeoBuilder {
+  constructor() { this.p = []; this.n = []; this.c = []; }
+  pushTri(x1,y1,z1, x2,y2,z2, x3,y3,z3, r,g,b, nx,ny,nz) {
+    if (nx === undefined) {
+      const ux=x2-x1, uy=y2-y1, uz=z2-z1, vx=x3-x1, vy=y3-y1, vz=z3-z1;
+      nx = uy*vz - uz*vy; ny = uz*vx - ux*vz; nz = ux*vy - uy*vx;
+      const l = Math.hypot(nx,ny,nz) || 1; nx/=l; ny/=l; nz/=l;
+    }
+    this.p.push(x1,y1,z1, x2,y2,z2, x3,y3,z3);
+    this.n.push(nx,ny,nz, nx,ny,nz, nx,ny,nz);
+    this.c.push(r,g,b, r,g,b, r,g,b);
+  }
+  pushQuad(x1,y1,z1, x2,y2,z2, x3,y3,z3, x4,y4,z4, r,g,b) {
+    this.pushTri(x1,y1,z1, x2,y2,z2, x3,y3,z3, r,g,b);
+    this.pushTri(x1,y1,z1, x3,y3,z3, x4,y4,z4, r,g,b);
+  }
+  addBox(cx,cy,cz, sx,sy,sz, r,g,b) {
+    const x0=cx-sx/2, x1=cx+sx/2, y0=cy-sy/2, y1=cy+sy/2, z0=cz-sz/2, z1=cz+sz/2;
+    this.pushQuad(x0,y0,z1, x1,y0,z1, x1,y1,z1, x0,y1,z1, r,g,b); // front
+    this.pushQuad(x1,y0,z0, x0,y0,z0, x0,y1,z0, x1,y1,z0, r,g,b); // back
+    this.pushQuad(x0,y1,z1, x1,y1,z1, x1,y1,z0, x0,y1,z0, r,g,b); // top
+    this.pushQuad(x0,y0,z0, x1,y0,z0, x1,y0,z1, x0,y0,z1, r,g,b); // bottom
+    this.pushQuad(x1,y0,z1, x1,y0,z0, x1,y1,z0, x1,y1,z1, r,g,b); // right
+    this.pushQuad(x0,y0,z0, x0,y0,z1, x0,y1,z1, x0,y1,z0, r,g,b); // left
+  }
+  addCyl(cx,cy,cz, rTop,rBot, h, segs, r,g,b, stripeMode=0) {
+    const y0 = cy, y1 = cy + h;
+    for (let i=0; i<segs; i++) {
+      const a0 = (i/segs)*Math.PI*2, a1 = ((i+1)/segs)*Math.PI*2;
+      const c0 = Math.cos(a0), s0 = Math.sin(a0), c1 = Math.cos(a1), s1 = Math.sin(a1);
+      let cr=r, cg=g, cb=b;
+      if (stripeMode === 1 && (i % 4 < 2)) { cr=0.12; cg=0.13; cb=0.15; } // Roll pattern
+      const nx0 = c0, nz0 = s0, nx1 = c1, nz1 = s1;
+      // Side
+      this.p.push(cx+c0*rBot,y0,cz+s0*rBot, cx+c0*rTop,y1,cz+s0*rTop, cx+c1*rTop,y1,cz+s1*rTop);
+      this.n.push(nx0,0,nz0, nx0,0,nz0, nx1,0,nz1);
+      this.c.push(cr,cg,cb, cr,cg,cb, cr,cg,cb);
+
+      this.p.push(cx+c0*rBot,y0,cz+s0*rBot, cx+c1*rTop,y1,cz+s1*rTop, cx+c1*rBot,y0,cz+s1*rBot);
+      this.n.push(nx0,0,nz0, nx1,0,nz1, nx1,0,nz1);
+      this.c.push(cr,cg,cb, cr,cg,cb, cr,cg,cb);
+
+      // Caps
+      if (rTop > 0.01) this.pushTri(cx,y1,cz, cx+c0*rTop,y1,cz+s0*rTop, cx+c1*rTop,y1,cz+s1*rTop, cr,cg,cb, 0,1,0);
+      if (rBot > 0.01) this.pushTri(cx,y0,cz, cx+c1*rBot,y0,cz+s1*rBot, cx+c0*rBot,y0,cz+s0*rBot, cr,cg,cb, 0,-1,0);
+    }
+  }
+  addStrut(x1,y1,z1, x2,y2,z2, thick, r,g,b) {
+    const dx=x2-x1, dy=y2-y1, dz=z2-z1;
+    let ux=-dz, uy=0, uz=dx;
+    if (Math.hypot(ux,uz) < 0.001) { ux=1; uz=0; }
+    const l = Math.hypot(ux,uy,uz); ux=(ux/l)*thick; uz=(uz/l)*thick;
+    const vx=0, vy=thick, vz=0;
+    this.pushQuad(x1-ux,y1-vy,z1-uz, x1+ux,y1-vy,z1+uz, x2+ux,y2-vy,z2+uz, x2-ux,y2-vy,z2-uz, r,g,b);
+    this.pushQuad(x1+ux,y1+vy,z1+uz, x1-ux,y1+vy,z1-uz, x2-ux,y2+vy,z2-uz, x2+ux,y2+vy,z2+uz, r,g,b);
+    this.pushQuad(x1-ux,y1+vy,z1-uz, x1-ux,y1-vy,z1-uz, x2-ux,y2-vy,z2-uz, x2-ux,y2+vy,z2+uz, r,g,b);
+    this.pushQuad(x1+ux,y1-vy,z1+uz, x1+ux,y1+vy,z1+uz, x2+ux,y2+vy,z2+uz, x2+ux,y2-vy,z2-uz, r,g,b);
+  }
+  compile() {
+    const vbo = (arr) => {
+      const b = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, b);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(arr), gl.STATIC_DRAW);
+      return b;
+    };
+    return { p: vbo(this.p), n: vbo(this.n), c: vbo(this.c), count: this.p.length / 3 };
+  }
+}
+
+// ============================================================================
+// BUILD 3D ASSETS: OCEAN PLATFORM, TOWER, ARMS, ROCKET
+// ============================================================================
+// 1. Ocean Launch Platform (Odyssey-style Semi-submersible)
+const padGeo = new GeoBuilder();
+// Submersible Twin Pontoons
+padGeo.addBox(-24, 0, 0, 10, 4, 72, 0.18, 0.20, 0.23);
+padGeo.addBox( 24, 0, 0, 10, 4, 72, 0.18, 0.20, 0.23);
+// 6 Massive Stability Columns
+for (let z of [-24, 0, 24]) {
+  padGeo.addCyl(-24, 1, z, 4.2, 4.2, 13, 16, 0.85, 0.60, 0.10); // Industrial yellow/orange legs
+  padGeo.addCyl( 24, 1, z, 4.2, 4.2, 13, 16, 0.85, 0.60, 0.10);
+  padGeo.addCyl(-24, 1, z, 4.3, 4.3, 2.5, 16, 0.15, 0.15, 0.17); // Waterline anti-foul boot
+  padGeo.addCyl( 24, 1, z, 4.3, 4.3, 2.5, 16, 0.15, 0.15, 0.17);
+}
+// Main Deck Hull & Blast Deflector Trench
+padGeo.addBox(0, 15, 0, 62, 3, 62, 0.24, 0.27, 0.30);
+padGeo.addBox(-18, 17, 0, 22, 1.5, 56, 0.30, 0.33, 0.37);
+padGeo.addBox( 18, 17, 0, 22, 1.5, 56, 0.30, 0.33, 0.37);
+padGeo.addBox(0, 17.5, 0, 14, 2.5, 16, 0.20, 0.21, 0.23); // Launch Mount Ring
+// Helipad & Command Hangar
+padGeo.addBox(20, 20.5, 18, 16, 6, 18, 0.78, 0.80, 0.82);
+padGeo.addBox(20, 21.5, 8.8, 12, 2, 0.5, 0.1, 0.3, 0.45); // Bridge windows
+padGeo.addCyl(-20, 17.8, 20, 7, 7, 0.2, 20, 0.22, 0.35, 0.28); // Helipad circle
+// LOX / LH2 Cryo Storage Tanks
+for (let i=-1; i<=1; i++) {
+  padGeo.addCyl(-21, 18.5, -18 + i*6, 2.2, 2.2, 9, 14, 0.92, 0.94, 0.96);
+}
+// Lightning Masts (4 corners)
+for (let sx of [-28, 28]) for (let sz of [-28, 28]) {
+  padGeo.addCyl(sx, 16.5, sz, 0.15, 0.5, 32, 8, 0.7, 0.72, 0.75);
+  padGeo.addCyl(sx, 45.0, sz, 0.4, 0.4, 1.5, 8, 1.0, 0.2, 0.1); // Red beacon tip
+}
+// Launch Umbilical Tower (Truss Structure at X = -10)
+const tx0 = -12.5, tx1 = -8.0, tz0 = -2.5, tz1 = 2.5;
+for (let lv=0; lv<11; lv++) {
+  const yA = 17.5 + lv * 4.2, yB = yA + 4.2;
+  const cr = 0.52, cg = 0.55, cb = 0.60, th = 0.22;
+  // Vertical posts
+  padGeo.addStrut(tx0,yA,tz0, tx0,yB,tz0, th, cr,cg,cb);
+  padGeo.addStrut(tx1,yA,tz0, tx1,yB,tz0, th, cr,cg,cb);
+  padGeo.addStrut(tx0,yA,tz1, tx0,yB,tz1, th, cr,cg,cb);
+  padGeo.addStrut(tx1,yA,tz1, tx1,yB,tz1, th, cr,cg,cb);
+  // Horizontal & Diagonal cross-bracing
+  padGeo.addStrut(tx0,yB,tz0, tx1,yB,tz0, th*0.8, cr,cg,cb);
+  padGeo.addStrut(tx0,yB,tz1, tx1,yB,tz1, th*0.8, cr,cg,cb);
+  padGeo.addStrut(tx0,yB,tz0, tx0,yB,tz1, th*0.8, cr,cg,cb);
+  padGeo.addStrut(tx1,yB,tz0, tx1,yB,tz1, th*0.8, cr,cg,cb);
+  padGeo.addStrut(tx0,yA,tz0, tx1,yB,tz0, th*0.6, cr,cg,cb);
+  padGeo.addStrut(tx0,yA,tz1, tx1,yB,tz1, th*0.6, cr,cg,cb);
+  padGeo.addStrut(tx1,yA,tz0, tx1,yB,tz1, th*0.6, cr,cg,cb);
+  padGeo.addStrut(tx0,yA,tz1, tx0,yB,tz0, th*0.6, cr,cg,cb);
+}
+// Crane at top of tower
+padGeo.addStrut(-12.5, 63.7, 0, -4.0, 66.5, 0, 0.35, 0.9, 0.65, 0.1);
+const padMesh = padGeo.compile();
+
+// 2. Retractable Strongback / Umbilical Arms (Pivots at (-8, 38, 0))
+const armGeo = new GeoBuilder();
+for (let h of [0, 8, 15]) {
+  armGeo.addStrut(0, h, -1.2, 6.2, h, -0.9, 0.22, 0.75, 0.25, 0.18);
+  armGeo.addStrut(0, h,  1.2, 6.2, h,  0.9, 0.22, 0.75, 0.25, 0.18);
+  armGeo.addBox(6.2, h, 0, 1.2, 0.6, 2.4, 0.3, 0.3, 0.32);
+}
+armGeo.addStrut(0, -10, 0, 0.5, 16, 0, 0.35, 0.75, 0.25, 0.18);
+const armMesh = armGeo.compile();
+
+// 3. Heavy Lift Rocket (Multi-stage + Side Boosters)
+const rktGeo = new GeoBuilder();
+// Core Stage
+rktGeo.addCyl(0, 1.5, 0, 1.85, 1.85, 18.0, 24, 0.94, 0.95, 0.97); // Lower white tank
+rktGeo.addCyl(0, 19.5, 0, 1.85, 1.85, 3.5, 24, 0.12, 0.13, 0.15); // Black carbon interstage
+rktGeo.addCyl(0, 23.0, 0, 1.85, 1.85, 8.0, 24, 0.94, 0.95, 0.97, 1); // Roll pattern upper stage
+rktGeo.addCyl(0, 31.0, 0, 2.15, 1.85, 2.0, 24, 0.90, 0.91, 0.93); // Fairing adapter
+rktGeo.addCyl(0, 33.0, 0, 2.15, 2.15, 5.5, 24, 0.96, 0.97, 0.99); // Payload fairing barrel
+rktGeo.addCyl(0, 38.5, 0, 0.60, 2.15, 5.0, 24, 0.96, 0.97, 0.99); // Nosecone ogive lower
+rktGeo.addCyl(0, 43.5, 0, 0.00, 0.60, 1.8, 24, 0.20, 0.22, 0.25); // Nosecone tip
+// USA / Orange Accent Stripe & Feedlines
+rktGeo.addBox(0, 11.0, 1.82, 0.35, 15.0, 0.2, 0.85, 0.35, 0.10);
+rktGeo.addBox(0, 11.0,-1.82, 0.35, 15.0, 0.2, 0.85, 0.35, 0.10);
+// Grid Fins (Folded against interstage)
+for (let a=0; a<4; a++) {
+  const rad = a * Math.PI / 2 + Math.PI/4;
+  rktGeo.addBox(Math.cos(rad)*1.95, 21.8, Math.sin(rad)*1.95, 0.5, 1.4, 0.5, 0.35, 0.37, 0.40);
+}
+// Twin Liquid Strap-on Boosters (Z = -3.3 and +3.3)
+for (let bz of [-3.3, 3.3]) {
+  rktGeo.addCyl(0, 1.5, bz, 1.15, 1.15, 15.5, 20, 0.94, 0.95, 0.97);
+  rktGeo.addCyl(0, 17.0, bz, 0.0, 1.15, 3.2, 20, 0.85, 0.30, 0.12); // Orange nosecone
+  rktGeo.addCyl(0, 3.5, bz, 1.18, 1.18, 0.8, 20, 0.15, 0.16, 0.18); // Attachment ring
+  rktGeo.addCyl(0, 14.5, bz, 1.18, 1.18, 0.6, 20, 0.15, 0.16, 0.18);
+  // Booster Nozzles
+  rktGeo.addCyl(0, 0.0, bz, 0.5, 0.95, 1.5, 16, 0.18, 0.19, 0.22);
+}
+// Core Stage 3 Main Engine Bells
+for (let ex of [-0.8, 0, 0.8]) {
+  rktGeo.addCyl(ex, 0.0, 0, 0.4, 0.75, 1.5, 16, 0.18, 0.19, 0.22);
+}
+const rktMesh = rktGeo.compile();
+
+// ============================================================================
+// SHADERS: SKY & OCEAN RAYMARCHER, PBR-LITE SOLID SHADER, VOLUMETRIC PARTICLES
+// ============================================================================
+
+// 1. Fullscreen Dawn Sky + Procedural Raymarched Ocean + Exhaust Reflection
+const bgProg = createProgram(`
+  attribute vec2 aPos;
+  varying vec2 vUv;
+  void main() { vUv = aPos; gl_Position = vec4(aPos, 0.9999, 1.0); }
+`, `
+  precision highp float;
+  varying vec2 vUv;
+  uniform mat4 uInvPV;
+  uniform vec3 uCamPos;
+  uniform vec3 uSunDir;
+  uniform vec3 uPlumePos;
+  uniform float uPlumeInt;
+  uniform float uTime;
+
+  float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float noise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f*f*(3.0-2.0*f);
+    return mix(mix(hash(i), hash(i+vec2(1,0)), f.x),
+               mix(hash(i+vec2(0,1)), hash(i+vec2(1,1)), f.x), f.y);
+  }
+
+  vec3 getSky(vec3 rd) {
+    float y = max(rd.y, 0.0);
+    // Rich dawn gradient: Deep twilight zenith -> Magenta band -> Golden horizon
+    vec3 zenith = vec3(0.03, 0.06, 0.16);
+    vec3 mid = vec3(0.28, 0.14, 0.28);
+    vec3 horiz = vec3(0.95, 0.42, 0.15);
+    vec3 col = mix(horiz, mid, pow(y, 0.35));
+    col = mix(col, zenith, pow(y, 0.85));
+
+    // Solar disk & Mie scattering glow
+    float sunDot = max(dot(rd, uSunDir), 0.0);
+    col += vec3(1.0, 0.6, 0.25) * pow(sunDot, 6.0) * 0.65;
+    col += vec3(1.0, 0.85, 0.6) * pow(sunDot, 64.0) * 1.2;
+    col += vec3(1.0, 0.98, 0.9) * smoothstep(0.9993, 0.9998, sunDot) * 4.0;
+
+    // Procedural dawn clouds
+    if (rd.y > 0.01) {
+      vec2 cuv = rd.xz / (rd.y + 0.12) * 1.8 + vec2(uTime * 0.015, 0.0);
+      float c = noise(cuv) * 0.55 + noise(cuv * 2.3) * 0.3 + noise(cuv * 5.0) * 0.15;
+      float cMask = smoothstep(0.48, 0.78, c) * exp(-rd.y * 4.5);
+      vec3 cLit = mix(vec3(0.18, 0.12, 0.22), vec3(1.0, 0.55, 0.22), pow(sunDot, 2.0));
+      col = mix(col, cLit, cMask * 0.75);
+    }
+
+    // Stars at high altitude
+    if (rd.y > 0.15) {
+      float st = pow(hash(floor(rd.xz / (rd.y + 0.1) * 280.0)), 26.0);
+      col += vec3(st) * smoothstep(0.15, 0.6, rd.y) * 0.7;
+    }
+    return col;
+  }
+
+  // Gerstner-like wave height & normal
+  vec3 oceanNormal(vec2 p) {
+    float t = uTime * 1.6;
+    vec2 n = vec2(0.0);
+    n += vec2(cos(p.x*0.22 + t), sin(p.y*0.18 + t*0.8)) * 0.25;
+    n += vec2(cos(p.x*0.65 - t*1.3 + p.y*0.3), sin(p.y*0.75 + t*1.1)) * 0.15;
+    n += (vec2(noise(p*1.4 + t*0.5), noise(p*1.4 - t*0.5)) - 0.5) * 0.22;
+    // Concentric acoustic shockwave ripples during ignition
+    float d = length(p);
+    if (uPlumeInt > 0.05 && d < 280.0) {
+      float rip = sin(d * 1.2 - uTime * 22.0) * uPlumeInt * exp(-d * 0.018) * 0.35;
+      n += normalize(p + 0.001) * rip;
+    }
+    return normalize(vec3(-n.x * 0.35, 1.0, -n.y * 0.35));
+  }
+
+  void main() {
+    vec4 pNear = uInvPV * vec4(vUv, -1.0, 1.0);
+    vec4 pFar  = uInvPV * vec4(vUv,  1.0, 1.0);
+    vec3 ro = pNear.xyz / pNear.w;
+    vec3 rd = normalize(pFar.xyz / pFar.w - ro);
+
+    vec3 col = getSky(rd);
+
+    // Ray-plane intersection with Ocean at Y = 0
+    if (rd.y < -0.0005 && ro.y > 0.0) {
+      float t = -ro.y / rd.y;
+      vec3 hit = ro + rd * t;
+      float dist = length(hit - ro);
+      vec3 N = oceanNormal(hit.xz);
+      // Smooth normal at far distance to prevent aliasing
+      N = normalize(mix(N, vec3(0,1,0), smoothstep(40.0, 800.0, dist)));
+
+      vec3 R = reflect(rd, N);
+      R.y = max(R.y, 0.01);
+      vec3 reflSky = getSky(R);
+
+      float fresnel = 0.04 + 0.96 * pow(1.0 - max(dot(-rd, N), 0.0), 5.0);
+      vec3 seaBase = vec3(0.01, 0.05, 0.09);
+
+      // Sun specular glitter path on waves
+      vec3 H = normalize(uSunDir - rd);
+      float spec = pow(max(dot(N, H), 0.0), 120.0) * 3.5;
+
+      // Rocket Plume dynamic orange reflection on the water
+      vec3 toPlume = uPlumePos - hit;
+      float pDist = length(toPlume);
+      vec3 L = toPlume / pDist;
+      float pDiff = max(dot(N, L), 0.0);
+      vec3 H_p = normalize(L - rd);
+      float pSpec = pow(max(dot(N, H_p), 0.0), 28.0);
+      float atten = uPlumeInt * 1400.0 / (pDist * pDist + 120.0);
+      vec3 plumeLight = vec3(1.0, 0.52, 0.15) * (pDiff * 0.4 + pSpec * 1.8) * atten;
+
+      // Platform shadow/occlusion around (0,0)
+      float padOcc = smoothstep(15.0, 42.0, length(hit.xz));
+
+      vec3 waterCol = mix(seaBase, reflSky, fresnel) * (0.4 + 0.6 * padOcc)
+                    + vec3(1.0, 0.65, 0.3) * spec
+                    + plumeLight;
+
+      // Atmospheric horizon mist blend
+      float fog = exp(-dist * 0.0014);
+      vec3 horizCol = getSky(normalize(vec3(rd.x, 0.002, rd.z)));
+      col = mix(horizCol, waterCol, fog);
+    }
+
+    // Tone mapping
+    col = col / (1.0 + col * 0.35);
+    gl_FragColor = vec4(pow(col, vec3(0.92)), 1.0);
+  }
+`);
+
+// 2. Solid 3D Mesh Shader (Sun + Skylight + Dynamic Rocket Exhaust Point Light)
+const meshProg = createProgram(`
+  attribute vec3 aPos;
+  attribute vec3 aNorm;
+  attribute vec3 aCol;
+  uniform mat4 uPV;
+  uniform mat4 uModel;
+  varying vec3 vWPos;
+  varying vec3 vNorm;
+  varying vec3 vCol;
+  void main() {
+    vec4 wp = uModel * vec4(aPos, 1.0);
+    vWPos = wp.xyz;
+    vNorm = mat3(uModel) * aNorm;
+    vCol = aCol;
+    gl_Position = uPV * wp;
+  }
+`, `
+  precision highp float;
+  varying vec3 vWPos;
+  varying vec3 vNorm;
+  varying vec3 vCol;
+  uniform vec3 uCamPos;
+  uniform vec3 uSunDir;
+  uniform vec3 uPlumePos;
+  uniform float uPlumeInt;
+
+  void main() {
+    vec3 N = normalize(vNorm);
+    vec3 V = normalize(uCamPos - vWPos);
+
+    // Dawn Sun Direct Light
+    float sunDiff = max(dot(N, uSunDir), 0.0);
+    vec3 H_sun = normalize(uSunDir + V);
+    float sunSpec = pow(max(dot(N, H_sun), 0.0), 32.0) * 0.5;
+    vec3 sunCol = vec3(1.0, 0.62, 0.35);
+
+    // Hemisphere Sky/Ocean Ambient
+    vec3 amb = mix(vec3(0.06, 0.10, 0.16), vec3(0.28, 0.22, 0.35), N.y * 0.5 + 0.5);
+
+    // Dynamic Rocket Exhaust Light (Under-lighting the rocket & launch pad)
+    vec3 toPlume = uPlumePos - vWPos;
+    float pDist = length(toPlume);
+    vec3 Lp = toPlume / (pDist + 0.001);
+    float pDiff = max(dot(N, Lp), 0.0) * 0.75 + 0.25;
+    float pAtten = uPlumeInt * 950.0 / (pDist * pDist + 45.0);
+    vec3 plumeCol = vec3(1.0, 0.55, 0.18) * pDiff * pAtten;
+
+    // Rim light against dawn sky
+    float rim = pow(1.0 - max(dot(N, V), 0.0), 4.0) * 0.35;
+
+    vec3 lit = vCol * (amb + sunCol * sunDiff * 0.95 + plumeCol)
+             + sunCol * sunSpec
+             + vec3(1.0, 0.6, 0.3) * rim;
+
+    // Aerial perspective fog at high altitude / distance
+    float dist = length(vWPos - uCamPos);
+    float fog = clamp(1.0 - exp(-dist * 0.0008), 0.0, 0.65);
+    vec3 fogCol = vec3(0.55, 0.32, 0.25);
+    lit = mix(lit, fogCol, fog);
+
+    lit = lit / (1.0 + lit * 0.3);
+    gl_FragColor = vec4(pow(lit, vec3(0.92)), 1.0);
+  }
+`);
+
+// 3. Soft Volumetric Particle Shader (Fire, Steam Trench Plume, Smoke Trail)
+const partProg = createProgram(`
+  attribute vec3 aPos;
+  attribute float aSize;
+  attribute vec4 aCol;
+  uniform mat4 uPV;
+  varying vec4 vCol;
+  void main() {
+    vCol = aCol;
+    gl_Position = uPV * vec4(aPos, 1.0);
+    gl_PointSize = clamp(aSize / max(gl_Position.w, 1.0), 1.0, 220.0);
+  }
+`, `
+  precision highp float;
+  varying vec4 vCol;
+  void main() {
+    vec2 p = gl_PointCoord * 2.0 - 1.0;
+    float r2 = dot(p, p);
+    if (r2 > 1.0) discard;
+    float alpha = pow(1.0 - r2, 1.6) * vCol.a;
+    gl_FragColor = vec4(vCol.rgb, alpha);
+  }
+`);
+
+// Fullscreen Quad Buffer
+const quadBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+
+// Dynamic Particle Buffers
+const MAX_PARTS = 1400;
+const partPosData = new Float32Array(MAX_PARTS * 3);
+const partSizeData = new Float32Array(MAX_PARTS);
+const partColData = new Float32Array(MAX_PARTS * 4);
+const partPosBuf = gl.createBuffer();
+const partSizeBuf = gl.createBuffer();
+const partColBuf = gl.createBuffer();
+
+// Deterministic pseudo-random helper for repeatable stateless particle physics
+function prand(seed) {
+  const x = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+// ============================================================================
+// ROCKET KINEMATICS & AI CINEMATIC CAMERA DIRECTOR
+// ============================================================================
+function getRocketState(t) {
+  // Ignition at T=6.0s, Liftoff at T=8.5s
+  let alt = 0, vel = 0, accel = 0, pitch = 0, roll = 0;
+  if (t > 8.5) {
+    const dt = t - 8.5;
+    alt = 0.42 * Math.pow(dt, 2.38);
+    vel = 0.42 * 2.38 * Math.pow(dt, 1.38) * 3.8; // Scaled for telemetry m/s
+    accel = 9.81 + dt * 1.45;
+    // Gravity turn & roll program starting at T=14s
+    if (t > 14.0) {
+      const pt = Math.min(1.0, (t - 14.0) / 22.0);
+      pitch = Math.pow(pt, 1.4) * 0.62;
+      roll = Math.min(1.0, (t - 14.0) / 6.0) * 0.35;
+    }
+  }
+  // High-frequency engine vibration during hold-down & early liftoff
+  let shake = 0;
+  if (t >= 6.0 && t < 18.0) {
+    shake = Math.min(1.0, (t - 6.0) / 1.5) * Math.max(0.0, 1.0 - (t - 8.5) / 10.0);
+  }
+  // Strongback retraction angle (starts retracting at T=3.5s)
+  let armAngle = 0;
+  if (t > 3.5) {
+    const at = Math.min(1.0, (t - 3.5) / 4.2);
+    armAngle = at * at * (3 - 2 * at) * 0.48; // Smoothstep to ~28 deg
+  }
+  // Plume intensity
+  let plumeInt = 0;
+  if (t >= 5.5) {
+    plumeInt = Math.min(1.0, (t - 5.5) / 1.8);
+  }
+  return { alt, vel, accel, pitch, roll, shake, armAngle, plumeInt };
+}
+
+function getCameraState(t, rkt) {
+  const rY = 17.5 + rkt.alt;
+  const rX = Math.sin(rkt.pitch) * rkt.alt * 0.32;
+  let eye = [0, 25, 80], target = [0, 35, 0], fov = 0.85, camName = "CAM 01 // OCEAN DRONE WIDE";
+
+  if (t < 5.5) {
+    // Shot 1: Sweeping low-altitude ocean drone reveal at dawn
+    const a = -0.55 + t * 0.11 + userYaw;
+    const d = 105.0 - t * 3.5;
+    eye = [Math.sin(a) * d, 16.0 + t * 1.4 + userPitch * 20, Math.cos(a) * d];
+    target = [0, 34.0, 0];
+    fov = 0.82;
+    camName = "CAM 01 // MARITIME DRONE SWEEP";
+  } else if (t < 9.5) {
+    // Shot 2: Dramatic low-angle pad deck camera watching ignition & liftoff
+    const dt = t - 5.5;
+    const a = 0.65 + dt * 0.04 + userYaw;
+    eye = [Math.sin(a) * 44.0, 19.5 + userPitch * 10, Math.cos(a) * 44.0];
+    target = [0, 24.0 + rkt.alt * 0.8, 0];
+    fov = 0.92;
+    camName = "CAM 02 // PAD PERIMETER DECK";
+  } else if (t < 15.5) {
+    // Shot 3: Tower top tracking camera watching the rocket clear the structure
+    const dt = t - 9.5;
+    eye = [-22.0, 66.0 + dt * 2.0, 32.0];
+    target = [rX, rY + 12.0, 0];
+    fov = 0.78;
+    camName = "CAM 03 // UMBILICAL TOWER MAST";
+  } else if (t < 24.5) {
+    // Shot 4: Supersonic chase plane / drone ascending with the vehicle
+    const dt = t - 15.5;
+    const a = 0.4 + dt * 0.09 + userYaw;
+    const d = 52.0 + dt * 1.5;
+    eye = [rX + Math.sin(a) * d, rY + 16.0 - dt * 1.2 + userPitch * 20, Math.cos(a) * d];
+    target = [rX, rY + 18.0, 0];
+    fov = 0.85;
+    camName = "CAM 04 // AERIAL CHASE TRACKER";
+  } else {
+    // Shot 5: High-altitude staging & downrange horizon vista
+    const dt = t - 24.5;
+    const a = 1.1 + dt * 0.04 + userYaw;
+    const d = 65.0 + dt * 2.5;
+    eye = [rX + Math.sin(a) * d, rY + 34.0 + userPitch * 25, Math.cos(a) * d];
+    target = [rX, rY + 14.0, 0];
+    fov = 0.80;
+    camName = "CAM 05 // DOWNRANGE TELEMETRY OPTICS";
+  }
+
+  // Apply acoustic camera shake during ignition & liftoff
+  if (rkt.shake > 0.01) {
+    const s = rkt.shake * 0.55;
+    eye[0] += Math.sin(t * 95.0) * s;
+    eye[1] += Math.cos(t * 113.0) * s;
+    target[1] += Math.sin(t * 83.0) * s * 0.8;
+  }
+
+  return { eye, target, fov, camName, rX, rY };
+}
+
+// ============================================================================
+// STATELESS VOLUMETRIC PARTICLE GENERATOR (Plume, Trench Steam, Contrail)
+// ============================================================================
+function buildParticles(t, rkt, cam) {
+  let count = 0;
+  const rX = cam.rX, rY = cam.rY;
+  const sinP = Math.sin(rkt.pitch), cosP = Math.cos(rkt.pitch);
+
+  const pushPart = (x, y, z, size, r, g, b, a) => {
+    if (count >= MAX_PARTS || a <= 0.005) return;
+    const i3 = count * 3, i4 = count * 4;
+    partPosData[i3] = x; partPosData[i3+1] = y; partPosData[i3+2] = z;
+    partSizeData[count] = size;
+    partColData[i4] = r; partColData[i4+1] = g; partColData[i4+2] = b; partColData[i4+3] = a;
+    count++;
+  };
+
+  // 1. Pre-launch Cryogenic LOX Venting from Upper Stage
+  if (t < 14.0) {
+    for (let i=0; i<75; i++) {
+      const age = (t * 1.4 + i / 75) % 1.0;
+      const vx = rX - 1.9 + age * 8.5 + (prand(i*3) - 0.5) * 1.5;
+      const vy = rY + 26.0 - age * 3.5 + (prand(i*5) - 0.5) * 1.2;
+      const vz = (prand(i*7) - 0.5) * 2.2;
+      const alpha = Math.sin(age * Math.PI) * 0.28;
+      pushPart(vx, vy, vz, (140 + age * 260), 0.88, 0.93, 1.0, alpha);
+    }
+  }
+
+  // 2. Water Deluge Sound Suppression System (Activates T=4.0s)
+  if (t > 4.0 && t < 18.0) {
+    const delugeInt = Math.min(1.0, (t - 4.0) / 1.5) * Math.max(0.0, 1.0 - (t - 12.0) / 6.0);
+    for (let i=0; i<160; i++) {
+      const age = (t * 0.9 + i / 160) % 1.0;
+      const side = (i % 2 === 0) ? 1 : -1;
+      const angle = (prand(i*11) - 0.5) * 0.9;
+      const spd = 18.0 + prand(i*13) * 28.0;
+      const px = Math.sin(angle) * age * spd * 0.7;
+      const pz = side * (4.0 + Math.cos(angle) * age * spd);
+      const py = 16.5 + age * age * 14.0 + prand(i*17) * 4.0;
+      const size = 350.0 + age * 1400.0;
+      // Lit orange by rocket plume once engines ignite
+      const glow = rkt.plumeInt * Math.exp(-age * 2.2);
+      const cr = 0.85 + glow * 0.15;
+      const cg = 0.87 - glow * 0.25;
+      const cb = 0.92 - glow * 0.55;
+      pushPart(px, py, pz, size, cr, cg, cb, Math.sin(age * Math.PI) * 0.42 * delugeInt);
+    }
+  }
+
+  // 3. Persistent Exhaust Smoke Plume & Acoustic Sea-Spray Cloud (T > 5.8s)
+  if (t > 5.8) {
+    // Billowing pad cloud & contrail
+    for (let i=0; i<520; i++) {
+      const birthT = 5.8 + (i / 520) * (t - 5.8);
+      const age = t - birthT;
+      if (age < 0 || age > 14.0) continue;
+
+      const bState = getRocketState(birthT);
+      const bY = 17.5 + bState.alt;
+      const bX = Math.sin(bState.pitch) * bState.alt * 0.32;
+
+      const dirA = prand(i * 19) * Math.PI * 2.0;
+      const radSpd = (bState.alt < 25.0) ? (12.0 + prand(i*23)*18.0) : (2.5 + prand(i*23)*4.5);
+
+      let px = bX - Math.sin(bState.pitch) * age * 14.0 + Math.cos(dirA) * Math.pow(age, 0.75) * radSpd;
+      let py = bY - Math.cos(bState.pitch) * age * 16.0 + (prand(i*29) - 0.3) * age * 4.0;
+      let pz = Math.sin(dirA) * Math.pow(age, 0.75) * radSpd;
+
+      // Deflect off the launch deck & ocean surface
+      if (py < 16.5 && Math.hypot(px, pz) < 34.0) {
+        const pushOut = (16.5 - py) * 1.4;
+        px += Math.cos(dirA) * pushOut;
+        pz += Math.sin(dirA) * pushOut;
+        py = 16.5 + prand(i*31) * 5.0 + age * 1.8;
+      } else if (py < 2.0) {
+        py = 2.0 + prand(i*37) * 4.0 + age * 1.2;
+      }
+
+      const life = age / 14.0;
+      const size = 480.0 + life * 2400.0;
+      // Internal scattering of rocket fire inside the smoke
+      const distToNozzle = Math.hypot(px - rX, py - rY, pz);
+      const fireLit = Math.exp(-distToNozzle * 0.035) * rkt.plumeInt;
+
+      const cr = Math.min(1.0, 0.55 + fireLit * 0.85);
+      const cg = Math.min(1.0, 0.52 + fireLit * 0.42);
+      const cb = Math.min(1.0, 0.56 + fireLit * 0.10);
+      const alpha = Math.sin(Math.min(1.0, life * 4.0) * Math.PI * 0.5) * Math.pow(1.0 - life, 1.5) * 0.48;
+
+      pushPart(px, py, pz, size, cr, cg, cb, alpha);
+    }
+
+    // 4. High-Velocity Incandescent Mach Diamond Exhaust Core
+    for (let i=0; i<320; i++) {
+      const s = ( (i / 320) + (t * 9.5) ) % 1.0; // 0 at nozzle, 1 at tail tip
+      const emitter = i % 3; // 0: Core, 1: Left Booster, 2: Right Booster
+      const bz = (emitter === 0) ? 0 : (emitter === 1 ? -3.3 : 3.3);
+
+      const jetLen = 26.0 + Math.min(30.0, rkt.alt * 0.08);
+      const spread = (0.6 + s * 3.8) * (1.0 + Math.min(1.8, rkt.alt * 0.004));
+      const ang = prand(i * 41) * Math.PI * 2.0;
+      const rad = prand(i * 43) * spread;
+
+      let px = rX - sinP * (s * jetLen) + Math.cos(ang) * rad;
+      let py = rY - cosP * (s * jetLen) + (prand(i*47)-0.5) * spread;
+      let pz = bz + Math.sin(ang) * rad;
+
+      // Splash fire in flame trench when near pad
+      if (py < 16.0) {
+        const deflect = (16.0 - py) * 1.8;
+        py = 16.0 + prand(i*53) * 2.5;
+        pz += (bz >= 0 ? 1 : -1) * deflect + (prand(i*59) - 0.5) * deflect;
+        px += (prand(i*61) - 0.5) * deflect;
+      }
+
+      // Mach shock diamond brightness modulation
+      const mach = 0.8 + 0.2 * Math.cos(s * 38.0);
+      let cr = 1.0, cg = 0.95, cb = 0.85, alpha = 0.85;
+      if (s < 0.25) {
+        cr = 1.0; cg = 0.98; cb = 0.92; alpha = 0.95;
+      } else if (s < 0.65) {
+        const k = (s - 0.25) / 0.4;
+        cr = 1.0; cg = (0.85 - k * 0.45) * mach; cb = (0.5 - k * 0.42); alpha = 0.82 * (1.0 - k*0.3);
+      } else {
+        const k = (s - 0.65) / 0.35;
+        cr = 0.95 - k * 0.5; cg = 0.35 * (1.0 - k); cb = 0.08 * (1.0 - k); alpha = 0.55 * (1.0 - k);
+      }
+
+      const size = (280.0 + s * 1150.0) * rkt.plumeInt;
+      pushPart(px, py, pz, size, cr, cg, cb, alpha * rkt.plumeInt);
+    }
+  }
+
+  return count;
+}
+
+// ============================================================================
+// TELEMETRY & MISSION CONTROL HUD OVERLAY (2D Canvas)
+// ============================================================================
+function drawHUD(t, rkt, cam) {
+  ctx.clearRect(0, 0, 1280, 720);
+
+  // Subtle Cinematic Letterbox Bars
+  ctx.fillStyle = "rgba(4, 7, 12, 0.72)";
+  ctx.fillRect(0, 0, 1280, 46);
+  ctx.fillRect(0, 674, 1280, 46);
+  ctx.strokeStyle = "rgba(80, 190, 255, 0.3)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, 46.5); ctx.lineTo(1280, 46.5);
+  ctx.moveTo(0, 673.5); ctx.lineTo(1280, 673.5);
+  ctx.stroke();
+
+  // Mission Clock T- / T+
+  const tRel = t - 8.5;
+  const sign = tRel < 0 ? "-" : "+";
+  const absT = Math.abs(tRel);
+  const mins = String(Math.floor(absT / 60)).padStart(2, '0');
+  const secs = String(Math.floor(absT % 60)).padStart(2, '0');
+  const ms = String(Math.floor((absT % 1) * 100)).padStart(2, '0');
+
+  ctx.font = "600 13px 'Segoe UI', monospace";
+  ctx.fillStyle = "rgba(130, 210, 255, 0.85)";
+  ctx.fillText("ODYSSEY OCEAN LAUNCH PLATFORM // EQUATORIAL PACIFIC", 28, 28);
+
+  ctx.font = "700 22px monospace";
+  ctx.fillStyle = tRel >= 0 ? "#4ef59c" : "#ffb347";
+  ctx.textAlign = "center";
+  ctx.fillText(`T ${sign} 00:${mins}:${secs}.${ms}`, 640, 31);
+
+  ctx.font = "600 13px 'Segoe UI', monospace";
+  ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+  ctx.textAlign = "right";
+  ctx.fillText(cam.camName, 1252, 28);
+  ctx.textAlign = "left";
+
+  // Left Telemetry Panel
+  const px = 28, py = 70, pw = 250, ph = 158;
+  ctx.fillStyle = "rgba(6, 14, 24, 0.62)";
+  ctx.strokeStyle = "rgba(70, 180, 255, 0.35)";
+  ctx.fillRect(px, py, pw, ph);
+  ctx.strokeRect(px, py, pw, ph);
+
+  ctx.font = "700 11px monospace";
+  ctx.fillStyle = "#5bc0ff";
+  ctx.fillText("LIVE VEHICLE TELEMETRY", px + 14, py + 22);
+
+  const altKm = (rkt.alt * 0.018).toFixed(2);
+  const velKmh = Math.floor(rkt.vel * 24.5);
+  const mach = (velKmh / 1225).toFixed(2);
+  const gLoad = (rkt.alt > 0 ? (1.0 + rkt.accel * 0.08) : 1.00).toFixed(2);
+  const qVal = Math.floor(Math.sin(Math.min(1, Math.max(0, (t - 8.5) / 26)) * Math.PI) * 34.8);
+
+  const rows = [
+    ["ALTITUDE", `${altKm} km`],
+    ["VELOCITY", `${velKmh} km/h  (M ${mach})`],
+    ["AXIAL LOAD", `${gLoad} G`],
+    ["DYN PRESS (Q)", `${qVal} kPa`],
+    ["PITCH ANGLE", `${(90 - rkt.pitch * 57.3).toFixed(1)}°`]
+  ];
+  rows.forEach((r, idx) => {
+    const ry = py + 46 + idx * 22;
+    ctx.font = "12px monospace";
+    ctx.fillStyle = "rgba(180, 210, 235, 0.75)";
+    ctx.fillText(r[0], px + 14, ry);
+    ctx.font = "700 13px monospace";
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "right";
+    ctx.fillText(r[1], px + pw - 14, ry);
+    ctx.textAlign = "left";
+  });
+
+  // Engine Thrust Cluster Status (Bottom Left)
+  const ex = 28, ey = 540, ew = 210, eh = 112;
+  ctx.fillStyle = "rgba(6, 14, 24, 0.62)";
+  ctx.strokeRect(ex, ey, ew, eh);
+  ctx.fillRect(ex, ey, ew, eh);
+  ctx.font = "700 11px monospace";
+  ctx.fillStyle = "#5bc0ff";
+  ctx.fillText("PROPULSION CLUSTER (5x LOX/RP1)", ex + 12, ey + 20);
+
+  const nozzles = [
+    { x: -38, y: 0, r: 12, lbl: "B1" },
+    { x: -14, y: -8, r: 9, lbl: "C1" },
+    { x: 0,   y: 8,  r: 9, lbl: "C2" },
+    { x: 14,  y: -8, r: 9, lbl: "C3" },
+    { x: 38,  y: 0, r: 12, lbl: "B2" }
+  ];
+  nozzles.forEach(n => {
+    const nx = ex + 72 + n.x, ny = ey + 64 + n.y;
+    ctx.beginPath();
+    ctx.arc(nx, ny, n.r, 0, Math.PI * 2);
+    if (rkt.plumeInt > 0.1) {
+      ctx.fillStyle = `rgba(255, ${Math.floor(140 + rkt.plumeInt*80)}, 50, ${0.4 + rkt.plumeInt*0.55})`;
+      ctx.strokeStyle = "#ffae42";
+    } else {
+      ctx.fillStyle = "rgba(30, 50, 70, 0.6)";
+      ctx.strokeStyle = "rgba(100, 160, 210, 0.5)";
+    }
+    ctx.fill();
+    ctx.stroke();
+  });
+  ctx.font = "700 13px monospace";
+  ctx.fillStyle = rkt.plumeInt > 0.1 ? "#ffb347" : "#88aacc";
+  ctx.fillText(`THRUST: ${Math.floor(rkt.plumeInt * 104)}%`, ex + 125, ey + 62);
+  ctx.font = "11px monospace";
+  ctx.fillStyle = "rgba(180,210,235,0.8)";
+  ctx.fillText(rkt.plumeInt > 0.1 ? "CHAMBER NOMINAL" : "PRE-VALVE STBY", ex + 125, ey + 80);
+
+  // Flight Trajectory Profile Graph (Bottom Right)
+  const gx = 1012, gy = 540, gw = 240, gh = 112;
+  ctx.fillStyle = "rgba(6, 14, 24, 0.62)";
+  ctx.fillRect(gx, gy, gw, gh);
+  ctx.strokeStyle = "rgba(70, 180, 255, 0.35)";
+  ctx.strokeRect(gx, gy, gw, gh);
+  ctx.font = "700 11px monospace";
+  ctx.fillStyle = "#5bc0ff";
+  ctx.fillText("GRAVITY TURN PROFILE", gx + 12, gy + 20);
+
+  // Reference curve
+  ctx.strokeStyle = "rgba(100, 170, 220, 0.3)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i=0; i<=40; i++) {
+    const u = i / 40;
+    const cx = gx + 20 + Math.pow(u, 1.7) * (gw - 40);
+    const cy = gy + gh - 18 - Math.pow(u, 0.75) * (gh - 48);
+    if (i === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
+  }
+  ctx.stroke();
+
+  // Active progress curve
+  const prog = Math.max(0, Math.min(1, (t - 8.5) / 27.5));
+  ctx.strokeStyle = "#4ef59c";
+  ctx.beginPath();
+  for (let i=0; i<=40; i++) {
+    const u = (i / 40) * prog;
+    const cx = gx + 20 + Math.pow(u, 1.7) * (gw - 40);
+    const cy = gy + gh - 18 - Math.pow(u, 0.75) * (gh - 48);
+    if (i === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
+  }
+  ctx.stroke();
+  const dotX = gx + 20 + Math.pow(prog, 1.7) * (gw - 40);
+  const dotY = gy + gh - 18 - Math.pow(prog, 0.75) * (gh - 48);
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath(); ctx.arc(dotX, dotY, 4, 0, Math.PI * 2); ctx.fill();
+
+  // Bottom Timeline Sequence Callouts
+  let eventTxt = "TERMINAL COUNT // AUTO-SEQUENCE ARMED";
+  if (t >= 3.5 && t < 5.8) eventTxt = "STRONGBACK RETRACTION & WATER DELUGE ACTIVATED";
+  else if (t >= 5.8 && t < 8.5) eventTxt = "MAIN ENGINE START (MES) // HOLD-DOWN THRUST BUILDUP";
+  else if (t >= 8.5 && t < 14.0) eventTxt = "LIFTOFF // VEHICLE HAS CLEARED THE LAUNCH TOWER";
+  else if (t >= 14.0 && t < 23.0) eventTxt = "PITCH & ROLL PROGRAM INITIATED // DOWNRANGE TRACKING";
+  else if (t >= 23.0) eventTxt = "VEHICLE SUPERSONIC // PASSING THROUGH MAX-Q";
+
+  ctx.font = "600 14px 'Segoe UI', monospace";
+  ctx.fillStyle = "#ffffff";
+  ctx.textAlign = "center";
+  ctx.fillText(eventTxt, 640, 701);
+
+  // Timeline progress bar
+  ctx.fillStyle = "rgba(255,255,255,0.18)";
+  ctx.fillRect(28, 673, 1224, 2);
+  ctx.fillStyle = "#5bc0ff";
+  ctx.fillRect(28, 673, 1224 * (t / window.DUR), 2);
+  ctx.textAlign = "left";
+}
+
+// ============================================================================
+// MAIN RENDER LOOP
+// ============================================================================
+const sunDir = (() => {
+  const v = [0.62, 0.085, -0.78];
+  const l = Math.hypot(v[0], v[1], v[2]);
+  return [v[0]/l, v[1]/l, v[2]/l];
+})();
+
+function drawMesh(prog, mesh, modelMat) {
+  gl.uniformMatrix4fv(gl.getUniformLocation(prog, "uModel"), false, modelMat);
+
+  const locP = gl.getAttribLocation(prog, "aPos");
+  gl.bindBuffer(gl.ARRAY_BUFFER, mesh.p);
+  gl.enableVertexAttribArray(locP);
+  gl.vertexAttribPointer(locP, 3, gl.FLOAT, false, 0, 0);
+
+  const locN = gl.getAttribLocation(prog, "aNorm");
+  gl.bindBuffer(gl.ARRAY_BUFFER, mesh.n);
+  gl.enableVertexAttribArray(locN);
+  gl.vertexAttribPointer(locN, 3, gl.FLOAT, false, 0, 0);
+
+  const locC = gl.getAttribLocation(prog, "aCol");
+  gl.bindBuffer(gl.ARRAY_BUFFER, mesh.c);
+  gl.enableVertexAttribArray(locC);
+  gl.vertexAttribPointer(locC, 3, gl.FLOAT, false, 0, 0);
+
+  gl.drawArrays(gl.TRIANGLES, 0, mesh.count);
+}
+
+// Invert 4x4 matrix for raymarching sky/ocean camera rays
+function invertMat4(m) {
+  const inv = new Float32Array(16);
+  inv[0] = m[5]*m[10]*m[15] - m[5]*m[11]*m[14] - m[9]*m[6]*m[15] + m[9]*m[7]*m[14] + m[13]*m[6]*m[11] - m[13]*m[7]*m[10];
+  inv[4] = -m[4]*m[10]*m[15] + m[4]*m[11]*m[14] + m[8]*m[6]*m[15] - m[8]*m[7]*m[14] - m[12]*m[6]*m[11] + m[12]*m[7]*m[10];
+  inv[8] = m[4]*m[9]*m[15] - m[4]*m[11]*m[13] - m[8]*m[5]*m[15] + m[8]*m[7]*m[13] + m[12]*m[5]*m[11] - m[12]*m[7]*m[9];
+  inv[12]= -m[4]*m[9]*m[14] + m[4]*m[10]*m[13] + m[8]*m[5]*m[14] - m[8]*m[6]*m[13] - m[12]*m[5]*m[10] + m[12]*m[6]*m[9];
+  inv[1] = -m[1]*m[10]*m[15] + m[1]*m[11]*m[14] + m[9]*m[2]*m[15] - m[9]*m[3]*m[14] - m[13]*m[2]*m[11] + m[13]*m[3]*m[10];
+  inv[5] = m[0]*m[10]*m[15] - m[0]*m[11]*m[14] - m[8]*m[2]*m[15] + m[8]*m[3]*m[14] + m[12]*m[2]*m[11] - m[12]*m[3]*m[10];
+  inv[9] = -m[0]*m[9]*m[15] + m[0]*m[11]*m[13] + m[8]*m[1]*m[15] - m[8]*m[3]*m[13] - m[12]*m[1]*m[11] + m[12]*m[3]*m[9];
+  inv[13]= m[0]*m[9]*m[14] - m[0]*m[10]*m[13] - m[8]*m[1]*m[14] + m[8]*m[2]*m[13] + m[12]*m[1]*m[10] - m[12]*m[2]*m[9];
+  inv[2] = m[1]*m[6]*m[15] - m[1]*m[7]*m[14] - m[5]*m[2]*m[15] + m[5]*m[3]*m[14] + m[13]*m[2]*m[7] - m[13]*m[3]*m[6];
+  inv[6] = -m[0]*m[6]*m[15] + m[0]*m[7]*m[14] + m[4]*m[2]*m[15] - m[4]*m[3]*m[14] - m[12]*m[2]*m[7] + m[12]*m[3]*m[6];
+  inv[10]= m[0]*m[5]*m[15] - m[0]*m[7]*m[13] - m[4]*m[1]*m[15] + m[4]*m[3]*m[13] + m[12]*m[1]*m[7] - m[12]*m[3]*m[5];
+  inv[14]= -m[0]*m[5]*m[14] + m[0]*m[6]*m[13] + m[4]*m[1]*m[14] - m[4]*m[2]*m[13] - m[12]*m[1]*m[6] + m[12]*m[2]*m[5];
+  inv[3] = -m[1]*m[6]*m[11] + m[1]*m[7]*m[10] + m[5]*m[2]*m[11] - m[5]*m[3]*m[10] - m[9]*m[2]*m[7] + m[9]*m[3]*m[6];
+  inv[7] = m[0]*m[6]*m[11] - m[0]*m[7]*m[10] - m[4]*m[2]*m[11] + m[4]*m[3]*m[10] + m[8]*m[2]*m[7] - m[8]*m[3]*m[6];
+  inv[11]= -m[0]*m[5]*m[11] + m[0]*m[7]*m[9] + m[4]*m[1]*m[11] - m[4]*m[3]*m[9] - m[8]*m[1]*m[7] + m[8]*m[3]*m[5];
+  inv[15]= m[0]*m[5]*m[10] - m[0]*m[6]*m[9] - m[4]*m[1]*m[10] + m[4]*m[2]*m[9] + m[8]*m[1]*m[6] - m[8]*m[2]*m[5];
+  let det = m[0]*inv[0] + m[1]*inv[4] + m[2]*inv[8] + m[3]*inv[12];
+  det = 1.0 / (det || 1.0);
+  for (let i=0; i<16; i++) inv[i] *= det;
+  return inv;
+}
+
+function render(now) {
+  const t = ((now * 0.001) + startOffset) % window.DUR;
+  const rkt = getRocketState(t);
+  const cam = getCameraState(t, rkt);
+
+  const proj = M4.persp(cam.fov, 1280 / 720, 1.0, 3500.0);
+  const view = M4.lookAt(cam.eye, cam.target, [0, 1, 0]);
+  const pv = M4.mul(proj, view);
+  const invPV = invertMat4(pv);
+
+  const plumePos = [cam.rX, Math.max(16.0, cam.rY - 4.0), 0.0];
+
+  gl.viewport(0, 0, 1280, 720);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  // 1. Render Sky & Raymarched Ocean Background
+  gl.disable(gl.DEPTH_TEST);
+  gl.useProgram(bgProg);
+  gl.uniformMatrix4fv(gl.getUniformLocation(bgProg, "uInvPV"), false, invPV);
+  gl.uniform3fv(gl.getUniformLocation(bgProg, "uCamPos"), cam.eye);
+  gl.uniform3fv(gl.getUniformLocation(bgProg, "uSunDir"), sunDir);
+  gl.uniform3fv(gl.getUniformLocation(bgProg, "uPlumePos"), plumePos);
+  gl.uniform1f(gl.getUniformLocation(bgProg, "uPlumeInt"), rkt.plumeInt);
+  gl.uniform1f(gl.getUniformLocation(bgProg, "uTime"), t);
+
+  const bgPosLoc = gl.getAttribLocation(bgProg, "aPos");
+  gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+  gl.enableVertexAttribArray(bgPosLoc);
+  gl.vertexAttribPointer(bgPosLoc, 2, gl.FLOAT, false, 0, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+  // 2. Render 3D Solid Meshes (Platform, Umbilical Arms, Rocket)
+  gl.enable(gl.DEPTH_TEST);
+  gl.depthMask(true);
+  gl.disable(gl.BLEND);
+  gl.useProgram(meshProg);
+  gl.uniformMatrix4fv(gl.getUniformLocation(meshProg, "uPV"), false, pv);
+  gl.uniform3fv(gl.getUniformLocation(meshProg, "uCamPos"), cam.eye);
+  gl.uniform3fv(gl.getUniformLocation(meshProg, "uSunDir"), sunDir);
+  gl.uniform3fv(gl.getUniformLocation(meshProg, "uPlumePos"), plumePos);
+  gl.uniform1f(gl.getUniformLocation(meshProg, "uPlumeInt"), rkt.plumeInt);
+
+  // Draw Ocean Platform
+  drawMesh(meshProg, padMesh, M4.ident());
+
+  // Draw Retracting Strongback Arms
+  const armMat = M4.compose(-8.0, 38.0, 0.0, 0, 0, rkt.armAngle, 1, 1, 1);
+  drawMesh(meshProg, armMesh, armMat);
+
+  // Draw Rocket Vehicle
+  const rktMat = M4.compose(cam.rX, cam.rY, 0.0, 0, rkt.roll, -rkt.pitch, 1, 1, 1);
+  drawMesh(meshProg, rktMesh, rktMat);
+
+  // 3. Render Volumetric Particles (Cryo Vent, Water Deluge, Exhaust Smoke & Fire)
+  const numParts = buildParticles(t, rkt, cam);
+  if (numParts > 0) {
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.depthMask(false);
+    gl.useProgram(partProg);
+    gl.uniformMatrix4fv(gl.getUniformLocation(partProg, "uPV"), false, pv);
+
+    const pLoc = gl.getAttribLocation(partProg, "aPos");
+    gl.bindBuffer(gl.ARRAY_BUFFER, partPosBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, partPosData.subarray(0, numParts * 3), gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(pLoc);
+    gl.vertexAttribPointer(pLoc, 3, gl.FLOAT, false, 0, 0);
+
+    const sLoc = gl.getAttribLocation(partProg, "aSize");
+    gl.bindBuffer(gl.ARRAY_BUFFER, partSizeBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, partSizeData.subarray(0, numParts), gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(sLoc);
+    gl.vertexAttribPointer(sLoc, 1, gl.FLOAT, false, 0, 0);
+
+    const cLoc = gl.getAttribLocation(partProg, "aCol");
+    gl.bindBuffer(gl.ARRAY_BUFFER, partColBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, partColData.subarray(0, numParts * 4), gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(cLoc);
+    gl.vertexAttribPointer(cLoc, 4, gl.FLOAT, false, 0, 0);
+
+    // Draw smoke first (normal alpha blend), then additive fire core (last 320 particles)
+    const fireStart = Math.max(0, numParts - (t > 5.8 ? 320 : 0));
+    if (fireStart > 0) {
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      gl.drawArrays(gl.POINTS, 0, fireStart);
+    }
+    if (numParts > fireStart) {
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+      gl.drawArrays(gl.POINTS, fireStart, numParts - fireStart);
+    }
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+  }
+
+  // 4. Render 2D Telemetry & Mission Control HUD
+  drawHUD(t, rkt, cam);
+
+  requestAnimationFrame(render);
+}
+
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

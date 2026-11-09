@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Why Is the Sky Blue?</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR = 48;
+const cv = document.getElementById('c'), x = cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q = new URLSearchParams(location.search), T0 = parseFloat(q.get('t')||'0')||0;
+const start = performance.now();
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)), ease=t=>t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+function rnd(i){const s=Math.sin(i*127.1+311.7)*43758.5453;return s-Math.floor(s);}
+function wl(nm){ // wavelength -> rgb
+  let r=0,g=0,b=0;
+  if(nm<440){r=-(nm-440)/60;b=1}else if(nm<490){g=(nm-440)/50;b=1}else if(nm<510){g=1;b=-(nm-510)/20}
+  else if(nm<580){r=(nm-510)/70;g=1}else if(nm<645){r=1;g=-(nm-645)/65}else r=1;
+  return `rgb(${r*255|0},${g*255|0},${b*255|0})`;
+}
+function txt(s,X,Y,size,col,a,align,w){x.globalAlpha=a;x.fillStyle=col||'#fff';x.font=`${w||600} ${size}px Helvetica,Arial,sans-serif`;x.textAlign=align||'center';x.fillText(s,X,Y);x.globalAlpha=1;}
+function fade(lt,len){return cl(lt/0.8)*cl((len-lt)/0.8);}
+function sky(top,bot){const g=x.createLinearGradient(0,0,0,720);g.addColorStop(0,top);g.addColorStop(1,bot);x.fillStyle=g;x.fillRect(0,0,1280,720);}
+function sun(X,Y,R,col){const g=x.createRadialGradient(X,Y,0,X,Y,R*4);g.addColorStop(0,col);g.addColorStop(.25,col);g.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=g;x.beginPath();x.arc(X,Y,R*4,0,7);x.fill();}
+function caption(s,lt,len){const a=fade(lt,len);x.globalAlpha=a*.55;x.fillStyle='#000';x.fillRect(0,640,1280,80);txt(s,640,690,26,'#fff',a,'center',400);}
+
+const scenes=[
+[0,7,(t,L)=>{ // hook
+  const k=ease(cl(t/4));
+  sky('#0a0f2a','#000');
+  x.globalAlpha=k;sky('#2a6fd6','#a8d4ff');x.globalAlpha=1;
+  sun(1050,140,50,'#fffbe8');
+  txt('Sunlight is white.',640,300,56,'#fff',cl(t/1)*fade(t,L));
+  txt('So why is the sky blue?',640,380,64,'#fff',cl((t-1.8)/1)*fade(t,L),'center',800);
+  txt('— and why not violet?',640,440,30,'#e0d0ff',cl((t-3.8)/1)*fade(t,L),'center',400);
+}],
+[7,15,(t,L)=>{ // white light is a mix
+  sky('#05060c','#0b0d18');const a=fade(t,L);x.globalAlpha=a;
+  x.strokeStyle='#fff';x.lineWidth=6;x.beginPath();x.moveTo(0,360);x.lineTo(520,360);x.stroke();
+  x.fillStyle='rgba(200,220,255,.25)';x.strokeStyle='#cde';x.lineWidth=2;
+  x.beginPath();x.moveTo(600,230);x.lineTo(500,450);x.lineTo(700,450);x.closePath();x.fill();x.stroke();
+  const k=ease(cl((t-.8)/2));
+  for(let i=0;i<40;i++){const nm=400+i*7.5;x.strokeStyle=wl(nm);x.lineWidth=4;x.beginPath();x.moveTo(600,370);
+    x.lineTo(600+680*k,370+(i-20)*9*k-40*k);x.stroke();}
+  x.globalAlpha=1;
+  txt('400 nm',1240,370-40-180,20,'#bbf',a*k,'right',400);txt('700 nm',1240,370-40+180,20,'#fbb',a*k,'right',400);
+  txt('White light = every color mixed together',640,90,40,'#fff',a);
+  caption('Newton showed this with a prism in 1666 — each color is a different wavelength.',t,L);
+}],
+[15,25,(t,L)=>{ // Rayleigh scattering
+  sky('#04060f','#0a1020');const a=fade(t,L);
+  txt('Air molecules scatter short waves far more',640,80,38,'#fff',a);
+  // molecules
+  for(let i=0;i<70;i++){x.globalAlpha=a*.5;x.fillStyle='#889';x.beginPath();x.arc(80+rnd(i)*1120,150+rnd(i+9)*300,3,0,7);x.fill();}
+  // photons
+  for(let i=0;i<60;i++){
+    const blue=i%2==0,ph=((t*0.25+rnd(i+50))%1),y0=170+rnd(i+3)*260;
+    const scat=blue?rnd(i+7)<.75:rnd(i+7)<.13,sx=0.25+rnd(i+11)*.5;
+    let px=ph*1280,py=y0;
+    if(scat&&ph>sx){const d=(ph-sx)*1280,an=rnd(i+20)*6.28;px=sx*1280+Math.cos(an)*d;py=y0+Math.sin(an)*d;}
+    x.globalAlpha=a;x.fillStyle=blue?'#4d8bff':'#ff5a3c';x.beginPath();x.arc(px,py,5,0,7);x.fill();
+  }
+  // graph
+  const gx=760,gy=600,gw=420,gh=130;x.globalAlpha=a;x.strokeStyle='#667';x.lineWidth=1;x.strokeRect(gx,gy-gh,gw,gh);
+  x.lineWidth=3;x.beginPath();for(let i=0;i<=60;i++){const nm=400+i*5,v=Math.pow(400/nm,4);x.strokeStyle=wl(nm);
+    x.lineTo(gx+i*7,gy-v*gh);}x.stroke();x.globalAlpha=1;
+  txt('Scattering ∝ 1 / wavelength⁴',gx+gw/2,gy-gh-12,20,'#ccd',a,'center',400);
+  txt('Blue (450 nm) scatters ~6× more than red (700 nm)',80,520,26,'#9cf',a*cl((t-2)/1),'left',600);
+  txt('Like a pinball: small fast bounces vs. a bowling ball rolling straight',80,560,20,'#ccc',a*cl((t-4)/1),'left',400);
+  caption('Lord Rayleigh, Philosophical Magazine, 1871',t,L);
+}],
+[25,35,(t,L)=>{ // why not violet
+  sky('#06040e','#0c0a18');const a=fade(t,L);
+  txt('Counter-intuitive: violet scatters even MORE',640,80,38,'#e4d4ff',a);
+  const items=[['1','Sunlight contains less violet than blue','#b8a0ff'],['2','Some violet is absorbed high in the atmosphere','#a6b0ff'],['3','Our eyes are far less sensitive to violet','#9cc4ff']];
+  items.forEach((it,i)=>{const k=cl((t-1-i*1.6)/.8);x.globalAlpha=a*k;x.fillStyle=it[2];x.beginPath();x.arc(150,190+i*90,26,0,7);x.fill();x.globalAlpha=1;
+    txt(it[0],150,199+i*90,26,'#000',a*k,'center',800);txt(it[1],200,200+i*90,28,'#fff',a*k,'left',400);});
+  const k=cl((t-6)/1.2);
+  const g=x.createLinearGradient(360,480,920,480);g.addColorStop(0,'#7a4dff');g.addColorStop(1,'#5fa8ff');
+  x.globalAlpha=a*k;x.fillStyle=g;x.fillRect(360,470,280,70);x.fillStyle='#8fc4ff';x.fillRect(680,470,240,70);x.globalAlpha=1;
+  txt('scattered light',500,565,18,'#ccc',a*k,'center',400);txt('what we perceive',800,565,18,'#ccc',a*k,'center',400);
+  txt('→',660,515,30,'#fff',a*k);
+  caption('Result: a pale sky blue. G. S. Smith, American Journal of Physics 73, 590 (2005)',t,L);
+}],
+[35,42,(t,L)=>{ // sunset
+  const a=fade(t,L),k=ease(cl(t/5));
+  sky(`rgb(${30+40*k|0},${90-50*k|0},${200-130*k|0})`,`rgb(${160+90*k|0},${200-70*k|0},${255-200*k|0})`);
+  sun(640,180+360*k,45,`rgb(255,${250-120*k|0},${220-200*k|0})`);
+  x.fillStyle='#0a0a12';x.fillRect(0,600,1280,120);
+  x.globalAlpha=a;x.strokeStyle='rgba(255,255,255,.6)';x.setLineDash([8,8]);x.lineWidth=2;
+  x.beginPath();x.moveTo(640,180+360*k);x.lineTo(640,640);x.stroke();x.setLineDash([]);x.globalAlpha=1;
+  txt('At sunset, light crosses ~40× more air',640,80,38,'#fff',a);
+  txt('Blue is scattered away en route — reds and oranges get through',640,130,26,'#ffe',a*cl((t-1.5)/1),'center',400);
+  caption('Same physics, longer path: that is why sunsets glow red.',t,L);
+}],
+[42,48,(t,L)=>{ // sources
+  sky('#05060c','#000');const a=fade(t,L);
+  txt('Sources',640,150,44,'#fff',a,'center',800);
+  ['Lord Rayleigh (1871). On the light from the sky. Phil. Mag. 41, 107–120.',
+   'G. S. Smith (2005). Human color vision and the unsaturated blue color',
+   '   of the daytime sky. American Journal of Physics 73(7), 590–597.',
+   'C. F. Bohren & D. R. Huffman (1983). Absorption and Scattering of Light',
+   '   by Small Particles. Wiley (textbook).']
+   .forEach((s,i)=>txt(s,170,250+i*50,24,'#cdd',a*cl((t-.4-i*.3)/.6),'left',400));
+  txt('The sky is blue because air is made of tiny molecules — and our eyes do the rest.',640,600,24,'#9cf',a*cl((t-2)/1));
+}]
+];
+function frame(){
+  const T=((performance.now()-start)/1000+T0)%DUR;
+  x.clearRect(0,0,1280,720);
+  for(const s of scenes)if(T>=s[0]&&T<s[1])s[2](T-s[0],s[1]-s[0]);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

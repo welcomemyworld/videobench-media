@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+window.DUR=30;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px'}
+fit();addEventListener('resize',fit);
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t')||0)||0,t0=performance.now();
+const E=t=>t<0?0:t>1?1:1-Math.pow(1-t,3);
+const cl=(v,a,b)=>Math.max(a,Math.min(b,v));
+const P=[];for(let i=0;i<160;i++)P.push({x:Math.random()*1280,y:Math.random()*720,z:Math.random()*2+.3,p:Math.random()*6});
+function seg(t,a,b){return cl((t-a)/(b-a),0,1)}
+function txt(s,X,Y,size,a,col,w,sp){x.save();x.globalAlpha=a;x.fillStyle=col||'#fff';x.font=(w||800)+' '+size+'px Helvetica,Arial,sans-serif';x.textAlign='center';x.textBaseline='middle';if(x.letterSpacing!==undefined)x.letterSpacing=(sp||0)+'px';x.fillText(s,X,Y);x.restore()}
+function scene(t,a,b,fn){if(t>=a&&t<b){const k=(t-a)/(b-a),i=E(seg(t,a,a+.8)),o=1-E(seg(t,b-.6,b));fn(k,Math.min(i,o),t-a)}}
+function bg(t){
+const g=x.createRadialGradient(640+Math.sin(t*.3)*200,360,50,640,360,900);
+const h=(220+t*4)%360;g.addColorStop(0,`hsl(${h},70%,18%)`);g.addColorStop(1,'#04040a');
+x.fillStyle=g;x.fillRect(0,0,1280,720);
+x.strokeStyle='rgba(120,160,255,.07)';x.lineWidth=1;
+for(let i=-20;i<20;i++){x.beginPath();x.moveTo(640+i*80,720);x.lineTo(640+i*8,380);x.stroke()}
+for(let j=0;j<12;j++){const y=380+Math.pow((j+(t*.5)%1)/12,2)*340;x.beginPath();x.moveTo(0,y);x.lineTo(1280,y);x.stroke()}
+for(const p of P){const y=(p.y-t*20*p.z+7200)%720;x.globalAlpha=.3+.3*Math.sin(t*2+p.p);x.fillStyle='#9cf';x.fillRect(p.x,y,p.z,p.z)}
+x.globalAlpha=1}
+function ring(t,r,a,col){x.save();x.globalAlpha=a;x.strokeStyle=col;x.lineWidth=3;x.beginPath();x.arc(640,360,r,t,t+Math.PI*1.4);x.stroke();x.restore()}
+function frame(){
+let t=((performance.now()-t0)/1000+off)%DUR;
+bg(t);
+scene(t,0,5,(k,a,l)=>{
+for(let i=0;i<5;i++)ring(l*(1+i*.3),80+i*50*E(seg(l,0,1.5)),a*.8,`hsl(${200+i*25},90%,65%)`);
+txt('SOMETHING NEW',640,330,92*(.9+.1*E(seg(l,0,1))),a,'#fff',900,8);
+txt('IS COMING',640,420,32,a*E(seg(l,1,2)),'#8cf',300,18)});
+scene(t,5,11,(k,a,l)=>{
+txt('Built for the',640,250,40,a,'#9ab',300,4);
+const w=['SPEED','SCALE','FUTURE'][Math.min(2,Math.floor(l/2))];
+txt(w,640,360,150,a,'#fff',900,10);
+x.globalAlpha=a;x.fillStyle='#4af';x.fillRect(640-300*E(seg(l%2,0,.6)),450,600*E(seg(l%2,0,.6)),4);x.globalAlpha=1});
+scene(t,11,18,(k,a,l)=>{
+const F=[['⚡','Lightning Fast'],['◆','Rock Solid'],['✦','Beautifully Simple']];
+F.forEach((f,i)=>{const b=E(seg(l,i*.5,i*.5+.8)),X=240+i*400,Y=360+(1-b)*80;
+x.save();x.globalAlpha=a*b;x.fillStyle='rgba(255,255,255,.06)';x.strokeStyle=`hsl(${200+i*40},90%,65%)`;x.lineWidth=2;
+x.beginPath();x.roundRect(X-170,Y-150,340,300,24);x.fill();x.stroke();x.restore();
+txt(f[0],X,Y-40,80,a*b,`hsl(${200+i*40},90%,70%)`,400);
+txt(f[1],X,Y+70,30,a*b,'#fff',700,1)})});
+scene(t,18,24,(k,a,l)=>{
+const n=Math.floor(E(seg(l,0,2.5))*100);
+txt(n+'%',640,320,200,a,'#fff',900,0);
+txt('MORE OF WHAT MATTERS',640,460,34,a,'#8cf',300,12);
+for(let i=0;i<40;i++){const an=i/40*Math.PI*2+l;x.globalAlpha=a*.6;x.fillStyle=`hsl(${190+i*4},90%,65%)`;x.beginPath();x.arc(640+Math.cos(an)*320,330+Math.sin(an)*220,3,0,7);x.fill()}x.globalAlpha=1});
+scene(t,24,30,(k,a,l)=>{
+const s=E(seg(l,0,1));
+for(let i=0;i<3;i++)ring(-l*(1+i),120+i*40,a*.7,`hsl(${210+i*30},90%,65%)`);
+x.save();x.globalAlpha=a;x.translate(640,300);x.rotate((1-s)*Math.PI);x.scale(s,s);
+const g=x.createLinearGradient(-60,-60,60,60);g.addColorStop(0,'#4af');g.addColorStop(1,'#a6f');
+x.fillStyle=g;x.beginPath();x.roundRect(-60,-60,120,120,28);x.fill();x.restore();
+txt('YOUR PRODUCT',640,440,64,a*E(seg(l,.6,1.4)),'#fff',900,10);
+txt('Build faster. Ship better.',640,505,28,a*E(seg(l,1.2,2)),'#9bd',300,4);
+txt('GET STARTED TODAY',640,600,22,a*E(seg(l,1.8,2.6))*(.7+.3*Math.sin(l*4)),'#4af',700,8)});
+const v=x.createRadialGradient(640,360,300,640,360,800);v.addColorStop(0,'rgba(0,0,0,0)');v.addColorStop(1,'rgba(0,0,0,.7)');x.fillStyle=v;x.fillRect(0,0,1280,720);
+requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

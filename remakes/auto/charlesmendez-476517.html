@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Datagran</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}#s{position:absolute;left:50%;top:50%;transform-origin:0 0}</style></head>
+<body><canvas id="s" width="1280" height="720"></canvas>
+<script>
+const W=1280,H=720,C=document.getElementById('s'),X=C.getContext('2d');
+window.DUR=48;
+function fit(){const k=Math.min(innerWidth/W,innerHeight/H);C.style.transform=`scale(${k}) translate(-50%,-50%)`;C.style.left='50%';C.style.top='50%';C.style.transform=`translate(-50%,-50%) scale(${k})`;}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),T0=performance.now()-(parseFloat(q.get('t'))||0)*1000;
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),E=t=>1-Math.pow(1-cl(t),3),ER=t=>{t=cl(t);return t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2};
+const AC='#7c5cff',AC2='#22d3ee',GR='#34d399',PK='#f472b6';
+function rr(x,y,w,h,r){X.beginPath();X.roundRect(x,y,w,h,r);}
+function txt(s,x,y,sz,c='#fff',wt=600,al='left'){X.font=`${wt} ${sz}px Inter,Segoe UI,Helvetica,Arial,sans-serif`;X.fillStyle=c;X.textAlign=al;X.fillText(s,x,y);}
+function card(x,y,w,h,a=1){X.save();X.globalAlpha*=a;X.shadowColor='rgba(124,92,255,.35)';X.shadowBlur=40;rr(x,y,w,h,18);X.fillStyle='rgba(20,18,40,.92)';X.fill();X.shadowBlur=0;X.strokeStyle='rgba(255,255,255,.1)';X.lineWidth=1;X.stroke();X.restore();}
+function bg(t){const g=X.createLinearGradient(0,0,W,H);g.addColorStop(0,'#07060f');g.addColorStop(1,'#0d0a24');X.fillStyle=g;X.fillRect(0,0,W,H);
+for(let i=0;i<3;i++){const x=W/2+Math.cos(t*.3+i*2)*400,y=H/2+Math.sin(t*.25+i*2.4)*220,r=X.createRadialGradient(x,y,0,x,y,420);r.addColorStop(0,[AC,AC2,PK][i]+'33');r.addColorStop(1,'transparent');X.fillStyle=r;X.fillRect(0,0,W,H);}
+X.strokeStyle='rgba(255,255,255,.04)';X.lineWidth=1;for(let x=(t*20)%40;x<W;x+=40){X.beginPath();X.moveTo(x,0);X.lineTo(x,H);X.stroke();}for(let y=0;y<H;y+=40){X.beginPath();X.moveTo(0,y);X.lineTo(W,y);X.stroke();}}
+function logo(x,y,s){X.save();X.translate(x,y);X.scale(s,s);const g=X.createLinearGradient(-20,-20,20,20);g.addColorStop(0,AC);g.addColorStop(1,AC2);X.fillStyle=g;rr(-20,-20,40,40,11);X.fill();txt('d',0,9,26,'#fff',800,'center');X.restore();}
+function head(n,title,sub,lt){const a=E(lt*2);X.save();X.globalAlpha=a;X.translate(0,(1-a)*20);
+txt('0'+n,80,92,16,AC2,800);txt(title,120,92,30,'#fff',800);txt(sub,80,124,17,'rgba(255,255,255,.6)',400);X.restore();
+logo(1190,80,.8);txt('datagran.io',1160,86,15,'rgba(255,255,255,.7)',600,'right');}
+function typ(s,lt,sp=30){return s.slice(0,Math.floor(cl(lt)*sp));}
+function cursor(x,y,cl2){X.save();X.translate(x,y);X.fillStyle='#fff';X.beginPath();X.moveTo(0,0);X.lineTo(0,20);X.lineTo(5,15);X.lineTo(10,24);X.lineTo(13,22);X.lineTo(8,14);X.lineTo(15,14);X.closePath();X.fill();if(cl2>0){X.strokeStyle=`rgba(124,92,255,${1-cl2})`;X.lineWidth=3;X.beginPath();X.arc(0,0,cl2*30,0,7);X.stroke();}X.restore();}
+function btn(x,y,w,h,s,p){rr(x,y,w,h,10);const g=X.createLinearGradient(x,y,x+w,y);g.addColorStop(0,AC);g.addColorStop(1,AC2);X.fillStyle=g;X.globalAlpha=.8+.2*p;X.fill();X.globalAlpha=1;txt(s,x+w/2,y+h/2+6,16,'#fff',700,'center');}
+const S=[[0,4],[4,6],[10,6],[16,6],[22,5],[27,5],[32,5],[37,6],[43,5]];
+function scene(i,t){const[s,d]=S[i],lt=t-s;return{lt,a:cl(Math.min(lt*3,(d-lt)*3))};}
+function intro(lt){const a=E(lt*1.5);X.save();X.globalAlpha=a*cl((4-lt)*3);logo(W/2,280,2.4*a);
+txt('Datagran',W/2,410,64,'#fff',800,'center');txt('Ads → Attribution → AI Agents → Revenue',W/2,456,22,'rgba(255,255,255,.7)',400,'center');
+const w=E(lt-1)*360;X.fillStyle=AC2;X.fillRect(W/2-w/2,480,w,3);X.restore();}
+function s1(lt){head(1,'Create a ChatGPT Ads campaign','Launch conversational ads in minutes',lt);
+card(80,160,620,500);txt('New Campaign · ChatGPT Ads',110,200,18,'#fff',700);
+const F=[['Campaign name','Spring Solar Leads'],['Audience','Homeowners · intent: "solar quotes"'],['Daily budget','$250'],['Ad prompt','"Get a free solar savings estimate in 60s"']];
+F.forEach((f,i)=>{const y=240+i*86;txt(f[0],110,y,13,'rgba(255,255,255,.5)',500);rr(110,y+10,560,44,10);X.fillStyle='rgba(255,255,255,.05)';X.fill();X.strokeStyle=lt>.5+i*.9&&lt<1.4+i*.9?AC:'rgba(255,255,255,.1)';X.stroke();txt(typ(f[1],(lt-.5-i*.9)/.8,f[1].length),126,y+38,16,'#fff',500);});
+const p=cl((lt-4.3)*3);btn(110,600,200,44,p>=1?'✓ Launched':'Launch campaign',p);
+card(740,160,460,500,E(lt-1));X.save();X.globalAlpha=E(lt-1);txt('Preview in ChatGPT',770,200,18,'#fff',700);
+rr(770,230,400,50,12);X.fillStyle='rgba(255,255,255,.06)';X.fill();txt('is solar worth it for my home?',790,262,15,'#ddd',400);
+rr(770,300,400,180,12);X.fillStyle='rgba(124,92,255,.15)';X.fill();txt('Sponsored',790,328,12,AC2,700);txt('BrightSun Solar',790,356,20,'#fff',700);
+txt('Get a free solar savings estimate',790,386,15,'#ccc',400);txt('in 60 seconds.',790,408,15,'#ccc',400);btn(790,428,160,36,'Get estimate',1);X.restore();
+cursor(110+E((lt-4)*2)*90,640-E((lt-4)*2)*20,cl((lt-4.4)*2));}
+function s2(lt){head(2,'Connect your metrics','One click. Every source unified.',lt);
+const src=[['ChatGPT Ads',AC],['Google Ads','#facc15'],['Meta','#60a5fa'],['HubSpot','#fb923c'],['Stripe',GR],['GA4',PK]];
+const cx=W/2,cy=410;X.save();X.globalAlpha=E(lt);logo(cx,cy,2);X.restore();
+src.forEach((s,i)=>{const an=i/6*Math.PI*2-Math.PI/2,r=230,x=cx+Math.cos(an)*r*1.4,y=cy+Math.sin(an)*r*.95,on=lt>.6+i*.5,p=cl((lt-.6-i*.5)*2);
+X.strokeStyle=s[1];X.globalAlpha=p;X.lineWidth=2;X.setLineDash([6,6]);X.lineDashOffset=-lt*40;X.beginPath();X.moveTo(x,y);X.lineTo(cx,cy);X.stroke();X.setLineDash([]);
+const k=(lt*.8+i*.17)%1;X.fillStyle=s[1];X.beginPath();X.arc(x+(cx-x)*k,y+(cy-y)*k,4,0,7);X.fill();X.globalAlpha=1;
+card(x-90,y-28,180,56,E((lt-.2-i*.3)*2));X.fillStyle=s[1];X.beginPath();X.arc(x-64,y,8,0,7);X.fill();txt(s[0],x-48,y+6,15,'#fff',600);if(on)txt('✓',x+70,y+6,16,GR,800,'right');});
+txt(`${Math.floor(cl(lt/4)*6)}/6 sources connected · ${(cl(lt/4)*1.24).toFixed(2)}M events synced`,cx,690,16,'rgba(255,255,255,.7)',500,'center');}
+function s3(lt){head(3,'Understand attribution','See which touchpoints really drive revenue',lt);
+const ch=[['ChatGPT Ads',.42,AC],['Google Search',.23,'#facc15'],['Meta',.16,'#60a5fa'],['Email',.11,PK],['Direct',.08,GR]];
+card(80,160,600,500);txt('Multi-touch attribution · Data-driven model',110,200,17,'#fff',700);
+ch.forEach((c,i)=>{const y=250+i*80,w=E((lt-.5-i*.2)*1.2)*c[1]*900;txt(c[0],110,y,15,'#ccc',500);rr(110,y+12,Math.max(w,1),30,8);X.fillStyle=c[2];X.fill();txt(Math.round(c[1]*100*cl(w/(c[1]*900)))+'%',120+w,y+34,15,'#fff',700);});
+card(720,160,480,500,E(lt-.8));X.save();X.globalAlpha=E(lt-.8);txt('Customer journey',750,200,17,'#fff',700);
+['ChatGPT Ad','Site visit','Email','Purchase'].forEach((s,i)=>{const y=250+i*95,p=cl((lt-1.2-i*.6)*2);X.globalAlpha=p;X.fillStyle=i==3?GR:AC;X.beginPath();X.arc(780,y,14,0,7);X.fill();if(i<3){X.fillStyle='rgba(255,255,255,.2)';X.fillRect(778,y+14,4,67);}txt(s,810,y+6,17,'#fff',600);txt(['Day 1','Day 2','Day 4','Day 6 · $4,800'][i],1170,y+6,14,'rgba(255,255,255,.55)',500,'right');});
+X.restore();X.globalAlpha=E(lt-4);rr(750,610,420,34,8);X.fillStyle='rgba(52,211,153,.15)';X.fill();txt('ROAS 5.8x  ·  CAC −34%',960,633,16,GR,700,'center');X.globalAlpha=1;}
+function wave(x,y,w,amp,t,c){X.strokeStyle=c;X.lineWidth=3;X.beginPath();for(let i=0;i<=w;i+=4){const v=Math.sin(i*.05+t*8)*Math.sin(i*.013+t*2)*amp;i?X.lineTo(x+i,y+v):X.moveTo(x+i,y+v);}X.stroke();}
+function s4(lt){head(4,'Connect a voice agent','Every new lead gets a call in seconds',lt);
+card(80,170,480,470);txt('Agent: "Sunny" · Voice',110,210,18,'#fff',700);
+[['Trigger','New lead from ChatGPT Ads'],['Voice','Warm · English (US)'],['Goal','Qualify & book consultation'],['Knowledge','Pricing, FAQs, CRM context']].forEach((r,i)=>{const y=260+i*70,p=E((lt-.4-i*.4)*2);X.globalAlpha=p;txt(r[0],110,y,13,'rgba(255,255,255,.5)',500);txt(r[1],110,y+26,17,'#fff',600);X.globalAlpha=1;});
+const on=lt>2.8;rr(110,580,120,36,18);X.fillStyle=on?GR:'rgba(255,255,255,.15)';X.fill();X.fillStyle='#fff';X.beginPath();X.arc(on?212:128,598,13,0,7);X.fill();txt(on?'Agent live':'Off',250,604,16,on?GR:'#aaa',700);
+const p=E(lt-1),cx=880,cy=400;X.globalAlpha=p;for(let i=0;i<3;i++){X.strokeStyle=`rgba(34,211,238,${.4-i*.12})`;X.lineWidth=2;X.beginPath();X.arc(cx,cy,90+i*40+Math.sin(lt*3+i)*8,0,7);X.stroke();}
+const g=X.createRadialGradient(cx,cy,0,cx,cy,90);g.addColorStop(0,AC2);g.addColorStop(1,AC);X.fillStyle=g;X.beginPath();X.arc(cx,cy,80,0,7);X.fill();txt('🎙',cx,cy+14,40,'#fff',400,'center');
+if(on)wave(700,580,360,18,lt,AC2);txt(on?'Calling new lead: Maria G. …':'Connecting…',cx,640,17,'#fff',600,'center');X.globalAlpha=1;}
+function bubble(x,y,w,s,who,c,p){if(p<=0)return;X.save();X.globalAlpha=E(p*2);X.translate(0,(1-E(p*2))*12);X.font='500 16px Inter,Arial';const h=56;rr(x,y,w,h,14);X.fillStyle=c;X.fill();txt(who,x+16,y+20,12,'rgba(255,255,255,.65)',700);txt(s,x+16,y+42,16,'#fff',500);X.restore();}
+function s5(lt){head(5,'The agent responds','Natural, real-time conversation',lt);
+card(240,160,800,500);wave(280,200,720,8,lt,'rgba(34,211,238,.6)');
+const M=[['Sunny (AI)','Hi Maria! Saw you asked about solar savings — got a minute?',0,AC],['Maria','Sure, my bill is around $220 a month.',1,'#334'],['Sunny (AI)','You could save ~$1,900/yr. Want a free consult Thursday?',0,AC],['Maria','Thursday at 4pm works.',1,'#334'],['Sunny (AI)','Booked ✓ Confirmation sent by SMS.',0,'#0f766e']];
+M.forEach((m,i)=>bubble(m[2]?560:280,240+i*78,m[2]?440:540,m[1],m[0],m[3],lt-.3-i*.85));}
+function s6(lt){head(6,'Automated follow-up','The right message, on the right channel',lt);
+const st=[['Call ended','Lead qualified · score 92',AC],['SMS','Reminder: consult Thu 4pm',AC2],['Email','Your personalized savings report',PK],['CRM','Deal created in HubSpot · $4,800','#fb923c']];
+st.forEach((s,i)=>{const x=90+i*285,p=E((lt-.3-i*.6)*2);X.save();X.globalAlpha=p;X.translate(0,(1-p)*30);card(x,300,250,160);X.fillStyle=s[2];rr(x+20,320,40,6,3);X.fill();txt(s[0],x+20,360,22,'#fff',700);txt(s[1],x+20,395,13,'rgba(255,255,255,.7)',500);txt(['+0s','+5m','+1h','+1h'][i],x+20,440,13,s[2],700);X.restore();
+if(i<3){X.globalAlpha=p;X.strokeStyle='rgba(255,255,255,.3)';X.lineWidth=2;X.beginPath();X.moveTo(x+252,380);X.lineTo(x+283,380);X.stroke();X.globalAlpha=1;}});
+txt('Workflow runs automatically on every lead',W/2,540,18,'rgba(255,255,255,.6)',500,'center');}
+function s7(lt){head(7,'Humans in the loop','AI handles volume. Your team handles nuance.',lt);
+card(180,170,920,470);txt('Approval queue',210,212,18,'#fff',700);
+const R=[['Maria G.','Discount request: 10% off install','Needs approval'],['James T.','Commercial roof · 40kW','Escalated to sales'],['Ana R.','Financing question','Auto-resolved']];
+R.forEach((r,i)=>{const y=245+i*110,p=E((lt-.3-i*.4)*2);X.save();X.globalAlpha=p;rr(210,y,860,90,14);X.fillStyle='rgba(255,255,255,.04)';X.fill();
+X.fillStyle=[AC,PK,GR][i];X.beginPath();X.arc(250,y+45,20,0,7);X.fill();txt(r[0][0],250,y+52,18,'#fff',800,'center');txt(r[0],290,y+38,17,'#fff',700);txt(r[1],290,y+64,14,'rgba(255,255,255,.65)',500);
+let lab=r[2];if(i==0&&lt>3)lab='✓ Approved by Alex';const done=i==2||(i==0&&lt>3);rr(860,y+28,190,34,17);X.fillStyle=done?'rgba(52,211,153,.2)':'rgba(250,204,21,.18)';X.fill();txt(lab,955,y+51,13,done?GR:'#facc15',700,'center');X.restore();});
+cursor(820+E((lt-1.8)*1.5)*120,560-E((lt-1.8)*1.5)*270,cl((lt-3)*2));}
+function s8(lt){head(8,'Analytics that close the loop','Full-funnel performance in one place',lt);
+const K=[['Revenue','$248K',GR],['Leads','3,412',AC2],['Calls answered','99.2%',AC],['Booked rate','38%',PK]];
+K.forEach((k,i)=>{const x=80+i*285,p=E((lt-.2-i*.2)*2);X.globalAlpha=p;card(x,160,260,110);txt(k[0],x+20,195,14,'rgba(255,255,255,.6)',500);txt(k[1],x+20,245,36,k[2],800);X.globalAlpha=1;});
+card(80,300,740,360);txt('Revenue by week',110,338,16,'#fff',700);const p=E((lt-.6)/2);
+X.beginPath();for(let i=0;i<=20;i++){const x=110+i*34,y=620-(60+i*10+Math.sin(i*1.3)*25)*p;i?X.lineTo(x,y):X.moveTo(x,y);}
+X.strokeStyle=AC2;X.lineWidth=3;X.stroke();X.lineTo(790,630);X.lineTo(110,630);X.closePath();const g=X.createLinearGradient(0,340,0,630);g.addColorStop(0,'rgba(34,211,238,.35)');g.addColorStop(1,'transparent');X.fillStyle=g;X.fill();
+card(850,300,350,360);txt('Funnel',880,338,16,'#fff',700);[['Impressions',1],['Clicks',.72],['Leads',.5],['Calls',.4],['Booked',.26],['Won',.16]].forEach((f,i)=>{const w=f[1]*290*E((lt-.8-i*.15)*2);rr(1025-w/2,360+i*48,Math.max(w,1),38,8);X.fillStyle=`hsl(${255-i*18},80%,${60}%)`;X.fill();X.globalAlpha=cl(w/50);txt(f[0],1025,384+i*48,13,'#fff',700,'center');X.globalAlpha=1;});}
+function outro(lt){const a=E(lt*1.5);X.globalAlpha=a;logo(W/2,250,2*a);txt('From ad to revenue —',W/2,370,46,'#fff',800,'center');
+txt('on autopilot.',W/2,425,46,AC2,800,'center');txt('Ads · Attribution · Voice Agents · Humans in the loop · Analytics',W/2,475,18,'rgba(255,255,255,.65)',500,'center');
+btn(W/2-140,520,280,54,'datagran.io',1);X.globalAlpha=1;}
+const F=[intro,s1,s2,s3,s4,s5,s6,s7,s8,outro];S.push([48,0]);S[9]=[43,5];
+function frame(){let t=((performance.now()-T0)/1000)%DUR;bg(t);
+for(let i=0;i<10;i++){const[s,d]=S[i];if(t>=s&&t<s+d){const lt=t-s,a=cl(Math.min(lt*4,(d-lt)*4));X.save();X.globalAlpha=a;F[i](lt);X.restore();
+X.fillStyle='rgba(255,255,255,.1)';X.fillRect(0,H-4,W,4);const g=X.createLinearGradient(0,0,W,0);g.addColorStop(0,AC);g.addColorStop(1,AC2);X.fillStyle=g;X.fillRect(0,H-4,W*t/DUR,4);}}
+requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

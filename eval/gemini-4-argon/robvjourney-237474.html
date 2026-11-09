@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>NO HANDS LABS // MOTION REEL</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
+  }
+  #stage {
+    width: 1280px;
+    height: 720px;
+    display: block;
+    background: #050508;
+    box-shadow: 0 0 80px rgba(0, 240, 255, 0.12);
+  }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+(() => {
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const W = 1280, H = 720;
+
+  window.DUR = 15.0;
+  const params = new URLSearchParams(window.location.search);
+  const startOffset = parseFloat(params.get('t') || '0') || 0;
+
+  function resize() {
+    const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+    canvas.style.transform = `scale(${scale})`;
+    canvas.style.transformOrigin = 'center center';
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // Math & Easing Helpers
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const invLerp = (a, b, v) => clamp((v - a) / (b - a), 0, 1);
+  const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+  const easeOutExpo = t => t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
+  const easeInOutCubic = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  const easeOutBack = t => {
+    const c1 = 1.70158, c3 = c1 + 1;
+    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+  };
+
+  function hash(n) {
+    const x = Math.sin(n * 127.1 + 311.7) * 43758.5453123;
+    return x - Math.floor(x);
+  }
+
+  // Palette
+  const COL_BG = '#05060b';
+  const COL_CYAN = '#00f2fe';
+  const COL_PINK = '#ff0854';
+  const COL_LIME = '#00ff88';
+  const COL_GOLD = '#ffbe0b';
+  const COL_WHITE = '#f4f7ff';
+
+  // Precomputed 3D Hand Wireframe (21 landmarks + forearm)
+  const handJoints = [
+    // 0: Wrist
+    [0, 1.4, 0],
+    // Thumb (1-4)
+    [-0.55, 1.05, 0.2], [-0.95, 0.65, 0.3], [-1.25, 0.25, 0.35], [-1.45, -0.1, 0.4],
+    // Index (5-8)
+    [-0.5, 0.2, 0.05], [-0.58, -0.45, 0.05], [-0.62, -0.95, 0.05], [-0.65, -1.38, 0.05],
+    // Middle (9-12)
+    [-0.15, 0.1, 0], [-0.16, -0.6, 0], [-0.16, -1.15, 0], [-0.16, -1.58, 0],
+    // Ring (13-16)
+    [0.22, 0.2, -0.05], [0.26, -0.48, -0.05], [0.29, -0.98, -0.05], [0.31, -1.38, -0.05],
+    // Pinky (17-20)
+    [0.58, 0.38, -0.1], [0.68, -0.18, -0.1], [0.75, -0.6, -0.1], [0.81, -0.95, -0.1],
+    // Forearm base (21-22)
+    [-0.38, 2.1, -0.05], [0.38, 2.1, -0.05]
+  ];
+  const handBones = [
+    [0,1],[1,2],[2,3],[3,4],
+    [0,5],[5,6],[6,7],[7,8],
+    [0,9],[9,10],[10,11],[11,12],
+    [0,13],[13,14],[14,15],[15,16],
+    [0,17],[17,18],[18,19],[19,20],
+    [5,9],[9,13],[13,17],[1,5],
+    [0,21],[0,22],[21,22]
+  ];
+
+  // Precomputed 3D Brain Swarm Nodes
+  const swarmNodes = [];
+  for (let i = 0; i < 160; i++) {
+    const u = hash(i * 3 + 1) * Math.PI * 2;
+    const v = Math.acos(2 * hash(i * 3 + 2) - 1);
+    const r = 0.75 + 0.35 * hash(i * 3 + 3);
+    let x = r * Math.sin(v) * Math.cos(u) * 1.25;
+    let y = r * Math.sin(v) * Math.sin(u) * 0.95;
+    let z = r * Math.cos(v) * 1.1;
+    // Split into two hemispheres
+    x += (x >= 0 ? 0.18 : -0.18);
+    swarmNodes.push({ x, y, z, id: i });
+  }
+
+  // Background Star / Data Field
+  const bgParticles = [];
+  for (let i = 0; i < 90; i++) {
+    bgParticles.push({
+      x: (hash(i * 11) - 0.5) * 2400,
+      y: (hash(i * 17) - 0.5) * 1400,
+      z: hash(i * 23) * 1000,
+      c: i % 3 === 0 ? COL_CYAN : (i % 5 === 0 ? COL_PINK : '#ffffff')
+    });
+  }
+
+  // Projection Helper
+  function project3D(x, y, z, rotX, rotY, rotZ, scale, cx, cy) {
+    // Rotate Y
+    let cosY = Math.cos(rotY), sinY = Math.sin(rotY);
+    let x1 = x * cosY - z * sinY;
+    let z1 = z * cosY + x * sinY;
+    // Rotate X
+    let cosX = Math.cos(rotX), sinX = Math.sin(rotX);
+    let y2 = y * cosX - z1 * sinX;
+    let z2 = z1 * cosX + y * sinX;
+    // Rotate Z
+    let cosZ = Math.cos(rotZ), sinZ = Math.sin(rotZ);
+    let x3 = x1 * cosZ - y2 * sinZ;
+    let y3 = y2 * cosZ + x1 * sinZ;
+
+    const fov = 4.5;
+    const persp = fov / (fov + z2 + 3.2);
+    return {
+      x: cx + x3 * scale * persp,
+      y: cy + y3 * scale * persp,
+      z: z2,
+      s: persp
+    };
+  }
+
+  // Draw Sci-Fi Corner Brackets
+  function drawBrackets(x, y, w, h, size, color, alpha = 1) {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    // TL
+    ctx.moveTo(x, y + size); ctx.lineTo(x, y); ctx.lineTo(x + size, y);
+    // TR
+    ctx.moveTo(x + w - size, y); ctx.lineTo(x + w, y); ctx.lineTo(x + w, y + size);
+    // BR
+    ctx.moveTo(x + w, y + h - size); ctx.lineTo(x + w, y + h); ctx.lineTo(x + w - size, y + h);
+    // BL
+    ctx.moveTo(x + size, y + h); ctx.lineTo(x, y + h); ctx.lineTo(x, y + h - size);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Draw Glitch Text
+  function drawGlitchText(text, x, y, font, color, glitchAmt, align = 'center') {
+    ctx.save();
+    ctx.font = font;
+    ctx.textAlign = align;
+    ctx.textBaseline = 'middle';
+    if (glitchAmt > 0.01) {
+      const gx = (Math.sin(performance.now() * 0.09) * 14) * glitchAmt;
+      const gy = (Math.cos(performance.now() * 0.13) * 5) * glitchAmt;
+      ctx.fillStyle = COL_PINK;
+      ctx.globalAlpha = 0.8 * glitchAmt;
+      ctx.fillText(text, x + gx, y + gy);
+      ctx.fillStyle = COL_CYAN;
+      ctx.fillText(text, x - gx, y - gy);
+    }
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = color;
+    ctx.fillText(text, x, y);
+    ctx.restore();
+  }
+
+  // Global Cyber Background Grid & Particles
+  function drawCyberBackground(t, speedMult = 1, pulse = 0) {
+    ctx.fillStyle = COL_BG;
+    ctx.fillRect(0, 0, W, H);
+
+    // Radial core glow
+    const grad = ctx.createRadialGradient(W/2, H/2, 10, W/2, H/2, 700);
+    grad.addColorStop(0, `rgba(0, 242, 254, ${0.09 + pulse * 0.12})`);
+    grad.addColorStop(0.5, `rgba(255, 8, 84, ${0.04 + pulse * 0.06})`);
+    grad.addColorStop(1, 'rgba(5, 6, 11, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Perspective Horizon Grid
+    ctx.save();
+    const horizon = H * 0.5;
+    ctx.strokeStyle = COL_CYAN;
+    ctx.lineWidth = 1;
+
+    // Floor & Ceiling Grids
+    for (let dir of [-1, 1]) {
+      for (let i = -14; i <= 14; i++) {
+        ctx.globalAlpha = 0.12 * (1 - Math.abs(i) / 15);
+        ctx.beginPath();
+        ctx.moveTo(W/2 + i * 25, horizon + dir * 40);
+        ctx.lineTo(W/2 + i * 240, dir === 1 ? H : 0);
+        ctx.stroke();
+      }
+      const scroll = (t * 2.5 * speedMult) % 1;
+      for (let j = 0; j < 10; j++) {
+        const p = Math.pow((j + scroll) / 10, 2.2);
+        const y = horizon + dir * (40 + p * (H/2 - 40));
+        ctx.globalAlpha = p * 0.2;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(W, y);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+
+    // Streaming 3D Particles
+    ctx.save();
+    for (let p of bgParticles) {
+      let z = (p.z - t * 380 * speedMult) % 1000;
+      if (z < 10) z += 1000;
+      const k = 450 / z;
+      const px = W/2 + p.x * k;
+      const py = H/2 + p.y * k;
+      if (px > 0 && px < W && py > 0 && py < H) {
+        const alpha = clamp((1000 - z) / 800, 0, 1) * 0.65;
+        ctx.fillStyle = p.c;
+        ctx.globalAlpha = alpha;
+        const s = clamp(k * 2.2, 1, 5);
+        ctx.fillRect(px, py, s, s);
+      }
+    }
+    ctx.restore();
+  }
+
+  // SCENE 1 (0.0s - 2.6s): THE OBSOLETE INPUT ("STILL USING HANDS?")
+  function renderScene1(t) {
+    const lt = t;
+    const shatterT = invLerp(1.65, 2.55, lt);
+    const introT = easeOutCubic(invLerp(0, 0.6, lt));
+
+    // Draw 3D Wireframe Hand
+    const cx = W/2, cy = H/2 + 20;
+    const rotY = Math.sin(lt * 2.2) * 0.35 + shatterT * 1.8;
+    const rotX = -0.15 + shatterT * 0.6;
+    const rotZ = Math.cos(lt * 1.5) * 0.08;
+    const scale = 155 * (0.8 + 0.2 * introT);
+
+    // Compute transformed joints
+    const pts = handJoints.map((j, idx) => {
+      let [x, y, z] = j;
+      if (shatterT > 0) {
+        const easeS = easeOutCubic(shatterT);
+        const dirX = x + (hash(idx * 7) - 0.5) * 2.5;
+        const dirY = y + (hash(idx * 13) - 0.5) * 2.5;
+        const dirZ = z + (hash(idx * 19) - 0.5) * 2.5;
+        x += dirX * easeS * 3.5;
+        y += dirY * easeS * 3.5;
+        z += dirZ * easeS * 3.5;
+      }
+      return project3D(x, y, z, rotX, rotY, rotZ, scale, cx, cy);
+    });
+
+    // Draw Bones
+    ctx.save();
+    for (let b = 0; b < handBones.length; b++) {
+      const [i1, i2] = handBones[b];
+      const p1 = pts[i1], p2 = pts[i2];
+      ctx.strokeStyle = shatterT > 0.1 ? COL_PINK : COL_CYAN;
+      ctx.globalAlpha = (1 - shatterT * 0.85) * 0.85;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      if (shatterT > 0) {
+        // Detach bones slightly during explosion
+        const mx = (p1.x + p2.x) / 2, my = (p1.y + p2.y) / 2;
+        const shrink = 1 - shatterT * 0.6;
+        ctx.moveTo(lerp(mx, p1.x, shrink), lerp(my, p1.y, shrink));
+        ctx.lineTo(lerp(mx, p2.x, shrink), lerp(my, p2.y, shrink));
+      } else {
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+      }
+      ctx.stroke();
+    }
+
+    // Draw Joints
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i];
+      ctx.fillStyle = shatterT > 0.05 ? COL_PINK : COL_WHITE;
+      ctx.globalAlpha = 1 - shatterT * 0.7;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 4.5 * p.s, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // Laser Scanline before shatter
+    if (lt < 1.75) {
+      const scanY = H * 0.18 + ((lt * 380) % (H * 0.64));
+      ctx.save();
+      ctx.strokeStyle = COL_PINK;
+      ctx.shadowColor = COL_PINK;
+      ctx.shadowBlur = 15;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(W/2 - 220, scanY);
+      ctx.lineTo(W/2 + 220, scanY);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Target Lock HUD Box
+    drawBrackets(W/2 - 230, H/2 - 230, 460, 460, 28, shatterT > 0 ? COL_PINK : COL_CYAN, 0.75);
+
+    // Typography Overlay
+    if (lt < 1.65) {
+      const glitch = lt > 1.35 ? (lt - 1.35) * 3 : 0;
+      drawGlitchText('MANUAL WORKFLOW DETECTED', W/2, 95, '700 18px monospace', COL_CYAN, glitch);
+      drawGlitchText('STILL USING HANDS?', W/2, H - 105, '900 62px sans-serif', COL_WHITE, glitch);
+    } else {
+      const stampT = easeOutBack(invLerp(1.65, 1.95, lt));
+      ctx.save();
+      ctx.translate(W/2, H/2);
+      ctx.scale(lerp(2.2, 1, stampT), lerp(2.2, 1, stampT));
+      ctx.rotate(-0.08);
+      ctx.fillStyle = 'rgba(255, 8, 84, 0.18)';
+      ctx.strokeStyle = COL_PINK;
+      ctx.lineWidth = 5;
+      ctx.fillRect(-340, -65, 680, 130);
+      ctx.strokeRect(-340, -65, 680, 130);
+      drawGlitchText('OBSOLETE INPUT', 0, 0, '900 68px sans-serif', COL_WHITE, 0.6);
+      ctx.restore();
+    }
+  }
+
+  // SCENE 2 (2.5s - 5.6s): BRAND IGNITION ("NO HANDS LABS")
+  function renderScene2(t) {
+    const lt = t - 2.5;
+    const enterT = easeOutExpo(invLerp(0, 0.7, lt));
+    const exitT = invLerp(2.7, 3.1, lt);
+
+    const cx = W/2, cy = H/2;
+
+    // Shockwave rings
+    ctx.save();
+    for (let i = 0; i < 3; i++) {
+      const rT = clamp((lt - i * 0.18) / 1.4, 0, 1);
+      if (rT > 0 && rT < 1) {
+        ctx.strokeStyle = i % 2 === 0 ? COL_CYAN : COL_PINK;
+        ctx.globalAlpha = (1 - rT) * 0.6;
+        ctx.lineWidth = (1 - rT) * 8;
+        ctx.beginPath();
+        ctx.arc(cx, cy, easeOutCubic(rT) * 650, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+
+    // Rotating Cyber Core Reactor behind text
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(lt * 0.6);
+    ctx.strokeStyle = COL_CYAN;
+    ctx.globalAlpha = 0.25 * (1 - exitT);
+    ctx.lineWidth = 2;
+    ctx.setLineDash([18, 14]);
+    ctx.beginPath();
+    ctx.arc(0, 0, 250 * enterT, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.rotate(-lt * 1.4);
+    ctx.strokeStyle = COL_PINK;
+    ctx.setLineDash([40, 25]);
+    ctx.beginPath();
+    ctx.arc(0, 0, 290 * enterT, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    // Giant Kinetic Typography
+    ctx.save();
+    const scale = lerp(0.5, 1.0, enterT) + exitT * 1.5;
+    ctx.translate(cx, cy);
+    ctx.scale(scale, scale);
+    ctx.globalAlpha = 1 - exitT;
+
+    // Top badge
+    ctx.fillStyle = COL_PINK;
+    ctx.fillRect(-165, -175, 330, 32);
+    drawGlitchText('AUTONOMOUS AI STUDIO', 0, -159, '800 16px monospace', COL_WHITE, 0);
+
+    // Main Title: NO HANDS
+    const glitch = lt < 0.35 ? 1 - lt / 0.35 : (Math.sin(lt * 12) > 0.92 ? 0.45 : 0);
+    drawGlitchText('NO HANDS', 0, -35, '900 132px sans-serif', COL_WHITE, glitch);
+
+    // Subtitle: LABS
+    ctx.letterSpacing = '18px';
+    drawGlitchText('L A B S', 0, 82, '900 74px sans-serif', COL_CYAN, glitch * 0.5);
+
+    // Slogan bar
+    const barW = 640 * easeOutCubic(invLerp(0.3, 1.0, lt));
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-barW/2, 148);
+    ctx.lineTo(barW/2, 148);
+    ctx.stroke();
+
+    if (lt > 0.45) {
+      drawGlitchText('ZERO MANUAL FRICTION  //  100% PURE EXECUTION', 0, 178, '700 18px monospace', COL_LIME, 0);
+    }
+    ctx.restore();
+  }
+
+  // SCENE 3 (5.5s - 9.1s): THE ENGINE (AUTONOMOUS PIPELINE DASHBOARD)
+  function renderScene3(t) {
+    const lt = t - 5.5;
+    const enterT = easeOutCubic(invLerp(0, 0.5, lt));
+
+    // Section Header
+    drawGlitchText('// LIVE AUTONOMOUS PIPELINE : ZERO TOUCH DEPLOYMENT', 65, 58, '700 18px monospace', COL_CYAN, 0, 'left');
+
+    const panels = [
+      { title: '01 / AI CODE SYNTHESIS', sub: 'SELF-WRITING ARCHITECTURE', col: COL_CYAN, delay: 0.0 },
+      { title: '02 / NEURAL AGENT SWARM', sub: 'PARALLEL TASK ORCHESTRATION', col: COL_PINK, delay: 0.15 },
+      { title: '03 / INSTANT SCALE', sub: 'MILLISECOND CLOUD SHIPPING', col: COL_LIME, delay: 0.30 }
+    ];
+
+    const pw = 365, ph = 520, gap = 32;
+    const startX = (W - (pw * 3 + gap * 2)) / 2;
+    const py = 105;
+
+    for (let i = 0; i < 3; i++) {
+      const p = panels[i];
+      const pT = easeOutBack(invLerp(p.delay, p.delay + 0.55, lt));
+      const px = startX + i * (pw + gap);
+      const curY = py + (1 - pT) * 120;
+
+      ctx.save();
+      ctx.globalAlpha = clamp(pT, 0, 1);
+
+      // Panel Glass Body
+      ctx.fillStyle = 'rgba(10, 14, 26, 0.86)';
+      ctx.strokeStyle = p.col;
+      ctx.lineWidth = 1.5;
+      ctx.fillRect(px, curY, pw, ph);
+      ctx.strokeRect(px, curY, pw, ph);
+
+      // Top Header Strip
+      ctx.fillStyle = p.col;
+      ctx.fillRect(px, curY, pw, 6);
+      drawBrackets(px + 8, curY + 8, pw - 16, ph - 16, 14, p.col, 0.5);
+
+      ctx.fillStyle = COL_WHITE;
+      ctx.font = '800 19px sans-serif';
+      ctx.fillText(p.title, px + 22, curY + 38);
+      ctx.fillStyle = p.col;
+      ctx.font = '600 12px monospace';
+      ctx.fillText(p.sub, px + 22, curY + 58);
+
+      // Divider
+      ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+      ctx.beginPath();
+      ctx.moveTo(px + 20, curY + 72);
+      ctx.lineTo(px + pw - 20, curY + 72);
+      ctx.stroke();
+
+      // PANEL 1 CONTENT: Self-Writing Code & AST
+      if (i === 0) {
+        const codeLines = [
+          'import { Swarm } from "@nohands/core";',
+          'const lab = new Swarm({ mode: "GOD" });',
+          'await lab.ingest("https://nohandslabs.com");',
+          'lab.synthesize({',
+          '  agents: 1024,',
+          '  humanIntervention: false,',
+          '  latency: "0.02ms",',
+          '  coverage: "100.0%"',
+          '});',
+          '// COMPILING NEURAL GRAPH...',
+          'export default lab.deployAutonomous();',
+          '>> STATUS: SHIPPING AT LIGHTSPEED'
+        ];
+        ctx.font = '600 13px monospace';
+        const visibleLines = Math.floor(lt * 5.2);
+        for (let l = 0; l < codeLines.length; l++) {
+          if (l > visibleLines) break;
+          const isLast = l === visibleLines;
+          const lineStr = codeLines[l];
+          const chars = isLast ? Math.floor(((lt * 5.2) % 1) * lineStr.length) : lineStr.length;
+          ctx.fillStyle = l === 11 ? COL_LIME : (l % 3 === 0 ? COL_CYAN : '#b8c7e0');
+          ctx.fillText(lineStr.substring(0, chars), px + 22, curY + 102 + l * 22);
+        }
+
+        // Bottom live waveform
+        ctx.strokeStyle = COL_CYAN;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let x = 0; x < pw - 44; x += 6) {
+          const wy = curY + 435 + Math.sin(x * 0.05 + lt * 12) * 22 * Math.sin(x * 0.01 - lt * 4);
+          if (x === 0) ctx.moveTo(px + 22 + x, wy);
+          else ctx.lineTo(px + 22 + x, wy);
+        }
+        ctx.stroke();
+        ctx.fillStyle = COL_WHITE;
+        ctx.font = '700 13px monospace';
+        ctx.fillText(`SYNTHESIS RATE: ${(4200 + Math.floor(lt * 890))} LOC/SEC`, px + 22, curY + 492);
+      }
+
+      // PANEL 2 CONTENT: Neural Agent Swarm Graph
+      if (i === 1) {
+        const ncx = px + pw/2, ncy = curY + 255;
+        const nodes = [];
+        for (let n = 0; n < 14; n++) {
+          const ang = (n / 14) * Math.PI * 2 + lt * (n % 2 === 0 ? 0.7 : -0.5);
+          const rad = n === 0 ? 0 : (n < 6 ? 65 : 125);
+          nodes.push({
+            x: ncx + Math.cos(ang) * rad,
+            y: ncy + Math.sin(ang) * rad
+          });
+        }
+        // Connections + Data Packets
+        ctx.lineWidth = 1.2;
+        for (let a = 0; a < nodes.length; a++) {
+          for (let b = a + 1; b < nodes.length; b++) {
+            const dist = Math.hypot(nodes[a].x - nodes[b].x, nodes[a].y - nodes[b].y);
+            if (dist < 135) {
+              ctx.strokeStyle = 'rgba(255, 8, 84, 0.28)';
+              ctx.beginPath();
+              ctx.moveTo(nodes[a].x, nodes[a].y);
+              ctx.lineTo(nodes[b].x, nodes[b].y);
+              ctx.stroke();
+
+              // Firing pulse
+              const pulseP = (lt * 2.4 + (a * b) * 0.17) % 1;
+              const qx = lerp(nodes[a].x, nodes[b].x, pulseP);
+              const qy = lerp(nodes[a].y, nodes[b].y, pulseP);
+              ctx.fillStyle = COL_WHITE;
+              ctx.fillRect(qx - 2, qy - 2, 4, 4);
+            }
+          }
+        }
+        // Draw Nodes
+        for (let n = 0; n < nodes.length; n++) {
+          ctx.fillStyle = n === 0 ? COL_CYAN : COL_PINK;
+          ctx.beginPath();
+          ctx.arc(nodes[n].x, nodes[n].y, n === 0 ? 11 : 6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = COL_WHITE;
+        ctx.font = '700 13px monospace';
+        ctx.fillText(`ACTIVE AGENTS: 1,024 // SYNC: 99.99%`, px + 22, curY + 492);
+      }
+
+      // PANEL 3 CONTENT: Velocity & Telemetry
+      if (i === 2) {
+        const gcx = px + pw/2, gcy = curY + 215;
+        const speedVal = clamp(lt / 2.2, 0, 1);
+
+        // Speedometer Arc
+        ctx.lineWidth = 14;
+        ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+        ctx.beginPath();
+        ctx.arc(gcx, gcy, 88, Math.PI * 0.75, Math.PI * 2.25);
+        ctx.stroke();
+
+        ctx.strokeStyle = COL_LIME;
+        ctx.beginPath();
+        ctx.arc(gcx, gcy, 88, Math.PI * 0.75, Math.PI * (0.75 + 1.5 * easeOutCubic(speedVal)));
+        ctx.stroke();
+
+        drawGlitchText(`${Math.floor(easeOutCubic(speedVal) * 100)}x`, gcx, gcy - 6, '900 46px sans-serif', COL_WHITE, 0);
+        drawGlitchText('VELOCITY', gcx, gcy + 30, '700 13px monospace', COL_LIME, 0);
+
+        // Telemetry Bars
+        const metrics = [
+          { label: 'AUTONOMY LEVEL', val: 1.0, col: COL_LIME },
+          { label: 'UPTIME SLA', val: 0.999, col: COL_CYAN },
+          { label: 'HUMAN BOTTLENECK', val: 0.0, col: COL_PINK }
+        ];
+        for (let m = 0; m < metrics.length; m++) {
+          const my = curY + 345 + m * 42;
+          ctx.fillStyle = '#b8c7e0';
+          ctx.font = '700 12px monospace';
+          ctx.fillText(metrics[m].label, px + 22, my);
+          const pct = m === 2 ? '0.00%' : `${(metrics[m].val * 100).toFixed(1)}%`;
+          ctx.fillStyle = metrics[m].col;
+          ctx.fillText(pct, px + pw - 75, my);
+
+          ctx.fillStyle = 'rgba(255,255,255,0.08)';
+          ctx.fillRect(px + 22, my + 8, pw - 44, 10);
+          ctx.fillStyle = metrics[m].col;
+          const bw = m === 2 ? 4 : (pw - 44) * easeOutCubic(clamp((lt - 0.4) / 1.5, 0, 1));
+          ctx.fillRect(px + 22, my + 8, bw, 10);
+        }
+        ctx.fillStyle = COL_WHITE;
+        ctx.font = '700 13px monospace';
+        ctx.fillText(`DEPLOY STATUS: PRODUCTION LIVE`, px + 22, curY + 492);
+      }
+
+      ctx.restore();
+    }
+  }
+
+  // SCENE 4 (9.0s - 12.1s): THE SINGULARITY CORE (3D AI CORTEX)
+  function renderScene4(t) {
+    const lt = t - 9.0;
+    const cx = W/2, cy = H/2;
+    const rotY = lt * 1.15;
+    const rotX = Math.sin(lt * 0.9) * 0.25;
+    const pulse = 1 + Math.sin(lt * 10) * 0.06;
+    const scale = 215 * easeOutBack(invLerp(0, 0.6, lt)) * pulse;
+
+    // Project 3D Swarm Nodes
+    const proj = swarmNodes.map(n => {
+      return project3D(n.x, n.y, n.z, rotX, rotY, 0, scale, cx, cy);
+    });
+
+    // Draw Synaptic Connections
+    ctx.save();
+    ctx.lineWidth = 1.1;
+    for (let i = 0; i < proj.length; i++) {
+      const p1 = proj[i];
+      for (let j = i + 1; j < proj.length; j += 3) {
+        const p2 = proj[j];
+        const dx = p1.x - p2.x, dy = p1.y - p2.y;
+        const distSq = dx * dx + dy * dy;
+        if (distSq < 4200) {
+          const alpha = (1 - distSq / 4200) * 0.45;
+          ctx.strokeStyle = (i + j) % 2 === 0 ? COL_CYAN : COL_PINK;
+          ctx.globalAlpha = alpha;
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.stroke();
+        }
+      }
+    }
+
+    // Draw Cortex Nodes
+    for (let i = 0; i < proj.length; i++) {
+      const p = proj[i];
+      ctx.fillStyle = i % 4 === 0 ? COL_WHITE : (i % 2 === 0 ? COL_CYAN : COL_PINK);
+      ctx.globalAlpha = clamp(p.s * 0.9, 0.2, 1);
+      const r = (i % 7 === 0 ? 4.2 : 2.5) * p.s;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // Orbiting Callout Badges
+    const callouts = [
+      { title: 'ZERO KEYSTROKES', sub: 'THOUGHT-TO-PRODUCT', x: 90, y: 165, align: 'left', col: COL_CYAN },
+      { title: 'INFINITE LEVERAGE', sub: '24/7 AUTONOMOUS OPS', x: W - 90, y: 165, align: 'right', col: COL_PINK },
+      { title: 'SELF-EVOLVING', sub: 'RECURSIVE AI LABS', x: 90, y: H - 140, align: 'left', col: COL_LIME },
+      { title: 'RAW SPEED', sub: 'NO HUMAN BOTTLENECK', x: W - 90, y: H - 140, align: 'right', col: COL_GOLD }
+    ];
+
+    for (let i = 0; i < callouts.length; i++) {
+      const c = callouts[i];
+      const cT = easeOutCubic(invLerp(0.2 + i * 0.15, 0.7 + i * 0.15, lt));
+      if (cT <= 0) continue;
+      ctx.save();
+      ctx.globalAlpha = cT;
+
+      // Connector line to brain center
+      ctx.strokeStyle = c.col;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      const elbowX = c.align === 'left' ? c.x + 240 : c.x - 240;
+      ctx.moveTo(c.x, c.y + 12);
+      ctx.lineTo(elbowX, c.y + 12);
+      ctx.lineTo(lerp(elbowX, cx, 0.45), lerp(c.y + 12, cy, 0.45));
+      ctx.stroke();
+
+      drawGlitchText(c.title, c.x, c.y - 8, '900 28px sans-serif', COL_WHITE, 0, c.align);
+      drawGlitchText(c.sub, c.x, c.y + 30, '700 14px monospace', c.col, 0, c.align);
+      ctx.restore();
+    }
+
+    // Center Singularity Flash Title
+    drawGlitchText('PURE COGNITIVE EXECUTION', cx, 68, '800 22px monospace', COL_CYAN, 0.1);
+  }
+
+  // SCENE 5 (12.0s - 15.0s): GRAND FINALE (NOHANDSLABS.COM)
+  function renderScene5(t) {
+    const lt = t - 12.0;
+    const enterT = easeOutExpo(invLerp(0, 0.8, lt));
+    const loopFade = invLerp(2.65, 3.0, lt);
+
+    const cx = W/2, cy = H/2;
+
+    // Warp Starburst Lines
+    ctx.save();
+    for (let i = 0; i < 60; i++) {
+      const ang = (i / 60) * Math.PI * 2 + lt * 0.15;
+      const r1 = 80 + ((lt * 350 + i * 30) % 550);
+      const r2 = r1 + 95;
+      ctx.strokeStyle = i % 2 === 0 ? COL_CYAN : COL_PINK;
+      ctx.globalAlpha = clamp((r1 - 80) / 400, 0, 0.5) * (1 - loopFade);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1);
+      ctx.lineTo(cx + Math.cos(ang) * r2, cy + Math.sin(ang) * r2);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(lerp(0.7, 1, enterT), lerp(0.7, 1, enterT));
+    ctx.globalAlpha = 1 - loopFade;
+
+    // Custom Geometric Emblem (Crossed-out Cyber Hand / Core)
+    const emblemY = -145;
+    ctx.strokeStyle = COL_CYAN;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    for (let k = 0; k < 6; k++) {
+      const a = (k / 6) * Math.PI * 2 - Math.PI / 2 + lt * 0.5;
+      const hx = Math.cos(a) * 52, hy = emblemY + Math.sin(a) * 52;
+      if (k === 0) ctx.moveTo(hx, hy);
+      else ctx.lineTo(hx, hy);
+    }
+    ctx.closePath();
+    ctx.stroke();
+
+    ctx.fillStyle = COL_PINK;
+    ctx.beginPath();
+    ctx.arc(0, emblemY, 16 + Math.sin(lt * 10) * 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Main Finale Brand Lockup
+    drawGlitchText('NO HANDS LABS', 0, -35, '900 92px sans-serif', COL_WHITE, lt < 0.3 ? 0.6 : 0);
+    drawGlitchText('BUILD THE FUTURE. TOUCH NOTHING.', 0, 35, '700 22px monospace', COL_CYAN, 0);
+
+    // Glowing CTA URL Pill
+    const boxW = 580, boxH = 82, boxY = 85;
+    ctx.shadowColor = COL_CYAN;
+    ctx.shadowBlur = 25 + Math.sin(lt * 8) * 10;
+    ctx.fillStyle = 'rgba(0, 242, 254, 0.12)';
+    ctx.strokeStyle = COL_CYAN;
+    ctx.lineWidth = 3;
+    ctx.fillRect(-boxW/2, boxY, boxW, boxH);
+    ctx.strokeRect(-boxW/2, boxY, boxW, boxH);
+    ctx.shadowBlur = 0;
+
+    drawBrackets(-boxW/2 - 10, boxY - 10, boxW + 20, boxH + 20, 16, COL_PINK, 0.9);
+    drawGlitchText('NOHANDSLABS.COM', 0, boxY + boxH/2 + 2, '900 44px monospace', COL_WHITE, 0.08);
+
+    // Animated Autonomous Cursor clicking the CTA
+    const curT = easeInOutCubic(invLerp(0.4, 1.2, lt));
+    const curX = lerp(380, 210, curT);
+    const curY = lerp(260, boxY + boxH/2 + 12, curT);
+    ctx.save();
+    ctx.translate(curX, curY);
+    const clickScale = (lt > 1.25 && lt < 1.5) ? 0.8 : 1.0;
+    ctx.scale(clickScale, clickScale);
+    ctx.fillStyle = COL_LIME;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, 28);
+    ctx.lineTo(8, 21);
+    ctx.lineTo(18, 28);
+    ctx.lineTo(22, 22);
+    ctx.lineTo(13, 15);
+    ctx.lineTo(24, 12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    if (lt > 1.25) {
+      const ripple = invLerp(1.25, 1.9, lt);
+      ctx.strokeStyle = COL_LIME;
+      ctx.globalAlpha = (1 - ripple) * (1 - loopFade);
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(210, boxY + boxH/2 + 12, ripple * 75, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  // Persistent Cinematic HUD & Post-FX
+  function renderHUDAndPostFX(t) {
+    // Scanlines
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.18)';
+    for (let y = 0; y < H; y += 4) {
+      ctx.fillRect(0, y, W, 1.5);
+    }
+
+    // Outer Frame HUD
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(24, 24, W - 48, H - 48);
+    drawBrackets(20, 20, W - 40, H - 40, 20, COL_CYAN, 0.6);
+
+    // Top-left & Top-right Telemetry
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.font = '600 12px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(`SYS.NODE // NOHANDSLABS.COM`, 40, 42);
+    ctx.textAlign = 'right';
+    const tc = t.toFixed(2).padStart(5, '0');
+    ctx.fillText(`AUTONOMOUS_FEED [T+${tc}s / 15.00s]`, W - 40, 42);
+
+    // Bottom Progress Timeline Bar
+    const prog = t / window.DUR;
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.fillRect(40, H - 36, W - 80, 4);
+    ctx.fillStyle = COL_CYAN;
+    ctx.fillRect(40, H - 36, (W - 80) * prog, 4);
+
+    // Scene Transition Glitch Slicing
+    const cutTimes = [2.5, 5.5, 9.0, 12.0];
+    for (let ct of cutTimes) {
+      const dist = Math.abs(t - ct);
+      if (dist < 0.14) {
+        const strength = 1 - dist / 0.14;
+        ctx.fillStyle = `rgba(0, 242, 254, ${strength * 0.22})`;
+        ctx.fillRect(0, 0, W, H);
+        // Horizontal slice displacement bars
+        for (let s = 0; s < 8; s++) {
+          const sy = hash(s * 19 + Math.floor(t * 60)) * H;
+          const sh = 8 + hash(s * 31) * 45;
+          const sx = (hash(s * 7 + Math.floor(t * 60)) - 0.5) * 90 * strength;
+          ctx.drawImage(canvas, 0, sy, W, sh, sx, sy, W, sh);
+        }
+      }
+    }
+    ctx.restore();
+  }
+
+  function frame(now) {
+    const elapsed = (now / 1000) + startOffset;
+    const t = elapsed % window.DUR;
+
+    // Background speed reacts to scene energy
+    const bgSpeed = t > 12.0 ? 2.5 : (t > 5.5 ? 1.6 : 1.0);
+    const pulse = Math.abs(Math.sin(t * Math.PI * 2));
+    drawCyberBackground(t, bgSpeed, pulse);
+
+    if (t < 2.55) {
+      renderScene1(t);
+    } else if (t < 5.55) {
+      renderScene2(t);
+    } else if (t < 9.05) {
+      renderScene3(t);
+    } else if (t < 12.05) {
+      renderScene4(t);
+    } else {
+      renderScene5(t);
+    }
+
+    renderHUDAndPostFX(t);
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

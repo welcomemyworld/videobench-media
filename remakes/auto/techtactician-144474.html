@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Slideforge — Launch</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=32;
+const c=document.getElementById('c'),x=c.getContext('2d'),W=1280,H=720;
+function fit(){const s=Math.min(innerWidth/W,innerHeight/H);c.style.width=W*s+'px';c.style.height=H*s+'px'}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)||0;let t0=null;
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const eo=v=>1-Math.pow(1-cl(v),3), eio=v=>{v=cl(v);return v<.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2};
+const back=v=>{v=cl(v);const s=1.7;return 1+(s+1)*Math.pow(v-1,3)+s*Math.pow(v-1,2)};
+const F='"Inter","Helvetica Neue",Arial,sans-serif';
+function rr(X,Y,w,h,r){x.beginPath();x.roundRect(X,Y,w,h,r)}
+function txt(s,X,Y,sz,col,wt=700,al='center',a=1){x.globalAlpha=a;x.fillStyle=col;x.font=`${wt} ${sz}px ${F}`;x.textAlign=al;x.textBaseline='middle';x.fillText(s,X,Y);x.globalAlpha=1}
+const OR='#ff6a2b',AM='#ffb547',BG='#0b0b12';
+function grad(X,Y,w,h){const g=x.createLinearGradient(X,Y,X+w,Y+h);g.addColorStop(0,OR);g.addColorStop(1,AM);return g}
+// background
+const sparks=[...Array(90)].map((_,i)=>({x:Math.random()*W,y:Math.random()*H,s:Math.random()*2+.5,v:Math.random()*20+8,p:Math.random()*6}));
+function bg(t){x.fillStyle=BG;x.fillRect(0,0,W,H);
+ const g=x.createRadialGradient(W/2+Math.sin(t*.3)*200,H*.6,0,W/2,H*.6,700);g.addColorStop(0,'rgba(255,106,43,.18)');g.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=g;x.fillRect(0,0,W,H);
+ x.strokeStyle='rgba(255,255,255,.035)';x.lineWidth=1;for(let i=0;i<W;i+=64){x.beginPath();x.moveTo(i,0);x.lineTo(i,H);x.stroke()}for(let j=0;j<H;j+=64){x.beginPath();x.moveTo(0,j);x.lineTo(W,j);x.stroke()}
+ for(const p of sparks){const y=(p.y-t*p.v)%H;const yy=y<0?y+H:y;x.globalAlpha=.25+.25*Math.sin(t*2+p.p);x.fillStyle=AM;x.fillRect(p.x,yy,p.s,p.s)}x.globalAlpha=1}
+// logo mark: stacked slides with spark
+function logo(X,Y,s,a=1,t=0){x.save();x.translate(X,Y);x.scale(s,s);x.globalAlpha=a;
+ x.fillStyle='rgba(255,181,71,.35)';rr(-34,-20,60,44,8);x.fill();
+ x.fillStyle=grad(-26,-28,60,44);rr(-26,-28,60,44,8);x.fill();
+ x.fillStyle='#fff';x.beginPath();x.moveTo(6,-20);x.lineTo(-4,-3);x.lineTo(4,-3);x.lineTo(-2,12);x.lineTo(14,-8);x.lineTo(5,-8);x.lineTo(12,-20);x.closePath();x.fill();x.restore()}
+// a slide thumbnail
+const themes=[['#111827','#ff6a2b','#fff'],['#f8f5ef','#1f6feb','#111'],['#0f2a24','#3ddc97','#eafff5'],['#1d1238','#c084fc','#fff'],['#fff','#ef4444','#111'],['#0c1a33','#38bdf8','#fff']];
+function slide(X,Y,w,h,th,kind,a=1,p=1){x.save();x.globalAlpha=a;const [b,ac,fg]=themes[th%6];
+ x.shadowColor='rgba(0,0,0,.5)';x.shadowBlur=30;x.shadowOffsetY=10;x.fillStyle=b;rr(X,Y,w,h,w*.03);x.fill();x.shadowColor='transparent';
+ x.save();rr(X,Y,w,h,w*.03);x.clip();
+ const u=w/100;x.fillStyle=ac;x.fillRect(X+6*u,Y+8*u,14*u*p,1.4*u);
+ x.fillStyle=fg;x.globalAlpha=a*.95;x.fillRect(X+6*u,Y+12*u,46*u*p,4*u);x.globalAlpha=a*.4;x.fillRect(X+6*u,Y+19*u,34*u*p,2*u);
+ if(kind%3==0){for(let i=0;i<5;i++){const hh=(8+((i*37+th*13)%18))*u*p;x.globalAlpha=a*(i==3?1:.5);x.fillStyle=ac;x.fillRect(X+58*u+i*7*u,Y+46*u-hh,5*u,hh)}}
+ else if(kind%3==1){x.globalAlpha=a;x.fillStyle=ac;x.beginPath();x.arc(X+75*u,Y+30*u,14*u*p,0,6.28);x.fill();x.globalAlpha=a*.4;x.fillStyle=fg;for(let i=0;i<3;i++)x.fillRect(X+6*u,Y+(30+i*6)*u,40*u*p,1.6*u)}
+ else{x.globalAlpha=a;for(let i=0;i<3;i++){x.fillStyle=ac;x.globalAlpha=a*(.3+i*.25);rr(X+(6+i*30)*u,Y+30*u,26*u*p,18*u,u);x.fill()}}
+ x.restore();x.restore()}
+// scenes
+function s1(t){// logo reveal 0-4.5
+ const p=back(t/1.1),a=cl((4.5-t)/.5);
+ if(t<1){x.strokeStyle=`rgba(255,181,71,${1-t})`;x.lineWidth=3;x.beginPath();x.arc(W/2,H/2,t*500,0,6.28);x.stroke()}
+ logo(W/2-170*eo((t-1)/.8),H/2,2.2*p,a);
+ x.save();x.beginPath();x.rect(W/2-110,0,600,H);x.clip();
+ txt('Slideforge',W/2-110+260*eo((t-1)/.8)-200*(1-eo((t-1)/.8)),H/2,92,'#fff',800,'left',a*cl((t-1)/.5));x.restore();
+ txt('INTRODUCING',W/2,H/2-110,18,AM,600,'center',a*cl((t-1.6)/.5));
+}
+function s2(t){// tagline 4.5-9
+ const a=cl(t/.4)*cl((4.5-t)/.4);const w=['Decks','that','used','to','take','days.'];
+ let X=W/2-330;w.forEach((s,i)=>{const k=eo((t-.1*i)/.5);txt(s,X,H/2-50+30*(1-k),68,'#fff',800,'left',a*k);x.font=`800 68px ${F}`;X+=x.measureText(s+' ').width});
+ const k=eo((t-1.4)/.6);x.save();x.globalAlpha=a*k;x.font=`800 68px ${F}`;x.textAlign='center';x.textBaseline='middle';x.fillStyle=grad(W/2-300,0,600,0);x.fillText('Now forged in seconds.',W/2,H/2+50+20*(1-k));x.restore();
+ x.fillStyle=grad(0,0,W,0);x.globalAlpha=a;x.fillRect(W/2-150,H/2+110,300*eo((t-2)/.8),3);x.globalAlpha=1}
+function s3(t){// prompt -> deck 9-16.5
+ const a=cl(t/.4)*cl((7.5-t)/.4);const up=eio((t-2.8)/.7);
+ const by=H/2-20-210*up;
+ x.globalAlpha=a;x.fillStyle='rgba(255,255,255,.06)';x.strokeStyle='rgba(255,181,71,.5)';x.lineWidth=1.5;rr(W/2-380,by-36,760,72,18);x.fill();x.stroke();
+ const msg='Create a 6-slide pitch deck for an eco startup';const n=Math.floor(cl((t-.4)/1.8)*msg.length);
+ txt('✦',W/2-350,by,22,AM,700,'left',a);txt(msg.slice(0,n)+((t*2|0)%2&&t<2.6?'|':''),W/2-315,by,24,'#eee',500,'left',a);
+ const bp=t>2.4&&t<2.8?.92:1;x.save();x.translate(W/2+320,by);x.scale(bp,bp);x.fillStyle=grad(-40,-22,80,44);rr(-40,-22,80,44,12);x.fill();x.restore();txt('Forge',W/2+320,by,17,'#fff',700,'center',a);
+ txt('Describe it. Slideforge builds it.',W/2,by+80*(1-up)+H*(1-up)*0,20,'#aaa',500,'center',a*(1-up));
+ for(let i=0;i<6;i++){const col=i%3,row=i/3|0,k=back((t-3.2-i*.15)/.6);if(k<=0)continue;
+  const sx=W/2-390+col*270,sy=250+row*175;slide(sx,sy+30*(1-k),240,135,0,i,a*cl(k),eo((t-3.5-i*.15)/.8))}
+ x.globalAlpha=1;
+ if(t>5.5)txt('6 slides · 4.2s',W/2,660,18,AM,600,'center',a*cl((t-5.5)/.4));}
+function s4(t){// features 16.5-23
+ const a=cl(t/.4)*cl((6.5-t)/.4);txt('Everything you need to ship the deck',W/2,130,40,'#fff',800,'center',a*eo(t/.6));
+ const f=[['AI Layouts','Smart structure, charts and visuals generated from a single prompt.','◆'],['Brand Themes','Your fonts, colors and logo applied to every slide automatically.','●'],['Export Anywhere','Present live, or export to PowerPoint, PDF and Google Slides.','▲']];
+ f.forEach((v,i)=>{const k=back((t-.4-i*.2)/.7);if(k<=0)return;const X=W/2-570+i*390,Y=230+50*(1-k);
+  x.globalAlpha=a*cl(k);x.fillStyle='rgba(255,255,255,.05)';x.strokeStyle='rgba(255,255,255,.12)';rr(X,Y,360,330,22);x.fill();x.stroke();
+  x.fillStyle=grad(X+30,Y+30,56,56);rr(X+30,Y+30,56,56,14);x.fill();txt(v[2],X+58,Y+58,24,'#fff',700,'center',a*cl(k));
+  txt(v[0],X+30,Y+130,28,'#fff',800,'left',a*cl(k));
+  const words=v[1].split(' ');let line='',ly=Y+180;x.font=`400 18px ${F}`;
+  for(const w of words){if(x.measureText(line+w).width>300){txt(line,X+30,ly,18,'#a8a8b8',400,'left',a*cl(k));line='';ly+=28;x.font=`400 18px ${F}`}line+=w+' '}txt(line,X+30,ly,18,'#a8a8b8',400,'left',a*cl(k));
+  const hl=cl((t-2-i*1.2)/1.2);if(hl>0&&hl<1){x.globalAlpha=a*Math.sin(hl*Math.PI);x.strokeStyle=AM;x.lineWidth=2;rr(X,Y,360,330,22);x.stroke()}
+ });x.globalAlpha=1}
+function s5(t){// editor theme switch 23-28
+ const a=cl(t/.4)*cl((5-t)/.4);const k=eo(t/.8);x.save();x.globalAlpha=a;x.translate(0,40*(1-k));
+ const X=180,Y=110,w=920,h=520;x.fillStyle='#15151f';x.strokeStyle='rgba(255,255,255,.12)';rr(X,Y,w,h,18);x.fill();x.stroke();
+ ['#ff5f57','#febc2e','#28c840'].forEach((cc,i)=>{x.fillStyle=cc;x.beginPath();x.arc(X+24+i*20,Y+22,6,0,6.28);x.fill()});
+ logo(X+w/2-60,Y+22,.35,a);txt('Slideforge',X+w/2-44,Y+22,14,'#ccc',600,'left',a);
+ const th=Math.min(5,Math.floor(cl((t-1)/3)*6));
+ for(let i=0;i<4;i++){slide(X+20,Y+60+i*110,150,84,th,i,a);if(i==1){x.strokeStyle=AM;x.lineWidth=2;rr(X+18,Y+58+i*110,154,88,6);x.stroke()}}
+ slide(X+200,Y+70,520,292,th,1,a,1);
+ txt('Themes',X+760,Y+75,15,'#aaa',600,'left',a);
+ for(let i=0;i<6;i++){const tx=X+760+(i%2)*72,ty=Y+100+(i/2|0)*56;x.fillStyle=themes[i][0];rr(tx,ty,62,44,8);x.fill();x.fillStyle=themes[i][1];x.fillRect(tx+8,ty+30,30,5);if(i==th){x.strokeStyle=AM;x.lineWidth=2.5;rr(tx-3,ty-3,68,50,10);x.stroke()}}
+ const cx=X+790+(th%2)*72,cy=Y+130+(th/2|0)*56;x.fillStyle='#fff';x.beginPath();x.moveTo(cx,cy);x.lineTo(cx,cy+20);x.lineTo(cx+6,cy+15);x.lineTo(cx+14,cy+18);x.closePath();x.fill();
+ txt('One click. Every slide restyled.',X+w/2-90,Y+420,26,'#fff',800,'center',a);txt('Edit with chat, drag & drop, or both.',X+w/2-90,Y+460,17,'#999',400,'center',a);
+ x.restore()}
+function s6(t){// CTA 28-32
+ const a=cl(t/.5)*cl((4-t)/.4);const k=back(t/.8);
+ logo(W/2,H/2-120,1.6*k,a);
+ txt('Slideforge',W/2,H/2-10,72,'#fff',800,'center',a*cl((t-.3)/.5));
+ txt('Your next deck is one prompt away.',W/2,H/2+55,24,'#bbb',500,'center',a*cl((t-.6)/.5));
+ const b=eo((t-1)/.6);x.globalAlpha=a*b;x.fillStyle=grad(W/2-150,0,300,0);rr(W/2-150,H/2+110,300,58,29);x.fill();
+ txt('Try it free → slideforge.io',W/2,H/2+139,20,'#fff',700,'center',a*b);x.globalAlpha=1}
+const S=[[0,4.5,s1],[4.5,4.5,s2],[9,7.5,s3],[16.5,6.5,s4],[23,5,s5],[28,4,s6]];
+function frame(now){if(t0===null)t0=now-off*1000;const T=((now-t0)/1000)%window.DUR;
+ bg(T);for(const [s,d,f] of S)if(T>=s&&T<s+d)f(T-s);
+ // flash on cuts
+ for(const [s] of S){const d=T-s;if(d>=0&&d<.15&&s>0){x.fillStyle=`rgba(255,200,140,${.15*(1-d/.15)})`;x.fillRect(0,0,W,H)}}
+ const v=x.createRadialGradient(W/2,H/2,300,W/2,H/2,800);v.addColorStop(0,'rgba(0,0,0,0)');v.addColorStop(1,'rgba(0,0,0,.6)');x.fillStyle=v;x.fillRect(0,0,W,H);
+ requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Psychedelic Showreel 2026</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #stage {
+    width: 1280px;
+    height: 720px;
+    position: relative;
+    box-shadow: 0 0 80px rgba(255, 0, 128, 0.25);
+    transform-origin: center center;
+  }
+  canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1280px;
+    height: 720px;
+    display: block;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="glCanvas" width="1280" height="720"></canvas>
+  <canvas id="uiCanvas" width="1280" height="720"></canvas>
+</div>
+<script>
+window.DUR = 20;
+
+const stage = document.getElementById('stage');
+function resize() {
+  const s = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+  stage.style.transform = `scale(${s})`;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// --- WebGL Setup (Raymarched Psychedelic Shader) ---
+const glCanvas = document.getElementById('glCanvas');
+const gl = glCanvas.getContext('webgl', { preserveDrawingBuffer: true, antialias: true });
+
+const vsSource = `
+attribute vec2 a_pos;
+void main() {
+  gl_Position = vec4(a_pos, 0.0, 1.0);
+}
+`;
+
+const fsSource = `
+precision highp float;
+uniform float u_time;
+uniform vec2 u_res;
+uniform float u_scene;
+uniform float u_beat;
+uniform float u_kick;
+
+#define PI 3.14159265359
+#define TAU 6.28318530718
+
+mat2 rot(float a) {
+  float s = sin(a), c = cos(a);
+  return mat2(c, -s, s, c);
+}
+
+vec3 palette(float t, vec3 a, vec3 b, vec3 c, vec3 d) {
+  return a + b * cos(TAU * (c * t + d));
+}
+
+vec3 psychPal(float t) {
+  return palette(t, vec3(0.5,0.5,0.5), vec3(0.5,0.5,0.5), vec3(1.0,1.0,1.0), vec3(0.00, 0.33, 0.67));
+}
+
+vec3 acidPal(float t) {
+  return palette(t, vec3(0.5,0.5,0.5), vec3(0.5,0.5,0.5), vec3(2.0,1.0,0.0), vec3(0.5,0.20,0.25));
+}
+
+float sdOctahedron(vec3 p, float s) {
+  p = abs(p);
+  return (p.x + p.y + p.z - s) * 0.57735027;
+}
+
+float sdBox(vec3 p, vec3 b) {
+  vec3 q = abs(p) - b;
+  return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+}
+
+float sdTorus(vec3 p, vec2 t) {
+  vec2 q = vec2(length(p.xz) - t.x, p.y);
+  return length(q) - t.y;
+}
+
+float smin(float a, float b, float k) {
+  float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+  return mix(b, a, h) - k * h * (1.0 - h);
+}
+
+vec2 kaleido(vec2 uv, float n) {
+  float angle = PI / n;
+  float r = length(uv);
+  float a = atan(uv.y, uv.x) + angle;
+  a = mod(a, 2.0 * angle) - angle;
+  return r * vec2(cos(a), abs(sin(a)));
+}
+
+float map(vec3 p) {
+  float t = u_time;
+  if (u_scene < 0.5) {
+    // Scene 0: Infinite Kaleidoscopic Wormhole
+    p.z -= t * 8.0;
+    float twist = sin(p.z * 0.15 + t) * 1.2;
+    p.xy *= rot(p.z * 0.1 + twist);
+    p.xy = kaleido(p.xy, 6.0);
+    p.x -= 2.4 + sin(t * 2.0 + p.z * 0.4) * 0.5;
+    vec3 q = p;
+    q.z = mod(q.z, 2.5) - 1.25;
+    q.xy *= rot(t * 2.0);
+    float d1 = sdOctahedron(q, 0.75 + u_kick * 0.25);
+    float d2 = length(p.xy - vec2(0.8, 0.0)) - 0.18;
+    return smin(d1, d2, 0.3);
+  } else if (u_scene < 1.5) {
+    // Scene 1: Liquid Iridescent Hyper-Torus
+    p.xz *= rot(t * 0.7);
+    p.xy *= rot(t * 0.5);
+    vec3 q = p;
+    for(int i = 0; i < 3; i++) {
+      q = abs(q) - vec3(0.65, 0.65, 0.65);
+      q.xy *= rot(t * 0.4 + float(i));
+      q.yz *= rot(t * 0.3);
+    }
+    float d1 = sdTorus(p, vec2(2.0, 0.45 + 0.15 * sin(atan(p.z, p.x) * 6.0 + t * 4.0)));
+    float d2 = sdOctahedron(q, 0.8 + u_kick * 0.3);
+    float disp = sin(p.x * 4.0 + t * 3.0) * sin(p.y * 4.0 - t * 2.0) * sin(p.z * 4.0 + t) * 0.15;
+    return smin(d1, d2, 0.6) + disp;
+  } else if (u_scene < 2.5) {
+    // Scene 2: Hypnotic Cyber Lattice Matrix
+    p.xy *= rot(sin(t * 0.5) * 0.4);
+    p.z -= t * 10.0;
+    vec3 q = mod(p, 4.0) - 2.0;
+    q.xy *= rot(t + floor(p.z / 4.0) * 0.5);
+    float b = sdBox(q, vec3(0.75 + u_kick * 0.2));
+    float c1 = length(q.xy) - 0.35;
+    float c2 = length(q.yz) - 0.35;
+    float c3 = length(q.xz) - 0.35;
+    float crossTube = min(c1, min(c2, c3));
+    return max(b, -crossTube);
+  } else if (u_scene < 3.5) {
+    // Scene 3: Op-Art Moiré Vortex
+    p.z -= t * 6.0;
+    p.xy *= rot(length(p.xy) * 0.5 - t * 1.5);
+    p.xy = kaleido(p.xy, 8.0);
+    vec3 q = mod(p, 3.0) - 1.5;
+    return sdTorus(q.xzy, vec2(0.9, 0.22 + 0.1 * sin(p.z * 2.0 + t * 5.0)));
+  } else {
+    // Scene 4: Cosmic Mandala Climax
+    p.xz *= rot(t * 0.5);
+    p.yz *= rot(t * 0.4);
+    p.xy = kaleido(p.xy, 10.0);
+    p.yz = kaleido(p.yz, 6.0);
+    vec3 q = p - vec3(2.2 + sin(t * 2.5) * 0.5, 0.0, 0.0);
+    q.xy *= rot(t * 2.0);
+    float d = sdOctahedron(q, 1.1 + u_kick * 0.3);
+    float ring = sdTorus(p, vec2(2.6, 0.15));
+    return smin(d, ring, 0.45);
+  }
+}
+
+vec3 calcNormal(vec3 p) {
+  vec2 e = vec2(0.002, 0.0);
+  return normalize(vec3(
+    map(p + e.xyy) - map(p - e.xyy),
+    map(p + e.yxy) - map(p - e.yxy),
+    map(p + e.yyx) - map(p - e.yyx)
+  ));
+}
+
+vec3 renderScene(vec2 uv) {
+  float t = u_time;
+  vec3 ro = vec3(0.0, 0.0, 6.0);
+  if (u_scene > 1.5 && u_scene < 2.5) {
+    ro.xy += vec2(sin(t * 1.5), cos(t * 1.2)) * 1.2;
+  }
+  vec3 rd = normalize(vec3(uv, -1.35 + u_kick * 0.18));
+
+  float totalDist = 0.0;
+  float glow = 0.0;
+  vec3 p;
+  int steps = 0;
+
+  for(int i = 0; i < 64; i++) {
+    p = ro + rd * totalDist;
+    float d = map(p);
+    glow += exp(-abs(d) * 7.0);
+    if(abs(d) < 0.002 || totalDist > 32.0) break;
+    totalDist += d * 0.78;
+    steps = i;
+  }
+
+  // Psychedelic background
+  vec2 bgUv = kaleido(uv * rot(t * 0.3), 8.0);
+  float bgPat = sin(length(bgUv) * 18.0 - t * 6.0) * cos(atan(bgUv.y, bgUv.x) * 6.0 + t * 2.0);
+  vec3 col = psychPal(length(uv) * 0.5 - t * 0.25 + u_scene * 0.2) * (0.25 + 0.2 * bgPat);
+
+  // Op-art overlay in Scene 3
+  if (u_scene > 2.5 && u_scene < 3.5) {
+    vec2 wuv = uv * rot(length(uv) * 2.5 - t * 2.0);
+    float stripes = sin(atan(wuv.y, wuv.x) * 16.0 + length(uv) * 24.0 - t * 10.0);
+    float rings = sin(length(uv) * 35.0 + t * 8.0);
+    float moire = smoothstep(-0.2, 0.2, stripes * rings);
+    vec3 acid = acidPal(length(uv) - t * 0.5);
+    col = mix(col, mix(vec3(0.04, 0.0, 0.08), acid, moire), 0.75);
+  }
+
+  if(totalDist < 32.0) {
+    vec3 n = calcNormal(p);
+    vec3 lightDir = normalize(vec3(sin(t * 2.0), cos(t * 1.7), 1.5));
+    float diff = max(dot(n, lightDir), 0.0);
+    float fres = pow(1.0 - max(dot(n, -rd), 0.0), 3.0);
+    vec3 Iridescence = psychPal(dot(n, rd) * 1.8 + t * 0.5 + p.z * 0.08 + u_scene * 0.3);
+    vec3 ref = reflect(rd, n);
+    vec3 specCol = acidPal(ref.y * 1.5 + t * 0.6);
+    float spec = pow(max(dot(ref, lightDir), 0.0), 16.0);
+
+    vec3 surfCol = Iridescence * (diff * 0.75 + 0.25) + specCol * fres * 1.6 + vec3(1.0) * spec * 0.9;
+    float fog = exp(-totalDist * 0.075);
+    col = mix(col, surfCol, fog);
+  }
+
+  vec3 glowCol = psychPal(t * 0.35 + length(uv) * 0.6 + u_scene * 0.25);
+  col += glow * 0.032 * glowCol * (1.0 + u_kick * 0.8);
+
+  return col;
+}
+
+void main() {
+  vec2 uv = (gl_FragCoord.xy - 0.5 * u_res) / u_res.y;
+
+  // Dynamic RGB Chromatic Aberration
+  float ca = (0.004 + 0.015 * u_kick) * (0.5 + length(uv));
+  vec2 dir = normalize(uv + 0.0001) * ca;
+
+  vec3 colCenter = renderScene(uv);
+  vec3 colEdge = renderScene(uv + dir);
+
+  vec3 col = vec3(colEdge.r, colCenter.g, mix(colCenter.b, colEdge.b, 0.6));
+
+  // Scanline & subtle film grain
+  float scan = sin(gl_FragCoord.y * 1.8 + u_time * 30.0) * 0.03;
+  float hash = fract(sin(dot(gl_FragCoord.xy + u_time * 100.0, vec2(12.9898,78.233))) * 43758.5453);
+  col += scan + (hash - 0.5) * 0.04;
+
+  // Vignette
+  col *= 1.0 - 0.35 * dot(uv, uv);
+
+  // Smooth gamma & contrast
+  col = smoothstep(-0.05, 1.05, col);
+  col = pow(max(col, 0.0), vec3(0.88));
+
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+function compileShader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  return s;
+}
+
+const prog = gl.createProgram();
+gl.attachShader(prog, compileShader(gl.VERTEX_SHADER, vsSource));
+gl.attachShader(prog, compileShader(gl.FRAGMENT_SHADER, fsSource));
+gl.linkProgram(prog);
+gl.useProgram(prog);
+
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+
+const aPos = gl.getAttribLocation(prog, 'a_pos');
+gl.enableVertexAttribArray(aPos);
+gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+const uTime = gl.getUniformLocation(prog, 'u_time');
+const uRes = gl.getUniformLocation(prog, 'u_res');
+const uScene = gl.getUniformLocation(prog, 'u_scene');
+const uBeat = gl.getUniformLocation(prog, 'u_beat');
+const uKick = gl.getUniformLocation(prog, 'u_kick');
+
+// --- 2D Canvas Motion Graphics Overlay ---
+const uiCanvas = document.getElementById('uiCanvas');
+const ctx = uiCanvas.getContext('2d');
+
+const W = 1280, H = 720;
+const BPM = 135; // 2.25 beats per second
+
+function easeOutExpo(x) {
+  return x === 1 ? 1 : 1 - Math.pow(2, -10 * x);
+}
+function easeInOutCubic(x) {
+  return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+}
+function hsl(h, s, l, a = 1) {
+  return `hsla(${((h % 360) + 360) % 360}, ${s}%, ${l}%, ${a})`;
+}
+
+function drawStarburst(x, y, rInner, rOuter, points, rotAngle, fill, stroke, lineW = 2) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotAngle);
+  ctx.beginPath();
+  for (let i = 0; i < points * 2; i++) {
+    const r = i % 2 === 0 ? rOuter : rInner;
+    const a = (i * Math.PI) / points;
+    if (i === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+    else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+  }
+  ctx.closePath();
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.lineWidth = lineW; ctx.strokeStyle = stroke; ctx.stroke(); }
+  ctx.restore();
+}
+
+function drawCheckeredRibbon(y, height, cols, offset, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const cw = W / cols;
+  const rows = 2;
+  const rh = height / rows;
+  for (let r = 0; r < rows; r++) {
+    for (let c = -2; c < cols + 2; c++) {
+      if ((r + c) % 2 === 0) {
+        const x = c * cw + (offset % (cw * 2));
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(x, y + r * rh, cw + 0.5, rh + 0.5);
+      } else {
+        const x = c * cw + (offset % (cw * 2));
+        ctx.fillStyle = '#080010';
+        ctx.fillRect(x, y + r * rh, cw + 0.5, rh + 0.5);
+      }
+    }
+  }
+  ctx.restore();
+}
+
+function drawMeltingEye(x, y, scale, t, kick) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+
+  // Outer rays
+  const rays = 24;
+  for (let i = 0; i < rays; i++) {
+    const a = (i / rays) * Math.PI * 2 + t * 0.8;
+    const len = 70 + Math.sin(i * 3 + t * 6) * 20 + kick * 25;
+    ctx.strokeStyle = hsl(t * 120 + i * 15, 100, 65, 0.85);
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * 48, Math.sin(a) * 28);
+    ctx.lineTo(Math.cos(a) * len, Math.sin(a) * (len * 0.7));
+    ctx.stroke();
+  }
+
+  // Sclera
+  ctx.beginPath();
+  ctx.moveTo(-65, 0);
+  ctx.bezierCurveTo(-30, -44 - kick * 10, 30, -44 - kick * 10, 65, 0);
+  ctx.bezierCurveTo(30, 44 + kick * 10, -30, 44 + kick * 10, -65, 0);
+  ctx.closePath();
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = '#ff007f';
+  ctx.stroke();
+
+  // Hypnotic Iris
+  const px = Math.sin(t * 3.5) * 10;
+  const py = Math.cos(t * 2.7) * 5;
+  for (let r = 26; r > 4; r -= 5) {
+    ctx.beginPath();
+    ctx.arc(px, py, r, 0, Math.PI * 2);
+    ctx.fillStyle = hsl(t * 180 + r * 25, 100, 50);
+    ctx.fill();
+  }
+
+  // Pupil
+  ctx.beginPath();
+  ctx.arc(px, py, 8 + kick * 4, 0, Math.PI * 2);
+  ctx.fillStyle = '#000';
+  ctx.fill();
+
+  // Specular glint
+  ctx.beginPath();
+  ctx.arc(px - 7, py - 7, 4, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff';
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawKineticStack(text, x, y, size, t, kick, layers = 7, spread = 14) {
+  ctx.save();
+  ctx.font = `900 ${size}px "Arial Black", Impact, system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  for (let i = layers; i >= 0; i--) {
+    const prog = i / layers;
+    const ox = Math.sin(t * 5 - i * 0.45) * spread * prog;
+    const oy = Math.cos(t * 4 - i * 0.45) * spread * prog + i * 2.5;
+    const sc = 1 + (layers - i) * 0.008 * kick;
+
+    ctx.save();
+    ctx.translate(x + ox, y + oy);
+    ctx.scale(sc, sc);
+
+    if (i === 0) {
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowColor = hsl(t * 120, 100, 60);
+      ctx.shadowBlur = 25;
+      ctx.fillText(text, 0, 0);
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = '#000000';
+      ctx.strokeText(text, 0, 0);
+    } else {
+      ctx.lineWidth = 3.5;
+      ctx.strokeStyle = hsl(t * 140 + i * 28, 100, 58, 1 - prog * 0.65);
+      ctx.strokeText(text, 0, 0);
+    }
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+function drawCircularTicker(text, cx, cy, radius, rotSpeed, t, fontSize, color) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(t * rotSpeed);
+  ctx.font = `800 ${fontSize}px "Arial Black", system-ui, sans-serif`;
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  const count = text.length;
+  const step = (Math.PI * 2) / count;
+  for (let i = 0; i < count; i++) {
+    ctx.save();
+    ctx.rotate(i * step);
+    ctx.translate(0, -radius);
+    ctx.fillText(text[i], 0, 0);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+function drawHUD(t, sceneIdx, beat, kick) {
+  ctx.save();
+  const hue = (t * 90) % 360;
+
+  // Outer Frame Marks
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+  ctx.lineWidth = 2;
+  const pad = 28;
+  const corner = 22;
+
+  // 4 Corners
+  const corners = [
+    [pad, pad, 1, 1],
+    [W - pad, pad, -1, 1],
+    [pad, H - pad, 1, -1],
+    [W - pad, H - pad, -1, -1]
+  ];
+  corners.forEach(([cx, cy, dx, dy]) => {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + dy * corner);
+    ctx.lineTo(cx, cy);
+    ctx.lineTo(cx + dx * corner, cy);
+    ctx.stroke();
+  });
+
+  // Top Header Metadata
+  ctx.font = '700 12px "Courier New", monospace';
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'left';
+  ctx.fillText('SHOWREEL // MOTION DESIGN 2026', pad + 14, pad + 16);
+
+  // Beat pulse indicator dots
+  for (let i = 0; i < 4; i++) {
+    const active = (Math.floor(beat) % 4) === i;
+    ctx.fillStyle = active ? hsl(hue, 100, 60) : 'rgba(255,255,255,0.25)';
+    ctx.beginPath();
+    ctx.arc(pad + 265 + i * 16, pad + 12, active ? 5 : 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Right Timecode & Scene Tag
+  const sec = Math.floor(t);
+  const frames = Math.floor((t % 1) * 60);
+  const tc = `00:00:${String(sec).padStart(2, '0')}:${String(frames).padStart(2, '0')}`;
+  const sceneNames = [
+    '01 / KALEIDO VORTEX',
+    '02 / LIQUID HYPER-TORUS',
+    '03 / PROCEDURAL SYSTEMS',
+    '04 / OP-ART OVERDRIVE',
+    '05 / TRANSCENDENCE'
+  ];
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = hsl(hue + 60, 100, 75);
+  ctx.fillText(sceneNames[sceneIdx] || sceneNames[0], W - pad - 115, pad + 16);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(tc, W - pad - 14, pad + 16);
+
+  // Bottom Audio/Motion Waveform Visualizer
+  const bars = 36;
+  const barW = 4;
+  const gap = 3;
+  const startX = pad + 14;
+  const baseY = H - pad - 12;
+  for (let i = 0; i < bars; i++) {
+    const h = 4 + Math.abs(Math.sin(t * 10 + i * 0.45)) * (14 + kick * 16);
+    ctx.fillStyle = hsl(hue + i * 6, 100, 60, 0.85);
+    ctx.fillRect(startX + i * (barW + gap), baseY - h, barW, h);
+  }
+
+  // Bottom Right Progress Bar
+  const progW = 220;
+  const progX = W - pad - 14 - progW;
+  const progY = H - pad - 16;
+  ctx.fillStyle = 'rgba(255,255,255,0.2)';
+  ctx.fillRect(progX, progY, progW, 4);
+  ctx.fillStyle = hsl(hue, 100, 60);
+  ctx.fillRect(progX, progY, progW * (t / window.DUR), 4);
+
+  ctx.restore();
+}
+
+// --- Scene Specific 2D Motion Graphics Choreography ---
+function renderMotionGraphics(t, sceneIdx, localT, beat, kick) {
+  ctx.clearRect(0, 0, W, H);
+
+  const cx = W / 2;
+  const cy = H / 2;
+  const enter = easeOutExpo(Math.min(1, localT / 0.6));
+  const exit = localT > 3.5 ? easeInOutCubic((localT - 3.5) / 0.5) : 0;
+  const vis = enter * (1 - exit);
+
+  // Scene 0 (0s - 4s): HYPNOTIC SHOWREEL INTRO
+  if (sceneIdx === 0) {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(0.85 + 0.15 * vis, 0.85 + 0.15 * vis);
+    ctx.translate(-cx, -cy);
+
+    // Rotating sacred geometry rings
+    for (let i = 0; i < 3; i++) {
+      const r = 210 + i * 48 + kick * 14;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(t * (i % 2 === 0 ? 0.5 : -0.7));
+      ctx.strokeStyle = hsl(t * 100 + i * 60, 100, 65, 0.65 * vis);
+      ctx.lineWidth = i === 1 ? 3 : 1.5;
+      ctx.setLineDash(i === 1 ? [18, 12] : [6, 14]);
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    drawCircularTicker(
+      '★ MOTION DESIGN SHOWREEL ★ PSYCHEDELIC VISUAL ENGINEERING ',
+      cx, cy, 240 + kick * 8, 0.35, t, 15, hsl(t * 90 + 180, 100, 75, vis)
+    );
+
+    // Floating Starbursts
+    drawStarburst(210, 185, 22, 52 + kick * 12, 12, t * 1.5, hsl(t * 150, 100, 55, vis), '#fff', 2);
+    drawStarburst(W - 210, H - 185, 22, 52 + kick * 12, 12, -t * 1.5, hsl(t * 150 + 120, 100, 55, vis), '#fff', 2);
+
+    // Kinetic Hero Typography
+    drawKineticStack('PSYCHEDELIC', cx, cy - 52, 86, t, kick, 8, 16);
+    drawKineticStack('MOTION REEL', cx, cy + 48, 86, t + 0.4, kick, 8, 16);
+
+    // Pill Subtitle Tag
+    ctx.save();
+    ctx.translate(cx, cy + 142);
+    ctx.fillStyle = hsl(t * 120 + 40, 100, 50, vis);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(-170, -18, 340, 36, 18);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#000';
+    ctx.font = '900 15px "Arial Black", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('NEXT-GEN CREATIVE DIRECTION', 0, 1);
+    ctx.restore();
+
+    ctx.restore();
+  }
+
+  // Scene 1 (4s - 8s): LIQUID 3D + FLOATING EYES & SPEC CARDS
+  else if (sceneIdx === 1) {
+    // Orbiting Melting Eyes
+    for (let i = 0; i < 4; i++) {
+      const a = t * 0.9 + (i * Math.PI) / 2;
+      const ex = cx + Math.cos(a) * 370;
+      const ey = cy + Math.sin(a * 2) * 175;
+      drawMeltingEye(ex, ey, (0.65 + 0.1 * Math.sin(t * 4 + i)) * vis, t + i, kick);
+    }
+
+    // Center Split Typography framing the 3D Hyper-Torus
+    ctx.save();
+    ctx.globalAlpha = vis;
+    drawKineticStack('LIQUID', 250, cy - 35, 68, t, kick, 6, 12);
+    drawKineticStack('DREAMS', 250, cy + 40, 68, t + 0.2, kick, 6, 12);
+
+    drawKineticStack('3D + 2D', W - 250, cy - 35, 68, t + 0.5, kick, 6, 12);
+    drawKineticStack('SYNERGY', W - 250, cy + 40, 68, t + 0.7, kick, 6, 12);
+
+    // Dynamic Spec Callout Lines pointing to center 3D torus
+    ctx.strokeStyle = '#00ffcc';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(430, cy - 90);
+    ctx.lineTo(510, cy - 90);
+    ctx.lineTo(565, cy - 45);
+    ctx.stroke();
+    ctx.fillStyle = '#00ffcc';
+    ctx.beginPath();
+    ctx.arc(565, cy - 45, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.font = '700 13px "Courier New", monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('SDF_MORPH // 60FPS', 430, cy - 98);
+    ctx.restore();
+  }
+
+  // Scene 2 (8s - 12s): SWISS GRID + PROCEDURAL SYSTEMS
+  else if (sceneIdx === 2) {
+    ctx.save();
+    ctx.globalAlpha = vis;
+
+    // Acid Swiss Bento Grid Overlay
+    const gx = 110, gy = 95, gw = W - 220, gh = H - 190;
+    ctx.strokeStyle = hsl(t * 100, 100, 70, 0.8);
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(gx, gy, gw, gh);
+
+    // Dynamic grid dividers
+    const splitX = gx + gw * (0.5 + 0.12 * Math.sin(t * 2.2));
+    const splitY = gy + gh * (0.5 + 0.12 * Math.cos(t * 1.8));
+
+    ctx.beginPath();
+    ctx.moveTo(splitX, gy); ctx.lineTo(splitX, gy + gh);
+    ctx.moveTo(gx, splitY); ctx.lineTo(gx + gw, splitY);
+    ctx.stroke();
+
+    // Quadrant 1: Lissajous Harmonic Curve
+    ctx.save();
+    ctx.translate((gx + splitX) / 2, (gy + splitY) / 2);
+    ctx.strokeStyle = '#00ffcc';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    for (let a = 0; a < Math.PI * 2; a += 0.04) {
+      const lx = Math.sin(a * 3 + t * 4) * 110;
+      const ly = Math.sin(a * 4 + t * 3) * 65;
+      if (a === 0) ctx.moveTo(lx, ly);
+      else ctx.lineTo(lx, ly);
+    }
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+
+    // Quadrant 4: Rotating Hypnotic Spiral
+    ctx.save();
+    ctx.translate((splitX + gx + gw) / 2, (splitY + gy + gh) / 2);
+    ctx.rotate(-t * 4);
+    ctx.strokeStyle = '#ff00aa';
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    for (let r = 0; r < 95; r += 1.5) {
+      const a = r * 0.35;
+      const sx = Math.cos(a) * r;
+      const sy = Math.sin(a) * r;
+      if (r === 0) ctx.moveTo(sx, sy);
+      else ctx.lineTo(sx, sy);
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    // Bold Center Banner
+    drawKineticStack('PROCEDURAL', cx, cy - 38, 82, t, kick, 7, 14);
+    drawKineticStack('CRAFT & CODE', cx, cy + 48, 82, t + 0.3, kick, 7, 14);
+
+    // Corner Crosshairs
+    [[gx, gy], [splitX, gy], [gx, splitY], [splitX, splitY], [gx + gw, gy + gh]].forEach(([px, py]) => {
+      drawStarburst(px, py, 5, 18 + kick * 8, 4, t * 2, '#fff', '#000', 1.5);
+    });
+
+    ctx.restore();
+  }
+
+  // Scene 3 (12s - 16s): OP-ART OVERDRIVE & CHECKERED RIBBONS
+  else if (sceneIdx === 3) {
+    drawCheckeredRibbon(62, 34, 24, t * 260, vis * 0.92);
+    drawCheckeredRibbon(H - 96, 34, 24, -t * 260, vis * 0.92);
+
+    // Wavy psychedelic sine snakes
+    for (let s = -1; s <= 1; s += 2) {
+      ctx.save();
+      ctx.globalAlpha = vis;
+      ctx.beginPath();
+      for (let x = 80; x <= W - 80; x += 12) {
+        const y = cy + s * 175 + Math.sin(x * 0.025 + t * 8 * s) * (24 + kick * 14);
+        if (x === 80) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.lineWidth = 10;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = hsl(t * 160 + s * 90, 100, 60);
+      ctx.stroke();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Center Hypnotic Target + Kinetic Words
+    drawStarburst(cx, cy, 110, 165 + kick * 25, 20, -t * 1.2, 'rgba(0,0,0,0.55)', hsl(t * 150, 100, 60, vis), 4);
+
+    const words = ['HYPNOTIC', 'KINETIC', 'ELECTRIC', 'VISIONARY'];
+    const wordIdx = Math.floor((localT / 4) * words.length) % words.length;
+    drawKineticStack(words[wordIdx], cx, cy - 28, 96, t, kick, 9, 18);
+    drawKineticStack('RHYTHM', cx, cy + 62, 76, t + 0.25, kick, 6, 12);
+  }
+
+  // Scene 4 (16s - 20s): GRAND MANDALA CLIMAX & OUTRO CARD
+  else if (sceneIdx === 4) {
+    ctx.save();
+    ctx.globalAlpha = vis;
+
+    // Symmetrical Mandala Petals in 2D
+    ctx.save();
+    ctx.translate(cx, cy);
+    const petals = 16;
+    for (let i = 0; i < petals; i++) {
+      ctx.save();
+      ctx.rotate((i * Math.PI * 2) / petals + t * 0.4);
+      ctx.strokeStyle = hsl(t * 120 + i * 22, 100, 65, 0.75);
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.ellipse(195 + kick * 18, 0, 75, 24, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+    ctx.restore();
+
+    drawCircularTicker(
+      '★ AVAILABLE FOR WORLDWIDE DIRECTION ★ LET’S CREATE MAGIC ',
+      cx, cy, 265 + kick * 10, -0.4, t, 16, '#ffffff'
+    );
+
+    drawMeltingEye(cx, cy - 150, 0.85 * vis, t, kick);
+
+    drawKineticStack('PURE', cx, cy - 22, 98, t, kick, 9, 16);
+    drawKineticStack('IMAGINATION', cx, cy + 68, 82, t + 0.3, kick, 9, 16);
+
+    // Bottom Call-to-action pill
+    ctx.save();
+    ctx.translate(cx, cy + 165);
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = hsl(t * 150, 100, 60);
+    ctx.shadowBlur = 20;
+    ctx.beginPath();
+    ctx.roundRect(-195, -20, 390, 40, 20);
+    ctx.fill();
+    ctx.fillStyle = '#090014';
+    ctx.font = '900 16px "Arial Black", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('SHOWREEL // FULL LOOP 20.0S', 0, 1);
+    ctx.restore();
+
+    ctx.restore();
+  }
+
+  // Transition Whip-Flash between 4-second scenes
+  const distToCut = Math.min(localT, 4.0 - localT);
+  if (distToCut < 0.22) {
+    const p = 1.0 - distToCut / 0.22;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(t * 5);
+    for (let i = 0; i < 6; i++) {
+      const r = Math.pow(p, 1.5) * 850 * ((i + 1) / 6);
+      ctx.strokeStyle = hsl(t * 240 + i * 55, 100, 65, p * 0.85);
+      ctx.lineWidth = 18 * p;
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  drawHUD(t, sceneIdx, beat, kick);
+}
+
+// --- Main Loop Driven Strictly by performance.now() ---
+const urlParams = new URLSearchParams(window.location.search);
+const startOffset = parseFloat(urlParams.get('t')) || 0;
+let startTime = null;
+
+function frame(now) {
+  if (startTime === null) startTime = now;
+  const elapsed = (now - startTime) / 1000 + startOffset;
+  const t = ((elapsed % window.DUR) + window.DUR) % window.DUR;
+
+  const beat = t * (BPM / 60);
+  const beatFract = beat % 1;
+  const kick = Math.pow(1.0 - beatFract, 3.0);
+
+  const sceneIdx = Math.min(4, Math.floor(t / 4.0));
+  const localT = t - sceneIdx * 4.0;
+
+  // Render WebGL Shader Background
+  gl.viewport(0, 0, W, H);
+  gl.uniform1f(uTime, t);
+  gl.uniform2f(uRes, W, H);
+  gl.uniform1f(uScene, sceneIdx);
+  gl.uniform1f(uBeat, beat);
+  gl.uniform1f(uKick, kick);
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+  // Render 2D Kinetic Typography & Vector Overlays
+  renderMotionGraphics(t, sceneIdx, localT, beat, kick);
+
+  requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

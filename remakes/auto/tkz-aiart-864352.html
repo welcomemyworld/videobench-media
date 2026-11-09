@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8"><title>Track Card</title>
+<style>html,body{margin:0;height:100%;background:#000;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=15;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t')||0)||0,t0=performance.now();
+const BPM=120,beat=60/BPM;
+const ease=k=>k<0?0:k>1?1:1-Math.pow(1-k,3);
+const cl=(v,a,b)=>Math.max(a,Math.min(b,v));
+function rnd(i){const s=Math.sin(i*127.1)*43758.5453;return s-Math.floor(s);}
+const parts=[...Array(80)].map((_,i)=>({x:rnd(i)*1280,y:rnd(i+99)*720,r:rnd(i+7)*2+.5,v:rnd(i+3)*20+5}));
+function art(cx,cy,S,t,pulse){
+ x.save();x.translate(cx,cy);
+ x.shadowColor='rgba(255,80,160,.6)';x.shadowBlur=60+pulse*30;
+ const g=x.createLinearGradient(-S/2,-S/2,S/2,S/2);
+ g.addColorStop(0,'#1b1040');g.addColorStop(.5,'#6a1b6e');g.addColorStop(1,'#ff6a3d');
+ x.fillStyle=g;x.beginPath();x.roundRect(-S/2,-S/2,S,S,18);x.fill();x.shadowBlur=0;
+ x.save();x.clip();
+ // sun
+ const sg=x.createLinearGradient(0,-S*.3,0,S*.15);sg.addColorStop(0,'#ffe27a');sg.addColorStop(1,'#ff3d7f');
+ x.fillStyle=sg;x.beginPath();x.arc(0,S*.05,S*.28*(1+pulse*.03),0,Math.PI*2);x.fill();
+ x.fillStyle='#2a0f3f';
+ for(let i=0;i<6;i++){const yy=S*(-.02+i*.06)+((t*20)%(S*.06));x.fillRect(-S/2,yy,S,2+i*1.5);}
+ // grid
+ x.fillStyle='#120826';x.fillRect(-S/2,S*.12,S,S*.4);
+ x.strokeStyle='rgba(255,90,200,.8)';x.lineWidth=1.5;
+ for(let i=-10;i<=10;i++){x.beginPath();x.moveTo(i*S*.03,S*.12);x.lineTo(i*S*.15,S*.5);x.stroke();}
+ for(let i=0;i<8;i++){const p=((i+t*1.5)%8)/8,yy=S*.12+p*p*S*.38;x.beginPath();x.moveTo(-S/2,yy);x.lineTo(S/2,yy);x.stroke();}
+ x.restore();x.restore();
+}
+function frame(){
+ const T=((performance.now()-t0)/1000+off)%DUR;
+ const bp=(T%beat)/beat,pulse=Math.pow(1-bp,3)*(T>1.5?1:0);
+ // bg
+ const bg=x.createRadialGradient(400,360,50,640,360,900);
+ bg.addColorStop(0,`hsl(${290+Math.sin(T*.4)*20},55%,${14+pulse*4}%)`);bg.addColorStop(1,'#05030c');
+ x.fillStyle=bg;x.fillRect(0,0,1280,720);
+ for(const p of parts){x.fillStyle=`rgba(255,200,240,${.15+p.r*.1})`;x.beginPath();x.arc(p.x,(p.y-T*p.v+720)%720,p.r,0,7);x.fill();}
+ const intro=ease(T/1.2),out=1-ease((T-14.2)/.8);
+ x.globalAlpha=out;
+ // art
+ const a=ease((T-.2)/1.1),S=380;
+ x.save();x.globalAlpha=a*out;art(330,360+(1-a)*60,S*(1+pulse*.015),T,pulse);x.restore();
+ // text
+ const tx=580;
+ function txt(s,y,font,col,d){const k=ease((T-d)/.8);x.globalAlpha=k*out;x.fillStyle=col;x.font=font;x.fillText(s,tx+(1-k)*40,y);}
+ x.textBaseline='alphabetic';
+ txt('NEW RELEASE ・ 新曲配信開始',210,'600 20px sans-serif','#ff8ac2',.6);
+ txt('真夜中のシグナル',300,'800 68px sans-serif','#fff',.9);
+ txt('Midnight Signal',345,'300 28px sans-serif','rgba(255,255,255,.7)',1.1);
+ txt('ネオン・ハルカ',400,'600 30px sans-serif','#ffd27a',1.3);
+ // visualizer
+ const vk=ease((T-1.6)/.8);x.globalAlpha=vk*out;
+ const N=48;for(let i=0;i<N;i++){
+  const f=i/N,h=(10+40*Math.abs(Math.sin(i*.7+T*3))*(.4+.6*pulse)+25*rnd(i+Math.floor(T*8))*(1-f*.5))*vk;
+  const g2=x.createLinearGradient(0,520-h,0,520);g2.addColorStop(0,'#ffe27a');g2.addColorStop(1,'#ff3d7f');
+  x.fillStyle=g2;x.fillRect(tx+i*13,520-h,8,h);
+ }
+ // progress
+ const pk=ease((T-2)/.8);x.globalAlpha=pk*out;
+ const W=620,pr=cl((T-2)/12,0,1);
+ x.fillStyle='rgba(255,255,255,.18)';x.fillRect(tx,560,W,4);
+ x.fillStyle='#fff';x.fillRect(tx,560,W*pr,4);x.beginPath();x.arc(tx+W*pr,562,7,0,7);x.fill();
+ const sec=Math.floor(pr*228),fm=s=>Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
+ x.font='500 16px sans-serif';x.fillStyle='rgba(255,255,255,.7)';
+ x.fillText(fm(sec),tx,592);x.textAlign='right';x.fillText('3:48',tx+W,592);x.textAlign='left';
+ // play button
+ x.fillStyle='#fff';x.beginPath();x.arc(tx+W/2,630,24+pulse*3,0,7);x.fill();
+ x.fillStyle='#2a0f3f';x.beginPath();x.moveTo(tx+W/2-7,618);x.lineTo(tx+W/2+11,630);x.lineTo(tx+W/2-7,642);x.fill();
+ // CTA
+ const ck=ease((T-10)/.8);x.globalAlpha=ck*out;
+ x.font='700 22px sans-serif';x.fillStyle='#fff';x.textAlign='center';
+ x.fillText('各種ストリーミングで配信中',640,690);x.textAlign='left';
+ x.globalAlpha=1;
+ // fade in
+ if(intro<1){x.fillStyle=`rgba(0,0,0,${1-intro})`;x.fillRect(0,0,1280,720);}
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></body></html>

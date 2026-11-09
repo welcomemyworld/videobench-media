@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>什么是Git</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#0d1117}
+#tip{position:absolute;left:10px;bottom:10px;color:#888;font:14px sans-serif}
+</style></head><body>
+<canvas id="c" width="1280" height="720"></canvas>
+<div id="tip">点击画面开启中文语音</div>
+<script>
+window.DUR=64;
+const S=8,SL=DUR/S;
+const cv=document.getElementById('c'),x=cv.getContext('2d');
+function fit(){const k=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*k+'px';cv.style.height=720*k+'px'}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)||0;
+const t0=performance.now()-off*1000;
+const F='"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif';
+const N=[
+"什么是Git？简单说，Git是一个帮你保存文件历史版本的工具，就像游戏里的存档。",
+"你写论文时，是不是有过：最终版、最终版二、真的最终版？文件一多就乱套了。",
+"Git帮你记住每一次修改。想回到昨天的样子？一条命令就能穿越回去，像时光机。",
+"Git有三个区域：工作区写文件，git add放进暂存区，git commit正式存档进仓库。",
+"git init创建仓库，git status查看哪些文件改了，git log查看所有存档记录。",
+"git branch开一条分支，安心试验新功能，满意了再用git merge合并回主线。",
+"想和别人协作？git clone下载项目，git push上传你的存档，git pull拉取别人的更新。",
+"总结：Git就是文件的存档时光机。多存档，勤提交，你已经入门啦！"];
+const T=["什么是 Git？","没有 Git 的烦恼","Git = 时光机","三个区域","常用命令 ①","分支：平行世界","远程协作","命令速查"];
+let voices=[],spoken=-1,enabled=false;
+function lv(){voices=speechSynthesis.getVoices()}
+if('speechSynthesis'in window){lv();speechSynthesis.onvoiceschanged=lv}
+function say(i){if(!('speechSynthesis'in window))return;speechSynthesis.cancel();
+const u=new SpeechSynthesisUtterance(N[i]);u.lang='zh-CN';u.rate=1.15;
+const v=voices.find(v=>/zh/i.test(v.lang));if(v)u.voice=v;speechSynthesis.speak(u)}
+addEventListener('click',()=>{enabled=true;document.getElementById('tip').style.display='none';spoken=-1});
+let ac;
+function chime(){try{ac=ac||new AudioContext();const o=ac.createOscillator(),g=ac.createGain();o.frequency.value=660;o.type='sine';
+g.gain.setValueAtTime(.08,ac.currentTime);g.gain.exponentialRampToValueAtTime(.001,ac.currentTime+.6);o.connect(g).connect(ac.destination);o.start();o.stop(ac.currentTime+.6)}catch(e){}}
+const E=v=>v<0?0:v>1?1:1-Math.pow(1-v,3);
+function txt(s,X,Y,sz,c,al,b){x.font=(b?'bold ':'')+sz+'px '+F;x.fillStyle=c;x.textAlign=al||'center';x.textBaseline='middle';x.fillText(s,X,Y)}
+function box(X,Y,w,h,c,r){r=r||14;x.beginPath();x.roundRect(X,Y,w,h,r);x.fillStyle=c;x.fill()}
+function sbox(X,Y,w,h,c){x.beginPath();x.roundRect(X,Y,w,h,14);x.strokeStyle=c;x.lineWidth=3;x.stroke()}
+function arrow(a,b,c,d,col,p){const e=a+(c-a)*p,f=b+(d-b)*p;x.strokeStyle=col;x.lineWidth=4;x.beginPath();x.moveTo(a,b);x.lineTo(e,f);x.stroke();
+if(p>.95){const an=Math.atan2(d-b,c-a);x.fillStyle=col;x.beginPath();x.moveTo(c,d);x.lineTo(c-16*Math.cos(an-.4),d-16*Math.sin(an-.4));x.lineTo(c-16*Math.cos(an+.4),d-16*Math.sin(an+.4));x.fill()}}
+function file(X,Y,s,c,a){x.globalAlpha=a;box(X-50,Y-60,100,120,'#e6edf3',8);x.fillStyle=c;x.fillRect(X-35,Y-35,70,8);x.fillRect(X-35,Y-15,50,8);x.fillRect(X-35,Y+5,60,8);txt(s,X,Y+85,20,'#c9d1d9');x.globalAlpha=1}
+function node(X,Y,c,l,a){x.globalAlpha=a;x.beginPath();x.arc(X,Y,22,0,7);x.fillStyle=c;x.fill();x.strokeStyle='#fff';x.lineWidth=3;x.stroke();if(l)txt(l,X,Y+45,18,'#c9d1d9');x.globalAlpha=1}
+function cmd(X,Y,c,d,a,col){x.globalAlpha=a;box(X,Y,520,70,'#161b22');sbox(X,Y,520,70,col||'#30363d');txt('$ '+c,X+24,Y+35,26,'#7ee787','left',1);txt(d,X+500,Y+35,22,'#c9d1d9','right');x.globalAlpha=1}
+const scenes=[
+(p,t)=>{const a=E(p*3);txt('Git',640,280,180*a+1,'#f05133','center',1);txt('给文件的「存档」系统',640,430,40,'rgba(230,237,243,'+E(p*3-.5)+')');
+for(let i=0;i<5;i++)node(440+i*100,540,'#f05133','',E(p*3-1-i*.2));for(let i=0;i<4;i++){x.globalAlpha=E(p*3-1.2-i*.2);x.fillStyle='#f05133';x.fillRect(462+i*100,537,56,6)}x.globalAlpha=1},
+(p)=>{const n=['论文.doc','论文_最终版','最终版2','真的最终版','打死不改版'];n.forEach((s,i)=>file(200+i*220,300+Math.sin(i*2+p*6)*8,s,'#8b949e',E(p*4-i*.4)));
+if(p>.6)txt('😵 哪个才是对的？改了什么？',640,520,40,'#ff7b72','center',1)},
+(p)=>{x.strokeStyle='#30363d';x.lineWidth=6;x.beginPath();x.moveTo(160,330);x.lineTo(1120,330);x.stroke();
+const L=['周一','周二','周三','周四','今天'];L.forEach((s,i)=>node(200+i*220,330,'#3fb950',s,E(p*4-i*.3)));
+if(p>.5){const k=E((p-.5)*3);const X=1080-k*660;txt('⏪',X,250,60,'#fff');txt('一键回到「周二」',640,500,38,'#e6edf3','center',1)}},
+(p)=>{const A=[['工作区','编辑文件','#58a6ff',120],['暂存区','准备存档','#d29922',500],['仓库','永久存档','#3fb950',880]];
+A.forEach((a,i)=>{x.globalAlpha=E(p*4-i*.4);sbox(a[3],200,280,260,a[2]);txt(a[0],a[3]+140,240,36,a[2],'center',1);txt(a[1],a[3]+140,420,24,'#8b949e');x.globalAlpha=1});
+const k=E((p-.35)*2.5),k2=E((p-.65)*3);const fx=k2>0?640+k2*380:260+k*380;file(fx,330,'',k2>0?'#3fb950':'#58a6ff',1);
+if(p>.35){arrow(410,520,500,520,'#d29922',E((p-.35)*4));txt('git add',455,560,26,'#d29922','center',1)}
+if(p>.65){arrow(790,520,880,520,'#3fb950',E((p-.65)*4));txt('git commit',835,560,26,'#3fb950','center',1)}},
+(p)=>{cmd(380,180,'git init','建一个新仓库',E(p*4),'#58a6ff');cmd(380,300,'git status','看看改了啥',E(p*4-1),'#d29922');cmd(380,420,'git log','翻看存档历史',E(p*4-2),'#3fb950');
+txt('💡 commit 时写说明：git commit -m "修好了登录"',640,580,26,'rgba(201,209,217,'+E(p*4-3)+')')},
+(p)=>{x.lineWidth=6;x.strokeStyle='#3fb950';x.beginPath();x.moveTo(160,420);x.lineTo(1120,420);x.stroke();
+const k=E(p*3-.5);x.strokeStyle='#bc8cff';x.beginPath();x.moveTo(400,420);x.quadraticCurveTo(450,260,560,260);x.lineTo(560+k*300,260);x.stroke();
+[200,400,640,880].forEach((X,i)=>node(X,420,'#3fb950',i==0?'main 主线':'',1));[560,700,860].forEach((X,i)=>node(X,260,'#bc8cff',i==0?'feature 分支':'',E(p*3-.5-i*.3)));
+txt('git branch feature',400,170,26,'#bc8cff','center',1);
+if(p>.65){const m=E((p-.65)*4);x.strokeStyle='#bc8cff';x.beginPath();x.moveTo(860,260);x.quadraticCurveTo(1000,260,1000-(1-m)*100,420);x.stroke();node(1040,420,'#f05133','合并',m);txt('git merge feature',960,560,26,'#f05133','center',1)}},
+(p)=>{txt('☁',640,190,120,'#58a6ff');txt('远程仓库 (如 GitHub)',640,290,26,'#c9d1d9');
+[[300,'你'],[980,'同事']].forEach(([X,s])=>{box(X-90,470,180,110,'#161b22');sbox(X-90,470,180,110,'#30363d');txt('💻 '+s,X,525,30,'#e6edf3')});
+const L=[['git clone',E(p*4),'#58a6ff',0],['git push',E(p*4-1.2),'#3fb950',1],['git pull',E(p*4-2.4),'#d29922',2]];
+if(L[0][1]>0){arrow(560,320,340,460,'#58a6ff',L[0][1]);txt('git clone 下载',390,370,24,'#58a6ff','center',1)}
+if(L[1][1]>0){arrow(330,460,600,320,'#3fb950',L[1][1]);txt('git push 上传',520,440,24,'#3fb950','center',1)}
+if(L[2][1]>0){arrow(700,320,950,460,'#d29922',L[2][1]);txt('git pull 拉取更新',880,370,24,'#d29922','center',1)}},
+(p)=>{const C=[['init','建仓库'],['status','看状态'],['add','放暂存'],['commit','存档'],['log','看历史'],['branch','开分支'],['merge','合并'],['clone','下载'],['push','上传'],['pull','拉取']];
+C.forEach((c,i)=>{const X=150+(i%2)*520,Y=150+Math.floor(i/2)*85;x.globalAlpha=E(p*5-i*.25);box(X,Y,460,66,'#161b22');txt('git '+c[0],X+24,Y+33,26,'#7ee787','left',1);txt(c[1],X+436,Y+33,24,'#c9d1d9','right');x.globalAlpha=1});
+txt('多存档 · 勤提交 · 你已入门 🎉',640,620,34,'rgba(240,81,51,'+E(p*3-1.5)+')','center',1)}];
+function frame(){let t=((performance.now()-t0)/1000)%DUR;const i=Math.floor(t/SL),p=(t-i*SL)/SL;
+if(i!==spoken){spoken=i;if(enabled){say(i);chime()}}
+x.fillStyle='#0d1117';x.fillRect(0,0,1280,720);
+x.strokeStyle='rgba(48,54,61,.4)';x.lineWidth=1;for(let g=0;g<1280;g+=40){x.beginPath();x.moveTo(g,0);x.lineTo(g,720);x.stroke()}
+const fa=Math.min(1,p*8,(1-p)*12);x.globalAlpha=1;
+txt(T[i],60,60,34,'#f0f6fc','left',1);txt((i+1)+' / '+S,1220,60,22,'#8b949e','right');
+x.save();x.globalAlpha=fa;scenes[i](p,t);x.restore();x.globalAlpha=1;
+box(0,650,1280,70,'rgba(0,0,0,.75)',0);
+x.font='26px '+F;let s=N[i];if(x.measureText(s).width>1200){x.font='22px '+F}
+x.fillStyle='#fff';x.textAlign='center';x.fillText(s,640,686);
+x.fillStyle='#f05133';x.fillRect(0,716,1280*t/DUR,4);
+requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

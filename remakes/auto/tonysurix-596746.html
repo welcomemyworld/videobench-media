@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#000;overflow:hidden;height:100%}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+window.DUR=30;
+const cv=document.getElementById('c'),g=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t')||0)*1000,t0=performance.now()-off;
+// road path: curvy mountain road param s -> (x,z) with height y
+function road(s){return{x:Math.sin(s*0.013)*60+Math.sin(s*0.031)*25,y:Math.sin(s*0.008)*18+s*0.05,z:s};}
+function hdg(s){const a=road(s),b=road(s+1);return Math.atan2(b.x-a.x,b.z-a.z);}
+let cam={x:0,y:0,z:0,yaw:0,pitch:0};
+function proj(x,y,z){let dx=x-cam.x,dy=y-cam.y,dz=z-cam.z;const c=Math.cos(-cam.yaw),s=Math.sin(-cam.yaw);
+let rx=dx*c+dz*s,rz=-dx*s+dz*c;const cp=Math.cos(cam.pitch),sp=Math.sin(cam.pitch);let ry=dy*cp-rz*sp;rz=dy*sp+rz*cp;
+if(rz<0.5)return null;const f=700/rz;return[640+rx*f,360-ry*f,rz];}
+function hash(n){return(Math.sin(n*127.1)*43758.5453)%1;}
+// box car
+function carFaces(s,lat,col){const p=road(s),h=hdg(s),c=Math.cos(h),sn=Math.sin(h);const ox=p.x+lat*c,oz=p.z-lat*sn,oy=p.y;
+const pts=(w,l,y0,y1,lo)=>{const r=[];for(const[a,b]of[[-w,-l],[w,-l],[w,l],[-w,l]])for(const yy of[y0,y1]){const zz=b+lo;r.push([ox+a*c+zz*sn,oy+yy,oz-a*sn+zz*c]);}return r;};
+const F=[];const add=(P,cl)=>{const idx=[[0,2,4,6],[1,3,5,7],[0,1,3,2],[2,3,5,4],[4,5,7,6],[6,7,1,0]],sh=[.5,1,.7,.85,.6,.75];
+idx.forEach((f,i)=>F.push({p:f.map(k=>P[k]),c:cl,s:sh[i]}));};
+add(pts(1,2.2,0.3,1,0),col);add(pts(.85,1.1,1,1.6,-0.2),col);return F;}
+function shade(c,s){return`rgb(${c[0]*s|0},${c[1]*s|0},${c[2]*s|0})`;}
+function frame(){const T=((performance.now()-t0)/1000)%DUR;
+const lead=T*42+60,chase=lead-14-Math.sin(T*0.7)*5;
+// camera shots
+const shot=Math.floor(T/6);let sc;
+if(shot==0){sc=chase-12;const p=road(sc);cam={x:p.x,y:p.y+4,z:p.z,yaw:hdg(sc),pitch:-0.12};}
+else if(shot==1){const p=road(lead+30);cam={x:p.x+18,y:p.y+3,z:p.z,yaw:hdg(lead)+Math.PI+0.5,pitch:-0.05};const L=road(lead);cam.yaw=Math.atan2(L.x-cam.x,L.z-cam.z);}
+else if(shot==2){const p=road(chase-40);cam={x:p.x-40,y:p.y+45,z:p.z,yaw:hdg(chase)+0.6,pitch:-0.5};}
+else if(shot==3){const p=road(chase+3),h=hdg(chase);cam={x:p.x+Math.cos(h)*1.6,y:p.y+1.2,z:p.z-Math.sin(h)*1.6,yaw:h,pitch:0};}
+else{const p=road(lead-8),h=hdg(lead);cam={x:p.x-6,y:p.y+3,z:p.z,yaw:h+Math.PI-0.3,pitch:-0.1};}
+// sky
+const sk=g.createLinearGradient(0,0,0,720);sk.addColorStop(0,'#3d5a7a');sk.addColorStop(1,'#c9b9a0');g.fillStyle=sk;g.fillRect(0,0,1280,720);
+// distant mountains
+for(let L=0;L<3;L++){g.fillStyle=['#6c7a8c','#56616e','#424a52'][L];g.beginPath();g.moveTo(0,720);
+for(let x=0;x<=1280;x+=20){const u=x+cam.yaw*(300+L*200);g.lineTo(x,330+L*25-Math.abs(Math.sin(u*.004+L)*90)-Math.sin(u*.017)*20+cam.pitch*400);}g.lineTo(1280,720);g.fill();}
+// world polys
+const polys=[];const base=Math.floor(cam.z/6)*6;
+for(let s=base-120;s<base+300;s+=6){const a=road(s),b=road(s+6),ha=hdg(s),hb=hdg(s+6);
+const P=(p,h,l,dy)=>proj(p.x+l*Math.cos(h),p.y+dy,p.z-l*Math.sin(h));
+const lane=(l1,l2,d1,d2,col)=>{const q=[P(a,ha,l1,d1),P(a,ha,l2,d2),P(b,hb,l2,d2),P(b,hb,l1,d1)];if(q.every(v=>v))polys.push({q,z:(q[0][2]+q[2][2])/2,c:col});};
+const k=Math.floor(s/6);
+lane(-5,5,0,0,k%2?'#3a3a3e':'#36363a');
+lane(-40,-5,25+hash(k)*3,0,k%2?'#5b5446':'#554e41');// cliff up
+lane(5,6,0.6,0.6,'#ccc');lane(6,50,-0.2,-40,k%2?'#3f5233':'#3a4c30');// drop
+if(k%3==0)lane(-.15,.15,0.02,0.02,'#e8c84a');
+if(hash(k*3.1)>.6){const l=12+hash(k)*25,p=road(s),h=hdg(s),bx=p.x+l*Math.cos(h),bz=p.z-l*Math.sin(h),by=p.y-l*0.8;
+const r=proj(bx,by,bz),tp=proj(bx,by+9,bz);if(r&&tp)polys.push({tree:[r,tp],z:r[2]});}}
+for(const[s,col,l]of[[lead,[200,40,30],1.5],[chase,[30,60,160],-1.5+Math.sin(T*1.3)*1.5]]){
+for(const f of carFaces(s,l,col)){const q=f.p.map(v=>proj(...v));if(q.every(v=>v))polys.push({q,z:q.reduce((a,v)=>a+v[2],0)/4-0.5,c:shade(col,f.s)});}}
+polys.sort((a,b)=>b.z-a.z);
+for(const p of polys){if(p.tree){const[r,t]=p.tree,w=(r[1]-t[1])*0.3;g.fillStyle='#22351f';g.beginPath();g.moveTo(t[0],t[1]);g.lineTo(r[0]-w,r[1]);g.lineTo(r[0]+w,r[1]);g.fill();continue;}
+g.fillStyle=p.c;g.beginPath();p.q.forEach((v,i)=>i?g.lineTo(v[0],v[1]):g.moveTo(v[0],v[1]));g.closePath();g.fill();
+g.strokeStyle='rgba(0,0,0,.15)';g.stroke();}
+// previs overlay
+g.fillStyle='#000';g.fillRect(0,0,1280,60);g.fillRect(0,660,1280,60);
+g.font='16px monospace';g.fillStyle='#eee';
+const names=['SH010 CHASE CAM','SH020 ROADSIDE PAN','SH030 AERIAL CRANE','SH040 HOOD CAM','SH050 REVERSE TRACK'];
+g.fillText('PREVIS v03 — MOUNTAIN CHASE',20,36);g.fillText(names[shot],520,36);
+const fr=Math.floor(T*24);g.fillText('FRAME '+String(fr).padStart(4,'0')+'  24fps',1080,36);
+g.fillText('CAM: 35mm   LEAD: RED   PURSUER: BLUE   GAP '+(lead-chase).toFixed(1)+'m',20,696);
+g.fillStyle='#e33';g.beginPath();g.arc(1240,690,7,0,7);if(fr%24<12)g.fill();
+g.strokeStyle='rgba(255,255,255,.25)';g.strokeRect(160,70,960,580);
+requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

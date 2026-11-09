@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Unknown</title>
+<style>
+html,body{margin:0;height:100%;background:#000;overflow:hidden}
+#stage{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:50% 50%;background:#000}
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+window.DUR=18;
+const cv=document.getElementById("stage"),c=cv.getContext("2d");
+function fit(){cv.style.transform="translate(-50%,-50%) scale("+Math.min(innerWidth/1280,innerHeight/720)+")"}
+addEventListener("resize",fit);fit();
+const q=new URLSearchParams(location.search);
+const t0=performance.now()-((parseFloat(q.get("t"))||0)%window.DUR)*1000;
+const N=220,P=[];
+for(let i=0;i<N;i++){
+  const u=i/N,a=u*6.283+Math.sin(i*1.7)*0.4;
+  P.push({a,r:30+((i*47)%200),sp:.12+(i%7)*.05,ph:i*0.37,sz:.7+(i%5)*.45,k:i%5});
+}
+const S=[];
+for(let i=0;i<80;i++)S.push({x:(i*97)%1280,y:(i*53)%720,z:.3+(i%5)*.2,p:i});
+function sm(t){return t<0?0:t>1?1:t*t*(3-2*t)}
+function fade(t,a,b,c,d){if(t<a||t>d)return 0;if(t<b)return sm((t-a)/(b-a));if(t>c)return sm((d-t)/(d-c));return 1}
+function frame(now){
+  let t=((now-t0)/1000)%window.DUR;if(t<0)t+=window.DUR;
+  c.fillStyle="#000";c.fillRect(0,0,1280,720);
+  const drift=Math.sin(t*.15)*8;
+  const g=c.createRadialGradient(640,340,20,640+drift,360,560);
+  g.addColorStop(0,"rgba(28,36,64,.7)");g.addColorStop(.55,"rgba(8,10,18,.35)");g.addColorStop(1,"rgba(0,0,0,0)");
+  c.fillStyle=g;c.fillRect(0,0,1280,720);
+  for(let i=0;i<S.length;i++){
+    const s=S[i];
+    const y=(s.y+t*8*s.z)%720;
+    c.globalAlpha=.15+s.z*.35;
+    c.fillStyle="#c9d4ff";
+    c.fillRect(s.x,y,1.2,1.2);
+  }
+  c.globalAlpha=1;
+  const form=fade(t,1.2,4.2,13.5,16.8);
+  c.save();c.translate(640+drift*.4,330);
+  c.strokeStyle="rgba(160,180,230,"+(0.12+form*.25)+")";
+  c.lineWidth=1;
+  c.beginPath();c.ellipse(0,-30,78,108,0,0,6.28);c.stroke();
+  c.beginPath();c.ellipse(0,130,150,46,0,Math.PI,0);c.stroke();
+  for(let i=0;i<N;i++){
+    const p=P[i],ang=p.a+t*p.sp;
+    let tx,ty;
+    if(p.k){const u=(i/N)*6.283;tx=Math.cos(u)*72+Math.sin(u*2+p.ph)*6;ty=Math.sin(u)*100-28}
+    else{const u=((i%40)/40)*Math.PI;tx=Math.cos(u)*150;ty=120+Math.sin(u)*36}
+    const sc=1-form;
+    const x=Math.cos(ang)*p.r*sc+tx*form+Math.sin(t*.8+p.ph)*5;
+    const y=Math.sin(ang)*p.r*.6*sc+ty*form+Math.cos(t*.55+p.ph)*4;
+    c.fillStyle="rgba(220,228,255,"+(0.12+.5*form)+")";
+    c.beginPath();c.arc(x,y,p.sz*(.8+.4*form),0,6.28);c.fill();
+  }
+  c.restore();
+  c.textAlign="center";c.fillStyle="#eef2ff";
+  function line(txt,y,a,size,w){
+    if(a<=0)return;c.globalAlpha=a;c.font=(w||"300")+" "+size+"px sans-serif";
+    c.fillText(txt,640,y);c.globalAlpha=1;
+  }
+  line("UNKNOWN",118,fade(t,.3,1.4,3.4,4.4),28,"500");
+  c.globalAlpha=fade(t,.6,1.6,3.2,4.2);c.fillStyle="#9aabd4";
+  c.fillRect(590,136,100,1);c.globalAlpha=1;c.fillStyle="#eef2ff";
+  line("I don't know your name.",548,fade(t,3.6,4.7,6.8,7.8),34);
+  line("I don't know your face.",548,fade(t,7.6,8.6,10.8,11.8),34);
+  line("Only this request,",520,fade(t,11.6,12.6,14.6,15.5),28);
+  line("and that you wanted to be seen.",568,fade(t,12.4,13.3,15.2,16.2),26);
+  line("That's all I know.",640,fade(t,15.8,16.6,17.6,18),30);
+  c.globalAlpha=.18+Math.sin(t*2)*.04;c.strokeStyle="#8899c8";
+  c.beginPath();c.moveTo(460,430);c.lineTo(820,430);c.stroke();c.globalAlpha=1;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>10xColleges – Launch</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; background: #000; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; max-width: 100vw; max-height: 100vh; aspect-ratio: 1280/720; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 1280;
+  canvas.height = 720;
+
+  // Loop duration
+  window.DUR = 30;
+
+  // URL params
+  const params = new URLSearchParams(window.location.search);
+  const tOffset = parseFloat(params.get('t')) || 0;
+
+  const startTime = performance.now();
+
+  // --- Utility ---
+  function easeInOut(t) { return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t; }
+  function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+  function easeOutBack(t) { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); }
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function smoothstep(t) { return t * t * (3 - 2 * t); }
+
+  // Fade helpers: alpha = fadeIn(t) * fadeOut(t)
+  function fadeIn(t, s, d) { if (t < s) return 0; if (t > s + d) return 1; return easeInOut((t - s) / d); }
+  function fadeOut(t, s, d) { if (t < s) return 1; if (t > s + d) return 0; return 1 - easeInOut((t - s) / d); }
+  function alphaRange(t, inS, inD, outS, outD) { return fadeIn(t, inS, inD) * fadeOut(t, outS, outD); }
+
+  // --- Particle System ---
+  class Particle {
+    constructor() {
+      this.reset(true);
+    }
+    reset(initial) {
+      this.x = Math.random() * 1280;
+      this.y = initial ? Math.random() * 720 : 720 + Math.random() * 50;
+      this.z = Math.random() * 0.8 + 0.2; // depth
+      this.size = (1.5 - this.z) * 3.5;
+      this.speed = (0.25 + this.z * 0.75) * 35;
+      this.amp = 8 + this.z * 22;
+      this.phase = Math.random() * Math.PI * 2;
+      this.freq = 0.3 + this.z * 1.2;
+      this.alphaBase = 0.35 + this.z * 0.6;
+      this.hueShift = Math.random() * 0.3;
+    }
+    update(dt) {
+      this.y -= this.speed * dt;
+      if (this.y < -30) { this.reset(false); }
+    }
+    draw(ctx, t) {
+      const twinkle = 0.65 + 0.35 * Math.sin(t * this.freq + this.phase);
+      const driftX = Math.sin(t * 0.4 + this.phase) * this.amp;
+      const alpha = this.alphaBase * twinkle;
+      const sz = this.size * (0.8 + 0.4 * twinkle);
+      // Color: blend between cyan and indigo
+      const r = Math.round(lerp(80, 60, this.z + this.hueShift * 0.2));
+      const g = Math.round(lerp(140, 100, this.z));
+      const b = Math.round(lerp(220, 180, this.z + this.hueShift));
+      ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
+      ctx.beginPath();
+      ctx.arc(this.x + driftX, this.y, sz, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  const particles = [];
+  for (let i = 0; i < 90; i++) particles.push(new Particle());
+
+  // --- Drawing Helpers ---
+  function drawGlowText(text, x, y, size, color, glowColor, alpha, bold = true, align = 'center', glowStrength = 22) {
+    if (alpha <= 0.003) return;
+    ctx.save();
+    ctx.globalAlpha = clamp(alpha, 0, 1);
+    ctx.textAlign = align;
+    ctx.textBaseline = 'middle';
+    ctx.font = `${bold ? '700' : '400'} ${size}px "Segoe UI", "Helvetica Neue", Arial, sans-serif`;
+    ctx.shadowColor = glowColor;
+    ctx.shadowBlur = glowStrength;
+    ctx.fillStyle = color;
+    ctx.fillText(text, x, y);
+    // Second pass for stronger glow
+    ctx.shadowBlur = glowStrength * 0.5;
+    ctx.fillText(text, x, y);
+    ctx.restore();
+  }
+
+  function drawPlainText(text, x, y, size, color, alpha, bold = true, align = 'center', tracking = 0) {
+    if (alpha <= 0.003) return;
+    ctx.save();
+    ctx.globalAlpha = clamp(alpha, 0, 1);
+    ctx.textAlign = align;
+    ctx.textBaseline = 'middle';
+    ctx.font = `${bold ? '600' : '400'} ${size}px "Segoe UI", "Helvetica Neue", Arial, sans-serif`;
+    ctx.fillStyle = color;
+    if (tracking) {
+      const totalWidth = ctx.measureText(text).width;
+      const chars = text.split('');
+      let currentX = x - totalWidth / 2;
+      for (const ch of chars) {
+        const w = ctx.measureText(ch).width;
+        if (align === 'center') {
+          ctx.textAlign = 'left';
+          ctx.fillText(ch, currentX, y);
+        }
+        currentX += w + tracking;
+      }
+    } else {
+      ctx.fillText(text, x, y);
+    }
+    ctx.restore();
+  }
+
+  // --- Icon Drawings ---
+  function drawCheckIcon(x, y, size, alpha, color) {
+    if (alpha <= 0.003) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = size * 0.22;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x - size * 0.35, y);
+    ctx.lineTo(x - size * 0.08, y + size * 0.3);
+    ctx.lineTo(x + size * 0.4, y - size * 0.33);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawCapIcon(x, y, size, alpha, color) {
+    if (alpha <= 0.003) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    // Mortarboard top (diamond shape)
+    ctx.beginPath();
+    ctx.moveTo(x, y - size * 0.45);
+    ctx.lineTo(x + size * 0.55, y - size * 0.15);
+    ctx.lineTo(x, y + size * 0.15);
+    ctx.lineTo(x - size * 0.55, y - size * 0.15);
+    ctx.closePath();
+    ctx.fill();
+    // Board under
+    ctx.fillStyle = color;
+    ctx.fillRect(x - size * 0.52, y - size * 0.12, size * 1.04, size * 0.16);
+    // Button
+    ctx.fillStyle = '#ffd700';
+    ctx.beginPath();
+    ctx.arc(x, y - size * 0.15, size * 0.08, 0, Math.PI * 2);
+    ctx.fill();
+    // Tassel
+    ctx.strokeStyle = '#ffd700';
+    ctx.lineWidth = size * 0.05;
+    ctx.beginPath();
+    ctx.moveTo(x, y - size * 0.15);
+    ctx.quadraticCurveTo(x + size * 0.35, y + size * 0.25, x + size * 0.25, y + size * 0.4);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawPersonIcon(x, y, size, alpha, color) {
+    if (alpha <= 0.003) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = size * 0.1;
+    // Head
+    ctx.beginPath();
+    ctx.arc(x, y - size * 0.35, size * 0.18, 0, Math.PI * 2);
+    ctx.fill();
+    // Body
+    ctx.beginPath();
+    ctx.moveTo(x - size * 0.3, y + size * 0.4);
+    ctx.quadraticCurveTo(x - size * 0.28, y - size * 0.05, x, y - size * 0.08);
+    ctx.quadraticCurveTo(x + size * 0.28, y - size * 0.05, x + size * 0.3, y + size * 0.4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawDocIcon(x, y, size, alpha, color) {
+    if (alpha <= 0.003) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = size * 0.09;
+    ctx.lineCap = 'round';
+    // Document outline
+    ctx.beginPath();
+    ctx.moveTo(x - size * 0.3, y - size * 0.45);
+    ctx.lineTo(x + size * 0.2, y - size * 0.45);
+    ctx.lineTo(x + size * 0.35, y - size * 0.28);
+    ctx.lineTo(x + size * 0.35, y + size * 0.45);
+    ctx.lineTo(x - size * 0.3, y + size * 0.45);
+    ctx.closePath();
+    ctx.stroke();
+    // Lines
+    ctx.lineWidth = size * 0.07;
+    ctx.beginPath();
+    ctx.moveTo(x - size * 0.18, y - size * 0.2);
+    ctx.lineTo(x + size * 0.22, y - size * 0.2);
+    ctx.moveTo(x - size * 0.18, y + size * 0.05);
+    ctx.lineTo(x + size * 0.22, y + size * 0.05);
+    ctx.moveTo(x - size * 0.18, y + size * 0.3);
+    ctx.lineTo(x + size * 0.08, y + size * 0.3);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawRocketIcon(x, y, size, alpha, color) {
+    if (alpha <= 0.003) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    // Rocket body
+    ctx.beginPath();
+    ctx.moveTo(x, y - size * 0.55);
+    ctx.quadraticCurveTo(x + size * 0.28, y - size * 0.1, x + size * 0.22, y + size * 0.38);
+    ctx.lineTo(x - size * 0.22, y + size * 0.38);
+    ctx.quadraticCurveTo(x - size * 0.28, y - size * 0.1, x, y - size * 0.55);
+    ctx.closePath();
+    ctx.fill();
+    // Window
+    ctx.fillStyle = '#ffd700';
+    ctx.beginPath();
+    ctx.arc(x, y - size * 0.05, size * 0.13, 0, Math.PI * 2);
+    ctx.fill();
+    // Fins
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x - size * 0.2, y + size * 0.25);
+    ctx.lineTo(x - size * 0.35, y + size * 0.45);
+    ctx.lineTo(x - size * 0.18, y + size * 0.4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x + size * 0.2, y + size * 0.25);
+    ctx.lineTo(x + size * 0.35, y + size * 0.45);
+    ctx.lineTo(x + size * 0.18, y + size * 0.4);
+    ctx.closePath();
+    ctx.fill();
+    // Flame
+    ctx.fillStyle = '#ff8c00';
+    ctx.beginPath();
+    ctx.moveTo(x - size * 0.1, y + size * 0.37);
+    ctx.quadraticCurveTo(x, y + size * 0.6, x + size * 0.1, y + size * 0.37);
+    ctx.quadraticCurveTo(x + size * 0.05, y + size * 0.42, x, y + size * 0.37);
+    ctx.quadraticCurveTo(x - size * 0.05, y + size * 0.42, x - size * 0.1, y + size * 0.37);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawAIIcon(x, y, size, alpha, color) {
+    if (alpha <= 0.003) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = size * 0.08;
+    const nodes = [
+      [-0.35, -0.2], [0.35, -0.3], [0.4, 0.25], [-0.3, 0.35], [0, -0.1]
+    ];
+    // Connections
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        if ((i + j) % 2 === 0 || j === 4) {
+          ctx.beginPath();
+          ctx.moveTo(x + nodes[i][0] * size, y + nodes[i][1] * size);
+          ctx.lineTo(x + nodes[j][0] * size, y + nodes[j][1] * size);
+          ctx.stroke();
+        }
+      }
+    }
+    // Nodes
+    ctx.fillStyle = color;
+    for (const [nx, ny] of nodes) {
+      ctx.beginPath();
+      ctx.arc(x + nx * size, y + ny * size, size * 0.09, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // --- Background ---
+  function drawBackground(t) {
+    // Gradient background
+    const grad = ctx.createRadialGradient(640, 360, 100, 640, 360, 900);
+    grad.addColorStop(0, '#111827');
+    grad.addColorStop(0.5, '#0d1424');
+    grad.addColorStop(1, '#06080f');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 1280, 720);
+
+    // Subtle grid dots
+    ctx.fillStyle = 'rgba(80,100,160,0.12)';
+    const spacing = 48;
+    const ox = (t * 3) % spacing;
+    const oy = (t * 1.5) % spacing;
+    for (let gx = -spacing + ox; gx < 1280 + spacing; gx += spacing) {
+      for (let gy = -spacing + oy; gy < 720 + spacing; gy += spacing) {
+        ctx.fillRect(gx, gy, 2.3, 2.3);
+      }
+    }
+
+    // Vignette
+    const vg = ctx.createRadialGradient(640, 360, 300, 640, 360, 780);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, 'rgba(0,0,0,0.55)');
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, 1280, 720);
+
+    // Large ambient glow orbs (subtle)
+    const orb1x = 350 + Math.sin(t * 0.18) * 80;
+    const orb1y = 250 + Math.cos(t * 0.13) * 60;
+    const og1 = ctx.createRadialGradient(orb1x, orb1y, 40, orb1x, orb1y, 420);
+    og1.addColorStop(0, 'rgba(79,70,229,0.14)');
+    og1.addColorStop(1, 'rgba(79,70,229,0)');
+    ctx.fillStyle = og1;
+    ctx.fillRect(0, 0, 1280, 720);
+
+    const orb2x = 900 + Math.sin(t * 0.15 + 2) * 100;
+    const orb2y = 450 + Math.cos(t * 0.17 + 1) * 70;
+    const og2 = ctx.createRadialGradient(orb2x, orb2y, 40, orb2x, orb2y, 380);
+    og2.addColorStop(0, 'rgba(6,182,212,0.10)');
+    og2.addColorStop(1, 'rgba(6,182,212,0)');
+    ctx.fillStyle = og2;
+    ctx.fillRect(0, 0, 1280, 720);
+  }
+
+  // --- Scene Render Functions ---
+  function renderScene0(t) {
+    // Logo intro: 0-4s
+    const titleAlpha = alphaRange(t, 0.4, 1.2, 2.8, 0.8);
+    const taglineAlpha = alphaRange(t, 1.3, 1.0, 2.6, 0.8);
+    const scale = 1 + (1 - easeOutBack(clamp((t - 0.3) / 1.1, 0, 1))) * 0.12;
+
+    ctx.save();
+    ctx.translate(640, 300);
+    ctx.scale(scale, scale);
+    drawGlowText('10xColleges', 0, 0, 92, '#ffffff', 'rgba(99,102,241,0.9)', titleAlpha, true, 'center', 40);
+    ctx.restore();
+
+    drawGlowText('Where Ambition Meets Admission', 640, 405, 30, '#fbbf24', 'rgba(245,158,11,0.5)', taglineAlpha, false, 'center', 14);
+
+    // Decorative ring behind title
+    const ringAlpha = alphaRange(t, 0.5, 1.5, 2.5, 1.0) * 0.5;
+    if (ringAlpha > 0.01) {
+      ctx.save();
+      ctx.globalAlpha = ringAlpha;
+      ctx.strokeStyle = 'rgba(99,102,241,0.5)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([12, 18]);
+      ctx.beginPath();
+      ctx.arc(640, 300, 170 + Math.sin(t * 1.3) * 8, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+  }
+
+  function renderScene1(t) {
+    // Problem: 4-11s
+    const txt1Alpha = alphaRange(t, 4.4, 1.1, 6.8, 0.8);
+    const txt2Alpha = alphaRange(t, 6.9, 1.2, 9.6, 0.8);
+    const scatterAlpha = alphaRange(t, 4.2, 0.8, 10.2, 0.7);
+
+    // Scattered dots (rejected applications)
+    if (scatterAlpha > 0.01) {
+      const seedBase = 42;
+      for (let i = 0; i < 48; i++) {
+        const sx = ((i * 137.5 + seedBase) % 1280);
+        const sy = ((i * 89.7 + seedBase * 3) % 620) + 50;
+        const dotAlpha = scatterAlpha * (0.45 + 0.55 * Math.abs(Math.sin(i * 1.7 + t * 0.4)));
+        const dotSize = 1.5 + (i % 4) * 0.8;
+        const fade = fadeOut(t, 7.2 + (i % 7) * 0.35, 1.8);
+        ctx.fillStyle = `rgba(130,140,170,${dotAlpha * fade})`;
+        ctx.beginPath();
+        ctx.arc(sx, sy, dotSize, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Downward arrow
+    const arrowAlpha = alphaRange(t, 4.6, 1.4, 9.0, 1.0) * 0.55;
+    if (arrowAlpha > 0.01) {
+      ctx.save();
+      ctx.globalAlpha = arrowAlpha;
+      ctx.strokeStyle = 'rgba(220,80,80,0.7)';
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = 'round';
+      const ax = 640 + (t - 5) * 4;
+      ctx.beginPath();
+      ctx.moveTo(ax - 45, 545);
+      ctx.lineTo(ax + 45, 575);
+      ctx.moveTo(ax + 45, 575);
+      ctx.lineTo(ax + 32, 565);
+      ctx.moveTo(ax + 45, 575);
+      ctx.lineTo(ax + 38, 586);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    drawGlowText('Every year, millions apply to top colleges', 640, 310, 36, 'rgba(230,235,245,0.92)', 'rgba(150,160,200,0.5)', txt1Alpha, false, 'center', 16);
+    drawGlowText('Only a fraction get into their dream school', 640, 390, 38, 'rgba(250,210,210,0.93)', 'rgba(220,100,100,0.4)', txt2Alpha, false, 'center', 18);
+  }
+
+  function renderScene2(t) {
+    // Solution: 11-18s
+    const titleAlpha = alphaRange(t, 11.2, 1.3, 14.5, 0.9);
+    const subAlpha = alphaRange(t, 12.0, 1.0, 14.0, 0.7);
+
+    drawGlowText('Introducing 10xColleges', 640, 175, 58, '#ffffff', 'rgba(99,102,241,0.9)', titleAlpha, true, 'center', 32);
+    drawGlowText('The world\'s first 10x admission platform', 640, 240, 24, '#94a3b8', 'rgba(148,163,184,0.3)', subAlpha, false, 'center', 10);
+
+    // Features
+    const features = [
+      { text: 'AI-Powered College Matching', y: 335, icon: 'ai', t_start: 12.6 },
+      { text: '1-on-1 Expert Mentorship', y: 420, icon: 'person', t_start: 13.9 },
+      { text: 'Essay & Application Optimization', y: 505, icon: 'doc', t_start: 15.2 },
+      { text: '10x Higher Acceptance Rate', y: 590, icon: 'rocket', t_start: 16.5 },
+    ];
+
+    const overlapOffset = [
+      { x: -220, y: -20 }, { x: 200, y: -10 }, { x: -180, y: 15 }, { x: 230, y: 5 }
+    ];
+
+    for (let i = 0; i < features.length; i++) {
+      const f = features[i];
+      const fAlpha = alphaRange(t, f.t_start, 0.7, 17.6, 0.5);
+      if (fAlpha <= 0.01) continue;
+      const slideIn = easeOutBack(clamp((t - f.t_start) / 0.8, 0, 1));
+      const offsetX = (1 - slideIn) * overlapOffset[i].x;
+      const offsetY = (1 - slideIn) * overlapOffset[i].y;
+
+      // Icon
+      const iconSize = 42;
+      const iconX = 408 + offsetX;
+      const iconY = f.y + offsetY;
+      const iconColor = i === 3 ? '#fbbf24' : '#6c7bd9';
+      drawCheckIcon(iconX - 28, f.y + offsetY, 18, fAlpha, '#10b981');
+      switch (f.icon) {
+        case 'ai': drawAIIcon(iconX, iconY, iconSize, fAlpha, iconColor); break;
+        case 'person': drawPersonIcon(iconX, iconY, iconSize, fAlpha, iconColor); break;
+        case 'doc': drawDocIcon(iconX, iconY, iconSize, fAlpha, iconColor); break;
+        case 'rocket': drawRocketIcon(iconX, iconY, iconSize, fAlpha, iconColor); break;
+      }
+
+      // Text
+      drawGlowText(f.text, 490 + offsetX, f.y + offsetY, 27, 'rgba(240,242,250,0.95)', 'rgba(100,120,200,0.4)', fAlpha, false, 'left', 12);
+
+      // Small connecting line
+      const lineAlpha = fAlpha * 0.5;
+      if (lineAlpha > 0.01) {
+        ctx.save();
+        ctx.globalAlpha = lineAlpha;
+        ctx.strokeStyle = 'rgba(100,120,200,0.5)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 8]);
+        ctx.beginPath();
+        ctx.moveTo(380, f.y + offsetY);
+        ctx.lineTo(410, f.y + offsetY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+      }
+    }
+  }
+
+  function renderScene3(t) {
+    // Stats: 18-25s
+    const titleAlpha = alphaRange(t, 18.3, 1.0, 21.5, 0.7);
+    drawGlowText('The 10x Difference', 640, 140, 44, '#ffffff', 'rgba(245,158,11,0.7)', titleAlpha, true, 'center', 26);
+
+    // Bar chart
+    const chartAlpha = alphaRange(t, 18.8, 0.9, 24.4, 0.6);
+    if (chartAlpha > 0.01) {
+      const baseY = 600;
+      const chartTopY = 250;
+      const maxBarH = 300;
+      const barW = 105;
+
+      const leftBarX = 490;
+      const rightBarX = 790;
+
+      // Grow animations
+      const grow1 = easeOutCubic(clamp((t - 19.3) / 1.6, 0, 1));
+      const grow2 = easeOutCubic(clamp((t - 20.2) / 1.9, 0, 1));
+      const bar1H = maxBarH * 0.12 * grow1;
+      const bar2H = maxBarH * 0.98 * grow2;
+
+      ctx.save();
+      ctx.globalAlpha = chartAlpha;
+
+      // Label backgrounds
+      const labelAlpha = chartAlpha * 0.85;
+      drawPlainText('Traditional', leftBarX, baseY + 35, 21, 'rgba(160,170,200,0.9)', labelAlpha, false, 'center');
+      drawPlainText('10xColleges', rightBarX, baseY + 35, 21, 'rgba(245,158,11,0.95)', labelAlpha, true, 'center');
+
+      // Bar 1 - Traditional
+      const grad1 = ctx.createLinearGradient(leftBarX - barW / 2, baseY, leftBarX + barW / 2, baseY);
+      grad1.addColorStop(0, '#334155');
+      grad1.addColorStop(1, '#475569');
+      ctx.fillStyle = grad1;
+      ctx.beginPath();
+      ctx.roundRect(leftBarX - barW / 2, baseY - bar1H, barW, bar1H, 4);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(100,130,180,0.4)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Bar 2 - 10xColleges
+      const grad2 = ctx.createLinearGradient(rightBarX - barW / 2, baseY - bar2H, rightBarX + barW / 2, baseY);
+      grad2.addColorStop(0, '#fbbf24');
+      grad2.addColorStop(0.5, '#f59e0b');
+      grad2.addColorStop(1, '#d97706');
+      ctx.fillStyle = grad2;
+      ctx.beginPath();
+      ctx.roundRect(rightBarX - barW / 2, baseY - bar2H, barW, bar2H, 4);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(245,158,11,0.6)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Glow above bar 2
+      const glowAlpha = chartAlpha * grow2 * 0.3;
+      if (glowAlpha > 0.01) {
+        const gg = ctx.createRadialGradient(rightBarX, baseY - bar2H, 20, rightBarX, baseY - bar2H, 140);
+        gg.addColorStop(0, `rgba(245,158,11,${glowAlpha})`);
+        gg.addColorStop(1, 'rgba(245,158,11,0)');
+        ctx.fillStyle = gg;
+        ctx.fillRect(rightBarX - 200, baseY - bar2H - 200, 400, 400);
+      }
+
+      // Multiplier text
+      const multAlpha = alphaRange(t, 21.5, 0.6, 24.0, 0.5) * chartAlpha;
+      if (multAlpha > 0.01) {
+        drawGlowText('10×', rightBarX, baseY - bar2H - 35, 52, '#fbbf24', 'rgba(245,158,11,0.8)', multAlpha, true, 'center', 24);
+        drawGlowText('1×', leftBarX, baseY - bar1H - 30, 30, '#7c8ca0', 'rgba(100,130,160,0.4)', multAlpha * 0.7, false, 'center', 10);
+      }
+
+      // Chart baseline
+      ctx.fillStyle = 'rgba(150,160,180,0.4)';
+      ctx.fillRect(leftBarX - barW - 30, baseY + 1.5, barW * 2 + 160, 2.5);
+
+      ctx.restore();
+    }
+
+    // Small stat labels
+    const stat1Alpha = alphaRange(t, 21.8, 0.8, 24.2, 0.5);
+    const stat2Alpha = alphaRange(t, 22.5, 0.8, 24.2, 0.5);
+    drawPlainText('From 1 in 10', 505, 530, 19, 'rgba(160,170,200,0.9)', stat1Alpha, false, 'center');
+    drawPlainText('To 10 in 10', 805, 530, 19, 'rgba(245,158,11,0.95)', stat2Alpha, true, 'center');
+  }
+
+  function renderScene4(t) {
+    // Closing: 25-30s
+    const titleAlpha = alphaRange(t, 25.3, 1.4, 28.6, 1.2);
+    const subAlpha = alphaRange(t, 26.2, 1.0, 28.6, 1.0);
+    const urlAlpha = alphaRange(t, 27.0, 0.9, 28.6, 0.9);
+
+    const scale = 1 + (1 - easeOutBack(clamp((t - 25.2) / 1.3, 0, 1))) * 0.1;
+    ctx.save();
+    ctx.translate(640, 285);
+    ctx.scale(scale, scale);
+    drawGlowText('10xColleges', 0, 0, 88, '#ffffff', 'rgba(99,102,241,0.95)', titleAlpha, true, 'center', 38);
+    ctx.restore();
+
+    drawGlowText('Your future starts now', 640, 385, 32, '#e2e8f0', 'rgba(148,163,184,0.4)', subAlpha, false, 'center', 14);
+
+    drawGlowText('10xColleges.com', 640, 455, 26, '#fbbf24', 'rgba(245,158,11,0.55)', urlAlpha, true, 'center', 18);
+
+    // Rapid particles burst
+    if (t > 25.5 && t < 28.5) {
+      const burstAlpha = clamp((t - 25.5) / 0.8, 0, 1) * clamp((28.5 - t) / 0.5, 0, 1);
+      const seed = Math.floor(t * 50);
+      for (let i = 0; i < 30; i++) {
+        const angle = (seed + i * 47.3) % 360 * Math.PI / 180;
+        const dist = 120 + (i % 12) * 28 + Math.sin(t * 3 + i) * 15;
+        const px = 640 + Math.cos(angle) * dist;
+        const py = 285 + Math.sin(angle) * dist * 0.55;
+        const sz = 1.2 + (i % 5) * 0.5;
+        ctx.fillStyle = `rgba(200,190,255,${burstAlpha * 0.55 * (0.6 + Math.sin(t * 5 + i) * 0.4)})`;
+        ctx.beginPath();
+        ctx.arc(px, py, sz, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Final ring pulse
+    const ringAlpha = alphaRange(t, 25.8, 0.9, 28.8, 1.0) * 0.5;
+    if (ringAlpha > 0.01) {
+      ctx.save();
+      ctx.globalAlpha = ringAlpha;
+      ctx.strokeStyle = 'rgba(99,102,241,0.55)';
+      ctx.lineWidth = 2;
+      const ringR = 200 + (t - 26) * 30;
+      ctx.beginPath();
+      ctx.arc(640, 285, ringR, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // --- Scene Management ---
+  const sceneStarts = [0, 4, 11, 18, 25, 30];
+  const sceneFns = [renderScene0, renderScene1, renderScene2, renderScene3, renderScene4];
+  const sceneDurations = [4, 7, 7, 7, 5];
+
+  function getActiveScene(globalTime) {
+    for (let i = sceneStarts.length - 1; i >= 0; i--) {
+      if (globalTime >= sceneStarts[i]) {
+        return { index: Math.min(i, 4), localTime: globalTime - sceneStarts[Math.min(i, 4)] };
+      }
+    }
+    return { index: 0, localTime: globalTime };
+  }
+
+  // --- Main Loop ---
+  let lastFrameTime = performance.now();
+  let particlesInitialized = false;
+
+  function animate() {
+    const now = performance.now();
+    const dt = Math.min((now - lastFrameTime) / 1000, 0.05);
+    lastFrameTime = now;
+
+    const globalTime = ((now - startTime) / 1000 + tOffset) % window.DUR;
+
+    // Clear
+    ctx.clearRect(0, 0, 1280, 720);
+
+    // Background
+    drawBackground(globalTime);
+
+    // Update and draw particles
+    for (const p of particles) {
+      p.update(dt);
+      p.draw(ctx, globalTime);
+    }
+
+    // Determine which scenes to render
+    const active = getActiveScene(globalTime);
+    sceneFns[active.index](active.localTime);
+
+    // Handle cross-fade between scenes (blend previous scene during transition)
+    const transDuration = 0.6;
+    if (active.index < 4 && active.localTime > sceneDurations[active.index] - transDuration) {
+      const transitionProgress = (active.localTime - (sceneDurations[active.index] - transDuration)) / transDuration;
+      const nextAlpha = easeInOut(clamp(transitionProgress, 0, 1));
+      const prevAlpha = 1 - nextAlpha;
+      // We already rendered active scene with full alpha. Re-render previous scene at reduced alpha?
+      // Instead, we'll render the next scene with increasing alpha on top.
+      ctx.save();
+      ctx.globalAlpha = nextAlpha * 0.85;
+      // We need to save the main canvas state and fade in the next scene
+      // For simplicity, we redraw a semi-transparent overlay of the next scene.
+      // Since we can't easily alpha-blend the existing canvas content with new drawing,
+      // we'll render the next scene on top with reduced alpha using globalCompositeOperation.
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.restore();
+      // Actually, a better approach: draw a black overlay with alpha = prevAlpha to fade out current scene,
+      // then draw next scene with alpha = nextAlpha.
+      // But since we already drew the current scene, we'll simply draw a dark overlay and then the next scene.
+
+      // Fade out current scene
+      ctx.fillStyle = `rgba(6,8,15,${prevAlpha * 0.75})`;
+      ctx.fillRect(0, 0, 1280, 720);
+
+      // Draw next scene with full alpha
+      if (active.index < 4) {
+        const nextLocalTime = active.localTime - sceneDurations[active.index];
+        const nextSceneT = nextLocalTime;
+        if (nextSceneT >= 0 && nextSceneT < sceneDurations[active.index + 1]) {
+          sceneFns[active.index + 1](nextSceneT);
+        }
+      }
+    }
+
+    requestAnimationFrame(animate);
+  }
+
+  // Polyfill roundRect if needed
+  if (!ctx.roundRect) {
+    ctx.roundRect = function(x, y, w, h, r) {
+      if (r > w / 2) r = w / 2;
+      if (r > h / 2) r = h / 2;
+      this.beginPath();
+      this.moveTo(x + r, y);
+      this.lineTo(x + w - r, y);
+      this.quadraticCurveTo(x + w, y, x + w, y + r);
+      this.lineTo(x + w, y + h - r);
+      this.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      this.lineTo(x + r, y + h);
+      this.quadraticCurveTo(x, y + h, x, y + h - r);
+      this.lineTo(x, y + r);
+      this.quadraticCurveTo(x, y, x + r, y);
+      this.closePath();
+    };
+  }
+
+  // Start
+  animate();
+})();
+</script>
+</body>
+</html>

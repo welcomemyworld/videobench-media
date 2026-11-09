@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Why celld earns its place</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#s{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#05080f}
+</style></head><body><canvas id="s" width="1280" height="720"></canvas>
+<script>
+window.DUR=34;
+const c=document.getElementById('s'),x=c.getContext('2d');
+function fit(){const k=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*k+'px';c.style.height=720*k+'px'}
+addEventListener('resize',fit);fit();
+const off=parseFloat(new URLSearchParams(location.search).get('t'))||0;
+const t0=performance.now()-off*1000;
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const ease=v=>{v=cl(v);return v*v*(3-2*v)};
+function fade(t,a,b){return ease((t-a)/0.8)*ease((b-t)/0.8)}
+function txt(s,X,Y,sz,col,al,w){x.globalAlpha=al;x.fillStyle=col;x.font=(w||'600')+' '+sz+'px system-ui,Segoe UI,Helvetica,Arial';x.textAlign='center';x.textBaseline='middle';x.fillText(s,X,Y);x.globalAlpha=1}
+function rr(X,Y,w,h,r){x.beginPath();x.roundRect?x.roundRect(X,Y,w,h,r):x.rect(X,Y,w,h)}
+function hex(X,Y,r){x.beginPath();for(let i=0;i<6;i++){const a=Math.PI/3*i+Math.PI/6;x.lineTo(X+r*Math.cos(a),Y+r*Math.sin(a))}x.closePath()}
+function bg(t){const g=x.createRadialGradient(640,360,50,640,360,800);g.addColorStop(0,'#0d1730');g.addColorStop(1,'#03050a');x.fillStyle=g;x.fillRect(0,0,1280,720);
+x.strokeStyle='rgba(80,140,255,0.06)';for(let i=0;i<1280;i+=40){x.beginPath();x.moveTo(i,0);x.lineTo(i,720);x.stroke()}for(let j=0;j<720;j+=40){x.beginPath();x.moveTo(0,j);x.lineTo(1280,j);x.stroke()}}
+const G='#3be8a0',R='#ff4d5e',B='#5aa8ff',Y='#ffd166';
+function cap(s,t,a,b){txt(s,640,640,28,'#dfe8ff',fade(t,a,b),'500')}
+function head(s,t,a,b,col){txt(s,640,80,40,col,fade(t,a,b),'700')}
+
+function title(t){const a=fade(t,0,6.5);
+for(let i=0;i<7;i++){const an=i/7*Math.PI*2+t*0.3,r=i?150:0;x.globalAlpha=a*0.9;hex(640+r*Math.cos(an),330+r*Math.sin(an)*0.6,i?40:60);x.strokeStyle=i?B:G;x.lineWidth=3;x.stroke();x.fillStyle=i?'rgba(90,168,255,0.1)':'rgba(59,232,160,0.15)';x.fill()}
+x.globalAlpha=1;txt('celld',640,330,64,'#fff',a,'800');
+txt('Why it earns its place',640,520,36,'#bcd0ff',a*ease((t-1)/1),'500');
+txt('one daemon · isolated cells · self-healing workloads',640,570,22,'#7f93bf',a*ease((t-2)/1),'400')}
+
+function without(t){const a=fade(t,6,13.5);if(a<=0)return;const lt=t-6;
+head('Without celld',t,6,13.5,R);
+x.globalAlpha=a;rr(340,160,600,380,20);x.strokeStyle='#8090b0';x.lineWidth=3;x.stroke();x.globalAlpha=1;
+txt('one shared host',640,185,18,'#8090b0',a,'400');
+for(let i=0;i<12;i++){const cx=400+(i%4)*160,cy=250+Math.floor(i/4)*110;
+const d=Math.hypot(i%4-1,Math.floor(i/4)-1);const fail=cl((lt-2-d*0.6)/0.5);
+x.globalAlpha=a;rr(cx-55,cy-35,110,70,10);x.fillStyle=fail>0.5?'rgba(255,77,94,0.25)':'rgba(90,168,255,0.15)';x.fill();x.strokeStyle=fail>0.5?R:B;x.lineWidth=2;x.stroke();
+x.globalAlpha=1;txt(fail>0.5?'✕ down':'app '+(i+1),cx+(fail>0.5?Math.sin(t*40)*2:0),cy,18,fail>0.5?R:'#cfe0ff',a)}
+cap('One crash spreads through shared memory, ports and disk — everything goes down.',t,7,13.5)}
+
+function withC(t){const a=fade(t,13,21.5);if(a<=0)return;const lt=t-13;
+head('With celld',t,13,21.5,G);
+for(let i=0;i<12;i++){const cx=400+(i%4)*160,cy=250+Math.floor(i/4)*110;const bad=i==5;
+let st=0;if(bad){if(lt>2&&lt<4.5)st=1;else if(lt>=4.5&&lt<5.5)st=2}
+const col=st==1?R:st==2?Y:G;
+x.globalAlpha=a;hex(cx,cy,52);x.fillStyle=st==1?'rgba(255,77,94,0.25)':'rgba(59,232,160,0.1)';x.fill();x.strokeStyle=col;x.lineWidth=st==1?4:2;x.stroke();
+if(st==1){x.globalAlpha=a*(0.5+0.5*Math.sin(t*10));hex(cx,cy,62);x.strokeStyle=R;x.stroke()}
+x.globalAlpha=1;txt(st==1?'✕ crashed':st==2?'↻ restart':'cell '+(i+1),cx,cy,17,st?col:'#d6ffe9',a)}
+txt('celld supervisor',640,175,18,G,a,'500');
+cap(lt<4.5?'Each workload runs in its own cell. A crash stays inside its walls.':'celld notices, restarts the cell — the other 11 never blinked.',t,14,21.5)}
+
+function scale(t){const a=fade(t,21,28);if(a<=0)return;const lt=t-21;
+head('Scales with demand',t,21,28,B);
+const load=Math.sin(cl(lt/6)*Math.PI);const n=2+Math.round(load*10);
+x.globalAlpha=a;x.strokeStyle='#5a6a90';x.beginPath();x.moveTo(160,520);x.lineTo(1120,520);x.stroke();
+x.beginPath();for(let k=0;k<=100;k++){const p=k/100,l=Math.sin(p*Math.PI);x.lineTo(160+p*960,520-l*80)}x.strokeStyle=Y;x.lineWidth=3;x.stroke();
+const px=160+cl(lt/6)*960;x.fillStyle=Y;x.beginPath();x.arc(px,520-load*80,7,0,7);x.fill();x.globalAlpha=1;
+txt('load',130,480,16,Y,a,'400');
+for(let i=0;i<12;i++){const on=i<n;const cx=310+(i%6)*132,cy=230+Math.floor(i/6)*120;
+x.globalAlpha=a*(on?1:0.15);hex(cx,cy,46);x.fillStyle='rgba(90,168,255,0.15)';x.fill();x.strokeStyle=B;x.lineWidth=2;x.stroke();x.globalAlpha=1;
+if(on)txt('cell',cx,cy,16,'#cfe0ff',a)}
+txt(n+' cells active',640,570,22,B,a,'600');
+cap('Cells spin up under load and are reclaimed when it fades — you pay only for what runs.',t,21.5,28)}
+
+function sum(t){const a=fade(t,27.5,34.5);if(a<=0)return;
+head('Why celld earns its place',t,27.5,34.5,'#fff');
+const pts=[['Isolation','failures stay contained',G],['Self-healing','crashed cells restart automatically',Y],['Elastic','capacity follows demand',B]];
+pts.forEach((p,i)=>{const e=ease((t-28-i*0.6)/0.8)*a;const X=260+i*380;
+x.globalAlpha=e;hex(X,330,70);x.strokeStyle=p[2];x.lineWidth=3;x.stroke();x.fillStyle='rgba(255,255,255,0.04)';x.fill();x.globalAlpha=1;
+txt(['◇','↻','⇅'][i],X,330,44,p[2],e,'400');txt(p[0],X,440,30,'#fff',e,'700');txt(p[1],X,480,19,'#9fb2d8',e,'400')});
+txt('Small daemon. Big blast-radius reduction.',640,600,26,G,a*ease((t-30.5)/1),'600')}
+
+function frame(){let t=((performance.now()-t0)/1000)%DUR;bg(t);title(t);without(t);withC(t);scale(t);sum(t);requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

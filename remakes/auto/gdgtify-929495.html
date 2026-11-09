@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>BUILD THE FLOOR</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#102820}
+</style></head><body><canvas id="c" width="1080" height="1080"></canvas>
+<script>
+window.DUR=20;
+const cv=document.getElementById('c'),X=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth,innerHeight)/1080;cv.style.width=1080*s+'px';cv.style.height=1080*s+'px'}
+addEventListener('resize',fit);fit();
+const BG='#102820',PA='#F4E9D5',AC='#F2B544';
+const SERIF='"Didot","Bodoni 72","Bodoni MT","Playfair Display",Georgia,"Times New Roman",serif';
+const GRO='"Helvetica Neue","Arial Black","Impact",Arial,sans-serif';
+const MONO='"SF Mono",Menlo,Consolas,"Courier New",monospace';
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const pr=(t,a,b)=>cl((t-a)/(b-a));
+const io=x=>x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2;
+const eo=x=>1-Math.pow(1-x,3);
+// critically damped step response (analytic)
+const cd=(x,k=7)=>x<=0?0:1-(1+k*x)*Math.exp(-k*x);
+const L=(a,b,x)=>a+(b-a)*x;
+function serif(t,x,y,sz,al,col,a,align){X.globalAlpha=al;X.fillStyle=col||PA;X.font=(a||'')+sz+'px '+SERIF;X.textAlign=align||'center';X.textBaseline='alphabetic';X.fillText(t,x,y);X.globalAlpha=1}
+function gro(t,x,y,sz,col,al,sx){X.save();X.globalAlpha=al==null?1:al;X.fillStyle=col||PA;X.font='900 '+sz+'px '+GRO;X.textAlign='center';X.textBaseline='alphabetic';X.translate(x,y);X.scale(sx||1,1);X.fillText(t,0,0);X.restore()}
+function mono(t,x,y,al,align){X.globalAlpha=al;X.fillStyle=AC;X.font='15px '+MONO;X.textAlign=align||'left';X.fillText(t,x,y);X.globalAlpha=1}
+// phrase reveal: words appear in reading order
+function phrase(words,x,y,sz,t,t0,gap,col,ital){X.font=(ital||'')+sz+'px '+SERIF;let full=words.join(' '),w=X.measureText(full).width,cx=x-w/2;
+ words.forEach((wd,i)=>{const a=eo(pr(t,t0+i*gap,t0+i*gap+.35));serif(wd,cx,y+(1-a)*14,sz,a,col,ital,'left');cx+=X.measureText(wd+' ').width});}
+// WAIT lintel geometry
+function lintel(y,h,al){X.fillStyle=PA;X.globalAlpha=al;X.fillRect(0,y,1080,h);X.globalAlpha=1;
+ X.save();X.beginPath();X.rect(0,y,1080,h);X.clip();gro('WAIT',540,y+h-h*.06,h*1.12,BG,1,1.55);X.restore()}
+function render(t){
+ t=((t%20)+20)%20;
+ X.setTransform(1,0,0,1,0,0);X.fillStyle=BG;X.fillRect(0,0,1080,1080);
+ // timing marks
+ mono('BUILD THE FLOOR',60,60,.8);mono(t.toFixed(2).padStart(5,'0')+' / 20.00',1020,60,.8,'right');
+ for(let i=0;i<=20;i++){X.fillStyle=AC;X.globalAlpha=i<=t?.8:.25;X.fillRect(60+i*48,1030,1,i%5?6:12)}X.globalAlpha=1;
+ if(t<3||t>=19.2){ // opening / return composition
+  let c=t<3?io(pr(t,0,3)):0;
+  let ret=t>=19.2?eo(pr(t,19.2,20)):1;
+  let lh=L(520,640,c),ly=-60;
+  lintel(ly,lh,1);
+  // floor slab below
+  let fy=L(820,700,c);X.fillStyle=AC;X.fillRect(0,fy,1080,1080-fy);
+  X.fillStyle=BG;X.fillRect(0,fy,1080,4);
+  let oy=(ly+lh+fy)/2+18;
+  let a=t<3?1:ret;
+  if(t<3)phrase(['We','were','told','to','wait.'],540,oy,64,t,.15,.28);
+  else serif('We were told to wait.',540,oy,64,a);
+  mono('OPENING '+Math.round(fy-ly-lh)+' PX',60,fy-14,.7);
+  if(t>=19.2){X.fillStyle=PA;X.globalAlpha=1-ret;X.fillRect(0,0,1080,1080);X.globalAlpha=1}
+  return;
+ }
+ if(t<6.5){ // weight of waiting
+  let p=pr(t,3,6.5);
+  // lintel retreats upward
+  let up=io(pr(t,3,3.6));lintel(L(-60,-560,up),520,1);
+  phrase(['So','we','learned'],540,250,50,t,3.1,.22);
+  phrase(['the','weight','of'],540,320,50,t,3.8,.22);
+  let drop=cd(pr(t,4.5,6.5),6);
+  let wy=L(230,560,drop);
+  // cables
+  X.strokeStyle=AC;X.lineWidth=1.5;X.globalAlpha=eo(pr(t,4.3,4.6));
+  [330,750].forEach(cx=>{X.beginPath();X.moveTo(cx,0);X.lineTo(cx,wy-90);X.stroke()});X.globalAlpha=1;
+  gro('WAITING',540,wy,150,PA,eo(pr(t,4.4,4.8)),.92);
+  // elastic baseline under load
+  let sag=drop*70*(1+.12*Math.exp(-3*pr(t,5.2,6.5))*Math.sin(pr(t,5.2,6.5)*14));
+  X.strokeStyle=AC;X.lineWidth=10;X.beginPath();
+  for(let x=0;x<=1080;x+=10){let u=x/1080,y=620+sag*Math.sin(Math.PI*u);x?X.lineTo(x,y):X.moveTo(x,y)}X.stroke();
+  serif('waiting.',540,760+sag*.6,46,eo(pr(t,5.6,6)),PA,'italic ');
+  mono('LOAD '+(drop*100).toFixed(0)+'%',60,1000,.7);
+  return;
+ }
+ const ws=[ // persistent structural state
+ ];
+ let sagE=70; // baseline sag at end of previous scene
+ if(t<10){ // voice support, room aperture
+  let lift=cd(pr(t,7.6,9),6);
+  let leftY=L(620,520,lift);
+  // baseline: sagging, now tilted
+  let s=sagE*(1-lift);
+  gro('WAITING',L(540,560,lift),L(560,leftY-60,lift),150,PA,1,.92);
+  X.strokeStyle=AC;X.lineWidth=10;X.beginPath();
+  for(let x=0;x<=1080;x+=10){let u=x/1080,y=L(leftY,620,u)+s*Math.sin(Math.PI*u);x?X.lineTo(x,y):X.moveTo(x,y)}X.stroke();
+  // VOICE support: enters vertical then rotates
+  let ent=eo(pr(t,6.7,7.4)),rot=io(pr(t,7.3,8));
+  X.save();X.translate(170,L(1300,leftY+5,ent));X.rotate(L(-Math.PI/2,-Math.PI/2,rot));
+  gro('VOICE',L(0,-260,rot)+260*rot,62,120,AC,1,.8);X.restore();
+  phrase(['Then','one','voice','made'],540,190,52,t,6.6,.25);
+  // ROOM with aperture
+  let ro=eo(pr(t,8,8.4));gro('ROOM',540,880,170,PA,ro,.95);
+  let ap=io(pr(t,9.1,10));
+  if(ap>0){X.save();X.beginPath();X.arc(475,820,L(30,1600,ap),0,7);X.clip();X.fillStyle=BG;X.fillRect(0,0,1080,1080);
+   X.fillStyle=AC;X.fillRect(0,520,1080,10);serif('Then another.',540,400,64,ap);X.restore()}
+  return;
+ }
+ if(t<12.5){
+  let a2=cd(pr(t,10.6,11.6),7);
+  let ry=L(620,520,a2);
+  phrase(['Then','another.'],540,280,64,Math.max(t,10),9.95,.3);
+  gro('WAITING',L(560,540,a2),L(460,460,a2),150,PA,1,.92);
+  X.strokeStyle=AC;X.lineWidth=10;X.beginPath();X.moveTo(0,520);X.lineTo(1080,ry);X.stroke();
+  X.save();X.translate(170,525);X.rotate(-Math.PI/2);gro('VOICE',260,62,120,AC,1,.8);X.restore();
+  X.save();X.translate(910,L(1300,ry+5,eo(pr(t,10.2,10.8))));X.rotate(-Math.PI/2);gro('VOICE',L(0,ry-ry,1)-ry+ry+(-1300+1300)+ -(-0)+(-L(0,0,0))+(-(0))+(ry-520>0?0:0)+(-0)+ (L(-0,0,0)) + -(-0) + (0)+(-(-0))+(-0)+(-0)+ -( -(0) ) + (-(0)) + 0 - (-(0)) + -(-(-0)) + (-260*0) + (-0) + (-(0)) + (0)+(-(0))+ (L(260,-260+520,0)) - 0,62,120,AC,1,.8);X.restore();
+  if(t>11.6){mono('LEVEL 0.0°',60,1000,.8);X.fillStyle=AC;X.fillRect(0,516,1080,1)}
+  return;
+ }
+ // platform assembly 12.5-20
+ let as=io(pr(t,12.5,13.6)),py=L(520,600,as);
+ let rel=t>16?Math.sin(pr(t,16,18)*Math.PI)*.5:0;
+ let tr=io(pr(t,18,19.2));
+ X.save();X.translate(0,-tr*1100);X.scale(1,1+tr*.4);
+ // supports
+ X.save();X.translate(170,L(525,py+5,as)+L(0,py+330-525,0));X.rotate(-Math.PI/2);gro('VOICE',L(260,-140,as)+140*as-0,62,120,AC,1,.8);X.restore();
+ X.save();X.translate(910,L(525,py+5,as));X.rotate(-Math.PI/2);gro('VOICE',L(260,-140,as)+140*as,62,120,AC,1,.8);X.restore();
+ // WAITING becomes slab, WAIT lintel underside
+ X.fillStyle=PA;X.fillRect(80,py,920,L(10,90,as));
+ X.save();X.beginPath();X.rect(80,py,920,90);X.clip();gro('WAITING',540,py+82,L(150,100,as),BG,as,.92);X.restore();
+ X.fillStyle=AC;X.fillRect(80,py-10,920,10);
+ // cables release
+ X.strokeStyle=AC;X.lineWidth=1.5;[330,750].forEach(cx=>{X.beginPath();X.moveTo(cx,0);X.quadraticCurveTo(cx+rel*8,(py-120)/2,cx,py-160);X.stroke()});
+ // final sentence settles
+ let s1=cd(pr(t,13.4,14.6),7),s2=cd(pr(t,14.4,15.6),7);
+ serif('Now the floor',540,L(py-260,py-200,s1),66,s1);
+ serif('belongs to',540,L(py-200,py-120,s2)-(1-s2)*0,54,s2,PA,'italic ');
+ let s3=cd(pr(t,15,16),6);
+ gro('US',540,py-12,L(60,150,s3)*1,AC,s3,4.2);
+ X.restore();
+ if(tr>0){lintel(L(1100,-60,tr),520,1)}
+ mono(t<16?'ASSEMBLY':t<18?'HOLD':'RETURN',60,1000,.7);
+}
+let start=performance.now(),off=parseFloat(new URLSearchParams(location.search).get('t'))||0;
+window.seek=t=>render(t);
+window.frame=n=>render(n/60);
+function loop(){render(off+(performance.now()-start)/1000);requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+</script></body></html>

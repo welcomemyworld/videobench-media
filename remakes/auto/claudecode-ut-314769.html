@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8"><title>仕事が速くなるGmailの機能5選</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=52;
+const cv=document.getElementById('c'),x=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||'0')||0;const t0=performance.now();
+const F='"Hiragino Sans","Yu Gothic","Noto Sans JP",sans-serif';
+// 台本: 5項目に構造化（機能名・効果・操作・セリフ[開始秒,話者,文]）
+const ITEMS=[
+{n:'送信取り消し',k:'送信直後なら取り消せる',op:'設定 → 全般 → 取り消し期間 最大30秒',lines:[[0,0,'第1位は「送信取り消し」だよ'],[3,1,'送った直後に「取り消し」を押せば戻せるのね'],[6,0,'取り消し期間は設定で最大30秒まで延ばせるよ']]},
+{n:'スヌーズ',k:'メールを指定日時に再表示',op:'メールにカーソル → 時計アイコン',lines:[[0,1,'第2位は「スヌーズ」'],[3,0,'今は処理できないメールを一時的に受信トレイから消すんだ'],[6,1,'指定した日時に、また一番上に戻ってくるわ']]},
+{n:'テンプレート',k:'定型文をワンクリック挿入',op:'設定 → 詳細 → テンプレートを有効化',lines:[[0,0,'第3位は「テンプレート」'],[3,1,'よく書く文面を保存して、作成画面から挿入できるの'],[6,0,'詳細設定で有効にすれば使えるよ']]},
+{n:'キーボードショートカット',k:'マウスなしで高速操作',op:'設定でON / 「?」で一覧表示',lines:[[0,1,'第4位は「キーボードショートカット」'],[3,0,'c で作成、r で返信、e でアーカイブできるんだ'],[6,1,'Shift + ? で一覧が見られるわ']]},
+{n:'検索演算子とフィルタ',k:'条件で探して自動で仕分け',op:'from: has:attachment など → フィルタ作成',lines:[[0,0,'第5位は「検索演算子とフィルタ」'],[3,1,'from: や has:attachment で一瞬で絞り込めるのね'],[6,0,'その条件でフィルタを作れば自動でラベル付けできるよ']]}
+];
+const INTRO=4,SEG=9,OUT=INTRO+SEG*5;
+const C=['#ea4335','#fbbc04','#34a853','#4285f4','#a142f4'];
+function rr(X,Y,w,h,r,f,s){x.beginPath();x.roundRect(X,Y,w,h,r);if(f){x.fillStyle=f;x.fill();}if(s){x.strokeStyle=s;x.lineWidth=2;x.stroke();}}
+function tx(s,X,Y,sz,c,al,w){x.font=(w||'bold')+' '+sz+'px '+F;x.fillStyle=c;x.textAlign=al||'left';x.textBaseline='middle';x.fillText(s,X,Y);}
+const E=v=>v<0?0:v>1?1:1-Math.pow(1-v,3);
+function env(X,Y,s,col){x.save();x.translate(X,Y);x.scale(s,s);rr(-40,-28,80,56,6,'#fff');x.beginPath();x.moveTo(-40,-28);x.lineTo(0,6);x.lineTo(40,-28);x.strokeStyle=col;x.lineWidth=5;x.stroke();x.restore();}
+function win(){rr(140,120,620,400,14,'#fff');rr(140,120,620,46,14,'#f1f3f4');x.fillStyle='#f1f3f4';x.fillRect(140,150,620,16);
+ for(let i=0;i<3;i++){x.beginPath();x.arc(166+i*22,143,7,0,7);x.fillStyle=['#ff5f57','#febc2e','#28c840'][i];x.fill();}}
+function row(Y,a,b,hi){rr(160,Y,580,48,8,hi||'#f8f9fa');tx(a,180,Y+24,18,'#202124');tx(b,380,Y+24,16,'#5f6368','left','normal');}
+const ILL=[
+p=>{win();rr(170,190,560,220,8,'#fff','#dadce0');tx('宛先: 部長',190,220,18,'#202124','left','normal');tx('件名: 見積書',190,252,18,'#202124','left','normal');
+ for(let i=0;i<4;i++){x.fillStyle='#e8eaed';x.fillRect(190,285+i*24,480-i*60,10);}
+ const fl=E((p-1)/1.2);if(p<4)env(450+fl*240,350-fl*200,1-fl*.5,C[0]);
+ if(p>2.2){const a=Math.min(1,(p-2.2)*3);x.globalAlpha=a;rr(200,440,500,56,8,'#323232');tx('メールを送信しました',225,468,18,'#fff','left','normal');tx('元に戻す',600,468,18,'#8ab4f8');
+  const w=Math.max(0,1-(p-2.2)/6.5);x.fillStyle='#8ab4f8';x.fillRect(200,492,500*w,4);x.globalAlpha=1;}
+ if(p>4.5&&p<6){x.beginPath();x.arc(640,468,24+(p-4.5)*20,0,7);x.strokeStyle='rgba(138,180,248,'+(1-(p-4.5)/1.5)+')';x.lineWidth=4;x.stroke();}},
+p=>{win();const m=['請求書の確認','週次レポート','ランチ会のお知らせ','契約更新について'];
+ const g=E((p-2)/1);for(let i=0;i<4;i++){let Y=190+i*60;if(i==0){x.globalAlpha=1-g;Y-=g*30;}else Y-=g*60*(p<6.5?1:1-E((p-6.5)/1));
+  if(i==0&&p>6.5){x.globalAlpha=E((p-6.5)/1);Y=190;}row(Y,m[i],'…',i==0&&p>6.5?'#fef7e0':0);x.globalAlpha=1;}
+ // 時計
+ x.save();x.translate(640,460);x.beginPath();x.arc(0,0,40,0,7);x.fillStyle=C[1];x.fill();x.strokeStyle='#fff';x.lineWidth=5;
+ const a=p*1.2;x.beginPath();x.moveTo(0,0);x.lineTo(Math.cos(a)*28,Math.sin(a)*28);x.moveTo(0,0);x.lineTo(Math.cos(a/12)*18,Math.sin(a/12)*18);x.stroke();x.restore();
+ tx(p<6.5?'明日 8:00 に再表示':'↑ 受信トレイに戻りました',180,460,20,'#5f6368','left','normal');},
+p=>{win();rr(170,190,560,300,8,'#fff','#dadce0');tx('新規メッセージ',190,215,18,'#202124');
+ const s='いつもお世話になっております。ご確認のほどよろしくお願いいたします。';
+ const n=p<2.5?0:Math.floor(Math.min(1,(p-2.5)/0.6)*s.length);
+ x.font='normal 17px '+F;const L=[s.slice(0,Math.min(n,18)),s.slice(18,n)];L.forEach((l,i)=>tx(l,190,260+i*30,17,'#202124','left','normal'));
+ if(p>0.8&&p<2.6){rr(440,330,260,120,8,'#fff','#dadce0');tx('テンプレート',460,355,16,'#5f6368','left','normal');rr(450,375,240,36,6,p>1.6?'#e6f4ea':'#fff');tx('挨拶と締め',465,393,17,'#202124','left','normal');}
+ x.beginPath();x.moveTo(600+(p>1.6&&p<2.6?-20:0),400);x.lineTo(610,425);x.lineTo(616,410);x.lineTo(630,410);x.closePath();x.fillStyle='#000';x.fill();},
+p=>{win();const ks=[['C','作成'],['R','返信'],['E','アーカイブ'],['?','一覧']];
+ ks.forEach((k,i)=>{const act=Math.floor(p*1.1)%4==i;const X=190+i*140,Y=240+(act?6:0);
+  rr(X,Y+8,110,100,12,'#bdc1c6');rr(X,Y,110,100,12,act?C[3]:'#f1f3f4');tx(k[0],X+55,Y+50,46,act?'#fff':'#202124','center');tx(k[1],X+55,380,18,'#5f6368','center','normal');});
+ tx('Shift + ?  でショートカット一覧',450,460,22,'#202124','center');},
+p=>{win();rr(170,185,560,46,23,'#f1f3f4');const s='from:sales@ has:attachment';const n=Math.floor(Math.min(1,p/2.5)*s.length);
+ tx('🔍',190,208,18,'#5f6368','left','normal');tx(s.slice(0,n)+(p%1<.5?'|':''),220,208,19,'#202124','left','normal');
+ const all=[['営業部','見積書.pdf',1],['総務','お知らせ',0],['営業部','契約書.pdf',1],['友人','週末どう？',0]];
+ let k=0;all.forEach((m,i)=>{const show=p<3||m[2];if(!show)return;const Y=250+(p<3?i:k)*56;k++;
+  row(Y,m[0],m[1]);if(p>6&&m[2]){rr(620,Y+12,100,26,13,C[4]);tx('見積',670,Y+25,14,'#fff','center');}});
+ if(p>6)tx('フィルタ → ラベル「見積」を自動付与',450,495,18,C[4],'center');}
+];
+function chara(X,Y,c,talk,t,lbl){x.save();x.translate(X,Y+(talk?Math.sin(t*12)*3:0));x.beginPath();x.arc(0,0,44,0,7);x.fillStyle=c;x.fill();
+ x.fillStyle='#fff';x.beginPath();x.arc(-15,-8,9,0,7);x.arc(15,-8,9,0,7);x.fill();x.fillStyle='#222';x.beginPath();x.arc(-14,-6,4,0,7);x.arc(16,-6,4,0,7);x.fill();
+ x.beginPath();talk&&Math.sin(t*20)>0?x.ellipse(0,18,9,7,0,0,7):x.rect(-8,16,16,3);x.fill();x.restore();tx(lbl,X,Y+62,15,'#ddd','center');}
+function bg(t,col){const g=x.createLinearGradient(0,0,1280,720);g.addColorStop(0,'#101826');g.addColorStop(1,'#1d1530');x.fillStyle=g;x.fillRect(0,0,1280,720);
+ for(let i=0;i<14;i++){const a=t*.2+i;x.globalAlpha=.06;x.beginPath();x.arc((i*97+t*20)%1400-60,(i*151)%720,40+i*6,0,7);x.fillStyle=col;x.fill();}x.globalAlpha=1;}
+function sub(sp,s,lt){rr(140,600,1000,84,14,'rgba(0,0,0,.72)',sp?'#ff8fb1':'#7fd0ff');tx(s,640,642,28,'#fff','center');chara(75,640,sp?'#e8607d':'#3b8fd6',lt<2.6,lt,sp?'B':'A');}
+function draw(T){const ab=Math.floor(T);// 秒単位で切り替え
+ if(T<INTRO){bg(T,'#4285f4');const a=E(T/1);x.globalAlpha=a;
+  ['#4285f4','#ea4335','#fbbc04','#34a853'].forEach((c,i)=>{x.fillStyle=c;x.fillRect(440+i*100,190,90,12);});
+  env(640,280,1.4,C[0]);tx('仕事が速くなる',640,390,52,'#fff','center');tx('Gmailの機能 5選',640,460,64,'#fbbc04','center');x.globalAlpha=1;
+  sub(ab<2?0:1,ab<2?'今日はGmailの便利機能を5つ紹介するよ':'公式ヘルプで確認した機能だけよ',T);return;}
+ if(T>=OUT){const p=T-OUT;bg(T,'#34a853');tx('まとめ',640,100,46,'#fff','center');
+  ITEMS.forEach((it,i)=>{const a=E((p-i*.25)/.5);x.globalAlpha=a;rr(300,150+i*72,680,58,10,'rgba(255,255,255,.1)');rr(300,150+i*72,10,58,4,C[i]);
+   tx((i+1)+'. '+it.n,330,179+i*72,24,'#fff');tx(it.k,950,179+i*72,18,'#ccc','right','normal');});x.globalAlpha=1;
+  sub(0,'さっそく設定して、仕事を速くしよう！',p);return;}
+ const i=Math.floor((T-INTRO)/SEG),p=T-INTRO-i*SEG,it=ITEMS[i],ps=Math.floor(p);bg(T,C[i]);
+ const sl=E(p/.6);x.save();x.translate((1-sl)*-60,0);x.globalAlpha=sl;
+ rr(40,30,90,70,12,C[i]);tx(String(i+1),85,66,44,'#fff','center');tx(it.n,150,52,38,'#fff');tx(it.k,152,90,20,'#ddd','left','normal');x.restore();x.globalAlpha=1;
+ x.save();x.translate(-60,0);ILL[i](p);x.restore();
+ // 操作カード
+ rr(740,180,470,280,14,'rgba(255,255,255,.08)','rgba(255,255,255,.25)');tx('使い方',770,215,20,C[i]);
+ const ws=it.op.split(' / ');x.font='bold 21px '+F;let Y=265;
+ it.op.split(/ → | \/ /).forEach((w,j)=>{if(p>1+j*.7){rr(770,Y-20,410,40,8,'rgba(255,255,255,.1)');tx((j+1)+'. '+w,785,Y,19,'#fff','left','normal');}Y+=52;});
+ // 進捗
+ for(let j=0;j<5;j++){rr(540+j*44,560,34,8,4,j<=i?C[j]:'#444');}
+ let L=it.lines[0];it.lines.forEach(l=>{if(ps>=l[0])L=l;});sub(L[1],L[2],p-L[0]);}
+function loop(){const T=((performance.now()-t0)/1000+off)%window.DUR;x.clearRect(0,0,1280,720);draw(T);requestAnimationFrame(loop);}
+requestAnimationFrame(loop);
+</script></body></html>

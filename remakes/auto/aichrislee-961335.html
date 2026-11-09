@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>SHOWREEL</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:100vw;height:56.25vw;max-height:100vh;max-width:177.78vh;background:#000}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=15;
+const cv=document.getElementById('c'),x=cv.getContext('2d');
+const W=1280,H=720;
+const q=new URLSearchParams(location.search);const T0=parseFloat(q.get('t')||'0')||0;
+const st=performance.now();
+const C={y:'#ffd400',p:'#ff2d6f',b:'#2b4bff',c:'#00e5d4',k:'#0b0b12',w:'#f4f1ea'};
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const eo=t=>1-Math.pow(1-cl(t),4);
+const eio=t=>{t=cl(t);return t<.5?8*t*t*t*t:1-Math.pow(-2*t+2,4)/2};
+const back=t=>{t=cl(t);const c1=1.9,c3=c1+1;return 1+c3*Math.pow(t-1,3)+c1*Math.pow(t-1,2)};
+const el=t=>{t=cl(t);return t===0||t===1?t:Math.pow(2,-10*t)*Math.sin((t*10-.75)*2.094)+1};
+function rnd(i){const s=Math.sin(i*127.1+311.7)*43758.5453;return s-Math.floor(s)}
+function txt(s,X,Y,sz,col,al='center',wt='900'){x.font=wt+' '+sz+'px Helvetica,Arial,sans-serif';x.textAlign=al;x.textBaseline='middle';x.fillStyle=col;x.fillText(s,X,Y)}
+function cam(cx,cy,z,r){x.translate(W/2,H/2);x.rotate(r);x.scale(z,z);x.translate(-cx,-cy)}
+// shake/whip
+function wipe(t,col,dir){ // t 0..1 cover then reveal
+ const a=eio(t*2),b=eio(t*2-1);x.fillStyle=col;
+ if(dir)x.fillRect(W*b-40,0,W*(a-b)+80,H);else x.fillRect(0,H*b,W,H*(a-b));}
+
+// Scene 1: 0-3 kinetic title
+function s1(t){
+ x.fillStyle=C.k;x.fillRect(0,0,W,H);
+ const z=1+0.25*eio(t/3)+0.6*eio((t-2.6)/0.4),r=-0.05+0.05*eo(t/1.2);
+ x.save();cam(640,360,z,r);
+ // grid
+ x.strokeStyle='rgba(255,255,255,.07)';x.lineWidth=1;
+ for(let i=-10;i<30;i++){x.beginPath();x.moveTo(i*64,-400);x.lineTo(i*64,1200);x.stroke();x.beginPath();x.moveTo(-400,i*64);x.lineTo(1800,i*64);x.stroke()}
+ // bars sweep
+ const cols=[C.y,C.p,C.b,C.c];
+ for(let i=0;i<4;i++){const p=eo((t-0.1*i)/0.6);x.fillStyle=cols[i];x.fillRect(-200,150+i*110,(W+400)*p,60)}
+ const words=['MOTION','DESIGN'];
+ words.forEach((w,j)=>{
+  for(let i=0;i<w.length;i++){
+   const d=0.5+j*0.35+i*0.05,p=back((t-d)/0.5);
+   x.save();x.translate(250+i*130+j*60,290+j*170+(1-p)*260);x.rotate((1-p)*0.6);x.globalAlpha=cl(p*3);
+   txt(w[i],0,0,190,j?C.y:C.w);x.restore();}});
+ const p=eo((t-1.6)/0.5);x.fillStyle=C.p;x.fillRect(250,530,700*p,14);
+ txt('SHOWREEL 2025',250+700*p-10,580,30,C.w,'right','700');
+ x.restore();
+}
+// Scene 2: 3-6 shapes morph + parallax
+function s2(t){
+ x.fillStyle=C.y;x.fillRect(0,0,W,H);
+ const z=1.5-0.5*eo(t/0.8),r=0.08*Math.sin(t*1.5);
+ x.save();cam(640+80*Math.sin(t),360,z,r);
+ for(let i=0;i<40;i++){const a=i/40*6.283+t*0.6,R=260+80*Math.sin(t*3+i);
+  x.fillStyle=i%2?C.k:C.p;x.beginPath();x.arc(640+Math.cos(a)*R,360+Math.sin(a)*R,8+6*Math.sin(t*4+i),0,7);x.fill()}
+ // morph polygon
+ const n=Math.floor(3+(t*2)%6),k=el((t*2)%1);
+ x.save();x.translate(640,360);x.rotate(t*1.8);x.scale(.6+.4*k,.6+.4*k);
+ x.fillStyle=C.b;x.beginPath();for(let i=0;i<=n;i++){const a=i/n*6.283;x.lineTo(Math.cos(a)*170,Math.sin(a)*170)}x.fill();
+ x.strokeStyle=C.k;x.lineWidth=12;x.beginPath();x.arc(0,0,210,0,6.283*eo(t/1.5));x.stroke();x.restore();
+ txt('SHAPE',640,360-10,120,C.w);
+ x.restore();
+ const p=eo((t-0.3)/0.5);x.fillStyle=C.k;x.fillRect(0,640,W*p,80);
+ txt('01 — FORM & RHYTHM',40,680,34,C.y,'left');
+}
+// Scene 3: 6-9 3D tunnel/camera fly
+function s3(t){
+ x.fillStyle=C.b;x.fillRect(0,0,W,H);
+ const sp=t*6;
+ for(let i=30;i>0;i--){const zz=i-(sp%1),s=600/zz,ang=sp*0.05+i*0.15+Math.floor(sp)*0.15;
+  x.save();x.translate(640+Math.sin(t+i*.2)*40,360);x.rotate(ang+t*0.3);
+  x.strokeStyle=[C.y,C.p,C.c,C.w][(i+Math.floor(sp))%4];x.lineWidth=Math.max(1,s*0.04);x.globalAlpha=cl(1-zz/30);
+  x.strokeRect(-s,-s*0.6,s*2,s*1.2);x.restore()}
+ x.globalAlpha=1;
+ const p=back((t-0.3)/0.6),wds=['DEPTH','SPACE','CAMERA'],wi=Math.min(2,Math.floor(t));
+ x.save();x.translate(640,360);const ph=(t%1);x.scale(.5+ph*1.2+p*0.0,.5+ph*1.2);x.globalAlpha=cl((1-ph)*4);
+ txt(wds[wi],0,0,170,C.w);x.restore();x.globalAlpha=1;
+ x.fillStyle=C.k;x.fillRect(0,640,W*eo(t/0.5),80);txt('02 — 3D & CAMERA',40,680,34,C.c,'left');
+}
+// Scene 4: 9-12 data / split type / bars
+function s4(t){
+ x.fillStyle=C.p;x.fillRect(0,0,W,H);
+ const pan=-200*eio(t/3);
+ x.save();cam(640-pan,360,1.1,-0.03);
+ for(let i=0;i<14;i++){const h=(80+rnd(i)*380)*back((t-i*0.05)/0.6)*(0.85+0.15*Math.sin(t*5+i));
+  x.fillStyle=i%3==0?C.y:(i%3==1?C.k:C.w);x.fillRect(100+i*80,620-h,56,h)}
+ // line graph
+ x.strokeStyle=C.c;x.lineWidth=8;x.beginPath();const L=eo((t-0.4)/1.2)*14;
+ for(let i=0;i<=L;i+=0.1){x.lineTo(128+i*80,300-Math.sin(i*0.8+t)*90-i*8)}x.stroke();
+ const v=Math.floor(eo((t-0.2)/1.5)*100);txt(v+'%',1150,180,150,C.w,'center');
+ x.restore();
+ // split title
+ const o=200*(1-eo((t-1.6)/0.5));
+ x.save();x.beginPath();x.rect(0,0,W,360);x.clip();txt('DATA',640-o,360,260,C.k);x.restore();
+ x.save();x.beginPath();x.rect(0,360,W,360);x.clip();txt('DATA',640+o,360,260,C.y);x.restore();
+ x.fillStyle=C.k;x.fillRect(0,640,W*eo(t/0.5),80);txt('03 — INFOGRAPHICS',40,680,34,C.p,'left');
+}
+// Scene 5: 12-15 particles explode -> logo
+function s5(t){
+ x.fillStyle=C.k;x.fillRect(0,0,W,H);
+ const z=1+0.6*(1-eo(t/0.8))+0.05*t;x.save();cam(640,360,z,0.15*(1-eo(t/1)));
+ for(let i=0;i<220;i++){const a=rnd(i)*6.283,sp=200+rnd(i+9)*700,e=eo(t/1.4),R=sp*e*(1-eio((t-1.6)/0.8))+40;
+  x.fillStyle=[C.y,C.p,C.b,C.c][i%4];const s=4+rnd(i+3)*10;x.fillRect(640+Math.cos(a+t)*R-s/2,360+Math.sin(a+t)*R-s/2,s,s)}
+ const p=el((t-1.8)/0.9);
+ x.save();x.translate(640,330);x.scale(p,p);x.rotate((1-p)*1);
+ x.fillStyle=C.y;x.beginPath();x.arc(0,0,130,0,7);x.fill();
+ x.fillStyle=C.p;x.fillRect(-60,-60,120,120);txt('HIRE',0,0,46,C.w);x.restore();
+ x.restore();
+ const q=eo((t-2.2)/0.4);x.save();x.beginPath();x.rect(0,500,W,140);x.clip();
+ txt("LET'S MAKE THINGS MOVE",640,560+80*(1-q),62,C.w);x.restore();
+ x.fillStyle=C.c;x.fillRect(640-300*q,610,600*q,8);
+}
+const scenes=[s1,s2,s3,s4,s5],wc=[C.p,C.b,C.y,C.c];
+function frame(){
+ const t=((performance.now()-st)/1000+T0)%window.DUR;
+ const i=Math.min(4,Math.floor(t/3)),lt=t-i*3;
+ x.save();
+ // impact shake at scene starts
+ const sh=Math.max(0,1-lt/0.3)*(i?10:0);x.translate((rnd(Math.floor(t*30))-.5)*sh,(rnd(Math.floor(t*30)+5)-.5)*sh);
+ scenes[i](lt);x.restore();
+ // whip transitions around cuts
+ const ct=(t+0.25)%3;if(t>2.7&&t<14.75&&ct<0.5)wipe(ct/0.5,wc[Math.floor((t+0.25)/3)-1]||C.p,Math.floor((t+.25)/3)%2);
+ // timecode
+ txt(t.toFixed(2)+'s',W-24,30,18,'rgba(255,255,255,.6)','right','700');
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></body></html>

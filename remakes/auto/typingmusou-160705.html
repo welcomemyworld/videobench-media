@@ -1,0 +1,104 @@
+<html><head><meta charset="utf-8"><style>
+body{margin:0;background:#000;overflow:hidden;height:100vh;display:flex;align-items:center;justify-content:center}
+canvas{width:100vw;height:56.25vw;max-height:100vh;max-width:177.78vh}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+window.DUR=30;
+const c=document.getElementById('c'),x=c.getContext('2d');
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t')||0)||0;
+const t0=performance.now();
+const F='"Hiragino Sans","Yu Gothic","Meiryo",sans-serif';
+const E=(a)=>a<0?0:a>1?1:1-Math.pow(1-a,3);
+const cl=(a)=>a<0?0:a>1?1:a;
+function txt(s,X,Y,sz,col,al,w){x.save();x.globalAlpha=al==null?1:al;x.font=(w||'bold')+' '+sz+'px '+F;x.fillStyle=col;x.textAlign='center';x.textBaseline='middle';x.fillText(s,X,Y);x.restore();}
+// 3D helpers (pseudo three.js)
+function proj(p,cam){let X=p[0],Y=p[1],Z=p[2];const ca=Math.cos(cam.ry),sa=Math.sin(cam.ry);[X,Z]=[X*ca-Z*sa,X*sa+Z*ca];const cb=Math.cos(cam.rx),sb=Math.sin(cam.rx);[Y,Z]=[Y*cb-Z*sb,Y*sb+Z*cb];Z+=cam.d;const f=700/Z;return[640+X*f,360+Y*f,Z];}
+const keys=[];const rows=['QWERTYUIOP','ASDFGHJKL','ZXCVBNM'];
+rows.forEach((r,i)=>[...r].forEach((k,j)=>keys.push({k,x:(j-r.length/2+0.5)*62+i*14,z:(i-1)*62})));
+function keyboard(cam,t,press,hue){
+ const L=[];
+ keys.forEach(K=>{const p=press[K.k]||0;const y=p*8;const h=22;
+  const pts=[[-27,-h+y,-27],[27,-h+y,-27],[27,-h+y,27],[-27,-h+y,27]].map(v=>proj([K.x+v[0],v[1]+40,K.z+v[2]],cam));
+  const base=[[-27,0,27],[27,0,27]].map(v=>proj([K.x+v[0],v[1]+40,K.z+v[2]],cam));
+  L.push({z:pts[0][2]+pts[2][2],K,pts,base,p});});
+ L.sort((a,b)=>b.z-a.z);
+ L.forEach(o=>{const{pts,base,p,K}=o;
+  x.fillStyle=`hsl(${hue},40%,${12+p*20}%)`;x.beginPath();x.moveTo(pts[3][0],pts[3][1]);x.lineTo(pts[2][0],pts[2][1]);x.lineTo(base[1][0],base[1][1]);x.lineTo(base[0][0],base[0][1]);x.fill();
+  x.fillStyle=p>0.05?`hsl(${hue+p*60},90%,${40+p*25}%)`:'#2a2d3a';
+  x.shadowColor=`hsl(${hue},100%,60%)`;x.shadowBlur=p*40;
+  x.beginPath();pts.forEach((v,i)=>i?x.lineTo(v[0],v[1]):x.moveTo(v[0],v[1]));x.closePath();x.fill();x.shadowBlur=0;
+  const cx=(pts[0][0]+pts[2][0])/2,cy=(pts[0][1]+pts[2][1])/2;
+  txt(K.k,cx,cy,Math.max(8,16*700/pts[0][2]),p>0.05?'#fff':'#889',1);});
+}
+let parts=[];
+function burst(X,Y,n,h){for(let i=0;i<n;i++){const a=Math.random()*6.28,s=2+Math.random()*9;parts.push({x:X,y:Y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-3,l:1,h:h+Math.random()*80});}}
+let lastT=-1;
+const stars=[...Array(160)].map(()=>[Math.random()*1280,Math.random()*720,Math.random()*2+.3]);
+function bg(h,a){const g=x.createRadialGradient(640,360,50,640,360,800);g.addColorStop(0,`hsl(${h},60%,${14*a}%)`);g.addColorStop(1,'#000');x.fillStyle=g;x.fillRect(0,0,1280,720);}
+const word='たのしい',romaji='TANOSHII';
+function frame(){
+ const T=((performance.now()-t0)/1000+off)%DUR;
+ if(T<lastT)parts=[];const dt=lastT<0||T<lastT?0:T-lastT;lastT=T;
+ x.setTransform(1,0,0,1,0,0);x.globalAlpha=1;
+ if(T<6){ // 1: boring
+  x.fillStyle='#111';x.fillRect(0,0,1280,720);
+  const g=T;x.fillStyle='#1c1c1c';x.fillRect(240,170,800,380);
+  x.strokeStyle='#333';x.strokeRect(240,170,800,380);
+  const s='the quick brown fox jumps over';const n=Math.floor(g*3)%(s.length+1);
+  x.font='28px monospace';x.fillStyle='#555';x.textAlign='left';x.fillText(s,300,330);
+  x.fillStyle='#999';x.fillText(s.slice(0,n),300,330);
+  txt('SCORE: 0012',640,240,20,'#444',1,'normal');
+  txt('カタ… カタ… カタ…',640,430,24,'#555',cl(g-0.5));
+  txt('タイピング練習、',640,110,46,'#bbb',E(g-1.5));
+  txt('つまらなくない？',640,620,58,'#fff',E(g-3));
+  if(T>5.4){x.fillStyle=`rgba(255,255,255,${(T-5.4)/0.6})`;x.fillRect(0,0,1280,720);}
+ }else if(T<12){ // 2: transform
+  const g=T-6;bg(260,1);
+  x.fillStyle='#fff';stars.forEach(s=>{const z=(s[2]+g*3)%4+0.2;x.globalAlpha=cl(z/3);x.fillRect(640+(s[0]-640)*z/2,360+(s[1]-360)*z/2,s[2]*z,s[2]*z);});x.globalAlpha=1;
+  const cam={ry:Math.sin(g*0.5)*0.5,rx:-0.9+E(g/2)*0.35,d:900-E(g/2)*250};
+  const press={};keys.forEach((K,i)=>{const w=Math.sin(g*6-K.x*0.02-K.z*0.02);press[K.k]=w>0.6?(w-0.6)*2.5:0;});
+  keyboard(cam,g,press,280+g*20);
+  if(T<6.5){x.fillStyle=`rgba(255,255,255,${1-(T-6)*2})`;x.fillRect(0,0,1280,720);}
+  txt('もし、キーボードが',640,110,48,'#fff',E(g-0.5));
+  txt('ステージになったら？',640,180,62,'#ffd84a',E(g-1.8));
+ }else if(T<22){ // 3: gameplay
+  const g=T-12;bg(200+g*10,1);
+  const cam={ry:-0.25+g*0.03,rx:-0.75,d:780};
+  const press={};const typed=Math.min(8,Math.floor(g*1.6));
+  const ci=Math.floor(g*1.6);const cur=romaji[ci%8];
+  keys.forEach(K=>{const ph=(g*1.6)%1;press[K.k]=K.k===cur?1-ph:0;});
+  x.save();x.translate(0,120);keyboard(cam,g,press,190+g*15);x.restore();
+  // enemy word bubble
+  const wx=640,wy=140+Math.sin(g*3)*8;
+  const killed=g>5.2;
+  if(!killed){x.fillStyle='rgba(255,60,120,.2)';x.beginPath();x.arc(wx,wy,90,0,7);x.fill();
+   txt('👾',wx,wy-10,70,'#fff');txt(word,wx,wy+60,34,'#fff');
+   x.font='bold 30px monospace';x.textAlign='center';x.fillStyle='#ff4fa0';x.fillText(romaji.slice(0,typed),wx-60+typed*7,wy+100);x.fillStyle='#667';x.fillText(romaji.slice(typed),wx+typed*7+(typed-8)*0,wy+100);
+  }
+  if(!window.k5&&killed){window.k5=1;burst(wx,wy,120,300);}if(!killed)window.k5=0;
+  if(Math.floor(g*1.6)!==window.lk){window.lk=Math.floor(g*1.6);if(!killed)burst(wx,wy+60,12,180);}
+  // combo
+  const combo=Math.floor(g*1.6)+1;
+  txt(combo+' COMBO!',1080,120,40,`hsl(${g*90},100%,65%)`,1);
+  x.fillStyle='#222';x.fillRect(80,100,240,18);x.fillStyle='#3cf';x.fillRect(80,100,240*cl(g/10),18);
+  txt('EXP',200,80,18,'#3cf');
+  if(killed){txt('撃破！',640,170,90,'#ffd84a',E((g-5.2)*3));txt('打つたびに、エフェクトとコンボ。',640,280,34,'#fff',E(g-6.5));}
+  else txt('打てば、倒せる。',640,660,40,'#fff',E(g-0.3));
+  if(killed)txt('レベルアップで、もっと速く。',640,660,40,'#7ff',E(g-7.5));
+ }else{ // 4: logo
+  const g=T-22;bg(320,1);
+  if(Math.random()<0.25&&g<6)burst(Math.random()*1280,Math.random()*400,25,Math.random()*360);
+  const cam={ry:g*0.4,rx:-1.1,d:1100};x.save();x.globalAlpha=0.35;x.translate(0,200);
+  const press={};keys.forEach(K=>press[K.k]=(Math.sin(g*4+K.x*0.05)+1)/2);keyboard(cam,g,press,g*40);x.restore();
+  const s=0.6+0.4*E(g*1.2);x.save();x.translate(640,280);x.scale(s,s);
+  x.shadowColor='#f4a';x.shadowBlur=40;txt('タイプ・クエスト',0,0,104,'#fff',E(g*1.5));x.restore();
+  txt('打つだけ、から　遊んで上達へ。',640,420,40,'#ffd84a',E(g-1.2));
+  txt('今すぐ無料でプレイ',640,520,30,'#fff',E(g-2.5));
+  if(g>2.5){x.strokeStyle=`rgba(255,255,255,${E(g-2.5)})`;x.lineWidth=3;x.strokeRect(470,490,340,60);}
+  if(T>29.4){x.fillStyle=`rgba(0,0,0,${(T-29.4)/0.6})`;x.fillRect(0,0,1280,720);}
+ }
+ parts.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=0.25;p.l-=dt*1.2;x.globalAlpha=cl(p.l);x.fillStyle=`hsl(${p.h},100%,65%)`;x.fillRect(p.x,p.y,5,5);});
+ parts=parts.filter(p=>p.l>0);x.globalAlpha=1;
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></html>

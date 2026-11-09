@@ -1,0 +1,1293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Mimicly — Studio Motion Ad & Growth Blueprint</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  #stage {
+    width: 1280px;
+    height: 720px;
+    display: block;
+    box-shadow: 0 0 80px rgba(99, 102, 241, 0.2);
+  }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+const canvas = document.getElementById('stage');
+const ctx = canvas.getContext('2d');
+
+window.DUR = 36;
+const params = new URLSearchParams(location.search);
+const startT = parseFloat(params.get('t') || '0') || 0;
+let t0 = null;
+
+function resize() {
+  const s = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+  canvas.style.transform = `scale(${s})`;
+  canvas.style.transformOrigin = 'center center';
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Easing & math helpers
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * clamp(t, 0, 1);
+const easeOutCubic = t => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
+const easeInOutCubic = t => {
+  t = clamp(t, 0, 1);
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+};
+const easeOutBack = t => {
+  t = clamp(t, 0, 1);
+  const c1 = 1.70158, c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+};
+const seg = (t, s, e) => clamp((t - s) / (e - s), 0, 1);
+
+function rrect(x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+
+function drawBadge(x, y, text, bg, fg, border = null, fontSize = 12) {
+  ctx.save();
+  ctx.font = `700 ${fontSize}px -apple-system, BlinkMacSystemFont, sans-serif`;
+  const padX = 12;
+  const w = ctx.measureText(text).width + padX * 2;
+  const h = fontSize + 12;
+  rrect(x, y, w, h, h / 2);
+  ctx.fillStyle = bg;
+  ctx.fill();
+  if (border) {
+    ctx.strokeStyle = border;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+  ctx.fillStyle = fg;
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, x + padX, y + h / 2 + 0.5);
+  ctx.restore();
+  return w;
+}
+
+function drawCursor(x, y, clicking = false) {
+  ctx.save();
+  ctx.translate(x, y);
+  if (clicking) {
+    ctx.beginPath();
+    ctx.arc(0, 0, 22, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.7)';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    ctx.scale(0.88, 0.88);
+  }
+  ctx.shadowColor = 'rgba(0,0,0,0.45)';
+  ctx.shadowBlur = 10;
+  ctx.shadowOffsetY = 4;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(0, 22);
+  ctx.lineTo(6, 17);
+  ctx.lineTo(11, 26);
+  ctx.lineTo(15, 24);
+  ctx.lineTo(10, 15);
+  ctx.lineTo(18, 15);
+  ctx.closePath();
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  ctx.strokeStyle = '#0f172a';
+  ctx.lineWidth = 1.8;
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawAvatar(x, y, r, color1, color2, initials) {
+  ctx.save();
+  const g = ctx.createLinearGradient(x - r, y - r, x + r, y + r);
+  g.addColorStop(0, color1);
+  g.addColorStop(1, color2);
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = g;
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = `700 ${Math.round(r * 0.9)}px -apple-system, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(initials, x, y + 1);
+  ctx.restore();
+}
+
+// Background ambient studio canvas
+function drawStudioBG(t) {
+  const g = ctx.createLinearGradient(0, 0, 1280, 720);
+  g.addColorStop(0, '#05070e');
+  g.addColorStop(0.5, '#0b1021');
+  g.addColorStop(1, '#070a14');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 1280, 720);
+
+  // Subtle moving spotlights
+  const orbs = [
+    { x: 250 + Math.sin(t * 0.6) * 120, y: 200 + Math.cos(t * 0.4) * 80, r: 420, c: 'rgba(99, 102, 241, 0.14)' },
+    { x: 980 + Math.cos(t * 0.5) * 140, y: 500 + Math.sin(t * 0.7) * 90, r: 460, c: 'rgba(14, 165, 233, 0.12)' },
+    { x: 640 + Math.sin(t * 0.9) * 90, y: 120 + Math.cos(t * 0.8) * 60, r: 340, c: 'rgba(168, 85, 247, 0.10)' }
+  ];
+  orbs.forEach(o => {
+    const rg = ctx.createRadialGradient(o.x, o.y, 0, o.x, o.y, o.r);
+    rg.addColorStop(0, o.c);
+    rg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = rg;
+    ctx.fillRect(0, 0, 1280, 720);
+  });
+
+  // Subtle architectural grid
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.025)';
+  ctx.lineWidth = 1;
+  const step = 48;
+  const offX = (t * 12) % step;
+  for (let x = -step + offX; x < 1280; x += step) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 720); ctx.stroke();
+  }
+  for (let y = 0; y < 720; y += step) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(1280, y); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// Reusable Phone Mockup Renderer
+function drawPhonePreview(x, y, w, h, state) {
+  ctx.save();
+  ctx.translate(x, y);
+
+  // Outer shadow & Titanium Bezel
+  ctx.shadowColor = 'rgba(0,0,0,0.65)';
+  ctx.shadowBlur = 40;
+  ctx.shadowOffsetY = 18;
+  rrect(0, 0, w, h, 42);
+  ctx.fillStyle = '#1e293b';
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
+
+  ctx.strokeStyle = '#475569';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Inner screen
+  const pad = 10;
+  const sw = w - pad * 2;
+  const sh = h - pad * 2;
+  rrect(pad, pad, sw, sh, 34);
+  ctx.fillStyle = state.bg || '#000000';
+  ctx.fill();
+  ctx.clip();
+
+  ctx.translate(pad, pad);
+
+  // Status Bar
+  ctx.fillStyle = state.headerBg || 'rgba(18,18,18,0.95)';
+  ctx.fillRect(0, 0, sw, 82);
+
+  // Dynamic Island
+  rrect(sw / 2 - 44, 10, 88, 22, 11);
+  ctx.fillStyle = '#000';
+  ctx.fill();
+
+  ctx.fillStyle = state.textFg || '#fff';
+  ctx.font = '600 12px -apple-system, sans-serif';
+  ctx.fillText(state.clock || '9:41', 22, 25);
+
+  // Signal / Battery icons
+  ctx.fillRect(sw - 42, 16, 20, 10);
+  ctx.strokeStyle = state.textFg || '#fff';
+  ctx.strokeRect(sw - 44, 15, 22, 12);
+
+  // App Header
+  const style = state.template || 'iMessage';
+  if (style === 'iMessage') {
+    drawAvatar(sw / 2, 52, 14, state.av1 || '#6366f1', state.av2 || '#ec4899', state.initials || 'AC');
+    ctx.fillStyle = state.textFg || '#fff';
+    ctx.font = '600 11px -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(state.name || 'Alex Chen', sw / 2, 75);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#0a84ff';
+    ctx.font = '500 13px -apple-system, sans-serif';
+    ctx.fillText('‹ 12', 14, 58);
+  } else if (style === 'WhatsApp') {
+    ctx.fillStyle = '#1f2c34';
+    ctx.fillRect(0, 0, sw, 82);
+    drawAvatar(42, 56, 15, '#10b981', '#059669', state.initials || 'AC');
+    ctx.fillStyle = '#e9edef';
+    ctx.font = '600 13px -apple-system, sans-serif';
+    ctx.fillText(state.name || 'Alex Chen', 66, 53);
+    ctx.fillStyle = '#8696a0';
+    ctx.font = '400 10px -apple-system, sans-serif';
+    ctx.fillText('online', 66, 67);
+  } else if (style === 'ChatGPT') {
+    ctx.fillStyle = '#171717';
+    ctx.fillRect(0, 0, sw, 82);
+    ctx.fillStyle = '#ececec';
+    ctx.font = '600 13px -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('ChatGPT 4o ▾', sw / 2, 58);
+    ctx.textAlign = 'left';
+  } else if (style === 'Discord') {
+    ctx.fillStyle = '#313338';
+    ctx.fillRect(0, 0, sw, 82);
+    ctx.fillStyle = '#949ba4';
+    ctx.font = '700 16px -apple-system, sans-serif';
+    ctx.fillText('#', 18, 60);
+    ctx.fillStyle = '#f2f3f5';
+    ctx.font = '600 13px -apple-system, sans-serif';
+    ctx.fillText('creator-ops', 34, 59);
+  }
+
+  // Timestamp divider
+  ctx.fillStyle = '#8e8e93';
+  ctx.font = '500 10px -apple-system, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(state.timestamp || 'Today 9:41 AM', sw / 2, 102);
+  ctx.textAlign = 'left';
+
+  // Messages
+  let curY = 118;
+  const msgs = state.messages || [];
+  msgs.forEach((m, idx) => {
+    const isMe = m.side === 'right';
+    ctx.font = '400 12.5px -apple-system, sans-serif';
+    const maxW = sw * 0.72;
+    const words = m.text.split(' ');
+    const lines = [];
+    let line = '';
+    words.forEach(w => {
+      const test = line ? line + ' ' + w : w;
+      if (ctx.measureText(test).width > maxW - 24) {
+        lines.push(line);
+        line = w;
+      } else {
+        line = test;
+      }
+    });
+    if (line) lines.push(line);
+
+    const bh = lines.length * 17 + 16;
+    let bw = 0;
+    lines.forEach(l => { bw = Math.max(bw, ctx.measureText(l).width); });
+    bw = Math.min(maxW, Math.max(64, bw + 24));
+
+    const bx = isMe ? sw - bw - 14 : 14;
+    let bubbleColor = isMe ? (state.accent || '#0a84ff') : '#26262a';
+    let textColor = '#ffffff';
+
+    if (style === 'WhatsApp') {
+      bubbleColor = isMe ? '#005c4b' : '#1f2c34';
+    } else if (style === 'ChatGPT') {
+      bubbleColor = isMe ? '#2f2f2f' : 'transparent';
+    } else if (style === 'Discord') {
+      bubbleColor = 'transparent';
+    }
+
+    if (bubbleColor !== 'transparent') {
+      rrect(bx, curY, bw, bh, 16);
+      ctx.fillStyle = bubbleColor;
+      ctx.fill();
+    }
+
+    ctx.fillStyle = textColor;
+    lines.forEach((l, li) => {
+      ctx.fillText(l, bx + 12, curY + 19 + li * 17);
+    });
+
+    if (m.status && isMe) {
+      ctx.fillStyle = '#8e8e93';
+      ctx.font = '500 9px -apple-system, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(m.status, sw - 16, curY + bh + 11);
+      ctx.textAlign = 'left';
+      curY += 14;
+    }
+
+    curY += bh + 10;
+  });
+
+  // Typing indicator if active
+  if (state.typing) {
+    rrect(14, curY, 54, 28, 14);
+    ctx.fillStyle = '#26262a';
+    ctx.fill();
+    for (let i = 0; i < 3; i++) {
+      const bounce = Math.sin(state.time * 8 + i * 1.4) * 3;
+      ctx.beginPath();
+      ctx.arc(28 + i * 11, curY + 14 + bounce, 3.5, 0, Math.PI * 2);
+      ctx.fillStyle = '#8e8e93';
+      ctx.fill();
+    }
+  }
+
+  // Bottom Input Bar
+  ctx.fillStyle = 'rgba(28,28,30,0.95)';
+  rrect(14, sh - 46, sw - 28, 30, 15);
+  ctx.fill();
+  ctx.strokeStyle = '#3a3a3c';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = '#636366';
+  ctx.font = '400 11px -apple-system, sans-serif';
+  ctx.fillText('Message...', 28, sh - 27);
+
+  // Home indicator
+  rrect(sw / 2 - 45, sh - 8, 90, 4, 2);
+  ctx.fillStyle = '#fff';
+  ctx.fill();
+
+  ctx.restore();
+}
+
+// ============================================================================
+// SCENE 1 (0 - 4s): THE HOOK & PROBLEM -> SOLUTION
+// ============================================================================
+function scene1(t) {
+  const lt = t;
+  const splitP = easeInOutCubic(seg(lt, 1.4, 2.3));
+
+  // Left: "The Old Way" (Photoshop layers mess, manual screenshots)
+  ctx.save();
+  const leftW = lerp(1280, 520, splitP);
+  ctx.beginPath();
+  ctx.rect(0, 0, leftW, 720);
+  ctx.clip();
+
+  // Dim red-tinted frustration side
+  ctx.fillStyle = 'rgba(239, 68, 68, 0.05)';
+  ctx.fillRect(0, 0, leftW, 720);
+
+  drawBadge(64, 52, 'THE OLD WAY · 45 MINUTES', 'rgba(239,68,68,0.18)', '#fca5a5', 'rgba(239,68,68,0.4)', 13);
+
+  ctx.fillStyle = '#f8fafc';
+  ctx.font = '800 44px -apple-system, sans-serif';
+  ctx.fillText('Stop building fake chats', 64, 130);
+  ctx.fillText('in Photoshop or texting', 64, 180);
+  ctx.fillStyle = '#f87171';
+  ctx.fillText('your own second phone.', 64, 230);
+
+  // Cluttered fake layer boxes
+  const badLayers = [
+    { name: 'Layer 42 copy 3 (blue_bubble_crop.png)', x: 64, y: 280 },
+    { name: ' Text tool: wrong SF Pro kerning (14.2pt)', x: 84, y: 342 },
+    { name: 'Battery_icon_low_res_jpeg.jpg', x: 54, y: 404 },
+    { name: 'Timestamp_alignment_broken_v4.psd', x: 74, y: 466 }
+  ];
+  badLayers.forEach((l, i) => {
+    const appear = easeOutBack(seg(lt, 0.2 + i * 0.18, 0.7 + i * 0.18));
+    ctx.save();
+    ctx.translate(l.x, l.y + (1 - appear) * 30);
+    ctx.globalAlpha = appear;
+    rrect(0, 0, 390, 48, 8);
+    ctx.fillStyle = '#1e1b2e';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(239,68,68,0.45)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = '#fca5a5';
+    ctx.font = '500 14px monospace';
+    ctx.fillText('✗ ' + l.name, 16, 29);
+    ctx.restore();
+  });
+  ctx.restore();
+
+  // Right: "The Mimicly Way" slides in
+  if (splitP > 0.01) {
+    ctx.save();
+    const rx = leftW;
+    ctx.beginPath();
+    ctx.rect(rx, 0, 1280 - rx, 720);
+    ctx.clip();
+
+    const bgG = ctx.createLinearGradient(rx, 0, 1280, 720);
+    bgG.addColorStop(0, '#0f172a');
+    bgG.addColorStop(1, '#090d16');
+    ctx.fillStyle = bgG;
+    ctx.fillRect(rx, 0, 1280 - rx, 720);
+
+    // Glowing divider line
+    ctx.fillStyle = '#38bdf8';
+    ctx.fillRect(rx - 2, 0, 4, 720);
+
+    const contentX = rx + 56;
+    drawBadge(contentX, 52, 'THE MIMICLY WAY · 10 SECONDS', 'rgba(16,185,129,0.18)', '#6ee7b7', 'rgba(16,185,129,0.45)', 13);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '800 46px -apple-system, sans-serif';
+    ctx.fillText('Mimicly.', contentX, 130);
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = '700 28px -apple-system, sans-serif';
+    ctx.fillText('Real Chat Mockups, Text Stories & Dialogue Videos.', contentX, 172);
+
+    // Feature pills
+    const pills = ['63 Real Templates', 'Web + iPhone App', 'Live Dual-Side Editor', 'PNG & 60fps MP4 Export'];
+    let px = contentX;
+    pills.forEach(p => {
+      px += drawBadge(px, 200, p, 'rgba(255,255,255,0.07)', '#e2e8f0', 'rgba(255,255,255,0.15)', 12) + 10;
+    });
+
+    // Clean phone preview right in hero
+    drawPhonePreview(contentX + 180, 245, 290, 440, {
+      template: 'iMessage',
+      name: 'Cofounder Mia',
+      initials: 'CM',
+      timestamp: 'Today 9:41 AM',
+      messages: [
+        { side: 'left', text: 'Did you make that launch teaser in After Effects?' },
+        { side: 'right', text: 'Nope. Built the whole dialogue in Mimicly in 12 seconds.', status: 'Delivered' },
+        { side: 'left', text: 'Wait the UI looks 100% native.' }
+      ],
+      typing: true,
+      time: lt
+    });
+
+    ctx.restore();
+  }
+}
+
+// ============================================================================
+// SCENE 2 (4 - 12s): ACTUAL PRODUCT LIVE EDITOR WALKTHROUGH
+// ============================================================================
+function scene2(t) {
+  const lt = t - 4;
+  const enter = easeOutCubic(seg(lt, 0, 0.7));
+
+  // Top Header Bar
+  drawBadge(48, 28, 'PHASE 1 & 5 · REAL PRODUCT LIVE EDITOR', 'rgba(56,189,248,0.15)', '#38bdf8', 'rgba(56,189,248,0.4)', 12);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '700 24px -apple-system, sans-serif';
+  ctx.fillText('Wait, that took 10 seconds? — Everything updates live on canvas.', 335, 48);
+
+  // Main Web App Window Frame
+  const wx = 48, wy = 72, ww = 1184, wh = 604;
+  ctx.save();
+  ctx.translate(0, (1 - enter) * 40);
+  ctx.globalAlpha = enter;
+
+  ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.shadowBlur = 45;
+  rrect(wx, wy, ww, wh, 18);
+  ctx.fillStyle = '#0f172a';
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Window Top Bar
+  ctx.fillStyle = '#1e293b';
+  rrect(wx, wy, ww, 44, 18);
+  ctx.fill();
+  ctx.fillRect(wx, wy + 24, ww, 20);
+
+  // Traffic lights
+  ['#ef4444', '#f59e0b', '#10b981'].forEach((c, i) => {
+    ctx.beginPath();
+    ctx.arc(wx + 24 + i * 20, wy + 22, 6, 0, Math.PI * 2);
+    ctx.fillStyle = c;
+    ctx.fill();
+  });
+
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = '600 13px -apple-system, sans-serif';
+  ctx.fillText('mimicly.app/editor — Live Studio Workspace (Web & iOS Sync)', wx + 95, wy + 27);
+
+  // Export status buttons in top right of app
+  drawBadge(wx + ww - 295, wy + 9, '3 Free Exports Included', 'rgba(16,185,129,0.15)', '#34d399', null, 11);
+  const expHover = lt > 6.3 && lt < 7.8;
+  drawBadge(wx + ww - 130, wy + 9, expHover ? '● Recording MP4' : 'Export PNG / MP4', expHover ? '#ef4444' : '#6366f1', '#ffffff', null, 11);
+
+  // Timeline state inside editor
+  const nameTyped = lt < 1.8 ? 'Alex Chen' : (lt < 2.6 ? 'Sarah (Creator)'.slice(0, Math.floor(seg(lt, 1.8, 2.6) * 15)) : 'Sarah (Creator)');
+  const SwappedAvatar = lt > 2.8;
+  const SwappedTheme = lt > 5.2 ? 'WhatsApp' : 'iMessage';
+  const msg3Progress = seg(lt, 3.2, 4.8);
+  const msg3Text = 'Just exported this 60fps MP4 straight from Mimicly — zero watermark on Pro.'.slice(0, Math.floor(msg3Progress * 75));
+
+  // LEFT SIDEBAR: Template Switcher (Width 230)
+  const sx = wx + 16, sy = wy + 60;
+  ctx.fillStyle = '#64748b';
+  ctx.font = '700 11px -apple-system, sans-serif';
+  ctx.fillText('63 TEMPLATES · CATEGORIES', sx + 8, sy + 16);
+
+  const cats = [
+    { name: 'iMessage (iOS 18)', active: SwappedTheme === 'iMessage', badge: 'HOT' },
+    { name: 'WhatsApp Dark', active: SwappedTheme === 'WhatsApp', badge: 'GLOBAL' },
+    { name: 'ChatGPT 4o / Claude', active: false, badge: 'AI' },
+    { name: 'Instagram DM & Story', active: false, badge: 'CREATOR' },
+    { name: 'TikTok / YT Comments', active: false, badge: 'HOOK' },
+    { name: 'Discord Server Chat', active: false, badge: 'GAMING' },
+    { name: 'Slack / Email Thread', active: false, badge: 'B2B' },
+    { name: 'Text Story Video Mode', active: false, badge: 'MP4' }
+  ];
+
+  cats.forEach((c, i) => {
+    const cy = sy + 30 + i * 44;
+    rrect(sx, cy, 225, 36, 8);
+    ctx.fillStyle = c.active ? 'rgba(56, 189, 248, 0.16)' : 'rgba(255,255,255,0.03)';
+    ctx.fill();
+    if (c.active) {
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
+    ctx.fillStyle = c.active ? '#ffffff' : '#94a3b8';
+    ctx.font = c.active ? '600 12.5px -apple-system, sans-serif' : '500 12.5px -apple-system, sans-serif';
+    ctx.fillText(c.name, sx + 12, cy + 22);
+    drawBadge(sx + 166, cy + 6, c.badge, 'rgba(255,255,255,0.08)', '#cbd5e1', null, 9);
+  });
+
+  // CENTER PANEL: Dual-Side Conversation Controls (Width 460)
+  const cx = wx + 260, cy = wy + 60, cw = 470;
+  rrect(cx, cy, cw, wh - 76, 12);
+  ctx.fillStyle = '#131c31';
+  ctx.fill();
+
+  ctx.fillStyle = '#e2e8f0';
+  ctx.font = '700 14px -apple-system, sans-serif';
+  ctx.fillText('Conversation & UI Inspector', cx + 20, cy + 28);
+
+  // Contact Header Editor Box
+  rrect(cx + 20, cy + 44, cw - 40, 74, 10);
+  ctx.fillStyle = '#0f172a';
+  ctx.fill();
+  ctx.strokeStyle = (lt > 1.6 && lt < 2.9) ? '#38bdf8' : 'rgba(255,255,255,0.08)';
+  ctx.stroke();
+
+  drawAvatar(cx + 52, cy + 81, 20, SwappedAvatar ? '#f43f5e' : '#6366f1', SwappedAvatar ? '#fb923c' : '#ec4899', SwappedAvatar ? 'SC' : 'AC');
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = '500 11px -apple-system, sans-serif';
+  ctx.fillText('CONTACT NAME & PHOTO', cx + 84, cy + 66);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '600 15px -apple-system, sans-serif';
+  ctx.fillText(nameTyped, cx + 84, cy + 88);
+
+  drawBadge(cx + 280, cy + 66, 'Timestamp: Today 9:41 AM', 'rgba(255,255,255,0.06)', '#cbd5e1', null, 11);
+
+  // Dual-side Message Editor List
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = '700 11px -apple-system, sans-serif';
+  ctx.fillText('BOTH SIDES EDITABLE · DRAG OR TYPE LIVE', cx + 20, cy + 142);
+
+  const editCards = [
+    { side: 'LEFT (Receiver)', text: 'How did you make that chat video look so clean?', time: '9:41 AM' },
+    { side: 'RIGHT (Sender)', text: 'Used Mimicly. Picked a template, typed both sides, hit record.', time: '9:42 AM · Delivered' },
+    { side: 'RIGHT (Sender · Live Typing)', text: msg3Text || 'Typing new message...', time: '9:42 AM · Read', active: msg3Progress > 0 && msg3Progress < 1 }
+  ];
+
+  editCards.forEach((ec, idx) => {
+    const ey = cy + 156 + idx * 96;
+    rrect(cx + 20, ey, cw - 40, 84, 10);
+    ctx.fillStyle = '#0f172a';
+    ctx.fill();
+    ctx.strokeStyle = ec.active ? '#38bdf8' : 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = ec.active ? 1.8 : 1;
+    ctx.stroke();
+
+    drawBadge(cx + 32, ey + 10, ec.side, idx === 0 ? 'rgba(148,163,184,0.15)' : 'rgba(56,189,248,0.18)', idx === 0 ? '#cbd5e1' : '#38bdf8', null, 10);
+    ctx.fillStyle = '#64748b';
+    ctx.font = '500 11px -apple-system, sans-serif';
+    ctx.fillText(ec.time, cx + cw - 155, ey + 23);
+
+    ctx.fillStyle = '#f1f5f9';
+    ctx.font = '400 13px -apple-system, sans-serif';
+    ctx.fillText(ec.text.slice(0, 52), cx + 32, ey + 52);
+    if (ec.text.length > 52) {
+      ctx.fillText(ec.text.slice(52), cx + 32, ey + 70);
+    }
+  });
+
+  // Bottom UI toggles inside center panel
+  drawBadge(cx + 20, cy + 455, '✓ Dark Mode UI', 'rgba(16,185,129,0.15)', '#6ee7b7', null, 11);
+  drawBadge(cx + 150, cy + 455, '✓ Show Read Receipts', 'rgba(56,189,248,0.15)', '#7dd3fc', null, 11);
+  drawBadge(cx + 315, cy + 455, '✓ 1080p MP4 Auto-Scroll', 'rgba(168,85,247,0.15)', '#d8b4fe', null, 11);
+
+  // RIGHT PANEL: Live Device Preview
+  const px = wx + 790, py = wy + 56;
+  const previewMsgs = [
+    { side: 'left', text: 'How did you make that chat video look so clean?' },
+    { side: 'right', text: 'Used Mimicly. Picked a template, typed both sides, hit record.', status: 'Delivered' }
+  ];
+  if (msg3Text.length > 0) {
+    previewMsgs.push({ side: 'right', text: msg3Text, status: 'Read 9:42 AM' });
+  }
+
+  drawPhonePreview(px, py, 320, 525, {
+    template: SwappedTheme,
+    name: nameTyped,
+    initials: SwappedAvatar ? 'SC' : 'AC',
+    av1: SwappedAvatar ? '#f43f5e' : '#6366f1',
+    av2: SwappedAvatar ? '#fb923c' : '#ec4899',
+    timestamp: 'Today 9:41 AM',
+    messages: previewMsgs,
+    typing: lt > 4.9 && lt < 6.2,
+    time: lt
+  });
+
+  // Export Toast Overlay when MP4 is clicked
+  if (lt > 6.4) {
+    const toastP = easeOutBack(seg(lt, 6.4, 6.9));
+    ctx.save();
+    ctx.translate(px + 20, py + 430 + (1 - toastP) * 20);
+    ctx.globalAlpha = toastP;
+    rrect(0, 0, 280, 64, 14);
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+    ctx.fill();
+    ctx.strokeStyle = '#10b981';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#10b981';
+    ctx.font = '700 13px -apple-system, sans-serif';
+    ctx.fillText('✓ MP4 Dialogue Video Ready', 18, 26);
+    ctx.fillStyle = '#cbd5e1';
+    ctx.font = '400 11.5px -apple-system, sans-serif';
+    ctx.fillText('1080×1920 · 60fps · Watermark-Free (Pro)', 18, 46);
+    ctx.restore();
+  }
+
+  // Animated Cursor guiding the viewer's eye
+  let curX = 640, curY = 360, click = false;
+  if (lt < 2.2) {
+    curX = lerp(900, cx + 140, easeInOutCubic(seg(lt, 0.5, 1.6)));
+    curY = lerp(500, cy + 80, easeInOutCubic(seg(lt, 0.5, 1.6)));
+    click = lt > 1.6 && lt < 1.9;
+  } else if (lt < 3.2) {
+    curX = lerp(cx + 140, cx + 52, easeInOutCubic(seg(lt, 2.2, 2.7)));
+    curY = lerp(cy + 80, cy + 81, easeInOutCubic(seg(lt, 2.2, 2.7)));
+    click = lt > 2.7 && lt < 2.95;
+  } else if (lt < 5.0) {
+    curX = lerp(cx + 52, cx + 180, easeInOutCubic(seg(lt, 3.2, 3.6)));
+    curY = lerp(cy + 81, cy + 390, easeInOutCubic(seg(lt, 3.2, 3.6)));
+    click = lt > 3.5 && lt < 3.8;
+  } else if (lt < 6.0) {
+    curX = lerp(cx + 180, sx + 110, easeInOutCubic(seg(lt, 5.0, 5.3)));
+    curY = lerp(cy + 390, sy + 92, easeInOutCubic(seg(lt, 5.0, 5.3)));
+    click = lt > 5.2 && lt < 5.5;
+  } else {
+    curX = lerp(sx + 110, wx + ww - 80, easeInOutCubic(seg(lt, 6.0, 6.4)));
+    curY = lerp(sy + 92, wy + 22, easeInOutCubic(seg(lt, 6.0, 6.4)));
+    click = lt > 6.35 && lt < 6.65;
+  }
+  drawCursor(curX, curY, click);
+
+  ctx.restore();
+}
+
+// ============================================================================
+// SCENE 3 (12 - 18s): THE 63-TEMPLATE UNIVERSE & TOP 6 RANKED FOR COLD TRAFFIC
+// ============================================================================
+function scene3(t) {
+  const lt = t - 12;
+
+  drawBadge(48, 32, 'PHASE 6 · TEMPLATE UNIVERSE AUDIT (63 TEMPLATES)', 'rgba(168,85,247,0.18)', '#d8b4fe', 'rgba(168,85,247,0.4)', 12);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '800 32px -apple-system, sans-serif';
+  ctx.fillText('Ranked: Top 6 Most Ad-Worthy Templates for Cold Traffic', 48, 86);
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = '400 16px -apple-system, sans-serif';
+  ctx.fillText('Selected from Mimicly’s 63 templates across Chat, AI, Social, Comments, Stories, Email & Game styles.', 48, 114);
+
+  const cards = [
+    {
+      rank: '#1 HIGHEST CVR',
+      title: 'iMessage / iOS Text Story',
+      accent: '#0a84ff',
+      why: 'Instant thumb-stop recognizability. Zero cognitive load in first 0.5s.',
+      aud: 'Short-form Storytellers, TikTok Skit Makers, Meme Pages',
+      adType: 'Hook: Live typing a cliffhanger text story → Export MP4',
+      sampleL: 'Are you still awake??',
+      sampleR: 'Wait who is this...'
+    },
+    {
+      rank: '#2 VIRAL AI',
+      title: 'AI Chats (ChatGPT / Claude / Gemini)',
+      accent: '#10b981',
+      why: 'Massive curiosity around AI prompts, humorous answers & SaaS demos.',
+      aud: 'Tech Creators, X/Twitter Marketers, AI Educators',
+      adType: 'Hook: Customizing an impossible AI conversation in 8s',
+      sampleL: 'Prompt: Write my resignation in 4 words.',
+      sampleR: 'I am out, peace.'
+    },
+    {
+      rank: '#3 GLOBAL SCALE',
+      title: 'WhatsApp Dark & Light UI',
+      accent: '#22c55e',
+      why: '#1 global messaging UI. Unlocks international creator markets.',
+      aud: 'Global Creators, WhatsApp Status Storytellers, Agencies',
+      adType: 'Hook: Switching iMessage → WhatsApp in 1 click',
+      sampleL: 'Client approved the storyboard!',
+      sampleR: 'Sent from Mimicly ✓✓'
+    },
+    {
+      rank: '#4 SOCIAL PROOF',
+      title: 'Instagram DM & Comment Threads',
+      accent: '#ec4899',
+      why: 'Creators use comment & DM mockups as visual hooks in Reels.',
+      aud: 'Reels Creators, Personal Brands, UGC Ad Strategists',
+      adType: 'Hook: Turning a viewer question into a clean overlay card',
+      sampleL: 'replied to your story 🔥',
+      sampleR: 'Drop the tutorial link!'
+    },
+    {
+      rank: '#5 COMMUNITY',
+      title: 'Discord & Game Chat Styles',
+      accent: '#6366f1',
+      why: 'Distinct dark-mode aesthetic loved by gaming & crypto/tech niches.',
+      aud: 'Gaming YouTubers, Streamers, Community Managers',
+      adType: 'Hook: Recreating legendary server moments cleanly',
+      sampleL: '[MOD] Server update live',
+      sampleR: 'W update!! GG'
+    },
+    {
+      rank: '#6 B2B / EDU',
+      title: 'Email & Workspace Threads',
+      accent: '#f59e0b',
+      why: 'High-ticket marketers & educators need clean lesson/pitch visuals.',
+      aud: 'Course Creators, B2B Marketers, Newsletter Writers',
+      adType: 'Hook: Replace blurry email screenshots with crisp mockups',
+      sampleL: 'Subject: Q4 Campaign Concept',
+      sampleR: 'Looks super clean. Approved.'
+    }
+  ];
+
+  cards.forEach((c, i) => {
+    const col = i % 3;
+    const row = Math.floor(i / 3);
+    const cw = 378, ch = 258;
+    const cx = 48 + col * (cw + 25);
+    const cy = 140 + row * (ch + 22);
+
+    const p = easeOutBack(seg(lt, i * 0.14, 0.65 + i * 0.14));
+    ctx.save();
+    ctx.translate(cx, cy + (1 - p) * 35);
+    ctx.globalAlpha = p;
+
+    rrect(0, 0, cw, ch, 16);
+    ctx.fillStyle = '#111827';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+
+    // Top accent bar
+    rrect(0, 0, cw, 5, 3);
+    ctx.fillStyle = c.accent;
+    ctx.fill();
+
+    drawBadge(18, 18, c.rank, 'rgba(255,255,255,0.08)', c.accent, null, 10);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '700 17px -apple-system, sans-serif';
+    ctx.fillText(c.title, 18, 60);
+
+    // Mini visual chat preview inside card
+    rrect(18, 72, cw - 36, 68, 10);
+    ctx.fillStyle = '#090d16';
+    ctx.fill();
+
+    rrect(28, 80, 210, 22, 8);
+    ctx.fillStyle = '#1e293b';
+    ctx.fill();
+    ctx.fillStyle = '#cbd5e1';
+    ctx.font = '400 11px -apple-system, sans-serif';
+    ctx.fillText(c.sampleL, 38, 95);
+
+    rrect(cw - 195, 108, 165, 22, 8);
+    ctx.fillStyle = c.accent;
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '600 11px -apple-system, sans-serif';
+    ctx.fillText(c.sampleR, cw - 185, 123);
+
+    // Marketing breakdown
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '600 11px -apple-system, sans-serif';
+    ctx.fillText('WHY IT CONVERTS:', 18, 160);
+    ctx.fillStyle = '#e2e8f0';
+    ctx.font = '400 11.5px -apple-system, sans-serif';
+    ctx.fillText(c.why, 18, 177);
+
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '600 11px -apple-system, sans-serif';
+    ctx.fillText('AUDIENCE: ', 18, 202);
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = '500 11.5px -apple-system, sans-serif';
+    ctx.fillText(c.aud, 84, 202);
+
+    ctx.fillStyle = '#10b981';
+    ctx.font = '500 11.5px -apple-system, sans-serif';
+    ctx.fillText('▶ ' + c.adType, 18, 228);
+
+    ctx.restore();
+  });
+}
+
+// ============================================================================
+// SCENE 4 (18 - 24s): CREATIVE STRATEGY — 5 PERSONAS, 10 ANGLES, GUARDRAILS
+// ============================================================================
+function scene4(t) {
+  const lt = t - 18;
+
+  drawBadge(48, 28, 'PHASE 2 & 3 · CREATIVE STRATEGY & POSITIONING ARCHITECTURE', 'rgba(16,185,129,0.18)', '#34d399', 'rgba(16,185,129,0.4)', 12);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '800 28px -apple-system, sans-serif';
+  ctx.fillText('Core Positioning: The Fastest Way to Make Realistic Chat & Social Visuals.', 48, 78);
+
+  // Column 1: Top 5 Personas (Desired / Pain / Proof / CTA)
+  const col1X = 48, colY = 100, col1W = 420, colH = 576;
+  rrect(col1X, colY, col1W, colH, 14);
+  ctx.fillStyle = '#111827';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.09)';
+  ctx.stroke();
+
+  ctx.fillStyle = '#38bdf8';
+  ctx.font = '700 14px -apple-system, sans-serif';
+  ctx.fillText('TOP 5 USER PERSONAS & VALUE MAPPING', col1X + 20, colY + 30);
+
+  const personas = [
+    { p: '1. Short-Form Storytellers & Skit Creators', pain: 'Texting 2 phones & screen-recording notifications.', proof: 'Live dual-side typing + 1-click MP4 video export.', cta: 'Create Your First Story Free' },
+    { p: '2. YouTubers, Meme Pages & Reels Editors', pain: 'Blurry screenshots or slow Photoshop bubble layers.', proof: 'Crisp high-DPI PNGs with accurate native fonts.', cta: 'Try 3 Free Exports' },
+    { p: '3. AI & Tech Content Creators (X / LinkedIn)', pain: 'Waiting on real LLMs to say the exact punchline.', proof: 'Editable ChatGPT / Claude / Gemini templates.', cta: 'Build an AI Mockup in 10s' },
+    { p: '4. Performance Marketers & UGC Agencies', pain: 'Pitching ad storyboards with ugly wireframe boxes.', proof: '63 templates ready for client pitch decks & ads.', cta: 'Open Web Editor Now' },
+    { p: '5. Educators & Course Creators', pain: 'Need safe, anonymized dialogue examples for lessons.', proof: 'Custom avatars, names, timestamps & email threads.', cta: 'Start Building on Web or iOS' }
+  ];
+
+  personas.forEach((item, i) => {
+    const py = colY + 48 + i * 102;
+    const ap = easeOutCubic(seg(lt, i * 0.1, 0.5 + i * 0.1));
+    ctx.save();
+    ctx.globalAlpha = ap;
+    rrect(col1X + 16, py, col1W - 32, 92, 10);
+    ctx.fillStyle = '#0b101e';
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '700 13px -apple-system, sans-serif';
+    ctx.fillText(item.p, col1X + 28, py + 22);
+    ctx.fillStyle = '#f87171';
+    ctx.font = '400 11.5px -apple-system, sans-serif';
+    ctx.fillText('Pain: ' + item.pain, col1X + 28, py + 42);
+    ctx.fillStyle = '#34d399';
+    ctx.fillText('Proof: ' + item.proof, col1X + 28, py + 60);
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = '600 11px -apple-system, sans-serif';
+    ctx.fillText('Best CTA: "' + item.cta + '"', col1X + 28, py + 79);
+    ctx.restore();
+  });
+
+  // Column 2: Top 10 Ad Angles
+  const col2X = 486, col2W = 390;
+  rrect(col2X, colY, col2W, colH, 14);
+  ctx.fillStyle = '#111827';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.09)';
+  ctx.stroke();
+
+  ctx.fillStyle = '#a855f7';
+  ctx.font = '700 14px -apple-system, sans-serif';
+  ctx.fillText('TOP 10 HIGH-CONVERTING AD ANGLES', col2X + 20, colY + 30);
+
+  const angles = [
+    '01. The "Stop Texting Yourself" Workflow Relief',
+    '02. 10-Second Speed Run (Blank → MP4 Export)',
+    '03. Photoshop Layers vs. Mimicly Live Editor',
+    '04. Text Story Dialogue Video Generator for TikTok',
+    '05. AI Prompt & Response Mockup Studio (GPT/Claude)',
+    '06. 1 Conversation → 5 Platforms (Template Switch)',
+    '07. Visual Hook Builder for YouTube & Reels Intros',
+    '08. Agency Pitch & Storyboard Secret Weapon',
+    '09. Educator / Lesson Scenario Builder (Safe & Clean)',
+    '10. Cross-Platform Freedom: Start on Web, Edit on iPhone'
+  ];
+
+  angles.forEach((a, i) => {
+    const ay = colY + 50 + i * 51;
+    rrect(col2X + 16, ay, col2W - 32, 42, 8);
+    ctx.fillStyle = i < 3 ? 'rgba(168,85,247,0.14)' : '#0b101e';
+    ctx.fill();
+    ctx.fillStyle = i < 3 ? '#f3e8ff' : '#cbd5e1';
+    ctx.font = i < 3 ? '600 12.5px -apple-system, sans-serif' : '500 12px -apple-system, sans-serif';
+    ctx.fillText(a, col2X + 28, ay + 26);
+  });
+
+  // Column 3: Guardrails (What NOT to say + Objections)
+  const col3X = 894, col3W = 338;
+  rrect(col3X, colY, col3W, colH, 14);
+  ctx.fillStyle = '#111827';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.09)';
+  ctx.stroke();
+
+  ctx.fillStyle = '#f43f5e';
+  ctx.font = '700 14px -apple-system, sans-serif';
+  ctx.fillText('BRAND GUARDRAILS: WHAT NOT TO SAY', col3X + 20, colY + 30);
+
+  const donts = [
+    '✗ Never say "Guaranteed to go viral"',
+    '✗ No "Revolutionary AI magic" startup fluff',
+    '✗ Never promote deceptive/harmful impersonation',
+    '✗ Do not invent features outside the 63 templates'
+  ];
+  donts.forEach((d, i) => {
+    ctx.fillStyle = '#fda4af';
+    ctx.font = '500 12px -apple-system, sans-serif';
+    ctx.fillText(d, col3X + 20, colY + 60 + i * 26);
+  });
+
+  ctx.fillStyle = '#10b981';
+  ctx.font = '700 14px -apple-system, sans-serif';
+  ctx.fillText('TOP OBJECTIONS → INSTANT ANSWERS', col3X + 20, colY + 185);
+
+  const objs = [
+    { q: '"Fake chats usually look super obvious."', a: 'Show 200% zoom on typography, timestamps & status bars.' },
+    { q: '"I don’t want to pay before testing."', a: 'Sign in for 3 free exports immediately. Zero card trap.' },
+    { q: '"Can I make videos or just screenshots?"', a: 'Supported templates record directly to MP4 dialogue video.' },
+    { q: '"Do I have to edit on a tiny phone screen?"', a: 'Works seamlessly on both Desktop Web and iPhone.' }
+  ];
+
+  objs.forEach((o, i) => {
+    const oy = colY + 204 + i * 88;
+    rrect(col3X + 16, oy, col3W - 32, 78, 8);
+    ctx.fillStyle = '#0b101e';
+    ctx.fill();
+    ctx.fillStyle = '#fbbf24';
+    ctx.font = '600 11.5px -apple-system, sans-serif';
+    ctx.fillText(o.q, col3X + 26, oy + 24);
+    ctx.fillStyle = '#cbd5e1';
+    ctx.font = '400 11px -apple-system, sans-serif';
+    ctx.fillText('→ ' + o.a.slice(0, 42), col3X + 26, oy + 46);
+    if (o.a.length > 42) ctx.fillText('   ' + o.a.slice(42), col3X + 26, oy + 62);
+  });
+}
+
+// ============================================================================
+// SCENE 5 (24 - 31s): THE 12 LAUNCH-READY AD CONCEPTS MATRIX
+// ============================================================================
+function scene5(t) {
+  const lt = t - 24;
+
+  drawBadge(48, 26, 'PHASE 4 · 12 PRODUCTION-READY AD CONCEPTS (4 UGC · 4 DEMO · 2 COMPARISON · 2 PROBLEM/SOLUTION)', 'rgba(245,158,11,0.18)', '#fbbf24', 'rgba(245,158,11,0.4)', 12);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '800 28px -apple-system, sans-serif';
+  ctx.fillText('12 Complete Ad Concepts — Hooks, UI Shots, Scripts & CTAs', 48, 72);
+
+  const concepts = [
+    // 4 UGC
+    { cat: 'UGC #1', name: 'Two-Phone Recovery', plat: 'TikTok / Reels', hook: '"I used to text my mom’s phone to film skits..."', ui: 'Swap avatar + live type both sides → MP4', cta: 'Try 3 Free Exports' },
+    { cat: 'UGC #2', name: 'Text Story Revenue Hook', plat: 'TikTok / Shorts', hook: '"How text-story creators make 60s videos in 2 mins"', ui: 'Type cliffhanger reply + record dialogue video', cta: 'Make a Text Story' },
+    { cat: 'UGC #3', name: 'Agency Pitch Secret', plat: 'X / LinkedIn / Paid', hook: '"Clients hated our wireframes until we showed this"', ui: 'Switch iMessage → Instagram DM → Slack', cta: 'Open Web Editor' },
+    { cat: 'UGC #4', name: 'Meme Page Speedrun', plat: 'Reels / Shorts', hook: '"POV: You get a meme idea & post it 15s later"', ui: 'Edit ChatGPT response + 1-click PNG save', cta: 'Start Free on iOS' },
+    // 4 DEMO
+    { cat: 'DEMO #5', name: '10-Second Stopwatch', plat: 'All Paid Social', hook: '"Blank screen to realistic chat video in 10.4s"', ui: 'Uncut real-time capture + timer overlay', cta: 'Test It Yourself' },
+    { cat: 'DEMO #6', name: '63-Template Roulette', plat: 'Website Hero / X', hook: '"1 conversation. 6 platforms. Instant switch."', ui: 'Rapid toggle across WhatsApp, GPT, Discord', cta: 'Browse 63 Templates' },
+    { cat: 'DEMO #7', name: 'Micro-Detail Realism', plat: 'App Store / Reels', hook: '"Why most fake chats look fake (and how to fix it)"', ui: 'Edit timestamps, battery, dark mode & receipts', cta: 'Get Pixel-Clean Exports' },
+    { cat: 'DEMO #8', name: 'Screenshot vs MP4 Mode', plat: 'YouTube Shorts', hook: '"Don’t just post static screenshots—animate them"', ui: 'Toggle static PNG export to MP4 video recording', cta: 'Export MP4 Free' },
+    // 2 COMPARISON
+    { cat: 'COMP #9', name: 'Photoshop vs. Mimicly', plat: 'Paid Social / X', hook: '"42 PSD layers vs. 1 browser tab"', ui: 'Split-screen race: aligning boxes vs live editor', cta: 'Ditch the PSD Template' },
+    { cat: 'COMP #10', name: 'Cringe Generator vs Studio', plat: 'TikTok / Reels', hook: '"2014 watermarked generators vs Mimicly Pro"', ui: 'Side-by-side typography & UI crispness zoom', cta: 'Upgrade to Pro' },
+    // 2 PROBLEM -> SOLUTION
+    { cat: 'P→S #11', name: 'The Waiting on ChatGPT Fix', plat: 'X / Shorts', hook: '"Trying to get AI to say the exact line for your video?"', ui: 'Open AI template → type exact prompt & answer', cta: 'Try AI Templates Free' },
+    { cat: 'P→S #12', name: 'Educator Safe Examples', plat: 'LinkedIn / Meta', hook: '"Stop blurring real client DMs in your slides"', ui: 'Recreate clean scenario with custom name/photo', cta: 'Build Lesson Visuals' }
+  ];
+
+  const activeIdx = Math.floor((lt / 7) * 12) % 12;
+
+  concepts.forEach((c, i) => {
+    const col = i % 4;
+    const row = Math.floor(i / 4);
+    const cw = 284, ch = 186;
+    const cx = 48 + col * (cw + 16);
+    const cy = 94 + row * (ch + 16);
+
+    const isHighlighted = i === activeIdx;
+    const pop = easeOutCubic(seg(lt, i * 0.05, 0.4 + i * 0.05));
+
+    ctx.save();
+    ctx.translate(cx, cy + (1 - pop) * 20);
+    ctx.globalAlpha = pop;
+
+    rrect(0, 0, cw, ch, 12);
+    ctx.fillStyle = isHighlighted ? '#1e293b' : '#111827';
+    ctx.fill();
+    ctx.strokeStyle = isHighlighted ? '#38bdf8' : 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = isHighlighted ? 2 : 1;
+    ctx.stroke();
+
+    const catColors = {
+      'UGC': ['#ec4899', 'rgba(236,72,153,0.15)'],
+      'DEM': ['#38bdf8', 'rgba(56,189,248,0.15)'],
+      'COM': ['#a855f7', 'rgba(168,85,247,0.15)'],
+      'P→S': ['#10b981', 'rgba(16,185,129,0.15)']
+    };
+    const key = c.cat.slice(0, 3);
+    const [fg, bg] = catColors[key] || ['#fff', '#333'];
+
+    drawBadge(14, 12, c.cat, bg, fg, null, 10);
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '500 10.5px -apple-system, sans-serif';
+    ctx.fillText(c.plat, cw - ctx.measureText(c.plat).width - 14, 25);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '700 15px -apple-system, sans-serif';
+    ctx.fillText(c.name, 14, 52);
+
+    ctx.fillStyle = '#fbbf24';
+    ctx.font = '600 11.5px -apple-system, sans-serif';
+    ctx.fillText('2s Hook:', 14, 74);
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = '400 11.5px -apple-system, sans-serif';
+    ctx.fillText(c.hook.slice(0, 38), 14, 91);
+    if (c.hook.length > 38) ctx.fillText(c.hook.slice(38), 14, 106);
+
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = '600 11px -apple-system, sans-serif';
+    ctx.fillText('UI Shot: ', 14, 130);
+    ctx.fillStyle = '#cbd5e1';
+    ctx.font = '400 11px -apple-system, sans-serif';
+    ctx.fillText(c.ui, 62, 130);
+
+    rrect(14, 146, cw - 28, 26, 6);
+    ctx.fillStyle = 'rgba(255,255,255,0.05)';
+    ctx.fill();
+    ctx.fillStyle = '#34d399';
+    ctx.font = '600 11px -apple-system, sans-serif';
+    ctx.fillText('CTA → ' + c.cta, 24, 163);
+
+    ctx.restore();
+  });
+}
+
+// ============================================================================
+// SCENE 6 (31 - 36s): COPY BANK, FUNNEL CONVERSION MAP & TOP 3 TESTS TO RUN FIRST
+// ============================================================================
+function scene6(t) {
+  const lt = t - 31;
+
+  drawBadge(48, 26, 'PHASE 7, 8, 9 & 10 · COPY BANK, FUNNEL CONVERSION & EXECUTION PRIORITIES', 'rgba(56,189,248,0.18)', '#38bdf8', 'rgba(56,189,248,0.4)', 12);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '800 28px -apple-system, sans-serif';
+  ctx.fillText('Conversion Architecture & Immediate Execution Blueprint', 48, 70);
+
+  // Top Row: 4-Stage Conversion Funnel
+  const stages = [
+    { stage: '1. GETS THE CLICK', metric: 'CTR Hook', msg: '"Wait—that took 10 seconds?" Uncut live UI typing + instant template switch.' },
+    { stage: '2. GETS THE INSTALL / SIGNUP', metric: 'Activation', msg: 'Web + iPhone parity. Sign in and get 3 Free Exports immediately.' },
+    { stage: '3. GETS 1ST EXPORT', metric: 'Aha! Moment', msg: 'Pre-filled realistic defaults. Edit 2 bubbles → Export crisp PNG or MP4.' },
+    { stage: '4. GETS PRO UPGRADE', metric: 'Monetization', msg: 'Unlock all 63 templates + remove watermarks for client & creator publishing.' }
+  ];
+
+  stages.forEach((s, i) => {
+    const sw = 284, sh = 118;
+    const sx = 48 + i * (sw + 16);
+    const sy = 90;
+    rrect(sx, sy, sw, sh, 12);
+    ctx.fillStyle = '#111827';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(56,189,248,0.3)';
+    ctx.stroke();
+
+    drawBadge(sx + 14, sy + 12, s.stage, 'rgba(56,189,248,0.15)', '#38bdf8', null, 10);
+    ctx.fillStyle = '#e2e8f0';
+    ctx.font = '400 12px -apple-system, sans-serif';
+    const words = s.msg.split(' ');
+    let line = '', ly = sy + 54;
+    words.forEach(w => {
+      if (ctx.measureText(line + w).width > sw - 28) {
+        ctx.fillText(line, sx + 14, ly);
+        line = w + ' ';
+        ly += 18;
+      } else {
+        line += w + ' ';
+      }
+    });
+    if (line) ctx.fillText(line, sx + 14, ly);
+  });
+
+  // Bottom Left: Launch-Ready Copy Bank & Asset Capture Plan
+  rrect(48, 224, 584, 260, 14);
+  ctx.fillStyle = '#111827';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.09)';
+  ctx.stroke();
+
+  ctx.fillStyle = '#fbbf24';
+  ctx.font = '700 13px -apple-system, sans-serif';
+  ctx.fillText('HIGH-CONVERSION COPY BANK (ZERO AI SLOP) & SHOT PLAN', 68, 252);
+
+  const copyItems = [
+    ['Landing Hero:', '"Mock up any conversation in seconds. Screenshot or MP4."'],
+    ['Subheadline:', '"63 realistic chat, AI, and social templates on Web & iPhone. Start with 3 free exports."'],
+    ['Punchy Hook #1:', '"Stop texting your second phone just to film a 5-second skit."'],
+    ['Punchy Hook #2:', '"If your fake chat has wrong fonts, viewers scroll past in 0.4s."'],
+    ['App Store Line:', '"Edit both sides live: names, avatars, timestamps, dark mode & MP4 video."'],
+    ['Asset Naming:', 'MIM_v01_[Angle]_[Template]_[9x16/16x9]_[HookID].mp4 (Capture at 60fps)']
+  ];
+
+  copyItems.forEach((ci, idx) => {
+    const y = 280 + idx * 33;
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = '600 12px -apple-system, sans-serif';
+    ctx.fillText(ci[0], 68, y);
+    ctx.fillStyle = '#f8fafc';
+    ctx.font = '500 12px -apple-system, sans-serif';
+    ctx.fillText(ci[1], 180, y);
+  });
+
+  // Bottom Right: Final Actionable Priorities (Best 3 First / Fastest / Highest Upside)
+  rrect(648, 224, 584, 260, 14);
+  ctx.fillStyle = '#111827';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(16,185,129,0.35)';
+  ctx.stroke();
+
+  ctx.fillStyle = '#34d399';
+  ctx.font = '700 13px -apple-system, sans-serif';
+  ctx.fillText('EXECUTION ROADMAP: WHAT TO SHIP TOMORROW', 668, 252);
+
+  const priorities = [
+    {
+      tag: 'BEST 3 CONCEPTS TO MAKE FIRST',
+      color: '#38bdf8',
+      text: '1) 10-Second Stopwatch Demo (#5)  2) Two-Phone Skit Relief UGC (#1)  3) Photoshop vs Mimicly Split-Screen (#9).'
+    },
+    {
+      tag: 'FASTEST ASSETS TO PRODUCE TOMORROW (UNDER 2 HOURS)',
+      color: '#fbbf24',
+      text: '5 raw screen recordings (9:16 & 16:9) of live typing + template switching across iMessage, WhatsApp & ChatGPT.'
+    },
+    {
+      tag: 'HIGHEST-UPSIDE GROWTH EXPERIMENT',
+      color: '#a855f7',
+      text: 'Interactive Homepage Hero: Let cold visitors edit 2 chat bubbles live BEFORE signup, then trigger "3 Free Exports" on download.'
+    }
+  ];
+
+  priorities.forEach((pr, idx) => {
+    const py = 268 + idx * 68;
+    rrect(666, py, 548, 58, 10);
+    ctx.fillStyle = '#0b101e';
+    ctx.fill();
+    ctx.fillStyle = pr.color;
+    ctx.font = '700 11px -apple-system, sans-serif';
+    ctx.fillText(pr.tag, 680, py + 20);
+    ctx.fillStyle = '#e2e8f0';
+    ctx.font = '400 11.5px -apple-system, sans-serif';
+    ctx.fillText(pr.text.slice(0, 78), 680, py + 40);
+    if (pr.text.length > 78) ctx.fillText(pr.text.slice(78), 680, py + 53);
+  });
+
+  // Final End Card Banner at bottom
+  const bannerY = 502;
+  const bgGrad = ctx.createLinearGradient(48, bannerY, 1232, bannerY + 170);
+  bgGrad.addColorStop(0, '#1e1b4b');
+  bgGrad.addColorStop(0.5, '#0f172a');
+  bgGrad.addColorStop(1, '#064e3b');
+  rrect(48, bannerY, 1184, 170, 18);
+  ctx.fillStyle = bgGrad;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(56,189,248,0.5)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '800 38px -apple-system, sans-serif';
+  ctx.fillText('Mimicly — Make It Look Right.', 84, bannerY + 62);
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = '500 18px -apple-system, sans-serif';
+  ctx.fillText('63 Templates · Live Dual-Side Editor · Crisp PNG & MP4 Dialogue Video · Web & iPhone', 84, bannerY + 98);
+
+  drawBadge(84, bannerY + 116, 'Sign In for 3 Free Exports → Unlock All 63 Templates & No Watermark with Pro', '#38bdf8', '#0f172a', null, 14);
+}
+
+// ============================================================================
+// HUD PROGRESS BAR & PHASE INDICATOR
+// ============================================================================
+function drawHUD(t) {
+  ctx.save();
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+  ctx.fillRect(0, 692, 1280, 28);
+
+  const phases = [
+    { name: '01 · Hook & Value Prop', s: 0, e: 4 },
+    { name: '02 · Live Product & MP4 Demo', s: 4, e: 12 },
+    { name: '03 · Top 6 Templates Ranked', s: 12, e: 18 },
+    { name: '04 · Personas, Angles & Strategy', s: 18, e: 24 },
+    { name: '05 · 12 Launch Ad Concepts', s: 24, e: 31 },
+    { name: '06 · Copy Bank, Funnel & Top 3 Tests', s: 31, e: 36 }
+  ];
+
+  phases.forEach((p, i) => {
+    const x1 = (p.s / window.DUR) * 1280;
+    const w = ((p.e - p.s) / window.DUR) * 1280;
+    const active = t >= p.s && t < p.e;
+    ctx.fillStyle = active ? 'rgba(56, 189, 248, 0.22)' : 'transparent';
+    ctx.fillRect(x1, 692, w, 28);
+    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+    ctx.strokeRect(x1, 692, w, 28);
+
+    ctx.fillStyle = active ? '#38bdf8' : '#64748b';
+    ctx.font = active ? '700 11px -apple-system, sans-serif' : '500 11px -apple-system, sans-serif';
+    ctx.fillText(p.name, x1 + 10, 710);
+  });
+
+  // Progress bar line
+  ctx.fillStyle = '#38bdf8';
+  ctx.fillRect(0, 690, (t / window.DUR) * 1280, 3);
+  ctx.restore();
+}
+
+function frame(now) {
+  if (t0 === null) t0 = now;
+  const elapsed = (now - t0) / 1000 + startT;
+  const t = elapsed % window.DUR;
+
+  drawStudioBG(t);
+
+  if (t < 4) {
+    scene1(t);
+  } else if (t < 12) {
+    scene2(t);
+  } else if (t < 18) {
+    scene3(t);
+  } else if (t < 24) {
+    scene4(t);
+  } else if (t < 31) {
+    scene5(t);
+  } else {
+    scene6(t);
+  }
+
+  drawHUD(t);
+  requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

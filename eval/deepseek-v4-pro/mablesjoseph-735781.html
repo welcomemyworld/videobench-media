@@ -1,0 +1,759 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Context Tax - Motion Graphics Explainer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+            font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+        }
+        canvas {
+            max-width: 100vw;
+            max-height: 100vh;
+            width: auto;
+            height: auto;
+            aspect-ratio: 16/9;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="c" width="1280" height="720"></canvas>
+    <script>
+        (function() {
+            const canvas = document.getElementById('c');
+            const ctx = canvas.getContext('2d');
+            const W = 1280;
+            const H = 720;
+            const DUR = 48;
+
+            window.DUR = DUR;
+
+            const urlParams = new URLSearchParams(window.location.search);
+            const startOffset = parseFloat(urlParams.get('t')) || 0;
+            let startTime = null;
+
+            function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+
+            function easeInCubic(t) { return t * t * t; }
+
+            function easeInOutCubic(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+
+            function easeOutBack(t) { const c1 = 1.70158;
+                const c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); }
+
+            function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+            function lerp(a, b, t) { return a + (b - a) * t; }
+
+            function fadeIn(t, delay, dur) { return clamp((t - delay) / dur, 0, 1); }
+
+            const particles = [];
+            for (let i = 0; i < 55; i++) {
+                particles.push({
+                    x: Math.random() * W,
+                    y: Math.random() * H,
+                    vx: (Math.random() - 0.5) * 0.25,
+                    vy: -0.08 - Math.random() * 0.35,
+                    size: 0.6 + Math.random() * 1.4,
+                    opacity: 0.08 + Math.random() * 0.25
+                });
+            }
+
+            function updateParticles() {
+                for (const p of particles) {
+                    p.x += p.vx;
+                    p.y += p.vy;
+                    if (p.y < -12) { p.y = H + 10;
+                        p.x = Math.random() * W; }
+                    if (p.x < -12) p.x = W + 10;
+                    if (p.x > W + 12) p.x = -10;
+                }
+            }
+
+            function drawParticles(ctx, t) {
+                for (const p of particles) {
+                    const twinkle = 0.7 + 0.3 * Math.sin(t * 1.8 + p.x * 0.7);
+                    const a = p.opacity * twinkle;
+                    ctx.fillStyle = `rgba(255,255,255,${a})`;
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            function drawGrid(ctx) {
+                ctx.strokeStyle = 'rgba(255,255,255,0.025)';
+                ctx.lineWidth = 1;
+                for (let x = 0; x <= W; x += 40) {
+                    ctx.beginPath();
+                    ctx.moveTo(x, 0);
+                    ctx.lineTo(x, H);
+                    ctx.stroke();
+                }
+                for (let y = 0; y <= H; y += 40) {
+                    ctx.beginPath();
+                    ctx.moveTo(0, y);
+                    ctx.lineTo(W, y);
+                    ctx.stroke();
+                }
+            }
+
+            function roundRect(ctx, x, y, w, h, r) {
+                if (ctx.roundRect) {
+                    ctx.beginPath();
+                    ctx.roundRect(x, y, w, h, r);
+                    return;
+                }
+                ctx.beginPath();
+                ctx.moveTo(x + r, y);
+                ctx.lineTo(x + w - r, y);
+                ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+                ctx.lineTo(x + w, y + h - r);
+                ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+                ctx.lineTo(x + r, y + h);
+                ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+                ctx.lineTo(x, y + r);
+                ctx.quadraticCurveTo(x, y, x + r, y);
+                ctx.closePath();
+            }
+
+            function drawText(ctx, text, x, y, size, color, font, align, alpha) {
+                ctx.save();
+                ctx.globalAlpha = alpha !== undefined ? alpha : 1;
+                ctx.font = `${size}px ${font || "'Segoe UI','Helvetica Neue',Arial,sans-serif"}`;
+                ctx.fillStyle = color;
+                ctx.textAlign = align || 'left';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(text, x, y);
+                ctx.restore();
+            }
+
+            function drawIcon(ctx, type, cx, cy, color, alpha, scale) {
+                const s = (scale || 1) * 1.0;
+                ctx.save();
+                ctx.globalAlpha = alpha;
+                ctx.strokeStyle = color;
+                ctx.fillStyle = color;
+                ctx.lineWidth = 2.5 * s;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                const u = 1 * s;
+                switch (type) {
+                    case 'switch':
+                        ctx.strokeRect(cx - 20 * u, cy - 14 * u, 22 * u, 28 * u);
+                        ctx.strokeRect(cx - 2 * u, cy - 10 * u, 22 * u, 28 * u);
+                        ctx.beginPath();
+                        ctx.moveTo(cx + 30 * u, cy);
+                        ctx.lineTo(cx + 18 * u, cy);
+                        ctx.moveTo(cx + 28 * u, cy - 6 * u);
+                        ctx.lineTo(cx + 36 * u, cy);
+                        ctx.lineTo(cx + 28 * u, cy + 6 * u);
+                        ctx.stroke();
+                        break;
+                    case 'loss':
+                        ctx.beginPath();
+                        ctx.moveTo(cx - 18 * u, cy - 16 * u);
+                        ctx.lineTo(cx + 18 * u, cy - 16 * u);
+                        ctx.lineTo(cx + 18 * u, cy + 6 * u);
+                        ctx.lineTo(cx + 6 * u, cy + 18 * u);
+                        ctx.lineTo(cx - 18 * u, cy + 18 * u);
+                        ctx.closePath();
+                        ctx.stroke();
+                        ctx.setLineDash([3 * u, 3 * u]);
+                        ctx.beginPath();
+                        ctx.moveTo(cx + 6 * u, cy + 18 * u);
+                        ctx.lineTo(cx + 6 * u, cy + 6 * u);
+                        ctx.lineTo(cx + 18 * u, cy + 6 * u);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                        break;
+                    case 'clock':
+                        ctx.beginPath();
+                        ctx.arc(cx, cy, 17 * u, 0, Math.PI * 2);
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.moveTo(cx, cy);
+                        ctx.lineTo(cx, cy - 10 * u);
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.moveTo(cx, cy);
+                        ctx.lineTo(cx + 8 * u, cy + 5 * u);
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.arc(cx, cy, 2.5 * u, 0, Math.PI * 2);
+                        ctx.fill();
+                        break;
+                    case 'doc':
+                        ctx.strokeRect(cx - 14 * u, cy - 18 * u, 28 * u, 36 * u);
+                        ctx.beginPath();
+                        ctx.moveTo(cx - 6 * u, cy - 8 * u);
+                        ctx.lineTo(cx + 8 * u, cy - 8 * u);
+                        ctx.moveTo(cx - 6 * u, cy - 2 * u);
+                        ctx.lineTo(cx + 8 * u, cy - 2 * u);
+                        ctx.moveTo(cx - 6 * u, cy + 4 * u);
+                        ctx.lineTo(cx + 4 * u, cy + 4 * u);
+                        ctx.moveTo(cx - 6 * u, cy + 10 * u);
+                        ctx.lineTo(cx + 2 * u, cy + 10 * u);
+                        ctx.stroke();
+                        break;
+                    case 'async':
+                        roundRect(ctx, cx - 20 * u, cy - 16 * u, 40 * u, 28 * u, 8 * u);
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.moveTo(cx - 5 * u, cy + 12 * u);
+                        ctx.lineTo(cx, cy + 20 * u);
+                        ctx.lineTo(cx + 7 * u, cy + 12 * u);
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.arc(cx, cy - 2 * u, 6 * u, 0, Math.PI * 2);
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.moveTo(cx, cy - 2 * u);
+                        ctx.lineTo(cx, cy - 6 * u);
+                        ctx.stroke();
+                        break;
+                    case 'gear':
+                        ctx.beginPath();
+                        for (let i = 0; i < 12; i++) {
+                            const a = i * Math.PI / 6;
+                            const or = 17 * u;
+                            const ir = 12 * u;
+                            const ax = cx + Math.cos(a) * or;
+                            const ay = cy + Math.sin(a) * or;
+                            if (i === 0) ctx.moveTo(ax, ay);
+                            else ctx.lineTo(ax, ay);
+                            const a2 = a + Math.PI / 12;
+                            const bx = cx + Math.cos(a2) * ir;
+                            const by = cy + Math.sin(a2) * ir;
+                            ctx.lineTo(bx, by);
+                        }
+                        ctx.closePath();
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.arc(cx, cy, 4 * u, 0, Math.PI * 2);
+                        ctx.stroke();
+                        break;
+                    case 'brain':
+                        ctx.beginPath();
+                        ctx.arc(cx - 6 * u, cy, 10 * u, 0, Math.PI * 2);
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.arc(cx + 6 * u, cy, 10 * u, 0, Math.PI * 2);
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.moveTo(cx - 14 * u, cy);
+                        ctx.lineTo(cx + 14 * u, cy);
+                        ctx.stroke();
+                        break;
+                }
+                ctx.restore();
+            }
+
+            function renderScene1(ctx, t) {
+                const fade = fadeIn(t, 0.3, 0.5);
+                if (fade <= 0) return;
+                ctx.save();
+                ctx.globalAlpha = fade;
+
+                const title = "CONTEXT TAX";
+                const titleSize = 78;
+                const letterSpacing = 52;
+                const totalWidth = (title.length - 1) * letterSpacing;
+                const baseX = 640 - totalWidth / 2;
+                const startY = 325;
+                const colorTop = '#ffffff';
+                const colorBottom = '#e8e0d0';
+
+                for (let i = 0; i < title.length; i++) {
+                    const letterDelay = 0.4 + i * 0.11;
+                    const letterFade = clamp((t - letterDelay) / 0.35, 0, 1);
+                    const letterOffset = (1 - letterFade) * 28;
+                    const grad = ctx.createLinearGradient(0, startY - 40, 0, startY + 40);
+                    grad.addColorStop(0, colorTop);
+                    grad.addColorStop(1, colorBottom);
+                    drawText(ctx, title[i], baseX + i * letterSpacing, startY + letterOffset, titleSize, grad, "'Segoe UI','Helvetica Neue',Arial,sans-serif",
+                        'center', letterFade);
+                }
+
+                if (t > 2.6) {
+                    const ulProg = clamp((t - 2.6) / 0.8, 0, 1);
+                    const ulW = totalWidth * 0.82;
+                    const ulX = 640 - ulW / 2;
+                    const ulY = startY + 52;
+                    const grad = ctx.createLinearGradient(ulX, 0, ulX + ulW, 0);
+                    grad.addColorStop(0, '#ff6b35');
+                    grad.addColorStop(1, '#f4a261');
+                    ctx.strokeStyle = grad;
+                    ctx.lineWidth = 3.5;
+                    ctx.lineCap = 'round';
+                    ctx.shadowColor = '#ff6b35';
+                    ctx.shadowBlur = 15;
+                    ctx.beginPath();
+                    ctx.moveTo(ulX, ulY);
+                    ctx.lineTo(ulX + ulW * easeOutCubic(ulProg), ulY);
+                    ctx.stroke();
+                    ctx.shadowBlur = 0;
+                }
+
+                if (t > 3.4) {
+                    const subFade = clamp((t - 3.4) / 0.9, 0, 1);
+                    const subY = 400 + (1 - subFade) * 14;
+                    drawText(ctx, "The hidden cost of software development", 640, subY, 26, '#a8b0c0',
+                        "'Segoe UI','Helvetica Neue',Arial,sans-serif", 'center', subFade);
+                }
+
+                if (t > 4.5) {
+                    const brFade = clamp((t - 4.5) / 0.7, 0, 1);
+                    const brY = 468;
+                    const brSize = 26;
+                    const brGap = 170;
+                    ctx.strokeStyle = `rgba(255,107,53,${0.45 * brFade})`;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(640 - brGap, brY - brSize);
+                    ctx.lineTo(640 - brGap - 7, brY);
+                    ctx.lineTo(640 - brGap, brY + brSize);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.moveTo(640 + brGap, brY - brSize);
+                    ctx.lineTo(640 + brGap + 7, brY);
+                    ctx.lineTo(640 + brGap, brY + brSize);
+                    ctx.stroke();
+                    ctx.fillStyle = `rgba(255,107,53,${0.55 * brFade})`;
+                    ctx.beginPath();
+                    ctx.arc(640, brY, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+
+            function renderScene2(ctx, t) {
+                const fade = fadeIn(t, 0.2, 0.5);
+                if (fade <= 0) return;
+                ctx.save();
+                ctx.globalAlpha = fade;
+                const hFade = fadeIn(t, 0.2, 0.5);
+                if (hFade > 0) {
+                    const hY = 105 + (1 - hFade) * 20;
+                    drawText(ctx, "What is Context Tax?", 640, hY, 42, '#f0f0f0', "'Segoe UI','Helvetica Neue',Arial,sans-serif",
+                        'center', hFade);
+                    ctx.strokeStyle = `rgba(255,107,53,${0.5*hFade})`;
+                    ctx.lineWidth = 2;
+                    ctx.lineCap = 'round';
+                    ctx.beginPath();
+                    ctx.moveTo(500, 148);
+                    ctx.lineTo(560, 148);
+                    ctx.moveTo(720, 148);
+                    ctx.lineTo(780, 148);
+                    ctx.stroke();
+                }
+                const cards = [
+                    { title: "Context Switching", desc: "Every switch costs focus", icon: 'switch', color: '#ff6b35' },
+                    { title: "Information Loss", desc: "Details slip away", icon: 'loss', color: '#e63946' },
+                    { title: "Ramp-up Cost", desc: "Re-loading takes time", icon: 'clock', color: '#f4a261' }
+                ];
+                const cw = 280;
+                const ch = 210;
+                const gap = 55;
+                const totalW = cw * 3 + gap * 2;
+                const startX = 640 - totalW / 2;
+                const cardY = 235;
+                for (let i = 0; i < 3; i++) {
+                    const cd = clamp((t - 1.6 - i * 1.1) / 0.75, 0, 1);
+                    if (cd <= 0) continue;
+                    const sy = cardY + (1 - cd) * 35;
+                    const x = startX + i * (cw + gap);
+                    ctx.save();
+                    ctx.globalAlpha = cd * fade;
+                    ctx.fillStyle = 'rgba(21,27,40,0.92)';
+                    ctx.strokeStyle = `rgba(255,107,53,${0.25*cd})`;
+                    ctx.lineWidth = 1.5;
+                    roundRect(ctx, x, sy, cw, ch, 14);
+                    ctx.fill();
+                    ctx.stroke();
+                    ctx.strokeStyle = `rgba(255,255,255,0.04)`;
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(x + 20, sy + ch - 38);
+                    ctx.lineTo(x + cw - 20, sy + ch - 38);
+                    ctx.stroke();
+                    drawIcon(ctx, cards[i].icon, x + cw / 2, sy + 62, cards[i].color, cd);
+                    drawText(ctx, cards[i].title, x + cw / 2, sy + 118, 22, '#f0f0f0', "'Segoe UI','Helvetica Neue',Arial,sans-serif",
+                        'center', cd);
+                    drawText(ctx, cards[i].desc, x + cw / 2, sy + 158, 17, '#a8b0c0', "'Segoe UI','Helvetica Neue',Arial,sans-serif",
+                        'center', cd);
+                    ctx.restore();
+                }
+                ctx.restore();
+            }
+
+            function renderScene3(ctx, t) {
+                const fade = fadeIn(t, 0.2, 0.5);
+                if (fade <= 0) return;
+                ctx.save();
+                ctx.globalAlpha = fade;
+                const hFade = fadeIn(t, 0.2, 0.5);
+                if (hFade > 0) {
+                    drawText(ctx, "The Switching Loop", 640, 92, 40, '#f0f0f0', "'Segoe UI','Helvetica Neue',Arial,sans-serif",
+                        'center', hFade);
+                }
+                const cx = 640;
+                const cy = 400;
+                const radius = 145;
+                const tasks = ['Code', 'Review', 'Meeting', 'Debug', 'Docs'];
+                const colors = ['#ff6b35', '#4ecdc4', '#f4a261', '#e63946', '#9b87f5'];
+                ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([5, 5]);
+                ctx.lineDashOffset = -t * 18;
+                for (let i = 0; i < 5; i++) {
+                    const a1 = -Math.PI / 2 + i * (2 * Math.PI / 5);
+                    const a2 = -Math.PI / 2 + (i + 1) * (2 * Math.PI / 5);
+                    ctx.beginPath();
+                    ctx.moveTo(cx + radius * Math.cos(a1), cy + radius * Math.sin(a1));
+                    ctx.lineTo(cx + radius * Math.cos(a2), cy + radius * Math.sin(a2));
+                    ctx.stroke();
+                }
+                ctx.setLineDash([]);
+                ctx.lineDashOffset = 0;
+
+                const cycleStart = 1.2;
+                const cycleTime = t - cycleStart;
+                if (cycleTime > 0) {
+                    const cycleDur = 4.5;
+                    const prog = (cycleTime % cycleDur) / cycleDur;
+                    const curIdx = Math.floor(prog * 5);
+                    const interp = (prog * 5) % 1;
+                    const easedInterp = easeInOutCubic(interp);
+                    const aCurr = -Math.PI / 2 + curIdx * (2 * Math.PI / 5);
+                    const aNext = -Math.PI / 2 + (curIdx + 1) * (2 * Math.PI / 5);
+                    const indAngle = aCurr + (aNext - aCurr) * easedInterp;
+
+                    for (let i = 0; i < 5; i++) {
+                        const angle = -Math.PI / 2 + i * (2 * Math.PI / 5);
+                        const x = cx + radius * Math.cos(angle);
+                        const y = cy + radius * Math.sin(angle);
+                        const isActive = (i === curIdx) || (i === ((curIdx + 1) % 5) && interp > 0.6);
+                        ctx.fillStyle = colors[i];
+                        ctx.shadowColor = isActive ? colors[i] : 'transparent';
+                        ctx.shadowBlur = isActive ? 18 : 0;
+                        ctx.beginPath();
+                        ctx.arc(x, y, isActive ? 13 : 11, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.shadowBlur = 0;
+                        const labelAlpha = isActive ? 0.95 : 0.65;
+                        drawText(ctx, tasks[i], x, y + 34, 16, isActive ? '#ffffff' : '#c0c8d8',
+                            "'Segoe UI','Helvetica Neue',Arial,sans-serif", 'center', labelAlpha);
+                    }
+
+                    const ix = cx + radius * Math.cos(indAngle);
+                    const iy = cy + radius * Math.sin(indAngle);
+                    ctx.strokeStyle = '#ff6b35';
+                    ctx.lineWidth = 3;
+                    ctx.shadowColor = '#ff6b35';
+                    ctx.shadowBlur = 22;
+                    ctx.beginPath();
+                    ctx.arc(ix, iy, 22, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.shadowBlur = 0;
+                    ctx.fillStyle = 'rgba(255,107,53,0.15)';
+                    ctx.beginPath();
+                    ctx.arc(ix, iy, 28, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    const totalSwitches = Math.floor(cycleTime / cycleDur * 5 + easedInterp);
+                    const switchCount = Math.floor(cycleTime * 5 / cycleDur);
+                    const timeLost = switchCount * 23;
+                    const pulse = 0.85 + 0.15 * Math.sin(t * 4);
+                    drawText(ctx, 'Switch #' + switchCount, cx, cy - 14, 30, '#f0f0f0',
+                        "'Segoe UI','Helvetica Neue',Arial,sans-serif", 'center');
+                    drawText(ctx, '≈ ' + timeLost + ' min lost', cx, cy + 26, 21,
+                        `rgba(255,107,53,${pulse})`, "'Segoe UI','Helvetica Neue',Arial,sans-serif", 'center');
+                    const subFade = fadeIn(t, 4.5, 1);
+                    if (subFade > 0) {
+                        drawText(ctx, 'Every context switch compounds', cx, cy + 68, 18, '#a8b0c0',
+                            "'Segoe UI','Helvetica Neue',Arial,sans-serif", 'center', subFade);
+                    }
+                }
+                ctx.restore();
+            }
+
+            function renderScene4(ctx, t) {
+                const fade = fadeIn(t, 0.2, 0.5);
+                if (fade <= 0) return;
+                ctx.save();
+                ctx.globalAlpha = fade;
+                const hFade = fadeIn(t, 0.2, 0.5);
+                if (hFade > 0) {
+                    drawText(ctx, "The Productivity Gap", 640, 88, 40, '#f0f0f0', "'Segoe UI','Helvetica Neue',Arial,sans-serif",
+                        'center', hFade);
+                }
+                const barData = [
+                    { label: 'Deep Work', desc: 'Full context', pct: 0.95, color: '#4ecdc4' },
+                    { label: '1–2 Switches', desc: 'Partial context', pct: 0.7, color: '#f4a261' },
+                    { label: 'Frequent Switches', desc: 'Fragmented context', pct: 0.4, color: '#e63946' }
+                ];
+                const barW = 190;
+                const barGap = 80;
+                const totalW = barW * 3 + barGap * 2;
+                const startX = 640 - totalW / 2;
+                const baseY = 545;
+                const maxH = 300;
+                const chartStart = 1.8;
+                const chartDur = 2.8;
+                for (let i = 0; i < 3; i++) {
+                    const p = clamp((t - chartStart - i * 0.4) / chartDur, 0, 1);
+                    if (p <= 0) continue;
+                    const bh = maxH * barData[i].pct * easeOutCubic(p);
+                    const x = startX + i * (barW + barGap);
+                    const y = baseY - bh;
+                    const grad = ctx.createLinearGradient(x, y, x, baseY);
+                    grad.addColorStop(0, barData[i].color);
+                    grad.addColorStop(1, barData[i].color + '44');
+                    ctx.fillStyle = grad;
+                    roundRect(ctx, x, y, barW, bh, 8);
+                    ctx.fill();
+                    ctx.strokeStyle = `rgba(255,255,255,0.08)`;
+                    ctx.lineWidth = 1;
+                    roundRect(ctx, x, y, barW, bh, 8);
+                    ctx.stroke();
+                    if (p > 0.5) {
+                        const pctFade = clamp((p - 0.5) / 0.5, 0, 1);
+                        const pctLabel = Math.round(barData[i].pct * 100) + '%';
+                        drawText(ctx, pctLabel, x + barW / 2, y - 18, 22, barData[i].color,
+                            "'Segoe UI','Helvetica Neue',Arial,sans-serif", 'center', pctFade);
+                    }
+                    const labelFade = clamp((p - 0.2) / 0.3, 0, 1);
+                    if (labelFade > 0) {
+                        drawText(ctx, barData[i].label, x + barW / 2, baseY + 32, 20, '#f0f0f0',
+                            "'Segoe UI','Helvetica Neue',Arial,sans-serif", 'center', labelFade);
+                        drawText(ctx, barData[i].desc, x + barW / 2, baseY + 58, 16, '#a8b0c0',
+                            "'Segoe UI','Helvetica Neue',Arial,sans-serif", 'center', labelFade * 0.85);
+                    }
+                }
+                const annotFade = fadeIn(t, 5.5, 0.8);
+                if (annotFade > 0) {
+                    const ax = startX + barW + barGap / 2;
+                    const ay1 = baseY - maxH * 0.95;
+                    const ay2 = baseY - maxH * 0.4;
+                    ctx.strokeStyle = `rgba(255,107,53,${0.6*annotFade})`;
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([4, 4]);
+                    ctx.beginPath();
+                    ctx.moveTo(ax, ay1);
+                    ctx.lineTo(ax, ay2);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                    const arrowY = ay1 + 18;
+                    ctx.beginPath();
+                    ctx.moveTo(ax - 6, arrowY + 6);
+                    ctx.lineTo(ax, arrowY);
+                    ctx.lineTo(ax + 6, arrowY + 6);
+                    ctx.stroke();
+                    drawText(ctx, '55% productivity gap', ax + 14, (ay1 + ay2) / 2, 19, '#ff6b35',
+                        "'Segoe UI','Helvetica Neue',Arial,sans-serif", 'left', annotFade);
+                    drawText(ctx, 'between deep work and frequent switching', ax + 14, (ay1 + ay2) / 2 + 28, 16,
+                        '#c0c8d8', "'Segoe UI','Helvetica Neue',Arial,sans-serif", 'left', annotFade * 0.9);
+                }
+                ctx.restore();
+            }
+
+            function renderScene5(ctx, t) {
+                const fade = fadeIn(t, 0.2, 0.5);
+                if (fade <= 0) return;
+                ctx.save();
+                ctx.globalAlpha = fade;
+                const hFade = fadeIn(t, 0.2, 0.5);
+                if (hFade > 0) {
+                    drawText(ctx, "Reduce the Tax", 640, 92, 42, '#f0f0f0', "'Segoe UI','Helvetica Neue',Arial,sans-serif",
+                        'center', hFade);
+                    ctx.strokeStyle = `rgba(78,205,196,${0.5*hFade})`;
+                    ctx.lineWidth = 2;
+                    ctx.lineCap = 'round';
+                    ctx.beginPath();
+                    ctx.moveTo(510, 136);
+                    ctx.lineTo(570, 136);
+                    ctx.moveTo(710, 136);
+                    ctx.lineTo(770, 136);
+                    ctx.stroke();
+                }
+                const sols = [
+                    { title: 'Write It Down', desc: 'Document decisions and context', icon: 'doc', color: '#4ecdc4' },
+                    { title: 'Go Async', desc: 'Reduce interruptions and meetings', icon: 'async', color: '#f4a261' },
+                    { title: 'Automate Context', desc: 'Tooling that surfaces knowledge', icon: 'gear', color: '#ff6b35' }
+                ];
+                const cw = 300;
+                const ch = 220;
+                const gap = 45;
+                const totalW = cw * 3 + gap * 2;
+                const startX = 640 - totalW / 2;
+                const cardY = 185;
+                for (let i = 0; i < 3; i++) {
+                    const cd = clamp((t - 1.5 - i * 0.9) / 0.7, 0, 1);
+                    if (cd <= 0) continue;
+                    const sy = cardY + (1 - cd) * 30;
+                    const x = startX + i * (cw + gap);
+                    ctx.save();
+                    ctx.globalAlpha = cd * fade;
+                    ctx.fillStyle = 'rgba(21,27,40,0.92)';
+                    ctx.strokeStyle = `rgba(78,205,196,${0.28*cd})`;
+                    ctx.lineWidth = 1.5;
+                    roundRect(ctx, x, sy, cw, ch, 14);
+                    ctx.fill();
+                    ctx.stroke();
+                    drawIcon(ctx, sols[i].icon, x + cw / 2, sy + 58, sols[i].color, cd);
+                    drawText(ctx, sols[i].title, x + cw / 2, sy + 118, 24, '#f0f0f0',
+                        "'Segoe UI','Helvetica Neue',Arial,sans-serif", 'center', cd);
+                    drawText(ctx, sols[i].desc, x + cw / 2, sy + 158, 17, '#a8b0c0',
+                        "'Segoe UI','Helvetica Neue',Arial,sans-serif", 'center', cd * 0.9);
+                    ctx.restore();
+                }
+                const extraFade = fadeIn(t, 4.5, 1);
+                if (extraFade > 0) {
+                    drawText(ctx, 'Invest in context infrastructure', 640, 470, 24, '#d0d8e8',
+                        "'Segoe UI','Helvetica Neue',Arial,sans-serif", 'center', extraFade);
+                    const teal = `rgba(78,205,196,${0.5*extraFade})`;
+                    ctx.fillStyle = teal;
+                    ctx.beginPath();
+                    ctx.arc(595, 470, 3.5, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.arc(685, 470, 3.5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+
+            function renderScene6(ctx, t) {
+                const fade = fadeIn(t, 0.3, 0.6);
+                if (fade <= 0) return;
+                ctx.save();
+                ctx.globalAlpha = fade;
+                const quoteFade = fadeIn(t, 0.3, 0.7);
+                if (quoteFade > 0) {
+                    const qY = 320 + (1 - quoteFade) * 25;
+                    const grad = ctx.createLinearGradient(0, qY - 30, 0, qY + 30);
+                    grad.addColorStop(0, '#ffffff');
+                    grad.addColorStop(0.6, '#ffe0c0');
+                    grad.addColorStop(1, '#ff6b35');
+                    drawText(ctx, 'Context is a currency', 640, qY, 52, grad,
+                        "'Segoe UI','Helvetica Neue',Arial,sans-serif", 'center', quoteFade);
+                    drawText(ctx, 'Invest it wisely', 640, qY + 58, 30, '#d0d8e8',
+                        "'Segoe UI','Helvetica Neue',Arial,sans-serif", 'center', quoteFade * 0.9);
+                }
+                const tagFade = fadeIn(t, 2.2, 0.8);
+                if (tagFade > 0) {
+                    drawText(ctx, 'Reduce the tax. Ship faster.', 640, 445, 24, '#4ecdc4',
+                        "'Segoe UI','Helvetica Neue',Arial,sans-serif", 'center', tagFade);
+                    const brFade = tagFade * 0.6;
+                    ctx.strokeStyle = `rgba(255,107,53,${brFade})`;
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.moveTo(560, 475);
+                    ctx.lineTo(600, 475);
+                    ctx.moveTo(680, 475);
+                    ctx.lineTo(720, 475);
+                    ctx.stroke();
+                    ctx.fillStyle = `rgba(255,255,255,${tagFade*0.3})`;
+                    ctx.beginPath();
+                    ctx.arc(640, 475, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                const endFade = fadeIn(t, 3.8, 0.8);
+                if (endFade > 0) {
+                    drawText(ctx, 'CONTEXT TAX', 640, 540, 20, `rgba(255,255,255,${0.4*endFade})`,
+                        "'Segoe UI','Helvetica Neue',Arial,sans-serif", 'center', endFade);
+                    drawText(ctx, '— an engineering explainer —', 640, 570, 16,
+                        `rgba(255,255,255,${0.25*endFade})`, "'Segoe UI','Helvetica Neue',Arial,sans-serif", 'center',
+                        endFade);
+                }
+                ctx.restore();
+            }
+
+            const scenes = [
+                { start: 0, dur: 7, render: renderScene1 },
+                { start: 7, dur: 9, render: renderScene2 },
+                { start: 16, dur: 11, render: renderScene3 },
+                { start: 27, dur: 9, render: renderScene4 },
+                { start: 36, dur: 7, render: renderScene5 },
+                { start: 43, dur: 5, render: renderScene6 }
+            ];
+
+            function findScenes(globalTime) {
+                let current = null;
+                let next = null;
+                for (let i = 0; i < scenes.length; i++) {
+                    const s = scenes[i];
+                    if (globalTime >= s.start && globalTime < s.start + s.dur) {
+                        current = s;
+                        if (i + 1 < scenes.length) next = scenes[i + 1];
+                        break;
+                    }
+                }
+                return { current, next };
+            }
+
+            function animate(now) {
+                if (startTime === null) startTime = now - startOffset * 1000;
+                let globalTime = ((now - startTime) / 1000) % DUR;
+                if (globalTime < 0) globalTime += DUR;
+
+                ctx.fillStyle = '#0a0e17';
+                ctx.fillRect(0, 0, W, H);
+                drawGrid(ctx);
+                updateParticles();
+                drawParticles(ctx, globalTime);
+
+                const { current, next } = findScenes(globalTime);
+                const fadeTime = 0.5;
+
+                if (current) {
+                    const localT = globalTime - current.start;
+                    if (next && globalTime > current.start + current.dur - fadeTime) {
+                        const fp = clamp((globalTime - (current.start + current.dur - fadeTime)) / fadeTime, 0, 1);
+                        ctx.save();
+                        ctx.globalAlpha = 1 - fp;
+                        current.render(ctx, localT);
+                        ctx.restore();
+                        ctx.save();
+                        ctx.globalAlpha = fp;
+                        next.render(ctx, 0);
+                        ctx.restore();
+                    } else {
+                        current.render(ctx, localT);
+                    }
+                }
+
+                const vg = ctx.createRadialGradient(W / 2, H / 2, H * 0.38, W / 2, H / 2, H * 0.82);
+                vg.addColorStop(0, 'rgba(0,0,0,0)');
+                vg.addColorStop(1, 'rgba(0,0,0,0.3)');
+                ctx.fillStyle = vg;
+                ctx.fillRect(0, 0, W, H);
+
+                const prog = globalTime / DUR;
+                ctx.fillStyle = 'rgba(255,255,255,0.07)';
+                ctx.fillRect(0, H - 3, W, 3);
+                ctx.fillStyle = '#ff6b35';
+                ctx.fillRect(0, H - 3, W * prog, 3);
+
+                requestAnimationFrame(animate);
+            }
+
+            requestAnimationFrame(animate);
+        })();
+    </script>
+</body>
+</html>

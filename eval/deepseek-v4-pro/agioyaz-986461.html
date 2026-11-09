@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>余白</title>
+<style>
+  body{margin:0;background:#000;display:flex;align-items:center;justify-content:center;height:100vh;overflow:hidden}
+  canvas{display:block;background:#000}
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+const W=1280,H=720,DUR=36;
+const CELL_COLS=8,CELL_ROWS=12,WIN_W=10,WIN_H=15;
+const CELL_W=WIN_W/CELL_COLS,CELL_H=WIN_H/CELL_ROWS;
+const Z_WALL=-30;
+const LIGHT_DIR={x:0,y:-1,z:1}; // normalized later
+const ctx=document.getElementById('c').getContext('2d');
+const focal=360/Math.tan(Math.PI/6);
+const urlParams=new URLSearchParams(location.search);
+const tStart=parseFloat(urlParams.get('t')||'0');
+
+function insideArch(x,y){
+  if(y<0||y>WIN_H)return false;
+  const hw=5*Math.sqrt(Math.max(0,1-Math.pow(y/WIN_H,1.8)));
+  return Math.abs(x)<=hw;
+}
+// ---------- stained glass texture ----------
+const texW=500,texH=750;
+const tex=document.createElement('canvas');
+tex.width=texW;tex.height=texH;
+const tctx=tex.getContext('2d');
+// arch clip path
+tctx.beginPath();
+for(let y=0;y<=texH;y+=5){
+  const wy=y/texH*WIN_H;
+  const hw=5*Math.sqrt(Math.max(0,1-Math.pow(wy/WIN_H,1.8)))*texW/10;
+  if(y===0)tctx.moveTo(texW/2-hw,y);
+  else tctx.lineTo(texW/2-hw,y);
+}
+for(let y=texH;y>=0;y-=5){
+  const wy=y/texH*WIN_H;
+  const hw=5*Math.sqrt(Math.max(0,1-Math.pow(wy/WIN_H,1.8)))*texW/10;
+  tctx.lineTo(texW/2+hw,y);
+}
+tctx.closePath();
+tctx.clip();
+// background
+tctx.fillStyle='#1a0e2e';
+tctx.fillRect(0,0,texW,texH);
+// rose window top
+tctx.save();
+tctx.translate(texW/2,texH*0.2);
+tctx.beginPath();tctx.arc(0,0,texW*0.18,0,Math.PI*2);tctx.fillStyle='#4a90d9';tctx.fill();
+for(let i=0;i<8;i++){tctx.rotate(Math.PI/4);tctx.fillStyle=i%2?'#d4a017':'#c1272d';tctx.fillRect(-4,-texW*0.15,8,texW*0.3);}
+tctx.beginPath();tctx.arc(0,0,texW*0.08,0,Math.PI*2);tctx.fillStyle='#e8c547';tctx.fill();
+tctx.restore();
+// central Madonna (stylized, symmetric)
+tctx.fillStyle='#2e5fa3'; // blue robe
+tctx.beginPath();tctx.moveTo(texW/2,texH*0.55);tctx.quadraticCurveTo(texW/2-texW*0.15,texH*0.45,texW/2-texW*0.10,texH*0.35);
+tctx.lineTo(texW/2+texW*0.10,texH*0.35);tctx.quadraticCurveTo(texW/2+texW*0.15,texH*0.45,texW/2,texH*0.55);tctx.fill();
+// head
+tctx.beginPath();tctx.arc(texW/2,texH*0.31,texW*0.06,0,Math.PI*2);tctx.fillStyle='#f0d9b5';tctx.fill();
+// halo
+tctx.beginPath();tctx.arc(texW/2,texH*0.30,texW*0.09,0,Math.PI*2);tctx.strokeStyle='#e8c547';tctx.lineWidth=4;tctx.stroke();
+// arms
+tctx.strokeStyle='#2e5fa3';tctx.lineWidth=6;
+tctx.beginPath();tctx.moveTo(texW/2-texW*0.10,texH*0.40);tctx.quadraticCurveTo(texW/2-texW*0.22,texH*0.36,texW/2-texW*0.20,texH*0.30);tctx.stroke();
+tctx.beginPath();tctx.moveTo(texW/2+texW*0.10,texH*0.40);tctx.quadraticCurveTo(texW/2+texW*0.22,texH*0.36,texW/2+texW*0.20,texH*0.30);tctx.stroke();
+// angels (left and right)
+function drawAngel(cx,cy,scale,flip){
+  tctx.save();tctx.translate(cx,cy);tctx.scale(flip?1:-1,1);
+  // body
+  tctx.fillStyle='#c1272d';tctx.beginPath();tctx.moveTo(0,scale*40);tctx.quadraticCurveTo(-scale*15,scale*20,-scale*8,0);tctx.lineTo(scale*8,0);tctx.quadraticCurveTo(scale*15,scale*20,0,scale*40);tctx.fill();
+  // head
+  tctx.beginPath();tctx.arc(0,-scale*5,scale*8,0,Math.PI*2);tctx.fillStyle='#f0d9b5';tctx.fill();
+  // wings
+  tctx.fillStyle='#d4a017';
+  tctx.beginPath();tctx.moveTo(-scale*8,0);tctx.quadraticCurveTo(-scale*35,-scale*20,-scale*30,-scale*50);tctx.lineTo(-scale*12,-scale*30);tctx.closePath();tctx.fill();
+  tctx.beginPath();tctx.moveTo(-scale*8,0);tctx.quadraticCurveTo(-scale*25,-scale*5,-scale*28,-scale*15);tctx.lineTo(-scale*10,-scale*10);tctx.closePath();tctx.fill();
+  tctx.restore();
+}
+drawAngel(texW*0.25,texH*0.45,2.2,false);
+drawAngel(texW*0.75,texH*0.45,2.2,true);
+// decorative pattern
+tctx.globalAlpha=0.3;
+for(let y=texH*0.1;y<texH*0.9;y+=20){tctx.fillStyle='#7a4a9e';tctx.fillRect(0,y,texW,2);}
+tctx.globalAlpha=1;
+// ---------- camera and projection ----------
+function getCamera(t){
+  let eye,target;
+  if(t<26){
+    eye={x:0,y:2,z:8};
+    target={x:0,y:6,z:Z_WALL};
+  }else{
+    const s=Math.min(1,(t-26)/7);const e=s*s*(3-2*s);
+    eye={x:0,y:2+16*e,z:8-16*e};
+    target={x:0,y:6-6*e,z:Z_WALL+18*e};
+  }
+  return {eye,target};
+}
+function project(p,cam){
+  let fwd={x:cam.target.x-cam.eye.x,y:cam.target.y-cam.eye.y,z:cam.target.z-cam.eye.z};
+  const len=Math.sqrt(fwd.x*fwd.x+fwd.y*fwd.y+fwd.z*fwd.z);fwd={x:fwd.x/len,y:fwd.y/len,z:fwd.z/len};
+  const up={x:0,y:1,z:0};
+  let right={x:up.y*fwd.z-up.z*fwd.y,y:up.z*fwd.x-up.x*fwd.z,z:up.x*fwd.y-up.y*fwd.x};
+  const rlen=Math.sqrt(right.x*right.x+right.y*right.y+right.z*right.z);right={x:right.x/rlen,y:right.y/rlen,z:right.z/rlen};
+  const upv={x:fwd.y*right.z-fwd.z*right.y,y:fwd.z*right.x-fwd.x*right.z,z:fwd.x*right.y-fwd.y*right.x};
+  const dx=p.x-cam.eye.x,dy=p.y-cam.eye.y,dz=p.z-cam.eye.z;
+  const cz=-(dx*fwd.x+dy*fwd.y+dz*fwd.z);
+  if(cz<0.1)return null;
+  const cx=dx*right.x+dy*right.y+dz*right.z;
+  const cy=dx*upv.x+dy*upv.y+dz*upv.z;
+  return {x:W/2+cx*focal/cz,y:H/2-cy*focal/cz,cz};
+}
+// ---------- cells, blocks, times ----------
+const cells=[];
+for(let j=0;j<CELL_ROWS;j++){
+  const y=(j+0.5)*CELL_H;
+  for(let i=0;i<CELL_COLS;i++){
+    const x=-5+(i+0.5)*CELL_W;
+    if(insideArch(x,y)){
+      const u=(x+5)/10,v=y/15;
+      const px=Math.floor(u*texW),py=Math.floor(v*texH);
+      const data=tctx.getImageData(px,py,1,1).data;
+      cells.push({x,y,i,j,color:{r:data[0],g:data[1],b:data[2]},spawn:0,arrive:0,removal:Infinity,text:''});
+    }
+  }
+}
+// assign spawn times (3-11s accelerating)
+const total=cells.length;
+const wordList=['忙しい','効率化','至急','締切','急ぎ','すぐ対応','承認','残業','会議','報告','連絡','対応'];
+// shuffle cells for random order
+for(let i=total-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[cells[i],cells[j]]=[cells[j],cells[i]];}
+for(let idx=0;idx<total;idx++){
+  const ratio=idx/total;
+  const spawn=3+7.5*Math.pow(ratio,1.5);
+  const flight=0.4+Math.random()*0.3;
+  cells[idx].spawn=spawn;
+  cells[idx].arrive=spawn+flight;
+  cells[idx].text=wordList[idx%wordList.length];
+}
+// first removal at 14s - central cell with "忙しい"
+// find nearest to center
+let first=cells[0];
+let minDist=Infinity;
+for(const c of cells){const d=c.x*c.x+(c.y-7.5)*(c.y-7.5);if(d<minDist){minDist=d;first=c;}}
+first.removal=14;
+// BFS for chain starting 19s
+const queue=[first];const distMap=new Map();distMap.set(first,0);
+while(queue.length){
+  const cur=queue.shift();
+  for(const nb of cells){
+    if(distMap.has(nb))continue;
+    const dx=nb.x-cur.x,dy=nb.y-cur.y;
+    if(Math.abs(dx)<=CELL_W*1.2&&Math.abs(dy)<=CELL_H*1.2){
+      distMap.set(nb,distMap.get(cur)+1);
+      queue.push(nb);
+    }
+  }
+}
+for(const c of cells){
+  if(c===first)continue;
+  const dist=distMap.get(c)||1;
+  c.removal=19+dist*0.35+Math.random()*0.2;
+  if(c.removal>24)c.removal=24;
+}
+// ---------- draw functions ----------
+function drawRect3d(p1,p2,p3,p4,color){
+  const pts=[project(p1,cam),project(p2,cam),project(p3,cam),project(p4,cam)];
+  if(pts.some(p=>!p))return;
+  ctx.fillStyle=color;ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);
+  for(let i=1;i<4;i++)ctx.lineTo(pts[i].x,pts[i].y);
+  ctx.closePath();ctx.fill();
+}
+function drawPolygon(points,color){
+  const pts=points.map(p=>project(p,cam));if(pts.some(p=>!p))return;
+  ctx.fillStyle=color;ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);
+  for(let i=1;i<pts.length;i++)ctx.lineTo(pts[i].x,pts[i].y);
+  ctx.closePath();ctx.fill();
+}
+function floorProjection(cell){
+  const hw=CELL_W/2,hh=CELL_H/2;
+  const corners=[{x:cell.x-hw,y:cell.y-hh},{x:cell.x+hw,y:cell.y-hh},{x:cell.x+hw,y:cell.y+hh},{x:cell.x-hw,y:cell.y+hh}];
+  return corners.map(p=>({x:p.x,y:0,z:Z_WALL+p.y}));
+}
+let cam={eye:{x:0,y:2,z:8},target:{x:0,y:6,z:Z_WALL}};
+function render(time){
+  const t=time%DUR+tStart;
+  cam=getCamera(t);
+  ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
+  // global darkness based on blocked fraction
+  const blockedCount=cells.filter(c=>!c.removed&&t>=c.arrive&&!c.removed&&!c.removed).length;
+  const openCount=cells.filter(c=>t<c.arrive||t>=c.removal).length;
+  const blockedFrac=1-openCount/total;
+  const darkness=blockedFrac*0.85;
+  // floor
+  drawRect3d({x:-5,y:0,z:0},{x:5,y:0,z:0},{x:5,y:0,z:Z_WALL},{x:-5,y:0,z:Z_WALL},`rgb(${20+darkness*30},${18+darkness*30},${22+darkness*30})`);
+  // side walls
+  drawRect3d({x:-5,y:0,z:0},{x:-5,y:0,z:Z_WALL},{x:-5,y:16,z:Z_WALL},{x:-5,y:16,z:0},`rgb(${25+darkness*20},${23+darkness*20},${26+darkness*20})`);
+  drawRect3d({x:5,y:0,z:0},{x:5,y:0,z:Z_WALL},{x:5,y:16,z:Z_WALL},{x:5,y:16,z:0},`rgb(${25+darkness*20},${23+darkness*20},${26+darkness*20})`);
+  // ceiling
+  drawRect3d({x:-5,y:16,z:0},{x:5,y:16,z:0},{x:5,y:16,z:Z_WALL},{x:-5,y:16,z:Z_WALL},`rgb(${15+darkness*20},${14+darkness*20},${18+darkness*20})`);
+  // back wall
+  drawRect3d({x:-5,y:0,z:Z_WALL},{x:5,y:0,z:Z_WALL},{x:5,y:16,z:Z_WALL},{x:-5,y:16,z:Z_WALL},`rgb(${20+darkness*20},${18+darkness*20},${22+darkness*20})`);
+  // window stained glass image
+  const c1=project({x:-5,y:0,z:Z_WALL},cam),c2=project({x:5,y:15,z:Z_WALL},cam);
+  if(c1&&c2){
+    const dw=Math.abs(c2.x-c1.x),dh=Math.abs(c1.y-c2.y);
+    const cx=(c1.x+c2.x)/2,cy=(c1.y+c2.y)/2;
+    ctx.save();ctx.globalAlpha=1-darkness*0.5;
+    ctx.drawImage(tex,cx-dw/2,cy-dh/2,dw,dh);
+    ctx.restore();
+  }
+  // floor projection + light beams for open cells
+  const colorFactor=t>14?Math.min(1,(t-14)/5):0; // color appears after first removal
+  for(const cell of cells){
+    const isOpen=t<cell.arrive || t>=cell.removal;
+    if(!isOpen)continue;
+    const floorPts=floorProjection(cell);
+    const projPts=floorPts.map(p=>project(p,cam));
+    if(projPts.some(p=>!p))continue;
+    // color
+    let col;
+    if(t<3||colorFactor<0.1){
+      col=`rgb(${200+darkness*20},${200+darkness*20},${210+darkness*20})`;
+    }else{
+      const r=Math.round(cell.color.r*colorFactor+255*(1-colorFactor));
+      const g=Math.round(cell.color.g*colorFactor+255*(1-colorFactor));
+      const b=Math.round(cell.color.b*colorFactor+255*(1-colorFactor));
+      col=`rgb(${r},${g},${b})`;
+    }
+    ctx.fillStyle=col;ctx.globalAlpha=0.7-darkness*0.4;
+    ctx.beginPath();ctx.moveTo(projPts[0].x,projPts[0].y);
+    for(let i=1;i<4;i++)ctx.lineTo(projPts[i].x,projPts[i].y);
+    ctx.closePath();ctx.fill();
+    // light beam side faces
+    ctx.globalAlpha=0.15;
+    ctx.strokeStyle=col;ctx.lineWidth=1;
+    const winPts=cellCorners(cell);
+    for(let k=0;k<4;k++){
+      const next=(k+1)%4;
+      const wp1=project(winPts[k],cam),wp2=project(winPts[next],cam);
+      const fp1=projPts[k],fp2=projPts[next];
+      if(wp1&&wp2){
+        ctx.beginPath();ctx.moveTo(wp1.x,wp1.y);ctx.lineTo(wp2.x,wp2.y);ctx.lineTo(fp2.x,fp2.y);ctx.lineTo(fp1.x,fp1.y);ctx.closePath();
+        ctx.fillStyle=col;ctx.fill();
+      }
+    }
+    ctx.globalAlpha=1;
+  }
+  // blocks (cells covered)
+  for(const cell of cells){
+    if(t>=cell.removal)continue;
+    if(t<cell.arrive){
+      // flying
+      const prog=(t-cell.spawn)/(cell.arrive-cell.spawn);
+      const z=8+prog*(Z_WALL-8);
+      const p=project({x:cell.x,y:cell.y,z},cam);
+      if(!p)continue;
+      const size=CELL_W*focal/p.cz;
+      const alpha=1;
+      ctx.fillStyle=`rgb(${80+darkness*40},${78+darkness*40},${82+darkness*40})`;
+      ctx.fillRect(p.x-size/2,p.y-size/2,size,size);
+      ctx.strokeStyle='#666';ctx.strokeRect(p.x-size/2,p.y-size/2,size,size);
+      ctx.fillStyle='#fff';ctx.font=`${size*0.3}px serif`;ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(cell.text,p.x,p.y);
+    }else if(!cell.removed){
+      // landed
+      const p=project({x:cell.x,y:cell.y,z:Z_WALL},cam);
+      if(!p)continue;
+      const size=CELL_W*focal/p.cz;
+      ctx.fillStyle=`rgb(${60+darkness*40},${58+darkness*40},${62+darkness*40})`;
+      ctx.fillRect(p.x-size/2,p.y-size/2,size,size);
+      ctx.strokeStyle='#555';ctx.strokeRect(p.x-size/2,p.y-size/2,size,size);
+      ctx.fillStyle='#fff';ctx.font=`${size*0.25}px serif`;ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(cell.text,p.x,p.y);
+    }
+  }
+  // falling particles for removed cells
+  for(const cell of cells){
+    if(t>=cell.removal&&t<cell.removal+2){
+      const elapsed=t-cell.removal;
+      ctx.globalAlpha=1-elapsed/2;
+      const p=project({x:cell.x,y:cell.y-elapsed*3,z:Z_WALL},cam);
+      if(p){
+        ctx.fillStyle='rgba(255,255,180,0.8)';
+        const sz=CELL_W*focal/p.cz*0.5;
+        for(let k=0;k<5;k++){ctx.beginPath();ctx.arc(p.x+(Math.random()-0.5)*sz*2,p.y+(Math.random()-0.5)*sz*2,sz*0.2,0,Math.PI*2);ctx.fill();}
+      }
+      ctx.globalAlpha=1;
+    }
+  }
+  // dark overlay
+  ctx.fillStyle=`rgba(0,0,0,${darkness*0.7})`;
+  ctx.fillRect(0,0,W,H);
+  // text overlays
+  const texts=[
+    {start:1,end:4,text:'毎日、もっと速く。'},
+    {start:5,end:8,text:'もっと、効率よく。'},
+    {start:12,end:15,text:'気づけば、光が入らなくなっていた。'},
+    {start:16,end:19,text:'ひとつ、手放してみる。'},
+    {start:20,end:24,text:'空いたところから、光が入る。'},
+    {start:25,end:28,text:'その光は、前より豊かだった。'},
+    {start:33.5,end:36,text:'豊かさは余白に宿る',large:true}
+  ];
+  for(const item of texts){
+    if(t>=item.start&&t<=item.end){
+      const alpha=Math.min(1,Math.min((t-item.start)/0.8,(item.end-t)/0.8));
+      ctx.globalAlpha=alpha;
+      ctx.fillStyle='#e8e0d0';
+      ctx.font=item.large?'bold 48px serif':'26px serif';
+      ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(item.text,W/2,item.large?H/2:H-80);
+      ctx.globalAlpha=1;
+    }
+  }
+  // final bright overlay
+  if(t>33){
+    const bright=Math.min(1,(t-33)/2);
+    ctx.fillStyle=`rgba(255,255,240,${bright*0.9})`;
+    ctx.fillRect(0,0,W,H);
+  }
+}
+function cellCorners(cell){
+  const hw=CELL_W/2,hh=CELL_H/2;
+  return [{x:cell.x-hw,y:cell.y-hh,z:Z_WALL},{x:cell.x+hw,y:cell.y-hh,z:Z_WALL},{x:cell.x+hw,y:cell.y+hh,z:Z_WALL},{x:cell.x-hw,y:cell.y+hh,z:Z_WALL}];
+}
+function loop(){
+  const now=performance.now()/1000;
+  render(now);
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>

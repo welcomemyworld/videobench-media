@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#w{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+canvas{width:1280px;height:720px;display:block}
+</style></head><body><div id="w"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+window.DUR=15;
+const c=document.getElementById('c'),x=c.getContext('2d'),w=document.getElementById('w');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);w.style.transform=`scale(${s})`;w.style.left=(innerWidth-1280*s)/2+'px';w.style.top=(innerHeight-720*s)/2+'px'}
+fit();onresize=fit;
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t'))||0,t0=performance.now();
+function rnd(n){const s=Math.sin(n*127.1)*43758.5;return s-Math.floor(s)}
+const ease=t=>t<0?0:t>1?1:t*t*(3-2*t);
+// bulb string positions
+function bulbs(t,dark){
+  for(let r=0;r<3;r++){
+    for(let i=0;i<=32;i++){
+      const px=i*40,py=70+r*28+Math.sin(i/32*Math.PI)*26*(r+1)*0.5;
+      // each bulb dies at its own time near 11-13s
+      const die=11+rnd(i*3+r)*2.2;
+      let on=t<die?1:0;
+      if(t>die-0.5&&t<die)on=rnd(Math.floor(t*20)+i)>0.4?1:0.3;
+      const hue=[45,30,50,15][(i+r)%4];
+      if(on>0){
+        const g=x.createRadialGradient(px,py,0,px,py,34);
+        g.addColorStop(0,`hsla(${hue},100%,75%,${0.9*on})`);
+        g.addColorStop(1,`hsla(${hue},100%,60%,0)`);
+        x.fillStyle=g;x.fillRect(px-34,py-34,68,68);
+      }
+      x.fillStyle=on>0.5?'#fff3c0':'#3a3226';
+      x.beginPath();x.arc(px,py,4,0,7);x.fill();
+    }
+  }
+}
+function tent(t){
+  // bunting
+  for(let i=0;i<22;i++){
+    const px=i*60,py=215+Math.sin(i*0.9)*3;
+    x.fillStyle=i%2?'#bfe4ff':'#fff';
+    x.globalAlpha=0.85;
+    x.beginPath();x.moveTo(px,200);x.lineTo(px+30,200);x.lineTo(px+15,235);x.fill();
+    x.globalAlpha=1;
+  }
+}
+function mug(cx,cy,ang,fill){
+  x.save();x.translate(cx,cy);x.rotate(ang);
+  // handle
+  x.strokeStyle='#e8e4d8';x.lineWidth=12;x.beginPath();x.ellipse(52,0,26,34,0,-1.5,1.5);x.stroke();
+  // glass
+  x.fillStyle='rgba(255,255,255,.25)';x.fillRect(-45,-70,92,140);
+  x.fillStyle='#f0a81c';x.fillRect(-41,-70+(1-fill)*130+0,84,130*fill+4);
+  x.fillStyle='#fff8e0';
+  if(fill>0.5){x.beginPath();for(let i=0;i<5;i++)x.arc(-33+i*17,-70+(1-fill)*130,13,0,7);x.fill();}
+  x.strokeStyle='#fff';x.lineWidth=3;x.strokeRect(-45,-70,92,140);
+  x.restore();
+}
+function character(cx,cy,t,raise){
+  // stylized Bavarian figure (generic stand-in for attached character)
+  x.save();x.translate(cx,cy);
+  const bob=Math.sin(t*4)*3*(1-ease((t-11)/1));
+  x.translate(0,bob);
+  // body: dirndl/lederhosen
+  x.fillStyle='#2c5da8';x.beginPath();x.roundRect(-70,-20,140,200,30);x.fill();
+  x.fillStyle='#fff';x.fillRect(-70,-20,140,50);
+  x.fillStyle='#8a3b20';x.fillRect(-40,30,80,60);
+  // head
+  x.fillStyle='#f2c9a0';x.beginPath();x.arc(0,-70,48,0,7);x.fill();
+  // hat
+  x.fillStyle='#3b5a3a';x.beginPath();x.moveTo(-60,-85);x.lineTo(60,-85);x.lineTo(30,-150);x.lineTo(-30,-150);x.fill();
+  x.fillStyle='#d33';x.fillRect(-45,-100,90,12);
+  // face
+  x.fillStyle='#222';x.beginPath();x.arc(-16,-72,5,0,7);x.arc(16,-72,5,0,7);x.fill();
+  x.strokeStyle='#822';x.lineWidth=4;x.beginPath();
+  const open=raise>0.6&&t<11.2?14:0;
+  x.arc(0,-52,14,0.1,Math.PI-0.1);x.stroke();
+  x.restore();
+}
+function render(t){
+  const dim=1-ease((t-12.2)/1.8)*0.93;
+  // background tent
+  const g=x.createLinearGradient(0,0,0,720);
+  g.addColorStop(0,'#3b2412');g.addColorStop(1,'#120a05');
+  x.fillStyle=g;x.fillRect(0,0,1280,720);
+  tent(t);
+  // crowd silhouettes
+  for(let i=0;i<20;i++){
+    const px=i*70+20,py=560+Math.sin(t*2+i)*4;
+    x.fillStyle='#0c0603';x.beginPath();x.arc(px,py,26,0,7);x.fill();
+    x.fillRect(px-30,py+20,60,140);
+  }
+  // tables
+  x.fillStyle='#5a3418';x.fillRect(0,620,1280,100);
+  bulbs(t,0);
+  // warm light
+  const lg=x.createRadialGradient(640,400,50,640,400,700);
+  lg.addColorStop(0,'rgba(255,190,90,.25)');lg.addColorStop(1,'rgba(0,0,0,0)');
+  x.fillStyle=lg;x.fillRect(0,0,1280,720);
+  // hero + mug raise
+  const raise=ease((t-4)/3);
+  const clink=ease((t-8)/0.6);
+  const px=420+clink*60,mx=px+90+raise*20-clink*0, my=480-raise*190;
+  character(520+0,460,t,raise);
+  mug(520+110+clink*100,my+60*(1-raise)+0,-0.15*raise,0.9-ease((t-9.5)/2)*0.6);
+  // second mug from right
+  const rx=1000-ease((t-6)/2)*260;
+  character(900+ (1-ease((t-6)/2))*250,460,t+1,0);
+  mug(rx-ease((t-8)/0.6)*0+ -170+ (1-ease((t-6)/2))*250 +170*0,my+60*(1-raise),0.15*raise,0.9-ease((t-9.5)/2)*0.6);
+  // sparks at clink
+  if(t>8.5&&t<9.6){
+    for(let i=0;i<30;i++){
+      const a=rnd(i)*6.28,d=(t-8.5)*200*rnd(i+9);
+      x.fillStyle=`rgba(255,${200+rnd(i)*50|0},120,${1-(t-8.5)})`;
+      x.fillRect(750+Math.cos(a)*d,330+Math.sin(a)*d,4,4);
+    }
+  }
+  // text
+  x.textAlign='center';
+  if(t<4){
+    x.globalAlpha=ease(t/1)*(1-ease((t-3.2)/0.8));
+    x.fillStyle='#ffe9b0';x.font='bold 54px Georgia,serif';
+    x.fillText('Letzter Tag auf der Wiesn',640,340);
+    x.font='28px Georgia,serif';x.fillText('Oktoberfest · München',640,385);
+    x.globalAlpha=1;
+  }
+  if(t>8.2&&t<12.6){
+    const s=1+0.15*Math.max(0,1-(t-8.2)*4);
+    x.save();x.translate(640,170);x.scale(s,s);
+    x.fillStyle='#ffd24a';x.shadowColor='#f90';x.shadowBlur=30;
+    x.font='bold 120px Georgia,serif';x.fillText('Prost!',0,0);x.restore();x.shadowBlur=0;
+  }
+  // darkness
+  x.fillStyle=`rgba(0,0,0,${1-dim})`;
+  x.fillRect(0,0,1280,720);
+  if(t>13.2){
+    x.globalAlpha=ease((t-13.2)/1)*(1-ease((t-14.6)/0.4));
+    x.fillStyle='#ffe9b0';x.font='italic 38px Georgia,serif';
+    x.fillText('Bis nächstes Jahr, Wiesn!',640,370);
+    x.globalAlpha=1;
+  }
+  if(t<0.5){x.fillStyle=`rgba(0,0,0,${1-t/0.5})`;x.fillRect(0,0,1280,720)}
+}
+function loop(now){
+  const t=((now-t0)/1000+off)%DUR;
+  render(t);requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script></body></html>

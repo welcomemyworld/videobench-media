@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>你的笔记工作台 · 产品介绍</title>
+<style>
+*{box-sizing:border-box}
+html,body{width:100%;height:100%;margin:0;background:#000;overflow:hidden}
+body{display:flex;align-items:center;justify-content:center;font-family:Arial,"Microsoft YaHei",sans-serif}
+#stage{width:min(100vw,177.777778vh);height:min(56.25vw,100vh);display:block}
+#tools{position:fixed;bottom:10px;right:12px;display:flex;gap:8px;align-items:center;z-index:2}
+button{border:1px solid #ffffff30;border-radius:20px;background:#151719e8;color:#ddd;padding:8px 13px;font:12px Arial,"Microsoft YaHei",sans-serif;cursor:pointer}
+button:disabled{opacity:.5;cursor:default}
+#status{max-width:360px;color:#ccc;font-size:11px;background:#111d;padding:5px 9px;border-radius:8px;display:none}
+#tools:hover #status{display:block}
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<div id="tools">
+<span id="status">示例产品界面；配乐由代码生成。导出为高码率 MP4，非严格无损。</span>
+<button id="music">开启配乐</button>
+<button id="export">导出 1080p MP4</button>
+</div>
+<script>
+"use strict";
+window.DUR=40;
+const canvas=document.getElementById("stage"),c=canvas.getContext("2d");
+const musicBtn=document.getElementById("music"),exportBtn=document.getElementById("export"),status=document.getElementById("status");
+const W=1280,H=720,PI=Math.PI;
+const C={paper:"#F3F3ED",ink:"#202622",muted:"#81877F",line:"#DADFD4",green:"#326C4C",lime:"#D3E9A6",light:"#E8EDDF",white:"#FCFDF8",dark:"#202A25"};
+const font='Arial,"PingFang SC","Microsoft YaHei",sans-serif';
+const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const ease=v=>{v=clamp(v);return v*v*(3-2*v)};
+const lerp=(a,b,t)=>a+(b-a)*t;
+function rr(x,y,w,h,r=12,fill,stroke){
+ c.beginPath();c.roundRect(x,y,w,h,r);
+ if(fill){c.fillStyle=fill;c.fill()}
+ if(stroke){c.strokeStyle=stroke;c.lineWidth=1;c.stroke()}
+}
+function txt(s,x,y,size=18,color=C.ink,weight=400,align="left"){
+ c.fillStyle=color;c.font=`${weight} ${size}px ${font}`;c.textAlign=align;c.textBaseline="middle";c.fillText(s,x,y);c.textAlign="left";
+}
+function line(x,y,x2,y2,color=C.line,width=1){
+ c.beginPath();c.moveTo(x,y);c.lineTo(x2,y2);c.strokeStyle=color;c.lineWidth=width;c.stroke();
+}
+function circle(x,y,r,fill,stroke){
+ c.beginPath();c.arc(x,y,r,0,PI*2);if(fill){c.fillStyle=fill;c.fill()}if(stroke){c.strokeStyle=stroke;c.stroke()}
+}
+function icon(type,x,y,size=22,col=C.green){
+ c.save();c.translate(x,y);c.scale(size/24,size/24);c.strokeStyle=col;c.fillStyle=col;c.lineWidth=1.65;c.lineCap="round";c.lineJoin="round";
+ if(type==="note"){c.strokeRect(5,3,14,18);lineLocal(8,8,16,8);lineLocal(8,12,16,12);lineLocal(8,16,13,16)}
+ if(type==="search"){c.beginPath();c.arc(10,10,6,0,PI*2);c.stroke();lineLocal(15,15,21,21)}
+ if(type==="link"){c.beginPath();c.roundRect(2,8,13,8,4);c.stroke();c.beginPath();c.roundRect(9,8,13,8,4);c.stroke()}
+ if(type==="web"){c.beginPath();c.arc(12,12,9,0,PI*2);c.stroke();c.beginPath();c.ellipse(12,12,4,9,0,0,PI*2);c.stroke();lineLocal(3,12,21,12)}
+ if(type==="desktop"){c.strokeRect(3,4,18,13);lineLocal(12,17,12,21);lineLocal(7,21,17,21)}
+ if(type==="spark"){c.beginPath();c.moveTo(12,2);c.lineTo(15,9);c.lineTo(22,12);c.lineTo(15,15);c.lineTo(12,22);c.lineTo(9,15);c.lineTo(2,12);c.lineTo(9,9);c.closePath();c.stroke()}
+ if(type==="check"){lineLocal(5,12,10,17);lineLocal(10,17,20,6)}
+ if(type==="obs"){c.beginPath();c.moveTo(12,2);c.lineTo(20,9);c.lineTo(17,21);c.lineTo(7,20);c.lineTo(3,10);c.closePath();c.stroke();lineLocal(12,2,8,13);lineLocal(8,13,17,21)}
+ c.restore();
+ function lineLocal(a,b,d,e){c.beginPath();c.moveTo(a,b);c.lineTo(d,e);c.stroke()}
+}
+function pill(s,x,y,w,fill=C.light,col=C.green){
+ rr(x,y,w,30,15,fill);txt(s,x+w/2,y+15,13,col,500,"center");
+}
+function typing(s,p){return s.slice(0,Math.floor(s.length*clamp(p)))}
+function pointer(x,y,click=0){
+ if(click>0){circle(x,y,9+28*click,null,`rgba(50,108,76,${.35*(1-click)})`)}
+ c.save();c.translate(x,y);c.shadowColor="#0003";c.shadowBlur=6;
+ c.beginPath();c.moveTo(0,0);c.lineTo(2,23);c.lineTo(8,17);c.lineTo(13,27);c.lineTo(18,24);c.lineTo(12,14);c.lineTo(22,12);c.closePath();
+ c.fillStyle=C.ink;c.fill();c.strokeStyle="#fff";c.lineWidth=1.6;c.stroke();c.restore();
+}
+function cursorPath(t,points){
+ let a=points[0],b=a;
+ for(let i=1;i<points.length;i++){if(t>=points[i][0])a=points[i];else{b=points[i];break}b=a}
+ let p=b===a?0:ease((t-a[0])/(b[0]-a[0]));
+ return [lerp(a[1],b[1],p),lerp(a[2],b[2],p)];
+}
+function common(section){
+ txt("你的笔记工作台",64,38,15,C.ink,600);
+ txt("产品概念演示 · 示例界面",1216,38,12,C.muted,400,"right");
+ line(64,60,1216,60);
+ txt(section,64,685,12,C.muted);
+ txt("Obsidian 插件  /  Web  /  桌面端",1216,685,12,C.muted,400,"right");
+}
+function heading(k,title,sub){
+ txt(k,80,100,13,C.green,600);
+ txt(title,80,142,36,C.ink,600);
+ txt(sub,1200,146,16,C.muted,400,"right");
+}
+function appFrame(name,kind){
+ c.save();c.shadowColor="#1b352014";c.shadowBlur=32;c.shadowOffsetY=12;
+ rr(80,190,1120,444,18,C.white,C.line);c.restore();
+ rr(80,190,1120,45,18,"#E8ECE3");
+ c.fillStyle="#E8ECE3";c.fillRect(80,213,1120,22);
+ [0,1,2].forEach(i=>circle(103+i*17,212,4,["#ADB6A6","#C1C9B9","#D0D7C8"][i]));
+ txt(name,154,213,13,C.ink,500);
+ pill(kind,1084,198,100,C.white,C.green);
+ line(80,235,1200,235);
+}
+function sidebar(selected){
+ rr(81,236,203,397,0,"#F0F3EA");
+ txt("我的笔记",104,265,17,C.ink,600);
+ const list=["全部笔记","灵感收藏","生活计划","最近打开"];
+ list.forEach((s,i)=>{
+ const y=311+i*44;if(i===selected)rr(94,y-18,176,36,8,C.lime);
+ icon(i===0?"note":i===1?"spark":i===2?"check":"link",104,y-10,18,i===selected?C.green:C.muted);
+ txt(s,132,y,14,i===selected?C.green:C.muted,i===selected?600:400);
+ });
+ line(102,498,263,498);
+ txt("示例笔记库",105,528,12,C.muted);
+ txt("12 条笔记",105,552,12,C.muted);
+}
+function subtitle(s){txt(s,640,657,17,C.green,500,"center")}
+function hero(t){
+ const p=ease((t-.15)/1.6);
+ txt("记下了很多。",640,156,47,C.ink,600,"center");
+ c.save();c.globalAlpha=ease((t-.6)/1);
+ txt("这次，让它们真正派上用场。",640,219,47,C.ink,600,"center");c.restore();
+ const cards=[
+ {x:240,y:324,r:-.13,s:"一闪而过的灵感",tag:"灵感",type:"spark"},
+ {x:490,y:333,r:.08,s:"下周要做的事情",tag:"计划",type:"check"},
+ {x:740,y:318,r:-.05,s:"想再看一次的收藏",tag:"收藏",type:"note"}
+ ];
+ cards.forEach((a,i)=>{
+ const q=ease((t-i*.15)/1.6);
+ c.save();c.translate(lerp(a.x+(i-1)*90,a.x,q),lerp(a.y+70,337,q));c.rotate(a.r*(1-p));c.globalAlpha=q;
+ c.shadowColor="#253a1714";c.shadowBlur=22;c.shadowOffsetY=10;
+ rr(0,0,240,145,15,i===1?C.lime:C.white,C.line);c.shadowBlur=0;
+ icon(a.type,20,22,25);txt(a.tag,57,35,13,C.green,600);
+ txt(a.s,20,83,18,C.ink,500);line(20,115,166,115);c.restore();
+ });
+ c.save();c.globalAlpha=ease((t-2)/.7);
+ pill("Obsidian 插件",374,546,168);pill("Web 网页端",558,546,154);pill("桌面端",728,546,128);
+ txt("随手记录 · 轻松整理 · 需要时找得到",640,604,19,C.muted,400,"center");c.restore();
+ common("01 / 让零散的记录，变成清晰的日常");
+}
+function obsidian(t){
+ common("02 / 在熟悉的笔记里，多一个好帮手");
+ heading("OBSIDIAN 插件","照常记笔记，整理少费力。","不用换习惯，也不用学复杂操作");
+ appFrame("Obsidian · 我的笔记库","插件演示");sidebar(1);
+ txt("咖啡店探店",316,272,14,C.muted);
+ line(304,294,856,294);
+ txt("周末发现一家安静的咖啡店",316,330,26,C.ink,600);
+ const s="靠窗的位置很舒服，适合看书和写东西。";
+ txt(typing(s,(t-.65)/1.9),316,381,17,C.ink);
+ if(t>.65&&t<2.7&&Math.sin(t*8)>0)line(316+c.measureText(typing(s,(t-.65)/1.9)).width+3,371,316+c.measureText(typing(s,(t-.65)/1.9)).width+3,390,C.green,2);
+ const s2="记得：周六上午去，带上相机。";
+ txt(typing(s2,(t-2.1)/1.25),316,416,17,C.ink);
+ const active=t>4.05;
+ rr(316,462,144,39,9,active?C.green:C.light);
+ icon("spark",329,472,19,active?C.white:C.green);
+ txt(active?"已整理":"整理这条笔记",356,482,14,active?C.white:C.green,500);
+ line(879,235,879,634);
+ icon("spark",903,258,21);txt("笔记助手",936,269,17,C.ink,600);
+ txt("把内容理清楚",904,302,13,C.muted);
+ if(!active){
+ rr(902,335,272,213,12,C.paper);
+ icon("note",1018,374,34,C.muted);txt("写好后，点一下整理",1038,445,15,C.muted,400,"center");
+ txt("原笔记仍然保留",1038,477,13,C.muted,400,"center");
+ }else{
+ const q=ease((t-4.05)/.7);c.save();c.globalAlpha=q;c.translate(0,12*(1-q));
+ pill("生活 / 探店",903,333,111);pill("周末",1024,333,69);
+ txt("内容摘要",903,391,13,C.muted,600);
+ txt("适合阅读和创作的安静咖啡店",903,424,15,C.ink);
+ line(903,453,1169,453);
+ txt("接下来要做",903,481,13,C.muted,600);
+ rr(904,505,18,18,4,C.light,C.line);txt("周六带相机去探店",933,515,15,C.ink);
+ icon("check",905,561,18);txt("整理结果，可继续修改",932,571,13,C.green);c.restore();
+ }
+ const pos=cursorPath(t,[[0,705,562],[2.8,700,439],[3.7,411,482],[4.15,411,482],[5.1,1048,426],[7,1048,426]]);
+ pointer(...pos,t>=4.05&&t<4.6?(t-4.05)/.55:0);
+ subtitle(t<4.05?"写下你的想法。剩下的，交给整理助手。":"摘要、标签、待办，一眼就能看明白。");
+}
+function web(t){
+ common("03 / 找得到，才用得上");
+ heading("WEB 网页端","想找什么，直接输入就好。","打开浏览器，就能开始");
+ appFrame("笔记工作台 · 网页端","Web 演示");sidebar(0);
+ rr(314,256,851,49,11,C.paper,C.line);
+ icon("search",329,270,21);
+ let query=typing("周末",(t-.7)/.85);
+ txt(query||"搜索你的笔记",367,281,17,query?C.ink:C.muted);
+ pill("搜索",1073,265,75,C.green,C.white);
+ const found=t>2.05,opened=t>4.6;
+ if(!found){
+ txt("最近记录",316,341,15,C.muted,600);
+ ["咖啡店探店","读书摘录","本周购物清单"].forEach((s,i)=>{
+ rr(316,366+i*71,846,57,9,C.white,C.line);icon("note",333,383+i*71,22);txt(s,369,395+i*71,16,C.ink);txt("最近编辑",1139,395+i*71,12,C.muted,400,"right");
+ });
+ }else if(!opened){
+ txt("找到 3 条相关笔记",316,335,14,C.muted);
+ const rows=[
+ ["咖啡店探店","周末发现一家安静的咖啡店，适合看书和写东西。","生活 / 探店"],
+ ["周末短途计划","周六出发，逛书店，再去附近的咖啡店。","生活 / 计划"],
+ ["周末阅读清单","想读的三本书，还有几段喜欢的摘录。","收藏 / 阅读"]
+ ];
+ rows.forEach((a,i)=>{
+ const y=361+i*79;rr(315,y,849,69,10,i===0?C.light:C.white,i===0?"#B4C6A8":C.line);
+ icon("note",331,y+16,23);txt(a[0],371,y+23,17,C.ink,600);
+ txt(a[1],371,y+49,13,C.muted);pill(a[2],1033,y+19,112,C.paper);
+ });
+ }else{
+ txt("‹  返回搜索结果",317,335,13,C.green,500);
+ rr(316,361,846,230,12,C.paper);
+ pill("生活 / 探店",340,382,111);
+ txt("周末发现一家安静的咖啡店",340,440,27,C.ink,600);
+ txt("靠窗的位置很舒服，适合看书和写东西。",340,485,17,C.ink);
+ txt("记得：周六上午去，带上相机。",340,519,17,C.ink);
+ icon("link",342,550,19);txt("相关笔记：周末短途计划",371,560,14,C.green);
+ }
+ let pos=cursorPath(t,[[0,931,539],[.6,622,281],[1.5,622,281],[1.9,1103,281],[2.2,1103,281],[3.5,650,394],[4.6,650,394],[5.8,700,519]]);
+ pointer(...pos,t>=2.05&&t<2.6?(t-2.05)/.55:t>=4.6&&t<5.15?(t-4.6)/.55:0);
+ subtitle(opened?"找到那条记录，接着上次的想法继续。":"不必记住存在哪里。记得一个词，就能开始找。");
+}
+function desktop(t){
+ common("04 / 从记下来，到做起来");
+ heading("桌面端","把灵感，变成今天的小行动。","一张清楚的计划，少一点手忙脚乱");
+ appFrame("笔记工作台 · 桌面端","桌面演示");sidebar(2);
+ txt("生活计划  /  周末短途计划",316,270,13,C.muted);
+ txt("给自己一个轻松的周末",316,322,28,C.ink,600);
+ pill("周六",317,350,68);pill("慢慢来",397,350,86);
+ const done=t>2.25;
+ const items=["选好想去的书店","上午去咖啡店，带上相机","下午整理照片和新灵感"];
+ items.forEach((s,i)=>{
+ const y=418+i*47;rr(317,y-10,21,21,5,i===0&&done?C.green:C.white,i===0&&done?C.green:C.line);
+ if(i===0&&done)icon("check",318,y-10,19,C.white);
+ txt(s,350,y+1,17,i===0&&done?C.muted:C.ink);
+ if(i===0&&done)line(350,y+1,503,y+1,C.muted);
+ });
+ line(315,550,850,550);
+ let s=typing("给这一天留一点自由时间。",(t-3.5)/1.4);
+ txt(s||"再补充一点想法…",317,581,16,s?C.ink:C.muted);
+ line(879,235,879,634);
+ txt("相关内容",905,271,17,C.ink,600);
+ txt("把用得上的记录放在一起",905,302,13,C.muted);
+ rr(903,332,272,143,12,C.light);
+ icon("note",923,349,22);
+ txt("咖啡店探店",923,399,18,C.ink,600);
+ txt("安静的靠窗位置，适合阅读",923,432,14,C.muted);
+ icon("link",906,497,20);txt("已经连接到这份计划",935,508,14,C.green);
+ rr(903,543,272,57,10,C.paper);
+ txt(done?"已完成 1 项，继续慢慢来":"3 件小事，一个轻松周末",923,563,13,C.green);
+ rr(923,580,231,4,2,C.line);rr(923,580,done?77:0,4,2,C.green);
+ const pos=cursorPath(t,[[0,726,571],[1.8,328,418],[2.3,328,418],[3.3,493,581],[5,633,581],[6,1043,401]]);
+ pointer(...pos,t>=2.25&&t<2.8?(t-2.25)/.55:0);
+ subtitle(done?"完成一项，再补充一个新想法。你的笔记，也在向前走。":"笔记不只是收藏夹，也可以是你的行动清单。");
+}
+function overview(t){
+ common("05 / 不同入口，同样清晰");
+ const p=ease(t/.9);
+ txt("熟悉的内容，不同的入口。",640,145,43,C.ink,600,"center");
+ txt("在笔记里整理，在网页上查找，在桌面上继续。",640,201,20,C.muted,400,"center");
+ const data=[["obs","Obsidian 插件","不换习惯，轻松整理"],["web","Web 网页端","打开浏览器，快速查找"],["desktop","桌面端","专注记录，推进计划"]];
+ const xx=[110,470,830];
+ data.forEach((a,i)=>{
+ c.save();c.globalAlpha=ease((t-i*.16)/.8);c.translate(0,30*(1-p));
+ rr(xx[i],292,340,235,18,i===1?C.dark:C.white,i===1?C.dark:C.line);
+ rr(xx[i]+27,319,55,55,15,i===1?"#344B3B":C.light);icon(a[0],xx[i]+40,332,29,i===1?C.lime:C.green);
+ txt(a[1],xx[i]+27,415,25,i===1?C.white:C.ink,600);
+ txt(a[2],xx[i]+27,465,17,i===1?"#B8C7B3":C.muted);
+ c.restore();
+ });
+ c.save();c.globalAlpha=ease((t-1.1)/.8);
+ line(280,563,1000,563,"#B7C8AA",2);
+ [280,640,1000].forEach(x=>circle(x,563,5,C.green));
+ pill("记录",239,591,82);pill("整理",599,591,82);pill("使用",959,591,82);
+ c.restore();
+}
+function outro(t){
+ common("06 / 从一条笔记开始");
+ const q=ease(t/1);
+ c.save();c.globalAlpha=q;c.translate(0,20*(1-q));
+ rr(604,156,72,72,21,C.green);icon("note",623,174,34,C.lime);
+ txt("少一点散乱。",640,306,54,C.ink,600,"center");
+ txt("多一点从容。",640,381,54,C.green,600,"center");
+ txt("你的笔记工作台",640,472,24,C.ink,500,"center");
+ pill("Obsidian 插件",384,527,166);pill("Web 网页端",565,527,151);pill("桌面端",731,527,126);
+ txt("从一条笔记开始，让想法有去处。",640,606,20,C.muted,400,"center");c.restore();
+}
+const scenes=[
+ [0,5,hero],[5,14,obsidian],[14,23,web],[23,31,desktop],[31,36,overview],[36,40,outro]
+];
+function render(t){
+ c.setTransform(1,0,0,1,0,0);c.globalAlpha=1;c.fillStyle=C.paper;c.fillRect(0,0,W,H);
+ // A shared background keeps the cross-dissolve clean and continuous.
+ for(let i=0;i<scenes.length;i++){
+ const [start,end,fn]=scenes[i],fade=.55;
+ let a=1;
+ if(t<start-fade||t>=end)continue;
+ if(t<start)a=ease((t-(start-fade))/fade);
+ else if(t>end-fade)a=1-ease((t-(end-fade))/fade);
+ c.save();c.globalAlpha=a;fn(Math.max(0,t-start));c.restore();
+ }
+ if(t>39.45){c.fillStyle=`rgba(243,243,237,${ease((t-39.45)/.55)})`;c.fillRect(0,0,W,H)}
+ if(t<.4){c.fillStyle=`rgba(243,243,237,${1-ease(t/.4)})`;c.fillRect(0,0,W,H)}
+}
+
+/* Original instrumental: soft keys, warm pad, bass, light brushed rhythm.
+   All sequencing is initiated by the performance.now()-driven frame loop. */
+let audio=null,musicOn=false,lastStep=-1,audioEpoch=0,noiseBuffer=null;
+function initAudio(){
+ if(audio)return;
+ const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;
+ audio=new AC();
+ const master=audio.createGain();master.gain.value=.42;
+ const comp=audio.createDynamicsCompressor();comp.threshold.value=-19;comp.ratio.value=3;
+ master.connect(comp);comp.connect(audio.destination);
+ const dest=audio.createMediaStreamDestination();comp.connect(dest);
+ audio.master=master;audio.recordDest=dest;
+ const delay=audio.createDelay(.8);delay.delayTime.value=.3125;
+ const dg=audio.createGain();dg.gain.value=.18;
+ master.connect(delay);delay.connect(dg);dg.connect(comp);
+ noiseBuffer=audio.createBuffer(1,audio.sampleRate*.18,audio.sampleRate);
+ const d=noiseBuffer.getChannelData(0);let seed=131;
+ for(let i=0;i<d.length;i++){seed=(seed*16807)%2147483647;d[i]=(seed/2147483647*2-1)*Math.exp(-i/d.length*9)}
+}
+function tone(midi,at,len,amp,type="sine"){
+ const o=audio.createOscillator(),g=audio.createGain();
+ o.type=type;o.frequency.value=440*Math.pow(2,(midi-69)/12);
+ g.gain.setValueAtTime(0,at);g.gain.linearRampToValueAtTime(amp,at+.025);
+ g.gain.exponentialRampToValueAtTime(.0001,at+len);
+ o.connect(g);g.connect(audio.master);o.start(at);o.stop(at+len+.03);
+}
+function rhythm(at,amp,low){
+ if(low){
+ const o=audio.createOscillator(),g=audio.createGain();
+ o.frequency.setValueAtTime(100,at);o.frequency.exponentialRampToValueAtTime(43,at+.16);
+ g.gain.setValueAtTime(amp,at);g.gain.exponentialRampToValueAtTime(.0001,at+.2);
+ o.connect(g);g.connect(audio.master);o.start(at);o.stop(at+.22);
+ }else{
+ const n=audio.createBufferSource(),f=audio.createBiquadFilter(),g=audio.createGain();
+ n.buffer=noiseBuffer;f.type="highpass";f.frequency.value=6200;g.gain.value=amp;
+ n.connect(f);f.connect(g);g.connect(audio.master);n.start(at);
+ }
+}
+function sequence(t){
+ if(!audio||!musicOn||audio.state!=="running")return;
+ const stepDur=.3125;
+ let k=Math.floor((t+.12)/stepDur);
+ if(k<lastStep){lastStep=k-1}
+ while(lastStep<k){
+ const step=++lastStep,local=(step*stepDur)%40;
+ const at=audio.currentTime+Math.max(.005,step*stepDur-t);
+ const chords=[[48,55,59,62],[45,52,55,59],[41,48,52,55],[43,50,55,57]];
+ const ch=chords[Math.floor(step/16)%4],sub=step%16;
+ const env=Math.min(1,local/1.5,(40-local)/1.8);
+ if(sub===0){ch.forEach(n=>tone(n+12,at,4,.024*env,"triangle"));tone(ch[0]-12,at,1.5,.12*env)}
+ if(sub===8)tone(ch[0]-12,at,1.1,.075*env);
+ if(step%2===0){const pattern=[0,2,1,3,2,1,3,2];tone(ch[pattern[(step/2)%8]]+24,at,1.25,.08*env,"sine")}
+ if(step%4===0)rhythm(at,.065*env,true);
+ if(step%2===1)rhythm(at,.025*env,false);
+ }
+}
+musicBtn.onclick=async()=>{
+ initAudio();if(!audio){status.textContent="当前浏览器不支持代码配乐。";return}
+ await audio.resume();musicOn=!musicOn;
+ audio.master.gain.value=musicOn?.42:0;lastStep=-1;
+ musicBtn.textContent=musicOn?"配乐已开启":"开启配乐";
+};
+let recorder=null,exportCanvas=null,exportCtx=null,recording=false,wantExport=false,chunks=[],exportStart=0;
+exportBtn.onclick=async()=>{
+ initAudio();if(audio){await audio.resume();musicOn=true;audio.master.gain.value=.42;musicBtn.textContent="配乐已开启"}
+ wantExport=true;
+};
+function startExport(now){
+ wantExport=false;
+ if(!window.MediaRecorder||!canvas.captureStream){status.textContent="浏览器不支持录制。请用录屏软件捕获此动画。";status.style.display="block";return}
+ const types=['video/mp4;codecs=avc1.640028,mp4a.40.2','video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4'];
+ const mime=types.find(s=>MediaRecorder.isTypeSupported(s));
+ if(!mime){status.textContent="此浏览器不支持 MP4 编码，请使用支持 MP4 录制的新版本浏览器。";status.style.display="block";return}
+ try{
+ exportCanvas=document.createElement("canvas");exportCanvas.width=1920;exportCanvas.height=1080;
+ exportCtx=exportCanvas.getContext("2d");render(0);exportCtx.drawImage(canvas,0,0,1920,1080);
+ const stream=exportCanvas.captureStream(60);
+ if(audio)audio.recordDest.stream.getAudioTracks().forEach(track=>stream.addTrack(track));
+ recorder=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:50000000,audioBitsPerSecond:320000});
+ chunks=[];
+ recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+ recorder.onstop=()=>{
+ const blob=new Blob(chunks,{type:"video/mp4"}),url=URL.createObjectURL(blob);
+ const a=document.createElement("a");a.href=url;a.download="笔记工作台_1080p_高码率.mp4";a.click();
+ recording=false;exportBtn.disabled=false;exportBtn.textContent="导出 1080p MP4";
+ status.textContent="MP4 已导出。浏览器编码为有损；严格无损需使用无损录制工作流。";status.style.display="block";
+ stream.getVideoTracks().forEach(tr=>tr.stop());
+ };
+ exportStart=now;origin=now;offset=0;lastStep=-1;recording=true;
+ recorder.start();exportBtn.disabled=true;status.style.display="block";
+ status.textContent="正在录制 40 秒 · 含代码配乐 · 请保持此页面在前台";
+ }catch(e){status.textContent="录制未能启动："+e.message;status.style.display="block";exportBtn.disabled=false;recording=false}
+}
+let offset=Number(new URLSearchParams(location.search).get("t"))||0;
+offset=((offset%window.DUR)+window.DUR)%window.DUR;
+let origin=null,prevTime=0;
+function frame(){
+ const now=performance.now();
+ if(origin===null)origin=now;
+ if(wantExport)startExport(now);
+ const elapsed=(now-origin)/1000+offset,t=elapsed%window.DUR;
+ render(t);
+ if(t<prevTime)lastStep=-1;
+ sequence(t);prevTime=t;
+ if(recording){
+ const rt=(now-exportStart)/1000;
+ if(rt>=window.DUR){
+ // Preserve the final composed frame instead of capturing a loop-start flash.
+ render(39.94);exportCtx.drawImage(canvas,0,0,1920,1080);
+ if(recorder.state==="recording")recorder.stop();
+ recording=false;
+ }else{
+ exportCtx.drawImage(canvas,0,0,1920,1080);
+ exportBtn.textContent=`录制中 ${Math.floor(rt)} / 40 秒`;
+ }
+ }
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

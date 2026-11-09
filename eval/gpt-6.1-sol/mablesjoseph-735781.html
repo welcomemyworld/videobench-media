@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Context Tax — Concept Preview</title>
+<style>
+*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#000}body{display:flex;align-items:center;justify-content:center}canvas{display:block;width:min(100vw,177.7778vh);height:min(56.25vw,100vh)}
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720" aria-label="Context Tax motion concept. The source article and visual reference were not provided. ElevenLabs and Remotion are not available in this session."></canvas>
+<script>
+(()=>{
+'use strict';
+const canvas=document.getElementById('stage'),c=canvas.getContext('2d');
+window.DUR=36;
+const query=Number(new URLSearchParams(location.search).get('t'));
+const offset=Number.isFinite(query)?query:0;
+const start=performance.now();
+const C={bg:'#111311',paper:'#ece9db',muted:'#969b8e',line:'#343a32',orange:'#f59150',green:'#c4dc99'};
+const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const ease=v=>{v=clamp(v);return v*v*(3-2*v)};
+const enter=(t,d=0,l=.7)=>ease((t-d)/l);
+const lerp=(a,b,v)=>a+(b-a)*v;
+function rr(x,y,w,h,r=10){c.beginPath();c.roundRect(x,y,w,h,r)}
+function box(x,y,w,h,fill,stroke,r=10){rr(x,y,w,h,r);if(fill){c.fillStyle=fill;c.fill()}if(stroke){c.strokeStyle=stroke;c.lineWidth=1;c.stroke()}}
+function text(s,x,y,size=20,color=C.paper,weight=400,align='left',font='Arial, Helvetica, sans-serif'){
+c.fillStyle=color;c.font=`${weight} ${size}px ${font}`;c.textAlign=align;c.textBaseline='alphabetic';c.fillText(s,x,y)
+}
+function mono(s,x,y,size=12,col=C.muted,align='left'){text(s,x,y,size,col,400,align,'monospace')}
+function line(x1,y1,x2,y2,col=C.line,w=1){c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.strokeStyle=col;c.lineWidth=w;c.stroke()}
+function dot(x,y,r,col){c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.fillStyle=col;c.fill()}
+function reveal(s,x,y,size,col,weight,progress){
+c.save();c.beginPath();c.rect(x-4,y-size-8,1200,(size+20)*clamp(progress));c.clip();
+text(s,x,y+24*(1-clamp(progress)),size,col,weight);c.restore()
+}
+function pill(s,x,y,w,color=C.orange){
+box(x,y,w,27,null,color,14);mono(s,x+w/2,y+18,10,color,'center')
+}
+const seeds=Array.from({length:100},(_,i)=>({x:(i*397.17)%1280,y:(i*183.73)%720,v:((i*31)%9)/9}));
+function background(t){
+c.fillStyle=C.bg;c.fillRect(0,0,1280,720);
+const g=c.createRadialGradient(960,280,20,800,360,770);g.addColorStop(0,'#25291d');g.addColorStop(1,'#111311');c.fillStyle=g;c.fillRect(0,0,1280,720);
+c.globalAlpha=.28;
+for(let x=48;x<1280;x+=48)line(x,0,x,720,'#34382c');
+for(let y=24;y<720;y+=48)line(0,y,1280,y,'#34382c');
+c.globalAlpha=.13;
+seeds.forEach(p=>dot(p.x,(p.y+t*(2+p.v*3))%720,.7,C.paper));
+c.globalAlpha=1;
+line(48,76,1232,76);
+mono('FIELD NOTES  /  ENGINEERING',48,49,12,C.paper);
+dot(1068,44,3,C.orange);mono('CONCEPT PREVIEW',1080,49,12,C.orange);
+line(48,658,1232,658);
+mono('CONTEXT TAX',48,689,12,C.paper);
+mono('SOURCE ARTICLE + STYLE REFERENCE NOT PROVIDED',640,689,11,C.muted,'center');
+const progress=t/window.DUR;
+line(1086,684,1232,684,C.line,2);line(1086,684,1086+146*progress,684,C.orange,2);
+}
+function smallLabel(n,s){mono('0'+n+' / '+s,48,119,12,C.orange)}
+function orbit(t){
+const x=987,y=351;
+c.save();c.globalAlpha=enter(t,.5);
+for(let r of [87,150,207]){
+c.beginPath();c.arc(x,y,r,0,Math.PI*2);c.strokeStyle=r===150?'#666c50':C.line;c.setLineDash(r===150?[2,8]:[]);c.lineWidth=1;c.stroke()
+}c.setLineDash([]);
+for(let i=0;i<4;i++){
+const a=i*Math.PI/2+.25+t*.12, px=x+150*Math.cos(a),py=y+150*Math.sin(a);
+line(x,y,px,py,'#4e5842');
+dot(px,py,5,C.green);
+}
+c.save();c.translate(x,y);c.rotate(t*.08);
+for(let i=0;i<32;i++){
+let a=i*Math.PI/16;line(Math.cos(a)*197,Math.sin(a)*197,Math.cos(a)*(i%4===0?211:204),Math.sin(a)*(i%4===0?211:204),i%4===0?C.orange:C.line)
+}c.restore();
+box(x-65,y-52,130,104,C.bg,C.green,12);
+mono('CONTEXT',x,y-12,13,C.green,'center');text('?',x,y+33,42,C.paper,500,'center');
+const labels=[['DOC',815,212],['CHAT',1084,220],['ISSUE',1070,467],['CODE',798,455]];
+labels.forEach(([s,px,py],i)=>{
+let bob=Math.sin(t*.7+i)*5;box(px,py+bob,92,45,'#1b2018',C.line,6);mono(s,px+46,py+28+bob,12,C.paper,'center')
+});
+c.restore()
+}
+function scene1(t){
+smallLabel(1,'TITLE STUDY');
+reveal('CONTEXT',45,279,116,C.paper,800,enter(t,.1));
+reveal('TAX',44,395,116,C.orange,800,enter(t,.35));
+c.save();c.globalAlpha=enter(t,1);
+text('A motion concept for engineering teams.',51,462,24,C.paper);
+text('Built around the title. Waiting for the article.',51,500,18,C.muted);
+pill('ORIGINAL VISUAL DIRECTION',51,550,232);
+c.restore();orbit(t);
+}
+function card(x,y,w,h,title,kind,t,delay=0){
+const a=enter(t,delay);
+c.save();c.globalAlpha=a;c.translate(0,14*(1-a));
+box(x,y,w,h,'#1b1f19','#4a5142',10);
+mono(kind,x+18,y+27,10,C.orange);text(title,x+18,y+57,18,C.paper,600);
+line(x+18,y+74,x+w-18,y+74);
+for(let j=0;j<3;j++){
+const ww=(w-38)*(j===1?.58:j===2?.78:1);
+line(x+18,y+96+j*13,x+18+ww,y+96+j*13,'#454d3d',3)
+}
+c.restore()
+}
+function path(points,col,progress=1){
+c.save();c.beginPath();c.moveTo(points[0][0],points[0][1]);points.slice(1).forEach(p=>c.lineTo(p[0],p[1]));
+c.strokeStyle=col;c.lineWidth=1.5;c.setLineDash([5,6]);c.stroke();c.setLineDash([]);
+let lengths=[],total=0;for(let i=1;i<points.length;i++){let l=Math.hypot(points[i][0]-points[i-1][0],points[i][1]-points[i-1][1]);lengths.push(l);total+=l}
+let d=(progress%1)*total;for(let i=0;i<lengths.length;i++){if(d<=lengths[i]){dot(lerp(points[i][0],points[i+1][0],d/lengths[i]),lerp(points[i][1],points[i+1][1],d/lengths[i]),3,col);break}d-=lengths[i]}
+c.restore()
+}
+function scene2(t){
+smallLabel(2,'ILLUSTRATIVE STORYBOARD');
+reveal('One topic.',48,215,64,C.paper,700,enter(t));
+reveal('Many fragments.',48,287,64,C.orange,700,enter(t,.25));
+c.save();c.globalAlpha=enter(t,.65);
+text('An original metaphor — not a summary of the source.',51,333,19,C.muted);
+c.restore();
+const cards=[
+[70,408,235,152,'The discussion','01 / CHAT'],
+[359,391,235,152,'The decision','02 / DOCUMENT'],
+[648,421,235,152,'The implementation','03 / CODE'],
+[937,399,235,152,'The open question','04 / ISSUE']];
+cards.forEach((a,i)=>card(...a,t,.8+i*.2));
+c.save();c.globalAlpha=enter(t,1.7);
+for(let i=0;i<3;i++){
+let x=cards[i][0]+235,y=cards[i][1]+76,x2=cards[i+1][0],y2=cards[i+1][1]+76;
+path([[x,y],[x+27,y],[x+27,y2],[x2,y2]],C.green,t*.18+i*.22);
+}
+mono('FOUR SURFACES',70,608,11,C.muted);
+mono('ONE SHARED QUESTION',1172,608,11,C.green,'right');
+c.restore();
+}
+function scene3(t){
+smallLabel(3,'VISUAL METAPHOR');
+reveal('From fragments',48,213,60,C.paper,700,enter(t));
+reveal('to shared context.',48,282,60,C.green,700,enter(t,.25));
+c.save();c.globalAlpha=enter(t,.7);
+text('A connected view, instead of another pile of tabs.',51,325,20,C.muted);c.restore();
+const p=enter(t,1.1,3),cx=904,cy=426;
+const initial=[[644,172],[1072,185],[672,530],[1115,531]];
+const end=[[782,363],[1026,363],[782,489],[1026,489]];
+const names=['WHY','WHAT','HOW','NEXT'];
+c.save();c.globalAlpha=enter(t,.6);
+box(701,309,405,285,'#181e16','#4c5b3d',18);
+mono('SHARED CONTEXT / CONCEPT',722,337,10,C.green);
+initial.forEach((a,i)=>{
+const x=lerp(a[0],end[i][0],p),y=lerp(a[1],end[i][1],p);
+path([[cx,cy],[x,cy],[x,y]],p>.8?C.green:C.line,t*.18+i*.25);
+box(x-61,y-25,122,50,'#20281b',p>.8?C.green:C.line,7);
+mono(names[i],x,y+4,12,C.paper,'center')
+});
+dot(cx,cy,25,C.green);
+c.strokeStyle=C.bg;c.lineWidth=2;c.beginPath();c.moveTo(cx-9,cy);c.lineTo(cx-2,cy+7);c.lineTo(cx+11,cy-9);c.stroke();
+c.restore();
+const rows=[['01','Connect the pieces'],['02','Make the shape visible'],['03','Give the story a destination']];
+rows.forEach((r,i)=>{
+c.save();c.globalAlpha=enter(t,1.2+i*.45);
+mono(r[0],52,408+i*61,12,C.orange);text(r[1],94,408+i*61,23,C.paper,500);
+if(i<2)line(52,426+i*61,542,426+i*61);c.restore()
+});
+mono('ILLUSTRATION ONLY — ARTICLE CLAIMS HAVE NOT BEEN INFERRED',52,612,11,C.muted);
+}
+function scene4(t){
+smallLabel(4,'NEXT / SOURCE-FAITHFUL PRODUCTION');
+reveal('Ready for',48,212,72,C.paper,700,enter(t));
+reveal('the source.',48,291,72,C.orange,700,enter(t,.22));
+c.save();c.globalAlpha=enter(t,.65);
+text('The article and its visual reference are missing.',51,341,22,C.paper);
+text('This preview cannot reproduce their content or styling.',51,375,19,C.muted);
+c.restore();
+const items=[['01','Article text or accessible URL'],['02','Screenshot of the original post'],['03','Brand requirements, if any']];
+items.forEach((a,i)=>{
+const e=enter(t,.9+i*.2);c.save();c.globalAlpha=e;c.translate(18*(1-e),0);
+box(743,166+i*100,469,81,'#1b2018',C.line,10);
+mono(a[0],766,212+i*100,12,C.orange);
+text(a[1],808,213+i*100,21,C.paper,500);c.restore()
+});
+c.save();c.globalAlpha=enter(t,1.8);
+box(51,442,629,135,'#1b2018',C.line,10);
+mono('PRODUCTION NOTE',73,471,11,C.orange);
+text('ElevenLabs and Remotion are not available',73,503,20,C.paper,500);
+text('in this session. This is a silent Canvas animation.',73,535,18,C.muted);
+pill('36s LOOP',745,498,105,C.green);
+pill('1280 × 720',864,498,130,C.green);
+pill('NO EXTERNAL ASSETS',1008,498,201,C.green);
+mono('COMPLETE CONTENT + MATCHED STYLE REQUIRE THE ORIGINAL POST.',51,613,11,C.muted);
+c.restore()
+}
+function draw(t){
+background(t);
+const bounds=[0,8,17,27,36];
+let idx=0;for(let i=0;i<4;i++)if(t>=bounds[i])idx=i;
+const local=t-bounds[idx],len=bounds[idx+1]-bounds[idx];
+const a=enter(local,0,.45)*(1-ease((local-(len-.5))/.5));
+c.save();c.globalAlpha=a;c.translate(0,(1-enter(local,0,.6))*12);
+[scene1,scene2,scene3,scene4][idx](local);c.restore();
+const names=['TITLE','FRAGMENTS','CONNECTION','SOURCE'];
+for(let i=0;i<4;i++){
+let x=48+i*113;
+line(x,642,x+95,642,i===idx?C.orange:C.line,i===idx?2:1);
+}
+mono(names[idx],1232,628,10,C.muted,'right');
+}
+function frame(){
+const t=(((performance.now()-start)/1000+offset)%window.DUR+window.DUR)%window.DUR;
+draw(t);requestAnimationFrame(frame)
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

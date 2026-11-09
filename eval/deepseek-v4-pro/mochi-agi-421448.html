@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>終電 — last train</title>
+<style>
+  body { margin: 0; background: #000; display: flex; align-items: center; justify-content: center; height: 100vh; overflow: hidden; }
+  canvas { width: min(100vw, calc(100vh * 16 / 9)); height: min(100vh, calc(100vw * 9 / 16)); }
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+const W = 1280, H = 720;
+const DUR = 24;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const MINCHO = '"Yu Mincho","Hiragino Mincho ProN","MS PMincho","MS Mincho","Noto Serif JP",serif';
+
+window.DUR = DUR;
+
+// ── audio: subtle ambient drone ──
+let audioCtx = null;
+function initAudio() {
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const master = audioCtx.createGain();
+    master.gain.value = 0.035;
+    master.connect(audioCtx.destination);
+    // low drone
+    const o1 = audioCtx.createOscillator();
+    o1.frequency.value = 52; o1.type = 'sine';
+    const o2 = audioCtx.createOscillator();
+    o2.frequency.value = 53.5; o2.type = 'sine';
+    const g1 = audioCtx.createGain(); g1.gain.value = 0.6;
+    o1.connect(g1); g1.connect(master);
+    const g2 = audioCtx.createGain(); g2.gain.value = 0.4;
+    o2.connect(g2); g2.connect(master);
+    o1.start(); o2.start();
+    // faint noise
+    const bufSize = audioCtx.sampleRate * 2;
+    const buf = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) d[i] = (Math.random()*2-1)*0.15;
+    const noise = audioCtx.createBufferSource();
+    noise.buffer = buf; noise.loop = true;
+    const nf = audioCtx.createBiquadFilter();
+    nf.type = 'lowpass'; nf.frequency.value = 180;
+    const ng = audioCtx.createGain(); ng.gain.value = 0.15;
+    noise.connect(nf); nf.connect(ng); ng.connect(master);
+    noise.start();
+  } catch(e) {}
+}
+document.addEventListener('pointerdown', initAudio, { once: true });
+
+// ── camera keyframes ──
+const camKeys = [
+  { t: 0.0,  cx: 640, cy: 360, zoom: 1.00 },
+  { t: 2.5,  cx: 520, cy: 380, zoom: 1.12 },
+  { t: 4.5,  cx: 340, cy: 395, zoom: 1.32 },
+  { t: 7.0,  cx: 560, cy: 370, zoom: 1.08 },
+  { t: 9.0,  cx: 790, cy: 355, zoom: 1.18 },
+  { t: 11.0, cx: 370, cy: 400, zoom: 1.48 },
+  { t: 14.0, cx: 840, cy: 365, zoom: 1.28 },
+  { t: 16.0, cx: 310, cy: 410, zoom: 1.75 },
+  { t: 19.0, cx: 880, cy: 375, zoom: 1.38 },
+  { t: 20.5, cx: 285, cy: 420, zoom: 2.15 },
+  { t: 22.5, cx: 640, cy: 360, zoom: 0.88 },
+  { t: 24.0, cx: 640, cy: 360, zoom: 0.65 },
+];
+
+function easeInOut(t) { return t < 0.5 ? 2*t*t : -1+(4-2*t)*t; }
+
+function getCam(t) {
+  const k = camKeys;
+  if (t <= k[0].t) return { ...k[0] };
+  if (t >= k[k.length-1].t) return { ...k[k.length-1] };
+  for (let i = 0; i < k.length-1; i++) {
+    if (t >= k[i].t && t <= k[i+1].t) {
+      const dt = (t - k[i].t) / (k[i+1].t - k[i].t);
+      const e = easeInOut(dt);
+      return {
+        cx: k[i].cx + (k[i+1].cx - k[i].cx) * e,
+        cy: k[i].cy + (k[i+1].cy - k[i].cy) * e,
+        zoom: k[i].zoom + (k[i+1].zoom - k[i].zoom) * e,
+        t: t
+      };
+    }
+  }
+  return { ...k[k.length-1] };
+}
+
+// ── dialogue data ──
+const dialog = [
+  { sp:'w', text:'終電…終わっちゃった…ね…',   start:4.0, end:6.5,  vert:true,  speed:0.30, intensity:0.4 },
+  { sp:'m', text:'おい…！そんなとこ危ないだろ！', start:8.0, end:10.5, vert:false, speed:0,   intensity:0.55 },
+  { sp:'w', text:'私…いつもここで…待ってるの…', start:10.5,end:13.0, vert:true,  speed:0.28, intensity:0.45 },
+  { sp:'m', text:'何言ってんだ！終電はもう行ったんだよ！', start:13.0,end:15.0, vert:false, speed:0, intensity:0.7 },
+  { sp:'w', text:'来るよ…もうすぐ…',              start:15.0,end:17.5, vert:true,  speed:0.35, intensity:0.5 },
+  { sp:'m', text:'やめろ…！こっち見るな…！',     start:17.5,end:19.5, vert:false, speed:0, intensity:0.85 },
+  { sp:'w', text:'乗らない…？',                    start:19.5,end:22.0, vert:true,  speed:0.55, intensity:0.6 },
+];
+
+function getActiveDialog(t) {
+  for (const d of dialog) if (t >= d.start && t <= d.end) return d;
+  return null;
+}
+
+// ── drawing helpers ──
+function skyGrad(ctx) {
+  const g = ctx.createLinearGradient(0,0,W,H);
+  g.addColorStop(0,'#020208');
+  g.addColorStop(0.35,'#0a0a1e');
+  g.addColorStop(0.55,'#0e0e20');
+  g.addColorStop(1,'#050510');
+  return g;
+}
+
+function drawSky(ctx, t) {
+  ctx.fillStyle = skyGrad(ctx);
+  ctx.fillRect(0,0,W,H);
+  // faint stars
+  ctx.fillStyle = '#8899bb';
+  for (let i = 0; i < 40; i++) {
+    const sx = (i*173+i*i*7) % W;
+    const sy = ((i*317+i*13) % 200) + 30;
+    const tw = 0.4 + 0.4*Math.sin(t*2+i*0.7);
+    ctx.globalAlpha = 0.15*tw;
+    ctx.fillRect(sx, sy, 1.8, 1.8);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawStationRoof(ctx, t) {
+  // dark roof structure
+  ctx.fillStyle = '#080810';
+  ctx.fillRect(0, 0, W, 160);
+  ctx.fillStyle = '#0c0c18';
+  ctx.fillRect(0, 120, W, 50);
+  // roof beams
+  ctx.fillStyle = '#050508';
+  for (let i = 0; i < 12; i++) ctx.fillRect(i*115, 60, 30, 100);
+  // hanging light fixtures
+  for (let i = 0; i < 6; i++) {
+    const lx = 80 + i*220;
+    ctx.fillStyle = '#1a1a2a';
+    ctx.fillRect(lx-3, 150, 6, 20);
+    const flicker = (i===1) ? (0.5+0.4*Math.sin(t*23)+0.3*Math.sin(t*7.3)) : 1;
+    const bright = Math.max(0.1, flicker);
+    ctx.fillStyle = `rgba(200,210,230,${0.7*bright})`;
+    ctx.fillRect(lx-18, 170, 36, 14);
+    ctx.fillStyle = `rgba(240,245,255,${0.3*bright})`;
+    ctx.fillRect(lx-8, 172, 16, 10);
+  }
+}
+
+function drawPlatformSurface(ctx, t) {
+  // concrete
+  const g = ctx.createLinearGradient(0,280,0,460);
+  g.addColorStop(0,'#181820');
+  g.addColorStop(0.5,'#20202c');
+  g.addColorStop(1,'#15151e');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 280, W, 180);
+  // perspective joints
+  ctx.strokeStyle = '#252532';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 8; i++) {
+    const y = 300 + i*20;
+    ctx.beginPath();
+    ctx.moveTo(0, 380 + (y-380)*1.6);
+    ctx.lineTo(W, 380 + (y-380)*1.6);
+    ctx.stroke();
+  }
+  // tactile paving (黄色線)
+  ctx.fillStyle = '#a88820';
+  ctx.fillRect(0, 428, W, 18);
+  ctx.fillStyle = '#c8a838';
+  for (let i = 0; i < 64; i++) ctx.fillRect(i*20+4, 430, 10, 14);
+  // safety line (white/yellow)
+  ctx.fillStyle = '#e8e0c0';
+  ctx.fillRect(0, 446, W, 5);
+  ctx.fillStyle = 'rgba(200,190,150,0.3)';
+  ctx.fillRect(0, 451, W, 2);
+}
+
+function drawTracks(ctx, t) {
+  // gravel
+  ctx.fillStyle = '#0a0a0e';
+  ctx.fillRect(0, 460, W, 260);
+  // rails
+  for (const rx of [300, 340]) {
+    ctx.fillStyle = '#3a3a44';
+    ctx.fillRect(rx, 460, 8, 260);
+    ctx.fillStyle = '#555568';
+    ctx.fillRect(rx+8, 465, 3, 250);
+  }
+  for (const rx of [700, 740]) {
+    ctx.fillStyle = '#3a3a44';
+    ctx.fillRect(rx, 460, 8, 260);
+    ctx.fillStyle = '#555568';
+    ctx.fillRect(rx+8, 465, 3, 250);
+  }
+  // ties
+  ctx.fillStyle = '#1a1a20';
+  for (let i = 0; i < 22; i++) ctx.fillRect(270, 470+i*12, 100, 5);
+  for (let i = 0; i < 22; i++) ctx.fillRect(670, 470+i*12, 100, 5);
+  // distant platform
+  ctx.fillStyle = '#14141c';
+  ctx.fillRect(0, 600, W, 120);
+  ctx.fillStyle = '#1c1c26';
+  ctx.fillRect(0, 600, W, 8);
+}
+
+function drawPillars(ctx, t) {
+  ctx.fillStyle = '#0e0e16';
+  for (const px of [80, 420, 720, 1050]) {
+    ctx.fillRect(px-20, 280, 40, 180);
+    ctx.fillStyle = '#181820';
+    ctx.fillRect(px-20, 280, 6, 180);
+    ctx.fillStyle = '#0e0e16';
+  }
+}
+
+function drawVendingMachine(ctx, t) {
+  // warm light source on right side
+  const vx = 1100, vy = 350;
+  ctx.fillStyle = '#1a1a24';
+  ctx.fillRect(vx-35, vy, 70, 130);
+  ctx.fillStyle = '#2a2a38';
+  ctx.fillRect(vx-28, vy+8, 56, 100);
+  // glow
+  const glow = ctx.createRadialGradient(vx, vy+50, 10, vx, vy+50, 90);
+  glow.addColorStop(0,'rgba(255,220,160,0.18)');
+  glow.addColorStop(0.5,'rgba(255,200,120,0.07)');
+  glow.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(vx-120, vy-50, 240, 200);
+  // light
+  ctx.fillStyle = 'rgba(255,230,190,0.75)';
+  ctx.fillRect(vx-24, vy+14, 48, 6);
+  ctx.fillStyle = 'rgba(255,220,170,0.25)';
+  ctx.fillRect(vx-20, vy+22, 40, 70);
+}
+
+function drawDepartureBoard(ctx, t) {
+  const bx = 500, by = 240;
+  ctx.fillStyle = '#0a0a10';
+  ctx.fillRect(bx-50, by, 100, 50);
+  ctx.fillStyle = '#111';
+  ctx.fillRect(bx-46, by+4, 92, 42);
+  // flickering display
+  const fl = 0.6+0.4*Math.sin(t*31)+0.25*Math.sin(t*7.7);
+  ctx.fillStyle = `rgba(255,120,80,${Math.max(0.2,fl)*0.65})`;
+  ctx.font = '22px "MS Gothic", monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('終電', bx, by+30);
+  ctx.fillStyle = `rgba(255,80,60,${Math.max(0.15,fl)*0.4})`;
+  ctx.font = '12px "MS Gothic", monospace';
+  ctx.fillText('23:47', bx, by+46);
+}
+
+function drawWomanBack(ctx, t, x, y, sway) {
+  // woman - back view
+  ctx.save();
+  ctx.translate(x, y);
+  const h = 130; // height of figure
+  const sw = sway * 0.08;
+  // hair (long, flowing down back)
+  const hairGrad = ctx.createLinearGradient(-30, 0, 30, 0);
+  hairGrad.addColorStop(0,'#0a0a12');
+  hairGrad.addColorStop(0.5,'#060608');
+  hairGrad.addColorStop(1,'#0a0a12');
+  ctx.fillStyle = hairGrad;
+  ctx.beginPath();
+  ctx.moveTo(-28+sw, -h*0.7);
+  ctx.quadraticCurveTo(-32+sw, -h*0.35, -26+sw, -h*0.15);
+  ctx.quadraticCurveTo(-22+sw, h*0.05, -18+sw, h*0.18);
+  ctx.lineTo(-14+sw, h*0.2);
+  ctx.quadraticCurveTo(-10+sw, h*0.05, -12+sw, -h*0.15);
+  ctx.quadraticCurveTo(-10+sw, -h*0.5, 10+sw, -h*0.5);
+  ctx.quadraticCurveTo(12+sw, -h*0.15, 10+sw, h*0.05);
+  ctx.quadraticCurveTo(14+sw, h*0.2, 18+sw, h*0.18);
+  ctx.quadraticCurveTo(22+sw, h*0.05, 26+sw, -h*0.15);
+  ctx.quadraticCurveTo(32+sw, -h*0.35, 28+sw, -h*0.7);
+  ctx.closePath();
+  ctx.fill();
+  // dress (pale, visible below hair)
+  ctx.fillStyle = '#b8b8cc';
+  ctx.beginPath();
+  ctx.moveTo(-14+sw, -h*0.15);
+  ctx.quadraticCurveTo(-21+sw, h*0.0, -23+sw, h*0.28);
+  ctx.quadraticCurveTo(-26+sw, h*0.35, -20+sw, h*0.34);
+  ctx.quadraticCurveTo(-8+sw, h*0.32, 8+sw, h*0.32);
+  ctx.quadraticCurveTo(20+sw, h*0.34, 26+sw, h*0.35);
+  ctx.quadraticCurveTo(23+sw, h*0.28, 21+sw, h*0.0);
+  ctx.quadraticCurveTo(14+sw, -h*0.15, 0+sw, -h*0.18);
+  ctx.quadraticCurveTo(-14+sw, -h*0.15, -14+sw, -h*0.15);
+  ctx.closePath();
+  ctx.fill();
+  // shoulders
+  ctx.fillStyle = '#c8c8d8';
+  ctx.beginPath();
+  ctx.ellipse(0+sw, -h*0.55, 12, 7, 0, 0, Math.PI*2);
+  ctx.fill();
+  // arms
+  ctx.fillStyle = '#b8b8cc';
+  ctx.beginPath();
+  ctx.ellipse(-21+sw, h*0.02, 4, 18, 0.25, 0, Math.PI*2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(21+sw, h*0.02, 4, 18, -0.25, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawWomanProfile(ctx, t, x, y, lipOpen) {
+  // woman - profile view (right facing), only lips visible
+  ctx.save();
+  ctx.translate(x, y);
+  const h = 130;
+  // neck and body
+  ctx.fillStyle = '#b8b8cc';
+  ctx.fillRect(-18, -h*0.3, 14, 40);
+  // head silhouette
+  ctx.fillStyle = '#08080c';
+  ctx.beginPath();
+  ctx.ellipse(0, -h*0.65, 24, 28, 0, 0, Math.PI*2);
+  ctx.fill();
+  // hair covering upper face
+  ctx.fillStyle = '#060608';
+  ctx.beginPath();
+  ctx.ellipse(-2, -h*0.62, 22, 26, 0.2, 0, Math.PI*2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(4, -h*0.55, 16, 20, 0.4, 0, Math.PI*2);
+  ctx.fill();
+  // lips (only visible feature)
+  const lw = 3.5 + lipOpen*2.5;
+  ctx.fillStyle = '#c8a898';
+  ctx.beginPath();
+  ctx.ellipse(14, -h*0.32, 6, lw, 0.1, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = '#b09080';
+  ctx.beginPath();
+  ctx.ellipse(14, -h*0.32, 4, lw*0.7, 0.1, 0, Math.PI*2);
+  ctx.fill();
+  // chin/jaw hint
+  ctx.fillStyle = '#0c0c12';
+  ctx.beginPath();
+  ctx.ellipse(10, -h*0.28, 8, 10, 0.15, 0, Math.PI*2);
+  ctx.fill();
+  // shoulders
+  ctx.fillStyle = '#b8b8cc';
+  ctx.beginPath();
+  ctx.ellipse(2, -h*0.18, 18, 8, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawMan(ctx, t, x, y, agitation) {
+  // man - suit, facing left
+  ctx.save();
+  ctx.translate(x, y);
+  const h = 150;
+  const shake = agitation * 2.5;
+  const ox = (Math.random()-0.5) * shake;
+  const oy = (Math.random()-0.5) * shake * 0.5;
+  // legs
+  ctx.fillStyle = '#151522';
+  ctx.fillRect(-20+ox, h*0.25, 16, h*0.35);
+  ctx.fillRect(4+ox, h*0.25, 16, h*0.35);
+  // torso
+  ctx.fillStyle = '#101018';
+  ctx.beginPath();
+  ctx.moveTo(-24+ox, -h*0.5);
+  ctx.quadraticCurveTo(-28+ox, h*0.1, -22+ox, h*0.28);
+  ctx.lineTo(16+ox, h*0.28);
+  ctx.quadraticCurveTo(22+ox, h*0.1, 24+ox, -h*0.5);
+  ctx.closePath();
+  ctx.fill();
+  // jacket lapels
+  ctx.fillStyle = '#1a1a28';
+  ctx.beginPath();
+  ctx.moveTo(-18+ox, -h*0.45);
+  ctx.lineTo(-6+ox, -h*0.1);
+  ctx.lineTo(0+ox, -h*0.45);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(14+ox, -h*0.45);
+  ctx.lineTo(4+ox, -h*0.1);
+  ctx.lineTo(-2+ox, -h*0.45);
+  ctx.closePath();
+  ctx.fill();
+  // shirt
+  ctx.fillStyle = '#d0d0d8';
+  ctx.fillRect(-5+ox, -h*0.42, 8, h*0.3);
+  // tie
+  ctx.fillStyle = '#303040';
+  ctx.fillRect(-3+ox, -h*0.4, 4, h*0.25);
+  // head
+  ctx.fillStyle = '#15151e';
+  ctx.beginPath();
+  ctx.ellipse(0+ox, -h*0.62, 16, 18, 0, 0, Math.PI*2);
+  ctx.fill();
+  // arms
+  const armRaise = agitation * 20;
+  ctx.fillStyle = '#101018';
+  ctx.beginPath();
+  ctx.ellipse(-26+ox, -h*0.25+armRaise*0.15, 5, 20, 0.3, 0, Math.PI*2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(26+ox, -h*0.25+armRaise*0.1, 5, 20, -0.3, 0, Math.PI*2);
+  ctx.fill();
+  // briefcase
+  ctx.fillStyle = '#1e1e28';
+  ctx.fillRect(20+ox, h*0.15, 12, 20);
+  ctx.restore();
+}
+
+function drawFog(ctx, t) {
+  // layered fog
+  for (let i = 0; i < 3; i++) {
+    const fy = 420 + i*90;
+    const fx = ((t * (4+i*2) + i*300) % (W+300)) - 150;
+    const g = ctx.createRadialGradient(fx, fy, 80, fx, fy, 300);
+    g.addColorStop(0, `rgba(180,190,210,${0.04+i*0.015})`);
+    g.addColorStop(0.5, `rgba(160,170,190,${0.025+i*0.01})`);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(fx-320, fy-120, 640, 240);
+  }
+}
+
+function drawVignette(ctx) {
+  const g = ctx.createRadialGradient(W/2, H/2, H*0.35, W/2, H/2, H*0.85);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(0.7, 'rgba(0,0,0,0.25)');
+  g.addColorStop(1, 'rgba(0,0,0,0.65)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,W,H);
+}
+
+function drawGrain(ctx, t) {
+  ctx.save();
+  ctx.globalAlpha = 0.04;
+  for (let i = 0; i < 300; i++) {
+    const gx = Math.floor((Math.random()*W));
+    const gy = Math.floor((Math.random()*H));
+    const ga = Math.floor(Math.random()*40)+30;
+    ctx.fillStyle = `rgba(160,160,180,${ga/255})`;
+    ctx.fillRect(gx, gy, 1, 1);
+  }
+  ctx.restore();
+}
+
+// ── subtitles ──
+function drawSubtitleVertical(ctx, text, visibleChars, x, y, t) {
+  const fontSize = 30;
+  ctx.font = `${fontSize}px ${MINCHO}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  const lineH = fontSize * 1.5;
+  for (let i = 0; i < visibleChars && i < text.length; i++) {
+    const ch = text[i];
+    // skip ellipsis chars spacing
+    const cy = y + i * lineH;
+    // slight fade-in
+    const fadeIn = Math.min(1, (visibleChars - i) * 2);
+    ctx.globalAlpha = fadeIn * 0.85;
+    // subtle sway
+    const swayY = Math.sin(t*1.5 + i*0.5) * 0.8;
+    ctx.fillStyle = '#d8d8e8';
+    ctx.fillText(ch, x, cy + swayY);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawSubtitleHorizontal(ctx, text, x, y, t, intensity) {
+  const fontSize = 34;
+  ctx.font = `${fontSize}px ${MINCHO}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  // trembling
+  const tremble = intensity * 3.2;
+  const totalW = text.length * fontSize * 1.05;
+  let cx = x - totalW/2;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    const jx = (Math.random()-0.5) * tremble;
+    const jy = (Math.random()-0.5) * tremble;
+    const rot = (Math.random()-0.5) * intensity * 0.04;
+    ctx.save();
+    ctx.translate(cx + jx, y + jy);
+    ctx.rotate(rot);
+    ctx.fillStyle = `rgba(255,255,255,${0.75 + intensity*0.2})`;
+    ctx.fillText(ch, 0, 0);
+    ctx.restore();
+    cx += fontSize * 1.05;
+  }
+}
+
+function getVisibleChars(active, t) {
+  if (!active || !active.vert) return 0;
+  const elapsed = t - active.start;
+  const count = Math.floor(elapsed / active.speed);
+  return Math.max(0, Math.min(active.text.length, count + 1));
+}
+
+// ── main loop ──
+const urlParams = new URLSearchParams(window.location.search);
+const tOffset = parseFloat(urlParams.get('t') || '0') || 0;
+let startTime = null;
+
+function loop() {
+  if (startTime === null) startTime = performance.now();
+  const rawT = (performance.now() - startTime) / 1000 + tOffset;
+  const t = rawT % DUR;
+  
+  // camera
+  const cam = getCam(t);
+  // camera shake during intense moments
+  let shakeAmt = 0;
+  const active = getActiveDialog(t);
+  if (active && active.sp === 'm' && active.intensity > 0.7) {
+    shakeAmt = (active.intensity - 0.6) * 5;
+  }
+  if (t > 22.0) shakeAmt = Math.max(0, (t-22)*3);
+  const shx = (Math.random()-0.5) * shakeAmt;
+  const shy = (Math.random()-0.5) * shakeAmt;
+
+  ctx.save();
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0,0,W,H);
+  
+  // apply camera transform
+  ctx.translate(W/2 + shx, H/2 + shy);
+  ctx.scale(cam.zoom, cam.zoom);
+  ctx.translate(-cam.cx, -cam.cy);
+  
+  // draw scene in world coords
+  drawSky(ctx, t);
+  drawStationRoof(ctx, t);
+  drawDepartureBoard(ctx, t);
+  drawPlatformSurface(ctx, t);
+  drawPillars(ctx, t);
+  drawVendingMachine(ctx, t);
+  drawTracks(ctx, t);
+  drawFog(ctx, t);
+  
+  // characters
+  const womanX = 300, womanY = 420;
+  const manX = 850, manY = 395;
+  
+  // sway for woman's hair
+  const sway = Math.sin(t * 0.8) * 2 + Math.sin(t * 1.7) * 0.8;
+  
+  // determine if we're in profile view (close-up on woman)
+  const isProfile = t > 15.0 && t < 22.5;
+  // lip open amount when whispering
+  const lipOpen = isProfile ? (0.4 + 0.3 * Math.sin(t * 6) + 0.2 * Math.sin(t * 13)) : 0.15;
+  
+  // man's agitation
+  let agitation = 0.1;
+  if (active && active.sp === 'm') {
+    agitation = 0.3 + active.intensity * 0.5;
+    agitation += Math.sin(t * 20) * 0.1;
+  }
+  
+  if (isProfile) {
+    drawWomanProfile(ctx, t, womanX, womanY, lipOpen);
+  } else {
+    drawWomanBack(ctx, t, womanX, womanY, sway);
+  }
+  drawMan(ctx, t, manX, manY, agitation);
+  
+  ctx.restore();
+  
+  // post-processing effects (screen space)
+  drawVignette(ctx);
+  drawGrain(ctx, t);
+  
+  // subtitles (screen space)
+  const dlg = getActiveDialog(t);
+  if (dlg) {
+    if (dlg.vert) {
+      // woman's vertical subtitle - near her position
+      const visChars = getVisibleChars(dlg, t);
+      // map woman's world position to screen
+      const sx = W/2 + (womanX - cam.cx) * cam.zoom;
+      const sy = H/2 + (womanY - 150 - cam.cy) * cam.zoom;
+      drawSubtitleVertical(ctx, dlg.text, visChars, sx + 60, sy, t);
+    } else {
+      // man's horizontal subtitle - near his position
+      const sx = W/2 + (manX - cam.cx) * cam.zoom;
+      const sy = H/2 + (manY - 120 - cam.cy) * cam.zoom;
+      // clamp to screen
+      const cx = Math.max(200, Math.min(1080, sx));
+      const cy = Math.max(80, Math.min(260, sy));
+      drawSubtitleHorizontal(ctx, dlg.text, cx, cy, t, dlg.intensity);
+    }
+  }
+  
+  // fade to black at end
+  if (t > 22.5) {
+    const fadeA = Math.min(1, (t - 22.5) / 1.5);
+    ctx.fillStyle = `rgba(0,0,0,${fadeA})`;
+    ctx.fillRect(0,0,W,H);
+  }
+  // fade in at start
+  if (t < 0.5) {
+    const fadeA = 1 - t / 0.5;
+    ctx.fillStyle = `rgba(0,0,0,${fadeA})`;
+    ctx.fillRect(0,0,W,H);
+  }
+  
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>

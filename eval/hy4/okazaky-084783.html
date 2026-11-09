@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Programmatic Engraving Music Video</title>
+<style>
+  body { margin: 0; background: #000; overflow: hidden; display: flex; align-items: center; justify-content: center; height: 100vh; }
+  #stage { width: 1280px; height: 720px; background: #060606; transform-origin: center; position: relative; }
+  canvas { display: block; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+  window.DUR = 50;
+  const params = new URLSearchParams(location.search);
+  const startOffset = parseFloat(params.get('t')) || 0;
+
+  function resize() {
+    const s = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+    document.getElementById('stage').style.transform = `scale(${s})`;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const ctx = document.getElementById('c').getContext('2d');
+  const BLK = '#060606', BON = '#E4DCCB', ORG = '#FF5A00', DIM = 'rgba(228,220,203,0.35)';
+  const FONT = '"Courier New", Courier, monospace';
+
+  const LYRICS = [
+    "Generate the sound, a phantom wave",
+    "Extract the words the metadata gave",
+    "Separate the stems, four paths diverge",
+    "Transcribe the voice, the timings merge",
+    "Storyboard the light, the camera flies",
+    "Four agents code where the logic lies",
+    "Sixteen frames to verify the sight",
+    "Render headless in the vertical night",
+    "Normalize the peak to minus fourteen",
+    "Engraved in bone and orange and black"
+  ];
+  const WORDS = ["GENERATE", "EXTRACT", "STEMS", "ALIGN", "BOARD", "CODE", "VERIFY", "RENDER", "-14 LUFS", "FINAL"];
+  const SHOW  = ["SINE_GRID_RIPPLE", "STEPPED_CUBES", "SPLIT_HELICES", "WAVE_SYNC", "FRUSTUM_TUNNEL", "PUNCHCARD_COLS", "4x4_BUMPS", "SPHERE_TO_9:16", "PULSING_RINGS", "TORUS_KNOT"];
+  const CAM   = ["SLOW_PUSH_IN", "TOP_DOWN_TILT", "ORBIT", "STATIC_PROFILE", "FLY_THROUGH", "PAN_RIGHT", "PULL_BACK", "DOLLY_ZOOM", "SETTLE_SHAKE", "MAJESTIC_ROTATE"];
+  const STEPS = ["SUNO_GEN", "META_EXTRACT", "DEMUCS_4STEM", "MLX_WHISPER", "STORYBOARD", "OPUS_x4", "CONTACT_16", "HEADLESS_RND", "LUFS_-14"];
+  const LOGS = [
+    "> init suno_v3...", "> wav written (48kHz)",
+    "> parsing id3v2...", "> lyrics: 10 lines",
+    "> demucs --four-stems", "> tensors separated",
+    "> mlx_whisper --align", "> phoneme map ok",
+    "> scene.bind(lyric[i])", "> frustum cached",
+    "> spawn opus_agent[4]", "> shaders compiled",
+    "> export contact.png", "> 16/16 verified",
+    "> chrome --headless", "> 1080x1920 @ 60fps",
+    "> ffmpeg loudnorm", "> I=-14.0 LUFS",
+    "> palette: BLK/BON/ORG", "> render complete."
+  ];
+  const STEM_NAMES = ["VOCALS", "DRUMS", "BASS", "OTHER"];
+
+  function evalScene(sc, l, u, v) {
+    let x = (u - 0.5) * 300, y = (v - 0.5) * 500, z = 0;
+    let ct = sc * 5 + l * 5;
+    switch(sc) {
+      case 0: z = Math.sin(u*10 + ct*0.6) * 45 * Math.cos(v*8 - ct*0.4); break;
+      case 1: z = Math.floor(Math.sin(u*8 + ct)*3)*22 + Math.floor(v*12)*6 - 30; break;
+      case 2: 
+        let band = Math.floor(v*4);
+        x += (band - 1.5) * 70 * Math.min(1, l*2);
+        z = Math.sin(u*20 + ct + band) * 25; 
+        break;
+      case 3: 
+        let off = Math.max(0, 1 - l*1.5) * 120;
+        z = Math.sin(u*15 + ct*0.5)*35 * (v<0.5 ? 1 : -1) + (v<0.5 ? off : -off);
+        break;
+      case 4: 
+        z = (v * 500) - 250 + (ct * 60 % 500);
+        x *= (1 + z/500); y *= (1 + z/500);
+        break;
+      case 5: 
+        let col = Math.floor(u*4);
+        z = Math.sin(v*25 + ct + col*2)*35;
+        x = (col-1.5)*85 + ((u*4)%1 - 0.5)*45;
+        break;
+      case 6: 
+        let gx = Math.floor(u*4), gy = Math.floor(v*4);
+        z = Math.sin((u*4%1)*Math.PI) * Math.sin((v*4%1)*Math.PI) * 70 * Math.sin(ct + gx + gy);
+        break;
+      case 7: 
+        let th = u*Math.PI*2, ph = v*Math.PI;
+        let sx = Math.sin(ph)*Math.cos(th)*160, sy = Math.cos(ph)*160, sz = Math.sin(ph)*Math.sin(th)*160;
+        let rx = (u-0.5)*220, ry = (v-0.5)*390;
+        let m = Math.min(1, l*1.2); m = m*m*(3-2*m);
+        x = sx*(1-m) + rx*m; y = sy*(1-m) + ry*m; z = sz*(1-m);
+        break;
+      case 8: 
+        let r = v * 220, a = u * Math.PI * 2;
+        x = Math.cos(a)*r; y = Math.sin(a)*r;
+        z = Math.sin(r*0.08 - ct*2) * 40 * Math.max(0, 1 - l*1.5);
+        break;
+      case 9: 
+        let R = 130, r2 = 45;
+        let tu = u*Math.PI*2*3, tv = v*Math.PI*2;
+        x = (R + r2*Math.cos(tv + ct*0.5)) * Math.cos(tu);
+        y = (R + r2*Math.cos(tv + ct*0.5)) * Math.sin(tu);
+        z = r2 * Math.sin(tv + ct*0.5) + Math.sin(tu*2)*25;
+        break;
+    }
+    return {x, y, z};
+  }
+
+  function getSurface(u, v, t) {
+    let scene = Math.floor(t / 5) % 10;
+    let lt = (t % 5) / 5;
+    let p0 = evalScene(scene, lt, u, v);
+    if (lt < 0.15) {
+      let prevSc = (scene === 0) ? 9 : scene - 1;
+      let pPrev = evalScene(prevSc, 1.0 + lt, u, v);
+      let b = lt / 0.15; b = b*b*(3-2*b);
+      return {
+        x: pPrev.x*(1-b) + p0.x*b,
+        y: pPrev.y*(1-b) + p0.y*b,
+        z: pPrev.z*(1-b) + p0.z*b
+      };
+    }
+    return p0;
+  }
+
+  let initTime = performance.now();
+
+  function draw(now) {
+    let t = (startOffset + (now - initTime) / 1000) % window.DUR;
+    if (t < 0) t += window.DUR;
+    let scene = Math.floor(t / 5) % 10;
+    let lt = (t % 5) / 5;
+
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = BLK;
+    ctx.fillRect(0, 0, 1280, 720);
+
+    // ================= LEFT PANEL =================
+    ctx.font = `12px ${FONT}`;
+    ctx.fillStyle = BON;
+    ctx.fillText("> PIPELINE_STATE", 40, 40);
+    ctx.strokeStyle = DIM; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(40, 58); ctx.lineTo(400, 58); ctx.stroke();
+
+    for(let i=0; i<9; i++) {
+      let y = 72 + i*22;
+      let active = (scene === i), done = (scene > i);
+      ctx.fillStyle = active ? ORG : (done ? BON : DIM);
+      ctx.fillText(`[${done?'x':active?'>':' '}] ${STEPS[i]}`, 40, y);
+      if(active) { ctx.fillRect(220, y+3, lt*140, 5); }
+    }
+
+    // Terminal Logs
+    ctx.font = `10px ${FONT}`;
+    let logIdx = Math.floor((t / 50) * LOGS.length);
+    for(let i=0; i<4; i++) {
+      let li = logIdx - 3 + i;
+      if(li >= 0 && li < LOGS.length) {
+        ctx.fillStyle = (li === logIdx) ? ORG : DIM;
+        ctx.fillText(LOGS[li], 40, 275 + i*14);
+      }
+    }
+
+    // Demucs Stems
+    ctx.font = `12px ${FONT}`; ctx.fillStyle = BON;
+    ctx.fillText("> DEMUCS_STEM_MONITOR", 40, 345);
+    ctx.font = `9px ${FONT}`;
+    for(let s=0; s<4; s++) {
+      let y = 370 + s*42;
+      ctx.strokeStyle = DIM; ctx.strokeRect(40, y, 340, 30);
+      ctx.fillStyle = BON; ctx.fillText(STEM_NAMES[s], 45, y+3);
+      ctx.beginPath();
+      for(let i=0; i<338; i+=2) {
+        let amp = Math.sin(i*0.1 + t*12 + s*2) * Math.sin(i*0.03 - t*4) * 9;
+        if(scene === 8 || scene === 9) amp = Math.sin(i*0.05 + t*6)*7;
+        let py = y + 16 + amp;
+        i===0 ? ctx.moveTo(41+i, py) : ctx.lineTo(41+i, py);
+      }
+      ctx.strokeStyle = (scene===2 || scene===3) ? ORG : DIM;
+      ctx.stroke();
+    }
+
+    // Opus Agents
+    ctx.font = `12px ${FONT}`; ctx.fillStyle = BON;
+    ctx.fillText("> OPUS_SUB_AGENTS", 40, 555);
+    for(let a=0; a<4; a++) {
+      let x = 40 + a*87;
+      let active = (scene === 5), done = (scene > 5);
+      ctx.strokeStyle = active ? ORG : DIM; ctx.strokeRect(x, 580, 78, 38);
+      ctx.fillStyle = active ? ORG : (done ? BON : DIM);
+      ctx.font = `10px ${FONT}`;
+      ctx.fillText(`AG_0${a+1}`, x+5, 585);
+      ctx.fillText(active ? `[${'.'.repeat(Math.floor(lt*5))}]` : (done ? "[OK]" : "[IDLE]"), x+5, 600);
+    }
+
+    // LUFS Meter
+    ctx.font = `11px ${FONT}`; ctx.fillStyle = BON;
+    ctx.fillText("LUFS METER", 40, 640);
+    ctx.strokeStyle = DIM; ctx.strokeRect(40, 658, 340, 10);
+    let lufsVal = -20 + Math.sin(t*8)*3.5;
+    if(scene === 8) lufsVal = -20 + 6 * Math.min(1, lt*1.5);
+    if(scene > 8) lufsVal = -14;
+    let mx = 40 + ((lufsVal + 20)/10)*340;
+    ctx.fillStyle = (Math.abs(lufsVal - (-14)) < 0.4) ? ORG : BON;
+    ctx.fillRect(mx-2, 656, 4, 14);
+    ctx.fillText(lufsVal.toFixed(1), 340, 640);
+
+    // ================= CENTER PANEL (9:16 VIDEO) =================
+    ctx.save();
+    ctx.beginPath(); ctx.rect(437, 0, 405, 720); ctx.clip();
+    ctx.fillStyle = '#030303'; ctx.fillRect(437, 0, 405, 720);
+    
+    let vg = ctx.createRadialGradient(639, 330, 10, 639, 330, 320);
+    vg.addColorStop(0, 'rgba(255, 90, 0, 0.06)');
+    vg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = vg; ctx.fillRect(437, 0, 405, 720);
+
+    // 3D Software Rasterizer
+    const ROWS = 36, COLS = 24;
+    let pts = [];
+    let rx = 0.25 + Math.sin(t*0.15)*0.1 + (scene===1 ? 0.5 : 0);
+    let ry = t*0.25 + scene*0.4;
+    let crx = Math.cos(rx), srx = Math.sin(rx), cry = Math.cos(ry), sry = Math.sin(ry);
+
+    for(let j=0; j<=ROWS; j++) {
+      let row = [];
+      for(let i=0; i<=COLS; i++) {
+        let p = getSurface(i/COLS, j/ROWS, t);
+        let y1 = p.y * crx - p.z * srx;
+        let z1 = p.y * srx + p.z * crx;
+        let x2 = p.x * cry + z1 * sry;
+        let z2 = -p.x * sry + z1 * cry;
+        let s = 500 / (500 + z2);
+        row.push({ x: 639 + x2*s, y: 330 + y1*s, z: z2 });
+      }
+      pts.push(row);
+    }
+
+    let quads = [];
+    for(let j=0; j<ROWS; j++) {
+      for(let i=0; i<COLS; i++) {
+        let p1=pts[j][i], p2=pts[j][i+1], p3=pts[j+1][i+1], p4=pts[j+1][i];
+        quads.push({p1,p2,p3,p4, avgZ:(p1.z+p2.z+p3.z+p4.z)/4});
+      }
+    }
+    quads.sort((a,b) => b.avgZ - a.avgZ); // Painter's algorithm (far to near)
+
+    for(let q of quads) {
+      ctx.fillStyle = '#030303'; // Hidden-line removal
+      ctx.beginPath();
+      ctx.moveTo(q.p1.x, q.p1.y); ctx.lineTo(q.p2.x, q.p2.y);
+      ctx.lineTo(q.p3.x, q.p3.y); ctx.lineTo(q.p4.x, q.p4.y);
+      ctx.closePath(); ctx.fill();
+
+      let depth = Math.max(0, Math.min(1, (q.avgZ + 200)/400));
+      let isPeak = q.avgZ < -70;
+      ctx.strokeStyle = isPeak ? ORG : `rgba(228, 220, 203, ${0.12 + 0.88*(1-depth)})`;
+      ctx.lineWidth = 0.7;
+      ctx.stroke();
+    }
+
+    // Video Overlay Typography
+    ctx.textAlign = 'center';
+    ctx.font = `bold 38px ${FONT}`;
+    ctx.strokeStyle = ORG; ctx.lineWidth = 1.2;
+    ctx.strokeText(WORDS[scene], 639, 645);
+    ctx.fillStyle = 'rgba(228, 220, 203, 0.12)';
+    ctx.fillText(WORDS[scene], 639, 645);
+
+    ctx.font = `13px ${FONT}`;
+    ctx.fillStyle = BON;
+    ctx.fillText(LYRICS[scene].toUpperCase(), 639, 688);
+    ctx.restore();
+
+    // Video Frame UI
+    ctx.textAlign = 'left';
+    ctx.strokeStyle = BON; ctx.lineWidth = 1;
+    ctx.strokeRect(437.5, 0.5, 405, 719);
+    ctx.fillStyle = BLK; ctx.fillRect(437, 4, 46, 16);
+    ctx.fillStyle = ORG; ctx.font = `10px ${FONT}`; ctx.fillText("9:16", 445, 7);
+    ctx.beginPath(); ctx.arc(826, 12, 4, 0, Math.PI*2);
+    ctx.fillStyle = (Math.floor(t*2)%2===0) ? ORG : 'rgba(255,90,0,0.2)'; ctx.fill();
+    ctx.fillStyle = BON; ctx.fillText("REC", 770, 7);
+
+    // ================= RIGHT PANEL =================
+    ctx.font = `12px ${FONT}`; ctx.fillStyle = BON;
+    ctx.fillText(`> ACTIVE_LYRIC / SCENE ${(scene+1).toString().padStart(2,'0')}/10`, 860, 40);
+    ctx.strokeStyle = DIM; ctx.beginPath(); ctx.moveTo(860, 58); ctx.lineTo(1240, 58); ctx.stroke();
+    
+    ctx.font = `15px ${FONT}`; ctx.fillStyle = BON;
+    ctx.fillText(LYRICS[scene], 860, 72);
+    ctx.fillStyle = ORG; ctx.fillRect(860, 96, lt * 380, 2);
+
+    ctx.font = `11px ${FONT}`; ctx.fillStyle = DIM;
+    ctx.fillText("PARAM", 860, 125); ctx.fillText("VALUE", 990, 125);
+    ctx.fillStyle = BON;
+    ctx.fillText("WHAT TO SHOW", 860, 148); ctx.fillText(SHOW[scene], 990, 148);
+    ctx.fillText("CAMERA", 860, 168);      ctx.fillText(CAM[scene], 990, 168);
+    ctx.fillText("MAIN WORD", 860, 188);   ctx.fillStyle = ORG; ctx.fillText(WORDS[scene], 990, 188);
+    ctx.strokeStyle = DIM; ctx.strokeRect(855, 120, 385, 88);
+
+    // Contact Sheet
+    ctx.fillStyle = BON; ctx.font = `12px ${FONT}`;
+    ctx.fillText("> CONTACT_SHEET [16 FRAMES]", 860, 235);
+    let dev = (t/50) * 16;
+    if(scene === 6) dev = lt * 16;
+    if(scene > 6) dev = 16;
+
+    for(let r=0; r<4; r++) {
+      for(let c=0; c<4; c++) {
+        let idx = r*4+c, cx = 860 + c*96, cy = 260 + r*56;
+        ctx.strokeStyle = DIM; ctx.strokeRect(cx, cy, 86, 48);
+        if(idx < dev) {
+          ctx.save();
+          ctx.beginPath(); ctx.rect(cx+1, cy+1, 84, 46); ctx.clip();
+          ctx.strokeStyle = (scene===6 && Math.abs(idx - Math.floor(lt*16)) < 1) ? ORG : DIM;
+          ctx.lineWidth = 0.5; ctx.beginPath();
+          for(let h=-48; h<86; h+=4) { ctx.moveTo(cx+h, cy); ctx.lineTo(cx+h+48, cy+48); }
+          ctx.stroke();
+          ctx.strokeStyle = BON; ctx.strokeRect(cx+32, cy+4, 22, 40);
+          ctx.restore();
+        }
+        ctx.fillStyle = DIM; ctx.font = `9px ${FONT}`;
+        ctx.fillText(`F${(idx+1).toString().padStart(2,'0')}`, cx+3, cy+38);
+      }
+    }
+
+    // Whisper Timestamps
+    ctx.fillStyle = BON; ctx.font = `12px ${FONT}`;
+    ctx.fillText("> MLX_WHISPER_TIMESTAMPS", 860, 500);
+    let wordsArr = LYRICS[scene].split(' ');
+    ctx.font = `10px ${FONT}`;
+    for(let w=0; w<wordsArr.length; w++) {
+      let wProg = w / wordsArr.length;
+      let active = (lt >= wProg);
+      let wx = 860 + (w % 3) * 128, wy = 525 + Math.floor(w / 3) * 18;
+      ctx.fillStyle = active ? ORG : DIM;
+      let ts = (scene*5 + wProg*5).toFixed(2).padStart(5,'0');
+      ctx.fillText(`[${ts}] ${wordsArr[w]}`, wx, wy);
+    }
+
+    // Render Config
+    ctx.strokeStyle = DIM; ctx.beginPath(); ctx.moveTo(860, 595); ctx.lineTo(1240, 595); ctx.stroke();
+    ctx.font = `11px ${FONT}`; ctx.fillStyle = DIM;
+    ctx.fillText("RES  : 1080x1920 (9:16)", 860, 608);
+    ctx.fillText("FPS  : 60 (HEADLESS_CHROME)", 860, 625);
+    ctx.fillText("PAL  : BLACK / BONE / ORANGE", 860, 642);
+    ctx.fillText("AUDIO: -14 LUFS NORMALIZED", 860, 659);
+    ctx.fillStyle = ORG;
+    ctx.fillText(`TC   : 00:00:${t.toFixed(2).padStart(5,'0')} / 00:00:50.00`, 860, 682);
+
+    // ================= GLOBAL ENGRAVING OVERLAYS =================
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.strokeStyle = 'rgba(228, 220, 203, 0.025)';
+    ctx.lineWidth = 1; ctx.beginPath();
+    for(let i = -720; i < 1280; i += 5) { ctx.moveTo(i, 0); ctx.lineTo(i + 720, 720); }
+    ctx.stroke();
+    ctx.restore();
+
+    let grad = ctx.createRadialGradient(640, 360, 250, 640, 360, 850);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.85)');
+    ctx.fillStyle = grad; ctx.fillRect(0, 0, 1280, 720);
+
+    ctx.strokeStyle = BON; ctx.lineWidth = 1; ctx.beginPath();
+    const T = 15;
+    [[0,0,1,1],[1280,0,-1,1],[0,720,1,-1],[1280,720,-1,-1]].forEach(([x,y,dx,dy])=>{
+      ctx.moveTo(x, y+dy*T); ctx.lineTo(x, y); ctx.lineTo(x+dx*T, y);
+    });
+    ctx.stroke();
+
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+</script>
+</body>
+</html>

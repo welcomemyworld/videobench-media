@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Engraved — Music Video</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; width: min(100vw, calc(100vh * 16 / 9)); height: min(100vh, calc(100vw * 9 / 16)); background: #0d0b0a; }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+(() => {
+  const cv = document.getElementById('stage');
+  const ctx = cv.getContext('2d');
+  const W = 1280, H = 720;
+  const DUR = 50;
+  window.DUR = DUR;
+  const params = new URLSearchParams(location.search);
+  const tOff = parseFloat(params.get('t')) || 0;
+  let start = performance.now();
+
+  // Color palette
+  const BLACK = '#0d0b0a';
+  const BONE = '#e8dcc8';
+  const BONE_DIM = '#b8a98c';
+  const BONE_FAINT = '#6a5f4e';
+  const ORANGE = '#c75a1f';
+  const ORANGE_BRIGHT = '#f07830';
+  const ORANGE_DIM = '#8a3515';
+
+  function now() { return ((performance.now() - start) / 1000 + tOff) % DUR; }
+
+  // Utility
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function smoothstep(t) { return t * t * (3 - 2 * t); }
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+  function easeInOut(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
+  function rand(min, max) { return min + Math.random() * (max - min); }
+
+  // 3D rotation
+  function rotY(p, a) {
+    const c = Math.cos(a), s = Math.sin(a);
+    return [p[0] * c + p[2] * s, p[1], -p[0] * s + p[2] * c];
+  }
+  function rotX(p, a) {
+    const c = Math.cos(a), s = Math.sin(a);
+    return [p[0], p[1] * c - p[2] * s, p[1] * s + p[2] * c];
+  }
+  function project3D(p, camera) {
+    const cx = camera.x || 0, cy = camera.y || 0, cz = camera.z || 0;
+    const dist = camera.dist || 200;
+    const fov = camera.fov || 120;
+    const x = p[0] - cx, y = p[1] - cy, z = p[2] - cz;
+    if (z + dist < 0.1) return null;
+    const s = fov / (z + dist);
+    return [W / 2 + x * s, H / 2 + y * s, s];
+  }
+
+  // Wireframe generators
+  function makeCube(size) {
+    const s = size / 2;
+    const v = [[-s,-s,-s],[s,-s,-s],[s,s,-s],[-s,s,-s],[-s,-s,s],[s,-s,s],[s,s,s],[-s,s,s]];
+    const e = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]];
+    return { v, e };
+  }
+  function makeObelisk(size) {
+    const s = size / 2, tip = size * 0.65;
+    const v = [[-s,-s,-s],[s,-s,-s],[s,s,-s],[-s,s,-s],[-tip,-s,tip],[tip,-s,tip],[tip,s,tip],[-tip,s,tip]];
+    const e = [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7],[4,6],[5,7]];
+    return { v, e };
+  }
+  function makeSphere(rings, segs, radius) {
+    const v = [], e = [];
+    for (let r = 0; r <= rings; r++) {
+      const lat = (r / rings) * Math.PI - Math.PI / 2;
+      const cy = Math.sin(lat) * radius;
+      const cr = Math.cos(lat) * radius;
+      for (let s = 0; s < segs; s++) {
+        const lon = (s / segs) * Math.PI * 2;
+        v.push([cr * Math.cos(lon), cy, cr * Math.sin(lon)]);
+      }
+    }
+    for (let r = 0; r < rings; r++) {
+      for (let s = 0; s < segs; s++) {
+        const a = r * segs + s, b = r * segs + ((s + 1) % segs);
+        const c = (r + 1) * segs + s, d = (r + 1) * segs + ((s + 1) % segs);
+        e.push([a, b], [a, c], [b, d], [c, d]);
+      }
+    }
+    return { v, e };
+  }
+  function makeTorus(R, r, rings, segs) {
+    const v = [], e = [];
+    for (let i = 0; i < rings; i++) {
+      const theta = (i / rings) * Math.PI * 2;
+      for (let j = 0; j < segs; j++) {
+        const phi = (j / segs) * Math.PI * 2;
+        const x = (R + r * Math.cos(phi)) * Math.cos(theta);
+        const y = r * Math.sin(phi);
+        const z = (R + r * Math.cos(phi)) * Math.sin(theta);
+        v.push([x, y, z]);
+      }
+    }
+    for (let i = 0; i < rings; i++) {
+      for (let j = 0; j < segs; j++) {
+        const a = i * segs + j, b = i * segs + ((j + 1) % segs);
+        const c = ((i + 1) % rings) * segs + j, d = ((i + 1) % rings) * segs + ((j + 1) % segs);
+        e.push([a, b], [a, c], [b, d], [c, d]);
+      }
+    }
+    return { v, e };
+  }
+  function drawWireframe(geo, camera, rotYAngle, rotXAngle, color, lineWidth, alpha) {
+    ctx.globalAlpha = alpha !== undefined ? alpha : 1;
+    ctx.strokeStyle = color || BONE;
+    ctx.lineWidth = lineWidth || 1.2;
+    ctx.beginPath();
+    for (const [a, b] of geo.e) {
+      let p1 = geo.v[a], p2 = geo.v[b];
+      if (rotYAngle) { p1 = rotY(p1, rotYAngle); p2 = rotY(p2, rotYAngle); }
+      if (rotXAngle) { p1 = rotX(p1, rotXAngle); p2 = rotX(p2, rotXAngle); }
+      const s1 = project3D(p1, camera), s2 = project3D(p2, camera);
+      if (s1 && s2) {
+        ctx.moveTo(s1[0], s1[1]);
+        ctx.lineTo(s2[0], s2[1]);
+      }
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // Cross-hatch fill
+  function hatchArea(points, angle, spacing, color, alpha) {
+    ctx.globalAlpha = alpha || 0.4;
+    ctx.strokeStyle = color || BONE_DIM;
+    ctx.lineWidth = 0.7;
+    const pts = points;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const p of pts) { minX = Math.min(minX, p[0]); maxX = Math.max(maxX, p[0]); minY = Math.min(minY, p[1]); maxY = Math.max(maxY, p[1]); }
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    const diag = Math.sqrt((maxX - minX) ** 2 + (maxY - minY) ** 2);
+    const ca = Math.cos(angle), sa = Math.sin(angle);
+    for (let d = -diag / 2; d <= diag / 2; d += spacing) {
+      const px = cx + d * ca, py = cy + d * sa;
+      const dx = -sa, dy = ca;
+      const len = diag * 1.2;
+      ctx.beginPath();
+      ctx.moveTo(px - dx * len, py - dy * len);
+      ctx.lineTo(px + dx * len, py + dy * len);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Stipple
+  function stipple(cx, cy, count, radius, color, alpha) {
+    ctx.globalAlpha = alpha || 0.6;
+    ctx.fillStyle = color || ORANGE;
+    for (let i = 0; i < count; i++) {
+      const a = Math.random() * Math.PI * 2, r = Math.random() * radius;
+      ctx.fillRect(cx + r * Math.cos(a), cy + r * Math.sin(a), 1.2, 1.2);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Particle system
+  class ParticleSystem {
+    constructor() { this.particles = []; }
+    spawn(cx, cy, count, opts = {}) {
+      for (let i = 0; i < count; i++) {
+        this.particles.push({
+          x: cx + rand(-opts.spreadX || 20, opts.spreadX || 20),
+          y: cy + rand(-opts.spreadY || 10, opts.spreadY || 10),
+          vx: rand(opts.vxMin || -10, opts.vxMax || 10),
+          vy: rand(opts.vyMin || -30, opts.vyMax || -10),
+          life: rand(0.5, opts.life || 3),
+          maxLife: opts.life || 3,
+          size: rand(0.8, opts.size || 2.5),
+          color: opts.color || ORANGE
+        });
+      }
+    }
+    update(dt) {
+      for (let i = this.particles.length - 1; i >= 0; i--) {
+        const p = this.particles[i];
+        p.x += p.vx * dt; p.y += p.vy * dt;
+        p.vy += (this.gravity || 0) * dt;
+        p.life -= dt;
+        if (p.life <= 0) this.particles.splice(i, 1);
+      }
+    }
+    render() {
+      for (const p of this.particles) {
+        const a = clamp(p.life / p.maxLife, 0, 1);
+        ctx.globalAlpha = a * 0.8;
+        ctx.fillStyle = p.color;
+        const s = p.size * (0.5 + 0.5 * a);
+        ctx.fillRect(p.x, p.y, s, s);
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // Grain overlay
+  let grainCanvas = document.createElement('canvas');
+  grainCanvas.width = 128; grainCanvas.height = 72;
+  const gctx = grainCanvas.getContext('2d');
+  gctx.fillStyle = '#fff';
+  for (let i = 0; i < 4000; i++) {
+    gctx.fillRect(Math.random() * 128, Math.random() * 72, 1, 1);
+  }
+  function drawGrain(t) {
+    const offsetX = Math.floor(Math.random() * 128);
+    const offsetY = Math.floor(Math.random() * 72);
+    ctx.globalAlpha = 0.06;
+    ctx.drawImage(grainCanvas, offsetX, offsetY, W, H, 0, 0, W, H);
+    ctx.drawImage(grainCanvas, -offsetX, -offsetY, W, H, 0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
+
+  // Vignette
+  function drawVignette() {
+    const grad = ctx.createRadialGradient(W/2, H/2, H*0.4, W/2, H/2, H*0.85);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.7)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // Lyrics
+  function drawLyrics(text, t, sceneDur) {
+    const fadeIn = 0.4, fadeOut = 0.4;
+    let alpha = 1;
+    if (t < fadeIn) alpha = t / fadeIn;
+    if (t > sceneDur - fadeOut) alpha = (sceneDur - t) / fadeOut;
+    alpha = clamp(alpha, 0, 1);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = BONE;
+    ctx.font = '36px Georgia, "Times New Roman", serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const ly = H - 80;
+    // Subtle glow
+    ctx.shadowColor = ORANGE_DIM;
+    ctx.shadowBlur = 20;
+    ctx.fillText(text, W/2, ly);
+    ctx.shadowBlur = 0;
+    // Underline ornament
+    const tw = ctx.measureText(text).width;
+    ctx.strokeStyle = ORANGE;
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = alpha * 0.7;
+    ctx.beginPath();
+    ctx.moveTo(W/2 - tw/2 - 20, ly + 30);
+    ctx.lineTo(W/2 + tw/2 + 20, ly + 30);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(W/2 - tw/2 - 20, ly + 30);
+    ctx.lineTo(W/2 - tw/2 - 12, ly + 24);
+    ctx.lineTo(W/2 - tw/2 - 4, ly + 30);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(W/2 + tw/2 + 20, ly + 30);
+    ctx.lineTo(W/2 + tw/2 + 12, ly + 24);
+    ctx.lineTo(W/2 + tw/2 + 4, ly + 30);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // Scene definitions: [startTime, duration, renderFn]
+  const scenes = [];
+  const lyrics = [
+    'Lines carved deep in bone-white stone',
+    'Shadows dance where light has flown',
+    'Orange embers mark the way',
+    'Through the dark, we find the day',
+    'Time engraves what we forget',
+    'Every scar a silhouette',
+    'Burning bright against the cold',
+    'Stories etched in black and gold',
+    'When the fire fades to bone',
+    'We remain, not alone'
+  ];
+
+  // Scene 1: Obelisk (0-5s)
+  scenes.push({
+    start: 0, dur: 5,
+    render: (lt) => {
+      const geo = makeObelisk(140);
+      const cam = { x: 0, y: -10, z: 0, dist: 260, fov: 180 };
+      const orbit = lt * 0.5;
+      const rx = Math.sin(lt * 0.3) * 0.15;
+      drawWireframe(geo, cam, orbit, rx, BONE, 1.4, 0.9);
+      // Cross-hatch background
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, W, H);
+      ctx.clip();
+      hatchArea([[0,0],[W,0],[W,H],[0,H]], Math.PI/4 + lt*0.05, 28, BONE_FAINT, 0.15);
+      ctx.restore();
+      // Stipple accents
+      stipple(W/2, H/2 - 80, 60, 150, ORANGE, 0.2);
+    }
+  });
+
+  // Scene 2: Shadows (5-10s)
+  scenes.push({
+    start: 5, dur: 5,
+    render: (lt) => {
+      const sway = Math.sin(lt * 2.5) * 20;
+      // Three silhouette figures
+      for (let i = 0; i < 3; i++) {
+        const fx = W/2 + (i - 1) * 250 + sway * (i * 0.5 + 0.3);
+        const fh = 250 + i * 60;
+        ctx.save();
+        ctx.translate(fx, H - 120);
+        // Body
+        ctx.beginPath();
+        ctx.moveTo(-45, 20);
+        ctx.quadraticCurveTo(-60, -fh * 0.6, -20, -fh);
+        ctx.quadraticCurveTo(0, -fh - 30, 25, -fh);
+        ctx.quadraticCurveTo(55, -fh * 0.6, 45, 20);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(13,11,10,0.9)';
+        ctx.fill();
+        ctx.strokeStyle = BONE_DIM;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        // Cross-hatch fill
+        const pts = [[-45,20],[-60,-fh*0.6],[-20,-fh],[0,-fh-30],[25,-fh],[55,-fh*0.6],[45,20]];
+        hatchArea(pts, Math.PI/3 + i, 14, BONE_FAINT, 0.35);
+        ctx.restore();
+      }
+      // Background cross-hatch
+      hatchArea([[0,0],[W,0],[W,H*0.5],[0,H*0.5]], Math.PI/3 + lt*0.1, 30, BONE_FAINT, 0.2);
+    }
+  });
+
+  // Scene 3: Embers (10-15s)
+  scenes.push({
+    start: 10, dur: 5,
+    ps: null,
+    init() { this.ps = new ParticleSystem(); this.acc = 0; },
+    render(lt, dt) {
+      this.acc += dt;
+      if (this.acc > 0.08) {
+        this.acc = 0;
+        this.ps.spawn(W/2 + rand(-200,200), H - 100, 3, {
+          spreadX: 80, spreadY: 10, vxMin: -15, vxMax: 15, vyMin: -50, vyMax: -20,
+          life: 2.5, size: 2.5, color: ORANGE_BRIGHT
+        });
+      }
+      this.ps.update(dt);
+      this.ps.render();
+      // Rising lines
+      for (let i = 0; i < 5; i++) {
+        const lx = W/2 + rand(-180, 180);
+        ctx.globalAlpha = 0.3;
+        ctx.strokeStyle = ORANGE_DIM;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(lx, H - 60 - rand(0, 100));
+        ctx.lineTo(lx + rand(-5,5), H - 60 - rand(100, 300));
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+      // Ground cross-hatch
+      hatchArea([[0,H-60],[W,H-60],[W,H],[0,H]], Math.PI/4, 18, BONE_FAINT, 0.3);
+    }
+  });
+
+  // Scene 4: Dawn (15-20s)
+  scenes.push({
+    start: 15, dur: 5,
+    render: (lt) => {
+      const cx = W/2, cy = H/2 - 40;
+      // Radiating lines
+      const rays = 36;
+      ctx.globalAlpha = 0.7;
+      ctx.strokeStyle = BONE_DIM;
+      ctx.lineWidth = 1;
+      for (let i = 0; i < rays; i++) {
+        const a = (i / rays) * Math.PI * 2 + lt * 0.1;
+        const r1 = 80 + Math.sin(lt * 2 + i) * 20;
+        const r2 = 200 + Math.sin(lt * 1.5 + i * 1.3) * 40;
+        ctx.beginPath();
+        ctx.moveTo(cx + r1 * Math.cos(a), cy + r1 * Math.sin(a));
+        ctx.lineTo(cx + r2 * Math.cos(a), cy + r2 * Math.sin(a));
+        ctx.stroke();
+      }
+      // Sun disc
+      ctx.globalAlpha = 0.6;
+      ctx.fillStyle = ORANGE_DIM;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 60 + Math.sin(lt * 2) * 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = ORANGE;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      // Horizon cross-hatch
+      hatchArea([[0,cy+65],[W,cy+65],[W,H],[0,H]], Math.PI/5, 22, BONE_FAINT, 0.25);
+      ctx.globalAlpha = 1;
+    }
+  });
+
+  // Scene 5: Time/Gears (20-25s)
+  scenes.push({
+    start: 20, dur: 5,
+    render: (lt) => {
+      const gearR = 110, teeth = 16, toothH = 28, toothW = 18;
+      const cx = W/2, cy = H/2 - 30;
+      // Main gear
+      ctx.strokeStyle = BONE;
+      ctx.lineWidth = 1.5;
+      for (let i = 0; i < teeth; i++) {
+        const a = (i / teeth) * Math.PI * 2 + lt * 0.3;
+        const a2 = a + 0.08;
+        ctx.beginPath();
+        ctx.moveTo(cx + gearR * Math.cos(a), cy + gearR * Math.sin(a));
+        ctx.lineTo(cx + (gearR + toothH) * Math.cos(a), cy + (gearR + toothH) * Math.sin(a));
+        ctx.lineTo(cx + (gearR + toothH) * Math.cos(a2), cy + (gearR + toothH) * Math.sin(a2));
+        ctx.lineTo(cx + gearR * Math.cos(a2), cy + gearR * Math.sin(a2));
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.arc(cx, cy, gearR, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy, gearR * 0.6, 0, Math.PI * 2);
+      ctx.strokeStyle = BONE_DIM;
+      ctx.stroke();
+      // Spokes
+      ctx.strokeStyle = BONE_FAINT;
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + lt * 0.3;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + gearR * 0.8 * Math.cos(a), cy + gearR * 0.8 * Math.sin(a));
+        ctx.stroke();
+      }
+      // Small gear
+      const sx = cx + gearR * 1.4, sy = cy + gearR * 0.6;
+      const sr = 60, steeth = 10;
+      ctx.strokeStyle = BONE_DIM;
+      ctx.lineWidth = 1.2;
+      for (let i = 0; i < steeth; i++) {
+        const a = (i / steeth) * Math.PI * 2 - lt * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(sx + sr * Math.cos(a), sy + sr * Math.sin(a));
+        ctx.lineTo(sx + (sr + 14) * Math.cos(a), sy + (sr + 14) * Math.sin(a));
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+      ctx.stroke();
+      // Clock face marks
+      ctx.fillStyle = BONE_FAINT;
+      ctx.font = '18px Georgia, serif';
+      ctx.textAlign = 'center';
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2 - Math.PI / 2;
+        ctx.fillText(['I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII'][i], cx + gearR*0.8*Math.cos(a), cy + gearR*0.8*Math.sin(a) + 6);
+      }
+      ctx.globalAlpha = 1;
+    }
+  });
+
+  // Scene 6: Scar silhouette (25-30s)
+  scenes.push({
+    start: 25, dur: 5,
+    render: (lt) => {
+      // Profile face
+      const cx = W/2, cy = H/2 - 20;
+      ctx.strokeStyle = BONE;
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      // Forehead
+      ctx.moveTo(cx - 70, cy - 120);
+      ctx.quadraticCurveTo(cx - 60, cy - 170, cx - 20, cy - 180);
+      // Nose
+      ctx.quadraticCurveTo(cx - 5, cy - 170, cx + 5, cy - 130);
+      ctx.lineTo(cx + 10, cy - 90);
+      // Lips
+      ctx.quadraticCurveTo(cx + 8, cy - 60, cx + 15, cy - 55);
+      ctx.lineTo(cx + 8, cy - 50);
+      // Chin
+      ctx.quadraticCurveTo(cx + 5, cy - 20, cx - 15, cy - 15);
+      // Jaw
+      ctx.quadraticCurveTo(cx - 50, cy - 10, cx - 70, cy - 30);
+      // Back of head
+      ctx.quadraticCurveTo(cx - 130, cy - 50, cx - 120, cy - 130);
+      ctx.quadraticCurveTo(cx - 100, cy - 165, cx - 70, cy - 120);
+      ctx.closePath();
+      ctx.stroke();
+      // Scars - jagged lines
+      ctx.strokeStyle = ORANGE;
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = 0.8;
+      const scars = [
+        [[cx - 40, cy - 140], [cx - 30, cy - 100], [cx - 45, cy - 60]],
+        [[cx - 20, cy - 160], [cx - 5, cy - 130], [cx - 15, cy - 95]],
+        [[cx - 55, cy - 75], [cx - 35, cy - 40], [cx - 48, cy - 18]]
+      ];
+      for (const scar of scars) {
+        ctx.beginPath();
+        ctx.moveTo(scar[0][0], scar[0][1]);
+        for (let i = 1; i < scar.length; i++) {
+          ctx.lineTo(scar[i][0] + Math.sin(lt * 3 + i) * 2, scar[i][1]);
+        }
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      // Cross-hatch shading
+      const fpts = [[cx-70,cy-120],[cx-20,cy-180],[cx+5,cy-130],[cx+10,cy-90],[cx+15,cy-55],[cx-15,cy-15],[cx-70,cy-30],[cx-120,cy-130]];
+      hatchArea(fpts, Math.PI/4, 16, BONE_FAINT, 0.3);
+    }
+  });
+
+  // Scene 7: Flame (30-35s)
+  scenes.push({
+    start: 30, dur: 5,
+    ps: null,
+    init() { this.ps = new ParticleSystem(); this.acc = 0; },
+    render(lt, dt) {
+      this.acc += dt;
+      if (this.acc > 0.04) {
+        this.acc = 0;
+        this.ps.spawn(W/2, H - 100 + rand(-30,30), 2, {
+          spreadX: 15, spreadY: 5, vxMin: -8, vxMax: 8, vyMin: -80, vyMax: -40,
+          life: 1.5, size: 2, color: ORANGE_BRIGHT
+        });
+      }
+      this.ps.update(dt);
+      this.ps.render();
+      // Flame spikes
+      const fx = W/2, fy = H - 60;
+      const flicker = Math.sin(lt * 12) * 8 + Math.sin(lt * 7 + 1) * 5 + Math.sin(lt * 20) * 3;
+      ctx.strokeStyle = ORANGE;
+      ctx.lineWidth = 2;
+      const spikes = [
+        [fx - 40, fy], [fx - 20 + flicker, fy - 120], [fx - 35, fy - 160 + flicker * 0.5],
+        [fx, fy - 200 + flicker], [fx + 30, fy - 170], [fx + 45, fy - 120],
+        [fx + 50, fy], [fx + 35, fy - 70], [fx + 10, fy - 55],
+        [fx - 10, fy - 75], [fx - 30, fy - 45], [fx - 40, fy]
+      ];
+      ctx.beginPath();
+      ctx.moveTo(spikes[0][0], spikes[0][1]);
+      for (let i = 1; i < spikes.length; i++) {
+        ctx.lineTo(spikes[i][0], spikes[i][1]);
+      }
+      ctx.closePath();
+      ctx.stroke();
+      // Inner flame
+      ctx.strokeStyle = ORANGE_BRIGHT;
+      ctx.lineWidth = 1.2;
+      ctx.globalAlpha = 0.7;
+      ctx.beginPath();
+      ctx.moveTo(fx - 15, fy - 20);
+      ctx.quadraticCurveTo(fx - 5 + flicker*0.5, fy - 100, fx - 8, fy - 140 + flicker*0.6);
+      ctx.quadraticCurveTo(fx + 10, fy - 100, fx + 20, fy - 30);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      // Ground
+      hatchArea([[0,H-50],[W,H-50],[W,H],[0,H]], Math.PI/6, 14, BONE_FAINT, 0.4);
+    }
+  });
+
+  // Scene 8: Scroll (35-40s)
+  scenes.push({
+    start: 35, dur: 5,
+    render: (lt) => {
+      const sx = W/2, sy = H/2 + 20;
+      const scrollW = 500, scrollH = 200;
+      const unfurl = easeInOut(clamp(lt / 3, 0, 1));
+      const leftR = 40, rightR = 40;
+      const sheetW = scrollW * unfurl;
+      // Left roller
+      ctx.strokeStyle = BONE;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(sx - sheetW/2, sy, leftR, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(sx - sheetW/2, sy, leftR * 0.4, 0, Math.PI * 2);
+      ctx.strokeStyle = BONE_DIM;
+      ctx.stroke();
+      // Right roller
+      ctx.strokeStyle = BONE;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(sx + sheetW/2, sy, rightR, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(sx + sheetW/2, sy, rightR * 0.4, 0, Math.PI * 2);
+      ctx.strokeStyle = BONE_DIM;
+      ctx.stroke();
+      // Sheet
+      if (sheetW > 10) {
+        ctx.strokeStyle = BONE_DIM;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(sx - sheetW/2, sy - leftR);
+        ctx.lineTo(sx + sheetW/2, sy - rightR);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(sx - sheetW/2, sy + leftR);
+        ctx.lineTo(sx + sheetW/2, sy + rightR);
+        ctx.stroke();
+        // Text lines on sheet
+        ctx.strokeStyle = ORANGE_DIM;
+        ctx.lineWidth = 1;
+        ctx.globalAlpha = 0.6;
+        const lineCount = 6;
+        for (let i = 0; i < lineCount; i++) {
+          const ly = sy - 30 + i * 28;
+          const lw = sheetW * (0.5 + 0.4 * Math.sin(i * 1.7 + lt));
+          ctx.beginPath();
+          ctx.moveTo(sx - lw/2, ly);
+          ctx.lineTo(sx + lw/2, ly + Math.sin(i * 2 + lt) * 3);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      }
+      // Background cross-hatch
+      hatchArea([[0,0],[W,0],[W,H],[0,H]], Math.PI/3, 35, BONE_FAINT, 0.12);
+    }
+  });
+
+  // Scene 9: Fading fire (40-45s)
+  scenes.push({
+    start: 40, dur: 5,
+    ps: null,
+    init() { this.ps = new ParticleSystem(); this.acc = 0; },
+    render(lt, dt) {
+      this.acc += dt;
+      if (this.acc > 0.1 && lt < 3) {
+        this.acc = 0;
+        this.ps.spawn(W/2, H - 80, 2, {
+          spreadX: 60, spreadY: 10, vxMin: -10, vxMax: 10, vyMin: -25, vyMax: -8,
+          life: 3, size: 1.5, color: ORANGE_DIM
+        });
+      }
+      this.ps.update(dt);
+      this.ps.render();
+      // Dim embers on ground
+      const glow = 1 - lt / 5;
+      ctx.globalAlpha = glow * 0.5;
+      ctx.fillStyle = ORANGE_DIM;
+      ctx.beginPath();
+      ctx.arc(W/2, H - 40, 60 + Math.sin(lt * 3) * 10, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      // Fading lines
+      ctx.strokeStyle = BONE_FAINT;
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = glow * 0.4;
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2 + lt * 0.2;
+        const r = 80 + i * 15;
+        ctx.beginPath();
+        ctx.moveTo(W/2 + r * Math.cos(a), H - 40 + r * Math.sin(a) * 0.4);
+        ctx.lineTo(W/2 + (r + 40) * Math.cos(a + 0.05), H - 40 + (r + 40) * Math.sin(a + 0.05) * 0.4);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      hatchArea([[0,H-50],[W,H-50],[W,H],[0,H]], Math.PI/4, 20, BONE_FAINT, 0.2);
+    }
+  });
+
+  // Scene 10: Unity (45-50s)
+  scenes.push({
+    start: 45, dur: 5,
+    render: (lt) => {
+      const t2 = easeInOut(clamp(lt / 4, 0, 1));
+      // Two lines converging
+      const startY1 = H - 60, startY2 = H - 60;
+      const endY = H / 2 - 60;
+      const startX1 = W/2 - 300, startX2 = W/2 + 300;
+      const endX = W/2;
+      const lx1 = lerp(startX1, endX, t2), ly1 = lerp(startY1, endY, t2);
+      const lx2 = lerp(startX2, endX, t2), ly2 = lerp(startY2, endY, t2);
+      ctx.strokeStyle = BONE;
+      ctx.lineWidth = 2;
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath();
+      ctx.moveTo(lx1, ly1);
+      ctx.lineTo(lx1 - 30 + Math.sin(lt * 3) * 5, ly1 - 80);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(lx2, ly2);
+      ctx.lineTo(lx2 + 30 - Math.sin(lt * 3) * 5, ly2 - 80);
+      ctx.stroke();
+      // Orange accents
+      ctx.strokeStyle = ORANGE;
+      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = 0.7;
+      ctx.beginPath();
+      ctx.moveTo(lx1, ly1);
+      ctx.lineTo(lx1 + 10, ly1 - 15);
+      ctx.moveTo(lx2, ly2);
+      ctx.lineTo(lx2 - 10, ly2 - 15);
+      ctx.stroke();
+      // Convergence point glow
+      const glowAlpha = t2 * 0.8;
+      ctx.globalAlpha = glowAlpha;
+      ctx.fillStyle = ORANGE_BRIGHT;
+      stipple(W/2, endY - 10, 40, 30, ORANGE_BRIGHT, glowAlpha);
+      ctx.globalAlpha = 1;
+      // Background radial lines
+      ctx.strokeStyle = BONE_FAINT;
+      ctx.lineWidth = 0.8;
+      ctx.globalAlpha = 0.3;
+      for (let i = 0; i < 24; i++) {
+        const a = (i / 24) * Math.PI * 2;
+        const r = 200 + Math.sin(lt * 2 + i * 0.7) * 30;
+        ctx.beginPath();
+        ctx.moveTo(W/2 + r * Math.cos(a), endY - 10 + r * Math.sin(a) * 0.5);
+        ctx.lineTo(W/2 + (r + 60) * Math.cos(a), endY - 10 + (r + 60) * Math.sin(a) * 0.5);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+  });
+
+  // Initialize scenes with init
+  for (const sc of scenes) {
+    if (sc.init) sc.init();
+  }
+
+  // Find current scene
+  function getScene(t) {
+    for (const sc of scenes) {
+      if (t >= sc.start && t < sc.start + sc.dur) return sc;
+    }
+    return null;
+  }
+
+  // Main render loop
+  let lastT = performance.now();
+  function render() {
+    const tNow = now();
+    const dt = Math.min(0.05, (performance.now() - lastT) / 1000);
+    lastT = performance.now();
+
+    // Clear
+    ctx.fillStyle = BLACK;
+    ctx.fillRect(0, 0, W, H);
+
+    // Find scene
+    const sc = getScene(tNow);
+    if (sc) {
+      const lt = tNow - sc.start;
+      sc.render(lt, dt);
+      const lyr = lyrics[Math.floor(tNow / 5)];
+      if (lyr) drawLyrics(lyr, lt, sc.dur);
+    }
+
+    // Grain and vignette
+    drawGrain(tNow);
+    drawVignette();
+
+    // Visual beat indicator
+    const beatPulse = Math.sin(tNow * Math.PI * 4) * 0.5 + 0.5;
+    ctx.globalAlpha = 0.25 + beatPulse * 0.2;
+    ctx.fillStyle = ORANGE_DIM;
+    ctx.fillRect(W/2 - 40, H - 20, 80 * beatPulse, 2);
+    ctx.globalAlpha = 1;
+
+    requestAnimationFrame(render);
+  }
+
+  // Start
+  render();
+})();
+</script>
+</body>
+</html>

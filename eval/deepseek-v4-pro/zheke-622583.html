@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EMERGE — Motion Design</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    overflow: hidden;
+    margin: 0;
+  }
+  canvas {
+    display: block;
+    width: min(100vw, calc(100vh * 16 / 9));
+    height: min(100vh, calc(100vw * 9 / 16));
+    object-fit: contain;
+  }
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+(() => {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const W = 1280, H = 720;
+  const CX = W * 0.5, CY = H * 0.5;
+  const DUR = 30;
+  window.DUR = DUR;
+
+  const params = new URLSearchParams(window.location.search);
+  const timeOffset = parseFloat(params.get('t') || '0') || 0;
+
+  // ─── Utility ───
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const smoothstep = (a, b, t) => {
+    const x = clamp((t - a) / (b - a), 0, 1);
+    return x * x * (3 - 2 * x);
+  };
+  const easeOut = t => 1 - Math.pow(1 - t, 3);
+  const easeIn = t => t * t * t;
+
+  // ─── Value Noise (2D) ───
+  function makeNoise(seed) {
+    const perm = new Uint8Array(512);
+    const p = new Uint8Array(256);
+    let s = seed;
+    for (let i = 0; i < 256; i++) {
+      s = (s * 16807 + 0) % 2147483647;
+      p[i] = s & 0xff;
+    }
+    for (let i = 0; i < 512; i++) perm[i] = p[i & 255];
+    function fade(t) { return t * t * t * (t * (t * 6 - 15) + 10); }
+    function lerpV(a, b, t) { return a + (b - a) * t; }
+    function grad(hash, x, y) {
+      const h = hash & 3;
+      const u = h < 2 ? x : y;
+      const v = h < 1 ? y : h === 3 ? x : -y;
+      return (h & 1 ? -u : u) + (h & 2 ? -v : v);
+    }
+    return function(x, y) {
+      const X = Math.floor(x) & 255, Y = Math.floor(y) & 255;
+      const xf = x - Math.floor(x), yf = y - Math.floor(y);
+      const u = fade(xf), v = fade(yf);
+      const aa = perm[perm[X] + Y];
+      const ab = perm[perm[X] + Y + 1];
+      const ba = perm[perm[X + 1] + Y];
+      const bb = perm[perm[X + 1] + Y + 1];
+      return lerpV(
+        lerpV(grad(aa, xf, yf), grad(ba, xf - 1, yf), u),
+        lerpV(grad(ab, xf, yf - 1), grad(bb, xf - 1, yf - 1), u),
+        v
+      );
+    };
+  }
+  const noise1 = makeNoise(42);
+  const noise2 = makeNoise(137);
+  const noise3 = makeNoise(777);
+
+  // ─── Pre-rendered glow sprites ───
+  function makeGlowSprite(size, r, g, b, intensity) {
+    const s = document.createElement('canvas');
+    s.width = s.height = size;
+    const sx = s.getContext('2d');
+    const grad = sx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+    grad.addColorStop(0, `rgba(${r},${g},${b},${intensity})`);
+    grad.addColorStop(0.3, `rgba(${r},${g},${b},${intensity * 0.5})`);
+    grad.addColorStop(0.6, `rgba(${r},${g},${b},${intensity * 0.15})`);
+    grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+    sx.fillStyle = grad;
+    sx.fillRect(0, 0, size, size);
+    return s;
+  }
+
+  const glowSprites = [];
+  const glowColors = [
+    [180, 120, 255], [255, 170, 100], [100, 255, 220], [255, 255, 255]
+  ];
+  for (const c of glowColors) {
+    glowSprites.push([
+      makeGlowSprite(32, c[0], c[1], c[2], 0.9),
+      makeGlowSprite(64, c[0], c[1], c[2], 0.6),
+      makeGlowSprite(96, c[0], c[1], c[2], 0.4)
+    ]);
+  }
+
+  // ─── Color palette ───
+  function getPaletteColor(t) {
+    const lt = t % 1;
+    const keyframes = [
+      { t: 0.00, h: 265, s: 85, l: 65 },
+      { t: 0.18, h: 290, s: 80, l: 60 },
+      { t: 0.30, h: 20,  s: 90, l: 60 },
+      { t: 0.45, h: 45,  s: 95, l: 62 },
+      { t: 0.58, h: 165, s: 85, l: 60 },
+      { t: 0.72, h: 185, s: 90, l: 62 },
+      { t: 0.85, h: 265, s: 80, l: 65 },
+      { t: 1.00, h: 265, s: 85, l: 65 }
+    ];
+    let i = 0;
+    while (i < keyframes.length - 1 && keyframes[i + 1].t < lt) i++;
+    const a = keyframes[i], b = keyframes[Math.min(i + 1, keyframes.length - 1)];
+    const span = b.t - a.t || 1;
+    const f = clamp((lt - a.t) / span, 0, 1);
+    const h = lerp(a.h, b.h, f);
+    const s = lerp(a.s, b.s, f);
+    const l = lerp(a.l, b.l, f);
+    return { h, s, l };
+  }
+
+  function hslToRgb(h, s, l) {
+    s /= 100; l /= 100;
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+    const m = l - c / 2;
+    let r = 0, g = 0, b = 0;
+    if (h < 60) { r = c; g = x; }
+    else if (h < 120) { r = x; g = c; }
+    else if (h < 180) { g = c; b = x; }
+    else if (h < 240) { g = x; b = c; }
+    else if (h < 300) { r = x; b = c; }
+    else { r = c; b = x; }
+    return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
+  }
+
+  function getColorAt(t) {
+    const pal = getPaletteColor(t / DUR);
+    return hslToRgb(pal.h, pal.s, pal.l);
+  }
+
+  function getGlowSpriteIndex(t) {
+    const lt = t / DUR;
+    if (lt < 0.3) return 0;
+    if (lt < 0.55) return 1;
+    if (lt < 0.8) return 2;
+    return 3;
+  }
+
+  // ─── Flow field ───
+  function getFlowMode(t) {
+    const lt = t / DUR;
+    if (lt < 0.22) return { type: 'spiral_out', strength: 2.2, speedMul: 1 };
+    if (lt < 0.40) return { type: 'orbit', strength: 0, speedMul: 0.9 };
+    if (lt < 0.62) return { type: 'spiral_in', strength: -2.8, speedMul: 1.2 };
+    if (lt < 0.80) return { type: 'burst', strength: 3.5, speedMul: 1.6 };
+    return { type: 'converge', strength: -1.5, speedMul: 0.8 };
+  }
+
+  function getFlowAngle(x, y, t, mode) {
+    const dx = x - CX, dy = y - CY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const base = Math.atan2(dy, dx);
+
+    let angleOffset = Math.PI / 2;
+    const norm = clamp(dist / 450, 0, 1);
+    angleOffset += mode.strength * (1 - norm);
+
+    const n = noise1(x * 0.004, y * 0.004 + t * 0.3);
+    const n2 = noise2(x * 0.006 + t * 0.2, y * 0.006 - t * 0.25);
+    const n3 = noise3(x * 0.01 - t * 0.15, y * 0.01 + t * 0.18);
+    const organic = n * 0.5 + n2 * 0.35 + n3 * 0.25;
+
+    return base + angleOffset + organic;
+  }
+
+  // ─── Particle system ───
+  const NUM_PARTICLES = 720;
+  const particles = [];
+  for (let i = 0; i < NUM_PARTICLES; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.random() * 400;
+    particles.push({
+      x: CX + Math.cos(a) * r,
+      y: CY + Math.sin(a) * r,
+      vx: 0,
+      vy: 0,
+      size: 1.5 + Math.random() * 2.5,
+      speed: 2.5 + Math.random() * 3.5,
+      hueOff: (Math.random() - 0.5) * 20,
+      life: Math.random(),
+      maxLife: 0.8 + Math.random() * 0.4,
+    });
+  }
+
+  function resetParticle(p, t) {
+    const lt = t / DUR;
+    if (lt < 0.22 || (lt >= 0.62 && lt < 0.80)) {
+      const a = Math.random() * Math.PI * 2;
+      const r = 10 + Math.random() * 30;
+      p.x = CX + Math.cos(a) * r;
+      p.y = CY + Math.sin(a) * r;
+    } else if (lt < 0.40) {
+      const a = Math.random() * Math.PI * 2;
+      const r = 150 + Math.random() * 300;
+      p.x = CX + Math.cos(a) * r;
+      p.y = CY + Math.sin(a) * r;
+    } else if (lt < 0.62) {
+      const a = Math.random() * Math.PI * 2;
+      const r = 300 + Math.random() * 200;
+      p.x = CX + Math.cos(a) * r;
+      p.y = CY + Math.sin(a) * r;
+    } else {
+      const a = Math.random() * Math.PI * 2;
+      const r = 50 + Math.random() * 350;
+      p.x = CX + Math.cos(a) * r;
+      p.y = CY + Math.sin(a) * r;
+    }
+    p.vx = 0;
+    p.vy = 0;
+    p.speed = 2.5 + Math.random() * 3.5;
+    p.life = 0;
+    p.maxLife = 0.8 + Math.random() * 0.4;
+  }
+
+  function updateParticles(t, dt) {
+    const mode = getFlowMode(t);
+    const spriteIdx = getGlowSpriteIndex(t);
+    const col = getColorAt(t);
+    const spriteSet = glowSprites[spriteIdx];
+
+    for (const p of particles) {
+      p.life += dt;
+      if (p.life >= p.maxLife) resetParticle(p, t);
+
+      const angle = getFlowAngle(p.x, p.y, t, mode);
+      const speed = p.speed * mode.speedMul * (1 + p.life * 0.5);
+      p.vx += (Math.cos(angle) * speed - p.vx) * 0.12;
+      p.vy += (Math.sin(angle) * speed - p.vy) * 0.12;
+      p.x += p.vx * dt * 60;
+      p.y += p.vy * dt * 60;
+
+      const dx = p.x - CX, dy = p.y - CY;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d > 520 || d < 5) resetParticle(p, t);
+
+      if (d < 8 && t / DUR > 0.85) resetParticle(p, t);
+    }
+  }
+
+  function drawParticles(t) {
+    const spriteIdx = getGlowSpriteIndex(t);
+    const spriteSet = glowSprites[spriteIdx];
+    const col = getColorAt(t);
+    const lt = t / DUR;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    let spriteSmall, spriteMed, spriteLarge;
+    spriteSmall = spriteSet[0];
+    spriteMed = spriteSet[1];
+    spriteLarge = spriteSet[2];
+
+    for (const p of particles) {
+      const size = p.size;
+      const alpha = clamp(p.life / p.maxLife, 0.2, 1) * 0.85;
+
+      if (size < 2) {
+        ctx.globalAlpha = alpha * 0.7;
+        ctx.drawImage(spriteSmall, p.x - 16, p.y - 16, 32, 32);
+      } else if (size < 3.5) {
+        ctx.globalAlpha = alpha * 0.55;
+        ctx.drawImage(spriteMed, p.x - 32, p.y - 32, 64, 64);
+        ctx.globalAlpha = alpha * 0.7;
+        ctx.drawImage(spriteSmall, p.x - 16, p.y - 16, 32, 32);
+      } else {
+        ctx.globalAlpha = alpha * 0.4;
+        ctx.drawImage(spriteLarge, p.x - 48, p.y - 48, 96, 96);
+        ctx.globalAlpha = alpha * 0.6;
+        ctx.drawImage(spriteMed, p.x - 32, p.y - 32, 64, 64);
+        ctx.globalAlpha = alpha * 0.85;
+        ctx.drawImage(spriteSmall, p.x - 16, p.y - 16, 32, 32);
+      }
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  // ─── Geometric mandala ───
+  function drawMandala(t) {
+    const lt = t / DUR;
+    const fadeIn1 = smoothstep(0.12, 0.20, lt);
+    const fadeIn2 = smoothstep(0.18, 0.26, lt);
+    const fadeOut = 1 - smoothstep(0.55, 0.68, lt);
+    const alpha1 = fadeIn1 * fadeOut;
+    const alpha2 = fadeIn2 * fadeOut;
+    const peakFade = smoothstep(0.25, 0.35, lt) * (1 - smoothstep(0.62, 0.75, lt));
+
+    const col = getColorAt(t);
+    const rgbStr = `rgb(${col[0]},${col[1]},${col[2]})`;
+
+    ctx.save();
+    ctx.translate(CX, CY);
+
+    const breathing = 1 + Math.sin(t * 1.5) * 0.015;
+    const rotation = t * 0.35;
+    const rot2 = -t * 0.22;
+
+    if (alpha1 > 0.01) {
+      ctx.globalAlpha = alpha1 * 0.55;
+      ctx.strokeStyle = rgbStr;
+      ctx.lineWidth = 1.2;
+      ctx.rotate(rotation);
+      const sides = 6;
+      const radius = 180 * breathing;
+      ctx.beginPath();
+      for (let i = 0; i <= sides; i++) {
+        const a = (i / sides) * Math.PI * 2 - Math.PI / 2;
+        const x = Math.cos(a) * radius;
+        const y = Math.sin(a) * radius;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+
+    if (alpha1 > 0.01) {
+      ctx.globalAlpha = alpha1 * 0.35;
+      ctx.strokeStyle = rgbStr;
+      ctx.lineWidth = 1.8;
+      ctx.rotate(rot2 - rotation);
+      const sides = 8;
+      const radius = 250 * breathing;
+      ctx.beginPath();
+      for (let i = 0; i <= sides; i++) {
+        const a = (i / sides) * Math.PI * 2;
+        const x = Math.cos(a) * radius;
+        const y = Math.sin(a) * radius;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+
+    if (alpha2 > 0.01) {
+      ctx.globalAlpha = alpha2 * 0.4;
+      ctx.strokeStyle = rgbStr;
+      ctx.lineWidth = 0.8;
+      ctx.rotate(rotation * 1.4);
+      for (let ring = 0; ring < 3; ring++) {
+        const rr = (100 + ring * 55) * breathing;
+        ctx.beginPath();
+        ctx.arc(0, 0, rr, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
+    if (peakFade > 0.02) {
+      ctx.globalAlpha = peakFade * 0.5;
+      ctx.strokeStyle = rgbStr;
+      ctx.lineWidth = 0.6;
+      const beamCount = 28;
+      for (let i = 0; i < beamCount; i++) {
+        const a = (i / beamCount) * Math.PI * 2 + rotation * 0.7;
+        const innerR = 60 + Math.sin(t * 2 + i) * 15;
+        const outerR = 400 + Math.cos(t * 1.3 + i * 0.7) * 30;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * innerR, Math.sin(a) * innerR);
+        ctx.lineTo(Math.cos(a) * outerR, Math.sin(a) * outerR);
+        ctx.stroke();
+      }
+    }
+
+    if (peakFade > 0.05) {
+      ctx.globalAlpha = peakFade * 0.65;
+      const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, 80 + Math.sin(t * 2.5) * 15);
+      grad.addColorStop(0, `rgba(${col[0]},${col[1]},${col[2]},0.5)`);
+      grad.addColorStop(1, `rgba(${col[0]},${col[1]},${col[2]},0)`);
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(0, 0, 80 + Math.sin(t * 2.5) * 15, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  // ─── Background glow ───
+  function drawBackground(t) {
+    const lt = t / DUR;
+    const col = getColorAt(t);
+    const centerGlowIntensity = 0.15 + smoothstep(0.2, 0.55, lt) * 0.3 + smoothstep(0.55, 0.7, lt) * 0.25;
+    const radius = 280 + Math.sin(t * 0.8) * 25;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    const grad = ctx.createRadialGradient(CX, CY, 0, CX, CY, radius);
+    grad.addColorStop(0, `rgba(${col[0]},${col[1]},${col[2]},${centerGlowIntensity})`);
+    grad.addColorStop(0.5, `rgba(${col[0]},${col[1]},${col[2]},${centerGlowIntensity * 0.3})`);
+    grad.addColorStop(1, `rgba(${col[0]},${col[1]},${col[2]},0)`);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.restore();
+  }
+
+  // ─── Film grain ───
+  const grainCanvas = document.createElement('canvas');
+  grainCanvas.width = W;
+  grainCanvas.height = H;
+  const gctx = grainCanvas.getContext('2d');
+  const grainData = gctx.createImageData(W, H);
+  for (let i = 0; i < grainData.data.length; i += 4) {
+    const v = Math.random() * 255;
+    grainData.data[i] = v;
+    grainData.data[i + 1] = v;
+    grainData.data[i + 2] = v;
+    grainData.data[i + 3] = 12;
+  }
+  gctx.putImageData(grainData, 0, 0);
+
+  function drawGrain(t) {
+    const offsetX = Math.floor(Math.random() * 4) * W / 4;
+    const offsetY = Math.floor(Math.random() * 4) * H / 4;
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.globalCompositeOperation = 'overlay';
+    ctx.drawImage(grainCanvas, 0, 0, W, H, offsetX, offsetY, W, H);
+    ctx.restore();
+    ctx.globalAlpha = 1;
+  }
+
+  // ─── Text overlay ───
+  function drawText(t) {
+    const lt = t / DUR;
+    const textAlpha = smoothstep(0.82, 0.88, lt) * (1 - smoothstep(0.95, 1.0, lt));
+    if (textAlpha < 0.01) return;
+
+    const col = getColorAt(t);
+    const whiteMix = smoothstep(0.86, 0.95, lt);
+    const r = Math.round(lerp(col[0], 255, whiteMix));
+    const g = Math.round(lerp(col[1], 255, whiteMix));
+    const b = Math.round(lerp(col[2], 255, whiteMix));
+
+    ctx.save();
+    ctx.globalAlpha = textAlpha;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    const fontSize = 92;
+    const letterSpacing = 22;
+    ctx.font = `300 ${fontSize}px 'Segoe UI', 'Helvetica Neue', Arial, sans-serif`;
+    const text = 'E M E R G E';
+    const totalWidth = text.length * (fontSize * 0.52 + letterSpacing);
+    ctx.fillStyle = `rgba(${r},${g},${b},0.85)`;
+    ctx.shadowColor = `rgba(${r},${g},${b},0.6)`;
+    ctx.shadowBlur = 40;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+    ctx.fillText(text, W / 2, H / 2 - 10);
+
+    ctx.shadowBlur = 0;
+    ctx.font = `200 24px 'Segoe UI', 'Helvetica Neue', Arial, sans-serif`;
+    ctx.fillStyle = `rgba(${r},${g},${b},0.6)`;
+    ctx.fillText('MOTION DESIGN', W / 2, H / 2 + 70);
+
+    ctx.restore();
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+  }
+
+  // ─── Camera breathing ───
+  function getCameraTransform(t) {
+    const zoom = 1 + Math.sin(t * 0.6) * 0.025 + Math.sin(t * 1.7) * 0.008;
+    const rot = Math.sin(t * 0.4) * 0.008;
+    return { zoom, rot };
+  }
+
+  // ─── Main render loop ───
+  let startTime = null;
+  let lastFrameTime = null;
+  let frameCount = 0;
+
+  function render(now) {
+    if (startTime === null) {
+      startTime = now - timeOffset * 1000;
+      lastFrameTime = startTime;
+    }
+    const elapsed = (now - startTime) / 1000;
+    const t = elapsed % DUR;
+    const dt = lastFrameTime === null ? 0.016 : Math.min((now - lastFrameTime) / 1000, 0.05);
+    lastFrameTime = now;
+    frameCount++;
+
+    // Trail fade
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = 'rgba(3, 3, 10, 0.24)';
+    ctx.fillRect(0, 0, W, H);
+
+    // Camera transform
+    const cam = getCameraTransform(t);
+    ctx.save();
+    ctx.translate(CX, CY);
+    ctx.rotate(cam.rot);
+    ctx.scale(cam.zoom, cam.zoom);
+    ctx.translate(-CX, -CY);
+
+    // Background glow
+    drawBackground(t);
+
+    // Mandala
+    drawMandala(t);
+
+    // Particles
+    updateParticles(t, dt);
+    drawParticles(t);
+
+    ctx.restore();
+
+    // Text (not affected by camera)
+    drawText(t);
+
+    // Film grain
+    drawGrain(t);
+
+    requestAnimationFrame(render);
+  }
+
+  requestAnimationFrame(render);
+})();
+</script>
+</body>
+</html>

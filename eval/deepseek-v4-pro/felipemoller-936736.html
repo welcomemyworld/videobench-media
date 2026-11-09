@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<style>
+  body { margin: 0; background: #000; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+  canvas { width: min(100vw, calc(100vh * (1280 / 720))); height: min(100vh, calc(100vw * (720 / 1280))); }
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR = 20;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const params = new URLSearchParams(location.search);
+let startOffset = parseFloat(params.get('t') || '0');
+startOffset = Math.max(0, Math.min(startOffset, window.DUR));
+
+function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+function easeInOutCubic(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function formatCurrency(v) {
+  return 'R$ ' + v.toFixed(2).replace('.', ',');
+}
+
+// Particles for background
+const particles = [];
+for (let i = 0; i < 50; i++) {
+  particles.push({
+    x: Math.random() * 1280,
+    y: Math.random() * 720,
+    radius: Math.random() * 2 + 0.5,
+    speed: Math.random() * 15 + 5,
+    phase: Math.random() * Math.PI * 2,
+    opacity: Math.random() * 0.4 + 0.1
+  });
+}
+
+function drawBackground(t) {
+  // Gradient background
+  const grad = ctx.createLinearGradient(0, 0, 0, 720);
+  grad.addColorStop(0, '#0b0b1e');
+  grad.addColorStop(0.5, '#12122b');
+  grad.addColorStop(1, '#1a1a35');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 1280, 720);
+
+  // Moving radial glows
+  const glow1X = 640 + Math.sin(t * 0.3) * 100;
+  const glow1Y = 360 + Math.cos(t * 0.4) * 80;
+  const glow1 = ctx.createRadialGradient(glow1X, glow1Y, 50, glow1X, glow1Y, 300);
+  glow1.addColorStop(0, 'rgba(100, 100, 200, 0.15)');
+  glow1.addColorStop(1, 'rgba(100, 100, 200, 0)');
+  ctx.fillStyle = glow1;
+  ctx.fillRect(0, 0, 1280, 720);
+
+  const glow2X = 200 + Math.sin(t * 0.2 + 2) * 80;
+  const glow2Y = 600 + Math.cos(t * 0.25 + 1) * 100;
+  const glow2 = ctx.createRadialGradient(glow2X, glow2Y, 30, glow2X, glow2Y, 200);
+  glow2.addColorStop(0, 'rgba(200, 100, 200, 0.1)');
+  glow2.addColorStop(1, 'rgba(200, 100, 200, 0)');
+  ctx.fillStyle = glow2;
+  ctx.fillRect(0, 0, 1280, 720);
+
+  // Particles
+  for (const p of particles) {
+    const py = (p.y - t * p.speed) % 720;
+    const drawY = py < 0 ? py + 720 : py;
+    const opacity = p.opacity * (0.7 + 0.3 * Math.sin(t * 2 + p.phase));
+    ctx.beginPath();
+    ctx.arc(p.x, drawY, p.radius, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
+    ctx.fill();
+  }
+}
+
+function drawPhone(t) {
+  const appear = easeOutCubic(clamp(t / 1.5, 0, 1));
+  const scale = lerp(0.8, 1, appear);
+  const opacity = appear;
+  const phoneW = 320;
+  const phoneH = 568;
+  const centerX = 640;
+  const centerY = 360;
+  const phoneX = centerX - phoneW / 2;
+  const phoneY = centerY - phoneH / 2;
+
+  ctx.save();
+  ctx.globalAlpha = opacity;
+  ctx.translate(centerX, centerY);
+  ctx.scale(scale, scale);
+  ctx.translate(-centerX, -centerY);
+
+  // Phone bezel
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+  ctx.shadowBlur = 30;
+  ctx.shadowOffsetY = 10;
+  ctx.fillStyle = '#1c1c1e';
+  ctx.beginPath();
+  ctx.roundRect(phoneX, phoneY, phoneW, phoneH, 36);
+  ctx.fill();
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
+
+  // Border highlight
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(phoneX + 1, phoneY + 1, phoneW - 2, phoneH - 2, 35);
+  ctx.stroke();
+
+  // Screen area
+  const screenX = phoneX + 12;
+  const screenY = phoneY + 12;
+  const screenW = phoneW - 24;
+  const screenH = phoneH - 24;
+  drawScreen(t, screenX, screenY, screenW, screenH);
+
+  ctx.restore();
+}
+
+function drawScreen(t, sx, sy, sw, sh) {
+  // Screen background
+  const screenBg = ctx.createLinearGradient(sx, sy, sx, sy + sh);
+  screenBg.addColorStop(0, '#f8f8fc');
+  screenBg.addColorStop(1, '#e8e8f0');
+  ctx.fillStyle = screenBg;
+  ctx.beginPath();
+  ctx.roundRect(sx, sy, sw, sh, 24);
+  ctx.fill();
+
+  // Clip content to screen
+  ctx.save();
+  ctx.beginPath();
+  ctx.roundRect(sx, sy, sw, sh, 24);
+  ctx.clip();
+
+  // Status bar
+  drawStatusBar(t, sx, sy, sw);
+
+  // Header
+  const headerFade = easeOutCubic(clamp((t - 1.0) / 0.8, 0, 1));
+  if (headerFade > 0) {
+    ctx.save();
+    ctx.globalAlpha = headerFade;
+    ctx.fillStyle = '#1a1a2e';
+    ctx.font = 'bold 24px Arial, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('Orbe', sx + 20, sy + 70);
+    // Orbit icon
+    drawOrbitIcon(sx + 60, sy + 62, 14, '#6c63ff');
+    ctx.font = '12px Arial, sans-serif';
+    ctx.fillStyle = '#666';
+    ctx.fillText('Controle de gastos', sx + 20, sy + 92);
+    ctx.restore();
+  }
+
+  // List items
+  const items = [
+    { name: 'Mercado', sub: 'Supermercado', amount: 287.90, color: '#4CAF50', icon: 'market', start: 2.0, dur: 0.8 },
+    { name: 'Posto de Gasolina', sub: 'Combustível', amount: 150.00, color: '#FF9800', icon: 'fuel', start: 3.5, dur: 0.8 },
+    { name: 'Restaurante', sub: 'Alimentação', amount: 89.40, color: '#F44336', icon: 'restaurant', start: 5.0, dur: 0.8 }
+  ];
+
+  let itemY = sy + 130;
+  for (const item of items) {
+    const progress = easeOutCubic(clamp((t - item.start) / item.dur, 0, 1));
+    if (progress > 0) {
+      ctx.save();
+      ctx.globalAlpha = progress;
+      const offsetX = lerp(30, 0, progress);
+      // Icon circle
+      ctx.fillStyle = item.color + '20';
+      ctx.beginPath();
+      ctx.arc(sx + 40 + offsetX, itemY, 22, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = item.color;
+      drawIcon(ctx, item.icon, sx + 40 + offsetX, itemY, 16);
+      // Text
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#1a1a2e';
+      ctx.font = 'bold 15px Arial, sans-serif';
+      ctx.fillText(item.name, sx + 80 + offsetX, itemY - 5);
+      ctx.fillStyle = '#666';
+      ctx.font = '11px Arial, sans-serif';
+      ctx.fillText(item.sub, sx + 80 + offsetX, itemY + 12);
+      // Amount
+      const amountProgress = easeOutCubic(clamp((t - item.start - 0.2) / 0.6, 0, 1));
+      const displayAmount = item.amount * amountProgress;
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#1a1a2e';
+      ctx.font = 'bold 16px Arial, sans-serif';
+      ctx.fillText(formatCurrency(displayAmount), sx + sw - 20, itemY + 5);
+      ctx.restore();
+    }
+    itemY += 70;
+  }
+
+  // Separator
+  const sepFade = easeOutCubic(clamp((t - 6.0) / 0.5, 0, 1));
+  if (sepFade > 0) {
+    ctx.save();
+    ctx.globalAlpha = sepFade;
+    ctx.strokeStyle = '#ddd';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(sx + 20, sy + 360);
+    ctx.lineTo(sx + sw - 20, sy + 360);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Total section
+  const totalFade = easeOutCubic(clamp((t - 6.5) / 0.6, 0, 1));
+  if (totalFade > 0) {
+    ctx.save();
+    ctx.globalAlpha = totalFade;
+    const totalY = sy + 400;
+    // Label
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#666';
+    ctx.font = '13px Arial, sans-serif';
+    ctx.fillText('Total do dia', sx + 20, totalY);
+    // Amount
+    const totalAmountProgress = easeOutCubic(clamp((t - 7.0) / 0.8, 0, 1));
+    const total = 527.30 * totalAmountProgress;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#1a1a2e';
+    ctx.font = 'bold 32px Arial, sans-serif';
+    ctx.fillText(formatCurrency(total), sx + 20, totalY + 40);
+
+    // Ring chart on right
+    const ringX = sx + sw - 60;
+    const ringY = totalY + 20;
+    const ringRadius = 35;
+    const ringProgress = easeOutCubic(clamp((t - 7.2) / 1.0, 0, 1));
+    // Background circle
+    ctx.beginPath();
+    ctx.arc(ringX, ringY, ringRadius, 0, Math.PI * 2);
+    ctx.strokeStyle = '#e0e0e0';
+    ctx.lineWidth = 8;
+    ctx.stroke();
+    // Foreground arc
+    ctx.beginPath();
+    ctx.arc(ringX, ringY, ringRadius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ringProgress);
+    ctx.strokeStyle = '#6c63ff';
+    ctx.lineWidth = 8;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    // Center text
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#1a1a2e';
+    ctx.font = 'bold 14px Arial, sans-serif';
+    ctx.fillText('+', ringX, ringY - 5);
+    ctx.fillStyle = '#666';
+    ctx.font = '9px Arial, sans-serif';
+    ctx.fillText('100%', ringX, ringY + 8);
+    ctx.restore();
+  }
+
+  // Button
+  const btnFade = easeOutCubic(clamp((t - 8.0) / 0.5, 0, 1));
+  if (btnFade > 0) {
+    ctx.save();
+    ctx.globalAlpha = btnFade;
+    const btnX = sx + 20;
+    const btnY = sy + 480;
+    const btnW = sw - 40;
+    const btnH = 44;
+    ctx.fillStyle = '#6c63ff';
+    ctx.beginPath();
+    ctx.roundRect(btnX, btnY, btnW, btnH, 22);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 14px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Ver relatório', btnX + btnW / 2, btnY + 28);
+    ctx.restore();
+  }
+
+  ctx.restore(); // clip
+}
+
+function drawStatusBar(t, sx, sy, sw) {
+  ctx.save();
+  ctx.fillStyle = '#1a1a2e';
+  ctx.font = '11px Arial, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('9:41', sx + 20, sy + 25);
+  // Signal dots
+  for (let i = 0; i < 4; i++) {
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(sx + sw - 60 + i * 4, sy + 15 - i * 3, 3, 4 + i * 3);
+  }
+  // Battery
+  ctx.strokeStyle = '#1a1a2e';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(sx + sw - 35, sy + 12, 22, 10);
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(sx + sw - 33, sy + 14, 14, 6);
+  ctx.fillRect(sx + sw - 13, sy + 15, 2, 4);
+  ctx.restore();
+}
+
+function drawOrbitIcon(x, y, r, color) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 0.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, r, r * 0.4, -0.3, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawIcon(ctx, type, x, y, size) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = 'currentColor';
+  ctx.strokeStyle = 'currentColor';
+  ctx.lineWidth = 1.5;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  if (type === 'market') {
+    // Shopping cart
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.7, -size * 0.4);
+    ctx.lineTo(-size * 0.3, size * 0.5);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.7, -size * 0.4);
+    ctx.lineTo(size * 0.7, -size * 0.4);
+    ctx.lineTo(size * 0.5, size * 0.5);
+    ctx.lineTo(-size * 0.3, size * 0.5);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(-size * 0.1, size * 0.7, size * 0.2, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(size * 0.7, size * 0.7, size * 0.2, 0, Math.PI * 2);
+    ctx.stroke();
+  } else if (type === 'fuel') {
+    // Fuel pump
+    ctx.beginPath();
+    ctx.rect(-size * 0.4, -size * 0.6, size * 0.8, size * 1.2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.2, -size * 0.6);
+    ctx.lineTo(-size * 0.2, -size * 0.9);
+    ctx.lineTo(size * 0.2, -size * 0.9);
+    ctx.lineTo(size * 0.2, -size * 0.6);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(size * 0.4, -size * 0.3);
+    ctx.lineTo(size * 0.7, -size * 0.1);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(size * 0.4, size * 0.3);
+    ctx.lineTo(size * 0.7, size * 0.1);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, size * 0.2, size * 0.15, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (type === 'restaurant') {
+    // Fork and knife
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.5, -size * 0.7);
+    ctx.lineTo(-size * 0.2, -size * 0.7);
+    ctx.lineTo(-size * 0.2, -size * 0.1);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.5, -size * 0.1);
+    ctx.lineTo(-size * 0.2, -size * 0.1);
+    ctx.lineTo(-size * 0.2, size * 0.7);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(size * 0.2, size * 0.7);
+    ctx.lineTo(size * 0.4, -size * 0.5);
+    ctx.lineTo(size * 0.5, -size * 0.1);
+    ctx.lineTo(size * 0.2, size * 0.2);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawSideText(t) {
+  // Left side
+  const leftFade = easeOutCubic(clamp((t - 8.5) / 0.6, 0, 1));
+  if (leftFade > 0) {
+    ctx.save();
+    ctx.globalAlpha = leftFade;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 24px Arial, sans-serif';
+    ctx.fillText('Gastos do dia a dia', 80, 200);
+    ctx.font = '14px Arial, sans-serif';
+    ctx.fillStyle = '#aaa';
+    const categories = [
+      { name: 'Mercado', time: 9.0 },
+      { name: 'Posto de gasolina', time: 9.5 },
+      { name: 'Restaurante', time: 10.0 }
+    ];
+    categories.forEach((cat, i) => {
+      const itemFade = easeOutCubic(clamp((t - cat.time) / 0.4, 0, 1));
+      if (itemFade > 0) {
+        ctx.save();
+        ctx.globalAlpha = itemFade;
+        // Checkmark
+        ctx.fillStyle = '#4CAF50';
+        ctx.font = 'bold 16px Arial, sans-serif';
+        ctx.fillText('✓', 85, 260 + i * 50);
+        ctx.fillStyle = '#ddd';
+        ctx.font = '15px Arial, sans-serif';
+        ctx.fillText(cat.name, 115, 260 + i * 50);
+        ctx.restore();
+      }
+    });
+    ctx.restore();
+  }
+
+  // Right side
+  const rightFade = easeOutCubic(clamp((t - 9.0) / 0.6, 0, 1));
+  if (rightFade > 0) {
+    ctx.save();
+    ctx.globalAlpha = rightFade;
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 18px Arial, sans-serif';
+    ctx.fillText('Total do dia', 1180, 220);
+    const totalAmountProgress = easeOutCubic(clamp((t - 9.2) / 0.8, 0, 1));
+    ctx.font = 'bold 42px Arial, sans-serif';
+    ctx.fillStyle = '#6c63ff';
+    ctx.fillText(formatCurrency(527.30 * totalAmountProgress), 1180, 280);
+    // CTA button
+    const btnFade = easeOutCubic(clamp((t - 10.0) / 0.5, 0, 1));
+    if (btnFade > 0) {
+      ctx.save();
+      ctx.globalAlpha = btnFade;
+      ctx.fillStyle = '#6c63ff';
+      ctx.beginPath();
+      ctx.roundRect(980, 330, 200, 50, 25);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 16px Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Simule agora', 1080, 360);
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+}
+
+function drawFrame(now) {
+  const t = (now / 1000 + startOffset) % window.DUR;
+  ctx.clearRect(0, 0, 1280, 720);
+  drawBackground(t);
+  drawSideText(t);
+  drawPhone(t);
+  requestAnimationFrame(drawFrame);
+}
+
+requestAnimationFrame(drawFrame);
+</script>
+</body>
+</html>

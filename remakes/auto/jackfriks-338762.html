@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Lovelee – Love Notes</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(100vw,177.78vh);height:min(56.25vw,100vh)}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=24;
+const C=document.getElementById('c'),X=C.getContext('2d');
+const q=new URLSearchParams(location.search),T0=parseFloat(q.get('t')||0);
+const start=performance.now()-T0*1000;
+const W=405,H=720,OX=(1280-W)/2;
+// ---- sound ----
+let AC=null;try{AC=new (window.AudioContext||window.webkitAudioContext)()}catch(e){}
+addEventListener('pointerdown',()=>AC&&AC.resume());
+function tone(f,d,type='sine',v=.15,slide=0){if(!AC||AC.state!=='running')return;const o=AC.createOscillator(),g=AC.createGain(),n=AC.currentTime;o.type=type;o.frequency.setValueAtTime(f,n);if(slide)o.frequency.exponentialRampToValueAtTime(f*slide,n+d);g.gain.setValueAtTime(v,n);g.gain.exponentialRampToValueAtTime(.001,n+d);o.connect(g).connect(AC.destination);o.start(n);o.stop(n+d)}
+const SFX={
+scribble:()=>{for(let i=0;i<4;i++)setTimeout?0:0;tone(900,.08,'sawtooth',.04,1.6)},
+step:()=>tone(180,.07,'triangle',.12,.6),
+creak:()=>tone(300,.4,'sawtooth',.05,.5),
+drop:()=>{tone(700,.15,'square',.06,.4)},
+ding:()=>{tone(1320,.5,'sine',.12);tone(1760,.6,'sine',.08)},
+pop:()=>tone(400,.12,'sine',.15,2.5),
+oink:()=>tone(220,.25,'sawtooth',.08,.7),
+swoosh:()=>tone(200,.4,'triangle',.08,4),
+chime:()=>[523,659,784,1047].forEach((f,i)=>tone(f,.6+i*.1,'sine',.09))};
+const cues=[[.6,'scribble'],[1.2,'scribble'],[1.8,'scribble'],[2.6,'oink'],[4.2,'step'],[4.6,'step'],[5,'step'],[5.4,'step'],[5.8,'step'],[6.2,'step'],[7.2,'creak'],[7.8,'drop'],[8.3,'ding'],[10.5,'step'],[11,'step'],[11.8,'creak'],[12.6,'pop'],[13.3,'oink'],[13.5,'pop'],[15.6,'swoosh'],[16.8,'pop'],[17.4,'oink'],[19.2,'chime']];
+let lastT=-1;
+// ---- helpers ----
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),E=t=>t<0?0:t>1?1:t*t*(3-2*t),L=(a,b,t)=>a+(b-a)*t;
+function heart(x,y,s,c){X.save();X.translate(x,y);X.scale(s,s);X.fillStyle=c;X.beginPath();X.moveTo(0,4);X.bezierCurveTo(-10,-4,-6,-12,0,-6);X.bezierCurveTo(6,-12,10,-4,0,4);X.fill();X.restore()}
+function ell(x,y,rx,ry,c){X.fillStyle=c;X.beginPath();X.ellipse(x,y,rx,ry,0,0,7);X.fill()}
+function pig(x,y,s,body,dark,opt={}){X.save();X.translate(x,y);X.scale(opt.flip?-s:s,s);
+ const w=opt.walk||0,bob=Math.sin(w*10)*3;
+ // legs
+ X.fillStyle=dark;[[-18,1],[16,-1]].forEach(([lx,k])=>{X.fillRect(lx-5+Math.sin(w*10)*5*k,30,10,22)});
+ ell(0,10+bob,42,36,body);
+ // tail
+ X.strokeStyle=dark;X.lineWidth=3;X.beginPath();X.arc(-44,8+bob,6,0,5);X.stroke();
+ // head
+ const hy=-30+bob;ell(8,hy,34,30,body);
+ X.fillStyle=dark;X.beginPath();X.moveTo(-14,hy-20);X.lineTo(-8,hy-44);X.lineTo(4,hy-26);X.fill();
+ X.beginPath();X.moveTo(18,hy-26);X.lineTo(30,hy-44);X.lineTo(34,hy-20);X.fill();
+ ell(30,hy+6,13,10,dark);ell(26,hy+6,2.5,3.5,'#7a2a3a');ell(34,hy+6,2.5,3.5,'#7a2a3a');
+ if(opt.blink)X.fillRect(2,hy-8,8,2),X.fillRect(20,hy-8,8,2);else{ell(6,hy-7,3.5,4.5,'#222');ell(24,hy-7,3.5,4.5,'#222')}
+ if(opt.blush){ell(0,hy+6,7,4,'rgba(255,60,110,'+opt.blush+')');ell(42,hy+14,6,4,'rgba(255,60,110,'+opt.blush+')')}
+ X.strokeStyle='#5a2030';X.lineWidth=2;X.beginPath();X.arc(22,hy+16,6,.2,2.9);X.stroke();
+ if(opt.bow){X.fillStyle='#ff3d7f';X.beginPath();X.moveTo(-6,hy-30);X.lineTo(-22,hy-40);X.lineTo(-22,hy-20);X.fill();X.beginPath();X.moveTo(-6,hy-30);X.lineTo(10,hy-42);X.lineTo(10,hy-20);X.fill();ell(-6,hy-30,5,5,'#c2185b')}
+ if(opt.note){X.save();X.translate(48,hy+30);X.rotate(-.2);X.fillStyle='#fff8ec';X.fillRect(-14,-10,28,20);X.strokeStyle='#e89';X.strokeRect(-14,-10,28,20);heart(0,1,.7,'#ff3d7f');X.restore()}
+ X.restore()}
+function mailbox(x,y,door,flag){X.fillStyle='#6b4a32';X.fillRect(x-6,y,12,150);
+ X.fillStyle='#e8445a';X.beginPath();X.moveTo(x-50,y);X.lineTo(x-50,y-50);X.arc(x,y-50,50,Math.PI,0);X.lineTo(x+50,y);X.fill();
+ X.fillStyle='#b8243a';X.fillRect(x-50,y-6,100,8);
+ X.fillStyle='#3a1520';X.beginPath();X.ellipse(x-50,y-38,8,36,0,0,7);X.fill();
+ X.save();X.translate(x-50,y);X.rotate(-door*1.4);X.fillStyle='#ff6b7f';X.fillRect(-6,-76,10,76);X.restore();
+ X.save();X.translate(x+40,y-30);X.rotate(-flag*1.5);X.fillStyle='#ffd23f';X.fillRect(-3,-50,6,50);X.fillRect(-3,-50,24,14);X.restore();
+ heart(x+5,y-45,1.3,'#fff')}
+function txt(s,x,y,sz,c,a=1,w='bold'){X.globalAlpha=a;X.font=w+' '+sz+'px "Trebuchet MS",Arial,sans-serif';X.textAlign='center';X.fillStyle=c;X.fillText(s,x,y);X.globalAlpha=1}
+function caption(s,t0,t1,t){const a=cl((t-t0)*3)*cl((t1-t)*3);if(a<=0)return;X.globalAlpha=a*.85;X.fillStyle='#fff';X.beginPath();X.roundRect(30,70,W-60,56,28);X.fill();X.globalAlpha=1;txt(s,W/2,107,22,'#c2185b',a)}
+const parts=[];function burst(x,y,n,t,t0){for(let i=0;i<n;i++){const k=t-t0;if(k<0||k>2)return;const a=i/n*6.28+i,r=k*90*(1+(i%3)*.3);heart(x+Math.cos(a)*r,y+Math.sin(a)*r-k*40,.8+(i%3)*.3,`rgba(255,${60+i*10%120},120,${1-k/2})`)}}
+// ---- scene ----
+function scene(t){
+ // sky
+ const g=X.createLinearGradient(0,0,0,H);const dusk=E((t-14)/4);
+ g.addColorStop(0,`rgb(${L(150,255,dusk)},${L(210,170,dusk)},${L(255,200,dusk)})`);g.addColorStop(1,'#ffe3ee');X.fillStyle=g;X.fillRect(0,0,W,H);
+ for(let i=0;i<4;i++){const cx=((i*140+t*12)%(W+160))-80;ell(cx,180+i*40,40,14,'rgba(255,255,255,.8)');ell(cx+25,172+i*40,28,14,'rgba(255,255,255,.8)')}
+ // houses far left/right on ground
+ X.fillStyle='#8ccf7e';X.fillRect(0,520,W,200);X.fillStyle='#79bd6b';for(let i=0;i<20;i++)ell(i*24,522,16,6,'#79bd6b');
+ // camera pan: 0 = his house (left), 1 = her house (right)
+ let cam=0;if(t>9)cam=E((t-9)/1.2);if(t>14.5)cam=1-E((t-14.5)/1)*.5;
+ X.save();X.translate(-cam*W,0);
+ // his house
+ X.fillStyle='#a7d8ff';X.fillRect(20,360,170,170);X.fillStyle='#4a7fc1';X.beginPath();X.moveTo(5,365);X.lineTo(105,280);X.lineTo(205,365);X.fill();
+ X.fillStyle='#fff6c9';X.fillRect(120,400,50,50);X.fillStyle='#6b4a32';X.fillRect(40,440,44,90);
+ // her house
+ X.fillStyle='#ffc1d9';X.fillRect(W+215,360,170,170);X.fillStyle='#e8447a';X.beginPath();X.moveTo(W+200,365);X.lineTo(W+300,280);X.lineTo(W+400,365);X.fill();
+ X.fillStyle='#fff6c9';X.fillRect(W+235,400,50,50);X.fillStyle='#6b4a32';X.fillRect(W+320,440,44,90);heart(W+300,330,1.4,'#fff');
+ // mailbox at her yard edge
+ const MX=W+110,MY=470;
+ let door=0,flag=0;
+ if(t>7&&t<8.6)door=E((t-7)/.4)*(1-E((t-8.2)/.4));
+ if(t>8.3)flag=E((t-8.3)/.3);if(t>12.4)flag=1-E((t-12.4)/.3);
+ if(t>11.8&&t<13.2)door=E((t-11.8)/.4)*(1-E((t-12.8)/.4));
+ mailbox(MX,MY,door,flag);
+ // HIM
+ let hx=150,walk=0,note=t>2.6&&t<7.6;
+ if(t>4&&t<6.8){walk=t;hx=L(150,W+10,E((t-4)/2.8))}else if(t>=6.8)hx=W+10;
+ if(t>8.6&&t<10)hx=L(W+10,W-40,E((t-8.6)/1));if(t>=10)hx=W-40;
+ if(t>=14.5){hx=L(W-40,W+20,E((t-15)/2));walk=t<17?t:0}
+ const blinkH=(t%3.1)<.12;
+ if(t<4){ // writing desk scene inset
+ }
+ pig(hx,560,1,'#ffb3c6','#f07a9a',{walk,note,blink:blinkH,blush:t>16.5?.8:t<3?.4:0,flip:t>8.6&&t<14.5});
+ // note into mailbox
+ if(t>7.4&&t<8){const k=E((t-7.4)/.6);X.save();X.translate(L(hx+48,MX-40,k),L(530,MY-40,k));X.scale(1-k*.5,1-k*.5);X.fillStyle='#fff8ec';X.fillRect(-14,-10,28,20);heart(0,1,.7,'#ff3d7f');X.restore()}
+ // HER
+ let sx=W+300,sw=0;
+ if(t>10.3&&t<11.8){sw=t;sx=L(W+300,MX+70,E((t-10.3)/1.5))}else if(t>=11.8)sx=MX+70;
+ if(t>=14.5){sx=L(MX+70,W+90,E((t-15)/2));sw=t<17?t:0}
+ pig(sx,560,1,'#ffc8e0','#e86fa0',{walk:sw,bow:1,flip:t<14.5||t>17.2?1:0,blink:(t%2.7)<.12,blush:t>13?.9:0,note:t>12.6&&t<15.4});
+ X.restore();
+ // inner love note open
+ if(t>12.6&&t<15){const a=cl((t-12.6)*3)*cl((15-t)*3),s=L(.3,1,E((t-12.6)/.4));X.save();X.globalAlpha=a;X.translate(W/2,300);X.scale(s,s);X.rotate(-.05);
+  X.fillStyle='#fff8ec';X.shadowColor='rgba(0,0,0,.25)';X.shadowBlur=20;X.beginPath();X.roundRect(-130,-90,260,180,14);X.fill();X.shadowBlur=0;
+  X.strokeStyle='#ffb3c6';X.lineWidth=2;for(let i=0;i<4;i++){X.beginPath();X.moveTo(-100,-30+i*30);X.lineTo(100,-30+i*30);X.stroke()}
+  txt('You make my heart',0,-40,22,'#c2185b',a);txt('go oink oink! 💗',0,-8,22,'#c2185b',a);txt('— your piggy',40,50,17,'#a05070',a,'italic');X.restore()}
+ burst(W/2,300,14,t,13.3);
+ // flying reply heart
+ if(t>15.6&&t<16.8){const k=(t-15.6)/1.2;heart(L(W-60,90,k),300-Math.sin(k*3.14)*150,2+Math.sin(k*20)*.3,'#ff3d7f')}
+ burst(W/2,470,16,t,17);
+ // writing intro
+ if(t<4){const a=cl((3.8-t)*3);X.globalAlpha=a*.9;X.fillStyle='#fff8ec';X.beginPath();X.roundRect(90,170,225,140,12);X.fill();X.globalAlpha=1;
+  const n=Math.floor(cl((t-.4)/2)*14);txt('Dear Sweetie,'.slice(0,n),W/2,215,20,'#c2185b',a);if(t>2.2)heart(W/2,265,2*E((t-2.2)/.4),'rgba(255,61,127,'+a+')')}
+ // floating mini hearts ambiance
+ for(let i=0;i<8;i++){const y=(H+50)-((t*30+i*97)%(H+100));heart((i*53+20)%W,y,.6,'rgba(255,120,170,.35)')}
+ caption('Piggy writes a secret note… ✍️',.2,3.8,t);
+ caption('Delivery time! 📬',4.1,8.8,t);
+ caption('Ding! Something for her…',9,12.4,t);
+ caption('Awww! 🥰',13.4,15.2,t);
+ caption('…and she writes back! 💌',15.4,18.4,t);
+ // end card
+ if(t>18.6){const a=E((t-18.6)/.8);X.fillStyle=`rgba(255,61,127,${a*.94})`;X.fillRect(0,0,W,H);
+  const s=1+Math.sin(t*4)*.06;X.save();X.translate(W/2,250);X.scale(s*a,s*a);heart(0,0,7,'#fff');X.restore();
+  txt('Lovelee',W/2,380,62,'#fff',a);
+  txt('Little love notes,',W/2,430,24,'#ffe3ee',cl((t-19.6)*2),'');txt('delivered every day 💌',W/2,462,24,'#ffe3ee',cl((t-19.6)*2),'');
+  const b=cl((t-20.6)*2);X.globalAlpha=b;X.fillStyle='#fff';X.beginPath();X.roundRect(W/2-120,520,240,58,29);X.fill();X.globalAlpha=1;
+  txt('Coming soon ✨',W/2,558,24,'#ff3d7f',b);
+  pig(W/2-110,670,.55,'#ffb3c6','#f07a9a',{blush:.8});pig(W/2+110,670,.55,'#ffc8e0','#e86fa0',{bow:1,flip:1,blush:.8})}
+}
+function frame(){const t=((performance.now()-start)/1000)%DUR;
+ if(t<lastT)lastT=-1;for(const[ct,n]of cues)if(ct>lastT&&ct<=t)SFX[n]();lastT=t;
+ X.fillStyle='#120812';X.fillRect(0,0,1280,720);
+ // side glow
+ const rg=X.createRadialGradient(640,360,100,640,360,700);rg.addColorStop(0,'#5a1f3c');rg.addColorStop(1,'#120812');X.fillStyle=rg;X.fillRect(0,0,1280,720);
+ for(let i=0;i<14;i++){const y=720-((t*20+i*80)%800);heart(i<7?60+i*50:820+(i-7)*55,y,1,'rgba(255,100,160,.15)')}
+ X.save();X.translate(OX,0);X.beginPath();X.rect(0,0,W,H);X.clip();scene(t);X.restore();
+ requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

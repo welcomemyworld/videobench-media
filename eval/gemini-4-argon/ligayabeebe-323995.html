@@ -1,0 +1,985 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>10xColleges — Programmatic Launch</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  canvas {
+    width: 100vw; height: 56.25vw;
+    max-height: 100vh; max-width: 177.78vh;
+    background: #05070e; display: block;
+    box-shadow: 0 0 80px rgba(0, 240, 255, 0.12);
+  }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+const canvas = document.getElementById('stage');
+const ctx = canvas.getContext('2d');
+const W = 1280, H = 720;
+
+window.DUR = 30;
+const TOTAL_FRAMES = 7867;
+const startOffset = parseFloat(new URLSearchParams(location.search).get('t') || '0') || 0;
+
+// Math & Easing Helpers
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const norm = (v, a, b) => clamp((v - a) / (b - a), 0, 1);
+const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
+const easeOutQuint = t => 1 - Math.pow(1 - t, 5);
+const easeInOutCubic = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const easeOutBack = t => {
+  const c1 = 1.70158, c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+};
+const rng = s => { let x = Math.sin(s * 9999.91) * 10000; return x - Math.floor(x); };
+
+function roundRect(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function drawCursor(x, y, clicking, scale = 1) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+  if (clicking) {
+    ctx.beginPath();
+    ctx.arc(0, 0, 22, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0, 240, 255, 0.25)';
+    ctx.fill();
+    ctx.strokeStyle = '#00f0ff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(0, 22);
+  ctx.lineTo(6, 17);
+  ctx.lineTo(11, 26);
+  ctx.lineTo(15, 24);
+  ctx.lineTo(10, 15);
+  ctx.lineTo(17, 15);
+  ctx.closePath();
+  ctx.fillStyle = '#ffffff';
+  ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.shadowBlur = 8;
+  ctx.fill();
+  ctx.strokeStyle = '#070a14';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Pre-generated data for scenes
+const legacyWins = Array.from({ length: 14 }, (_, i) => ({
+  title: ['Registrar_v2.xls', 'Student_Portal_2004', 'Syllabus_FINAL(3).doc', 'Waitlist_Error', 'Attendance_DB', 'Bursar_Legacy', 'Course_Catalog_PDF'][i % 7],
+  x: 160 + rng(i + 1) * 720,
+  y: 110 + rng(i + 20) * 340,
+  w: 240 + rng(i + 40) * 80,
+  h: 140 + rng(i + 60) * 50,
+  vx: (rng(i + 80) - 0.5) * 900,
+  vy: (rng(i + 90) - 0.5) * 900
+}));
+
+const netNodes = Array.from({ length: 28 }, (_, i) => {
+  const angle = (i / 28) * Math.PI * 2 + rng(i) * 0.2;
+  const rad = 110 + (i % 3) * 75 + rng(i + 50) * 25;
+  return {
+    x: Math.cos(angle) * rad * 1.35,
+    y: Math.sin(angle) * rad * 0.78,
+    r: 5 + (i % 4) * 2,
+    label: ['Linear Algebra', 'Rust Systems', 'BioTech Lab', 'AI Ethics', 'Distributed Sys', 'Quantum Sim', 'Product Studio', 'Compilers'][i % 8],
+    tier: i % 3
+  };
+});
+
+// Background Grid + Ambient Glow
+function drawBackground(t, accentHue = 190) {
+  const grad = ctx.createRadialGradient(W * 0.5, H * 0.45, 50, W * 0.5, H * 0.5, 780);
+  grad.addColorStop(0, `hsla(${accentHue}, 75%, 12%, 1)`);
+  grad.addColorStop(0.6, '#070a14');
+  grad.addColorStop(1, '#03050a');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle moving coordinate grid
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0, 240, 255, 0.045)';
+  ctx.lineWidth = 1;
+  const step = 40;
+  const ox = (t * 18) % step;
+  const oy = (t * 12) % step;
+  ctx.beginPath();
+  for (let x = ox; x < W; x += step) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+  for (let y = oy; y < H; y += step) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+  ctx.stroke();
+
+  // Crosshairs
+  ctx.fillStyle = 'rgba(0, 240, 255, 0.14)';
+  for (let x = ox; x < W; x += step * 4) {
+    for (let y = oy; y < H; y += step * 4) {
+      ctx.fillRect(x - 3, y - 0.5, 6, 1);
+      ctx.fillRect(x - 0.5, y - 3, 1, 6);
+    }
+  }
+  ctx.restore();
+}
+
+// Persistent Top & Bottom Programmatic HUD
+function drawHUD(t, currentFrame) {
+  ctx.save();
+  // Top bar
+  ctx.fillStyle = 'rgba(6, 10, 20, 0.78)';
+  ctx.fillRect(0, 0, W, 38);
+  ctx.strokeStyle = 'rgba(0, 240, 255, 0.18)';
+  ctx.beginPath(); ctx.moveTo(0, 38); ctx.lineTo(W, 38); ctx.stroke();
+
+  // Blinking rec dot
+  const pulse = 0.5 + 0.5 * Math.sin(t * 8);
+  ctx.fillStyle = `rgba(0, 240, 255, ${0.4 + pulse * 0.6})`;
+  ctx.beginPath(); ctx.arc(24, 19, 4.5, 0, Math.PI * 2); ctx.fill();
+
+  ctx.font = '600 12px "SF Mono", Menlo, Consolas, monospace';
+  ctx.fillStyle = '#e2f1ff';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('10xCOLLEGES // LAUNCH_ENGINE.js', 40, 19);
+
+  ctx.fillStyle = '#6488a8';
+  ctx.fillText('ZERO SCREEN RECORDINGS  •  100% PROCEDURAL CANVAS', 340, 19);
+
+  // Right frame counter
+  const fStr = String(currentFrame).padStart(4, '0') + ' / ' + TOTAL_FRAMES;
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#00f0ff';
+  ctx.fillText(`FRAME ${fStr}`, W - 24, 19);
+
+  // Bottom timeline bar
+  const p = currentFrame / TOTAL_FRAMES;
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  ctx.fillRect(0, H - 4, W, 4);
+  const barGrad = ctx.createLinearGradient(0, 0, W * p, 0);
+  barGrad.addColorStop(0, '#00f0ff');
+  barGrad.addColorStop(1, '#7b61ff');
+  ctx.fillStyle = barGrad;
+  ctx.fillRect(0, H - 4, W * p, 4);
+  ctx.restore();
+}
+
+// ==========================================
+// SCENE 1: 0.0s - 4.5s | THE META STATEMENT
+// ==========================================
+function sceneMeta(t) {
+  const lt = t;
+  // Terminal window
+  const appear = easeOutCubic(norm(lt, 0.1, 0.8));
+  const cx = W / 2, cy = H / 2;
+  const ww = 920, wh = 440;
+  const wx = cx - ww / 2, wy = cy - wh / 2 + (1 - appear) * 35;
+
+  ctx.save();
+  ctx.globalAlpha = appear;
+  roundRect(wx, wy, ww, wh, 14);
+  ctx.fillStyle = 'rgba(10, 15, 28, 0.92)';
+  ctx.fill();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = 'rgba(0, 240, 255, 0.35)';
+  ctx.stroke();
+
+  // Window header
+  roundRect(wx, wy, ww, 38, 14);
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.04)';
+  ctx.fill();
+  ['#ff5f56', '#ffbd2e', '#27c93f'].forEach((c, i) => {
+    ctx.fillStyle = c;
+    ctx.beginPath(); ctx.arc(wx + 24 + i * 20, wy + 19, 6, 0, Math.PI * 2); ctx.fill();
+  });
+  ctx.font = '12px "SF Mono", Menlo, monospace';
+  ctx.fillStyle = '#7c93b2';
+  ctx.fillText('render_pipeline.ts — 1280×720 @ 1080p MP4', wx + 95, wy + 23);
+
+  // Code lines typing in
+  const codeLines = [
+    { t: 0.3, c: '#7c93b2', txt: '// Every frame of this product launch is drawn live by code' },
+    { t: 0.6, c: '#c792ea', txt: 'export const CONFIG = {' },
+    { t: 0.85, c: '#82aaff', txt: '  product:       "10xColleges",' },
+    { t: 1.1, c: '#ffcb6b', txt: '  screenCapture: false,          // Nothing was screen-recorded' },
+    { t: 1.35, c: '#00f0ff', txt: '  totalFrames:   7867,           // Drawn procedurally in 2D Canvas' },
+    { t: 1.6, c: '#c3e88d', txt: '  editWorkflow:  "change_script_and_rerender()"' },
+    { t: 1.85, c: '#c792ea', txt: '};' }
+  ];
+
+  ctx.font = '16px "SF Mono", Menlo, Consolas, monospace';
+  codeLines.forEach((line, i) => {
+    const p = norm(lt, line.t, line.t + 0.35);
+    if (p > 0) {
+      const chars = Math.floor(line.txt.length * p);
+      ctx.fillStyle = '#425570';
+      ctx.fillText(String(i + 1).padStart(2, '0'), wx + 28, wy + 78 + i * 30);
+      ctx.fillStyle = line.c;
+      ctx.fillText(line.txt.slice(0, chars), wx + 68, wy + 78 + i * 30);
+    }
+  });
+
+  // Big Hero Overlay Statement at t > 2.0
+  const heroP = easeOutBack(norm(lt, 2.0, 2.65));
+  if (heroP > 0) {
+    ctx.save();
+    ctx.translate(cx, wy + 345);
+    ctx.scale(0.9 + 0.1 * heroP, 0.9 + 0.1 * heroP);
+    ctx.globalAlpha = clamp(heroP, 0, 1);
+
+    roundRect(-410, -58, 820, 112, 12);
+    const g = ctx.createLinearGradient(-410, 0, 410, 0);
+    g.addColorStop(0, 'rgba(0, 240, 255, 0.16)');
+    g.addColorStop(0.5, 'rgba(123, 97, 255, 0.22)');
+    g.addColorStop(1, 'rgba(0, 240, 255, 0.16)');
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.strokeStyle = '#00f0ff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '800 32px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillText('NOTHING WAS SCREEN-RECORDED.', 0, -10);
+
+    const fastCount = Math.floor(easeOutCubic(norm(lt, 2.1, 4.1)) * TOTAL_FRAMES);
+    ctx.fillStyle = '#00f0ff';
+    ctx.font = '600 18px "SF Mono", Menlo, monospace';
+    ctx.fillText(`ALL ${fastCount.toLocaleString()} FRAMES DRAWN BY CODE  •  EDIT A SCRIPT TO CHANGE REALITY`, 0, 28);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+// ==========================================
+// SCENE 2: 4.5s - 9.0s | LEGACY vs 10xCOLLEGES
+// ==========================================
+function sceneLegacyVs10x(t) {
+  const lt = t - 4.5;
+  const purgeP = easeInOutCubic(norm(lt, 1.8, 2.7));
+
+  ctx.save();
+  // Header text
+  ctx.textAlign = 'center';
+  if (lt < 2.2) {
+    ctx.fillStyle = '#ff6b7b';
+    ctx.font = '700 15px "SF Mono", monospace';
+    ctx.fillText('PROBLEM // HIGHER EDUCATION RUNS ON FRAGMENTED 1998 SOFTWARE', W / 2, 74);
+  } else {
+    const reveal = easeOutCubic(norm(lt, 2.2, 2.8));
+    ctx.globalAlpha = reveal;
+    ctx.fillStyle = '#00f0ff';
+    ctx.font = '700 15px "SF Mono", monospace';
+    ctx.fillText('SOLUTION // ONE UNIFIED, AI-NATIVE OPERATING SYSTEM', W / 2, 74);
+  }
+  ctx.globalAlpha = 1;
+
+  // Cluttered legacy windows exploding outward on purge
+  if (purgeP < 1) {
+    legacyWins.forEach((w, idx) => {
+      const appear = easeOutBack(norm(lt, idx * 0.07, idx * 0.07 + 0.35));
+      if (appear <= 0) return;
+      const x = w.x + w.vx * purgeP;
+      const y = w.y + w.vy * purgeP;
+      ctx.save();
+      ctx.translate(x + w.w / 2, y + w.h / 2);
+      ctx.rotate(purgeP * (idx % 2 === 0 ? 0.6 : -0.6));
+      ctx.scale(appear * (1 - purgeP * 0.6), appear * (1 - purgeP * 0.6));
+      ctx.globalAlpha = 1 - purgeP;
+
+      roundRect(-w.w / 2, -w.h / 2, w.w, w.h, 6);
+      ctx.fillStyle = '#181d2c';
+      ctx.fill();
+      ctx.strokeStyle = '#ff5f56';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      ctx.fillStyle = '#2b3248';
+      ctx.fillRect(-w.w / 2, -w.h / 2, w.w, 24);
+      ctx.fillStyle = '#ff8e88';
+      ctx.font = '11px "SF Mono", monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText(w.title, -w.w / 2 + 10, -w.h / 2 + 16);
+
+      // Fake spreadsheet cells / errors
+      ctx.fillStyle = 'rgba(255,255,255,0.07)';
+      for (let r = 0; r < 3; r++) {
+        ctx.fillRect(-w.w / 2 + 12, -w.h / 2 + 38 + r * 26, w.w - 24, 16);
+      }
+      ctx.fillStyle = '#ff5f56';
+      ctx.fillText('ERR_SYNC_TIMEOUT', -w.w / 2 + 16, -w.h / 2 + 50);
+      ctx.restore();
+    });
+  }
+
+  // Command bar trigger: legacyCampus.upgrade("10xColleges")
+  const cmdP = easeOutCubic(norm(lt, 1.1, 1.5));
+  if (cmdP > 0 && lt < 2.8) {
+    const fade = 1 - norm(lt, 2.3, 2.75);
+    ctx.save();
+    ctx.globalAlpha = cmdP * fade;
+    roundRect(W / 2 - 290, H / 2 - 32, 580, 64, 32);
+    ctx.fillStyle = '#070b16';
+    ctx.fill();
+    ctx.strokeStyle = '#00f0ff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.font = '600 20px "SF Mono", monospace';
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    const cmdTxt = '> campus.transform({ engine: "10xColleges" })';
+    const typed = cmdTxt.slice(0, Math.floor(cmdTxt.length * norm(lt, 1.15, 1.75)));
+    ctx.fillText(typed, W / 2, H / 2 + 7);
+    ctx.restore();
+  }
+
+  // Reveal 10xColleges emblem & unified pillars
+  const logoP = easeOutBack(norm(lt, 2.25, 3.0));
+  if (logoP > 0) {
+    ctx.save();
+    ctx.translate(W / 2, H / 2 - 35);
+    ctx.scale(logoP, logoP);
+    ctx.globalAlpha = clamp(logoP, 0, 1);
+
+    // Glowing aura
+    const aura = ctx.createRadialGradient(0, 0, 10, 0, 0, 220);
+    aura.addColorStop(0, 'rgba(0, 240, 255, 0.28)');
+    aura.addColorStop(1, 'rgba(0, 240, 255, 0)');
+    ctx.fillStyle = aura;
+    ctx.beginPath(); ctx.arc(0, 0, 220, 0, Math.PI * 2); ctx.fill();
+
+    ctx.textAlign = 'center';
+    ctx.font = '900 76px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText('10xColleges', 0, 10);
+
+    ctx.font = '600 20px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.fillStyle = '#00f0ff';
+    ctx.fillText('Admissions  •  AI Curriculum  •  Mastery Graph  •  Career Launch', 0, 56);
+
+    // 4 feature pills below
+    const pills = ['10x Faster Learning', '1-on-1 AI Mentors', 'Zero Busywork', 'Direct Industry Hiring'];
+    pills.forEach((pTxt, i) => {
+      const px = -435 + i * 290;
+      roundRect(px - 125, 95, 250, 48, 24);
+      ctx.fillStyle = 'rgba(0, 240, 255, 0.1)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0, 240, 255, 0.45)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.fillStyle = '#e6f6ff';
+      ctx.font = '600 15px -apple-system, sans-serif';
+      ctx.fillText(pTxt, px, 124);
+    });
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+// ==========================================
+// SCENE 3: 9.0s - 15.0s | AI CAMPUS DASHBOARD
+// ==========================================
+function sceneDashboard(t) {
+  const lt = t - 9.0;
+  const enter = easeOutCubic(norm(lt, 0, 0.7));
+
+  ctx.save();
+  ctx.translate(0, (1 - enter) * 40);
+  ctx.globalAlpha = enter;
+
+  // Main App Shell
+  const ax = 70, ay = 64, aw = 1140, ah = 596;
+  roundRect(ax, ay, aw, ah, 16);
+  ctx.fillStyle = 'rgba(11, 16, 30, 0.94)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0, 240, 255, 0.28)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Left Sidebar
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+  roundRect(ax, ay, 220, ah, 16);
+  ctx.fill();
+
+  ctx.textAlign = 'left';
+  ctx.font = '800 20px -apple-system, sans-serif';
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText('10xColleges', ax + 24, ay + 42);
+  ctx.fillStyle = '#00f0ff';
+  ctx.font = '600 11px "SF Mono", monospace';
+  ctx.fillText('STUDENT OS v4.2', ax + 24, ay + 62);
+
+  const nav = ['Overview', 'Mastery Graph', 'AI Socratic Tutor', 'Research Labs', 'Partner Offers'];
+  nav.forEach((item, i) => {
+    const ny = ay + 100 + i * 44;
+    if (i === 1) {
+      roundRect(ax + 12, ny - 14, 196, 34, 8);
+      ctx.fillStyle = 'rgba(0, 240, 255, 0.15)';
+      ctx.fill();
+      ctx.fillStyle = '#00f0ff';
+    } else {
+      ctx.fillStyle = '#7c93b2';
+    }
+    ctx.font = '600 14px -apple-system, sans-serif';
+    ctx.fillText(item, ax + 28, ny + 7);
+  });
+
+  // Top KPI Row
+  const kpis = [
+    { label: 'DEGREE VELOCITY', val: (1 + easeOutCubic(norm(lt, 0.4, 2.5)) * 9).toFixed(1) + 'x', sub: 'Accelerated Mastery' },
+    { label: 'CONCEPT RETENTION', val: Math.round(68 + easeOutCubic(norm(lt, 0.4, 2.5)) * 31.4) + '%', sub: 'Spaced-Repetition AI' },
+    { label: 'PROJECTS SHIPPED', val: Math.round(easeOutCubic(norm(lt, 0.4, 2.5)) * 42), sub: 'Peer & Industry Verified' }
+  ];
+  kpis.forEach((k, i) => {
+    const kx = ax + 245 + i * 290, ky = ay + 24, kw = 270, kh = 96;
+    roundRect(kx, ky, kw, kh, 12);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.035)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.stroke();
+
+    ctx.fillStyle = '#7c93b2';
+    ctx.font = '600 11px "SF Mono", monospace';
+    ctx.fillText(k.label, kx + 18, ky + 26);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '800 32px -apple-system, sans-serif';
+    ctx.fillText(k.val, kx + 18, ky + 62);
+
+    ctx.fillStyle = '#00f0ff';
+    ctx.font = '500 12px -apple-system, sans-serif';
+    ctx.fillText(k.sub, kx + 18, ky + 82);
+  });
+
+  // Center Panel: Live Skill Graph
+  const gx = ax + 245, gy = ay + 138, gw = 560, gh = 434;
+  roundRect(gx, gy, gw, gh, 12);
+  ctx.fillStyle = 'rgba(6, 10, 20, 0.75)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0, 240, 255, 0.18)';
+  ctx.stroke();
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '700 15px -apple-system, sans-serif';
+  ctx.fillText('Live Knowledge Graph — Adaptive Curriculum', gx + 20, gy + 30);
+
+  // Interactive Boost Button inside Graph Panel
+  const btnX = gx + gw - 195, btnY = gy + 12, btnW = 180, btnH = 30;
+  const isClicked = lt > 2.4;
+  roundRect(btnX, btnY, btnW, btnH, 15);
+  ctx.fillStyle = isClicked ? '#00f0ff' : 'rgba(0, 240, 255, 0.15)';
+  ctx.fill();
+  ctx.fillStyle = isClicked ? '#050811' : '#00f0ff';
+  ctx.font = '700 12px "SF Mono", monospace';
+  ctx.fillText(isClicked ? '✓ 10x AI LABS ACTIVE' : '⚡ ACTIVATE 10x LABS', btnX + 16, btnY + 19);
+
+  // Draw Graph Nodes
+  const gcx = gx + gw / 2, gcy = gy + gh / 2 + 15;
+  const boost = isClicked ? easeOutCubic(norm(lt, 2.4, 3.6)) : 0;
+
+  // Edges
+  ctx.lineWidth = 1.2;
+  for (let i = 0; i < 16; i++) {
+    const a = netNodes[i], b = netNodes[(i + 3) % 16];
+    const ax1 = gcx + a.x * 0.62, ay1 = gcy + a.y * 0.62;
+    const bx1 = gcx + b.x * 0.62, by1 = gcy + b.y * 0.62;
+    ctx.strokeStyle = boost > 0 ? `rgba(0, 240, 255, ${0.25 + boost * 0.45})` : 'rgba(124, 147, 178, 0.25)';
+    ctx.beginPath(); ctx.moveTo(ax1, ay1); ctx.lineTo(bx1, by1); ctx.stroke();
+  }
+
+  // Nodes
+  for (let i = 0; i < 16; i++) {
+    const n = netNodes[i];
+    const nx = gcx + n.x * 0.62 + Math.sin(lt * 2 + i) * 3;
+    const ny = gcy + n.y * 0.62 + Math.cos(lt * 1.7 + i) * 3;
+    const active = i < 6 + Math.floor(boost * 10);
+    ctx.beginPath();
+    ctx.arc(nx, ny, n.r + (active ? 2 : 0), 0, Math.PI * 2);
+    ctx.fillStyle = active ? '#00f0ff' : '#3a4b68';
+    ctx.fill();
+    if (i % 2 === 0) {
+      ctx.fillStyle = active ? '#e2f1ff' : '#6c82a3';
+      ctx.font = '600 11px -apple-system, sans-serif';
+      ctx.fillText(n.label, nx + 10, ny + 4);
+    }
+  }
+
+  // Right Panel: AI Socratic Co-Pilot
+  const rx = gx + gw + 20, ry = gy, rw = 290, rh = gh;
+  roundRect(rx, ry, rw, rh, 12);
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+  ctx.stroke();
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '700 15px -apple-system, sans-serif';
+  ctx.fillText('1-on-1 AI Mentor', rx + 18, ry + 30);
+
+  const msgs = [
+    { t: 0.6, role: 'AI', txt: 'You mastered Eigenvalues in 18m. Ready to build a PageRank engine in Rust?' },
+    { t: 1.6, role: 'STU', txt: 'Yes! Spin up the distributed cluster sandbox.' },
+    { t: 2.6, role: 'AI', txt: 'Cluster live (12 nodes). Benchmarking against Stanford CS246...' },
+    { t: 3.6, role: 'OK', txt: 'PASS: Top 0.4% latency. Verified credential minted.' }
+  ];
+
+  msgs.forEach((m, i) => {
+    const mp = easeOutCubic(norm(lt, m.t, m.t + 0.45));
+    if (mp <= 0) return;
+    const my = ry + 56 + i * 90 + (1 - mp) * 15;
+    ctx.save();
+    ctx.globalAlpha = mp;
+    roundRect(rx + 14, my, rw - 28, 74, 10);
+    ctx.fillStyle = m.role === 'STU' ? 'rgba(123, 97, 255, 0.22)' : (m.role === 'OK' ? 'rgba(39, 201, 63, 0.18)' : 'rgba(0, 240, 255, 0.1)');
+    ctx.fill();
+
+    ctx.fillStyle = m.role === 'OK' ? '#27c93f' : '#00f0ff';
+    ctx.font = '700 10px "SF Mono", monospace';
+    ctx.fillText(m.role === 'STU' ? 'YOU' : (m.role === 'OK' ? 'VERIFIED PROOF' : 'SOCRATIC AI'), rx + 26, my + 20);
+
+    ctx.fillStyle = '#d9e7f8';
+    ctx.font = '12px -apple-system, sans-serif';
+    const words = m.txt.split(' ');
+    let line = '', ly = my + 40;
+    words.forEach(w => {
+      if ((line + w).length > 34) {
+        ctx.fillText(line, rx + 26, ly);
+        line = w + ' ';
+        ly += 16;
+      } else {
+        line += w + ' ';
+      }
+    });
+    ctx.fillText(line, rx + 26, ly);
+    ctx.restore();
+  });
+
+  // Procedural AI Bot Cursor moving & clicking the Boost Button
+  const curP = easeInOutCubic(norm(lt, 1.0, 2.35));
+  const curX = lerp(W * 0.75, btnX + btnW * 0.5, curP);
+  const curY = lerp(H * 0.8, btnY + btnH * 0.5, curP);
+  const clicking = lt > 2.3 && lt < 2.6;
+  drawCursor(curX, curY, clicking);
+
+  ctx.restore();
+}
+
+// ==========================================
+// SCENE 4: 15.0s - 21.0s | EDIT A SCRIPT TO CHANGE REALITY
+// ==========================================
+function sceneLiveCodeEdit(t) {
+  const lt = t - 15.0;
+
+  // Title banner
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#00f0ff';
+  ctx.font = '700 14px "SF Mono", monospace';
+  ctx.fillText('META ADVANTAGE // MAKING A CHANGE MEANS EDITING A SCRIPT', W / 2, 68);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '800 28px -apple-system, sans-serif';
+  ctx.fillText('No Re-Recording. Edit Code → Instant Frame Update.', W / 2, 102);
+
+  // Evolution stages driven by script edits
+  // Stage 0 (0 - 1.7s): multiplier=1, theme="cobalt", aiPods=false
+  // Stage 1 (1.7 - 3.4s): multiplier=10, theme="cobalt", aiPods=false
+  // Stage 2 (3.4 - 6.0s): multiplier=10, theme="cyberGold", aiPods=true
+  const stage1 = easeOutBack(norm(lt, 1.6, 2.2));
+  const stage2 = easeOutCubic(norm(lt, 3.4, 4.1));
+
+  // Left: Script Editor
+  const ex = 70, ey = 130, ew = 530, eh = 520;
+  roundRect(ex, ey, ew, eh, 14);
+  ctx.fillStyle = 'rgba(10, 14, 26, 0.95)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0, 240, 255, 0.3)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  ctx.fillStyle = '#7c93b2';
+  ctx.textAlign = 'left';
+  ctx.font = '12px "SF Mono", monospace';
+  ctx.fillText('launch_video.script.js — LIVE HOT-RELOAD', ex + 20, ey + 28);
+
+  const multVal = lt < 1.5 ? '1' : '10';
+  const themeVal = lt < 3.2 ? '"cobalt"' : '"hyperGold"';
+  const podsVal = lt < 3.2 ? 'false' : 'true';
+
+  const scriptLines = [
+    'const campus = create10xCollege({',
+    `  velocityMultiplier: ${multVal},`,
+    `  visualTheme:        ${themeVal},`,
+    `  autonomousLabs:     ${podsVal},`,
+    '  tuitionModel:       "outcome_backed",',
+    '  mentorshipRatio:    "1:1_AI_plus_Founders"',
+    '});',
+    '',
+    '// Re-synthesizing frames 4,100 -> 5,600...',
+    'renderFrame(ctx, performance.now());'
+  ];
+
+  ctx.font = '15px "SF Mono", Menlo, monospace';
+  scriptLines.forEach((ln, i) => {
+    const ly = ey + 78 + i * 34;
+    // Highlight edited lines
+    if ((i === 1 && lt > 1.3 && lt < 2.6) || ((i === 2 || i === 3) && lt > 3.0 && lt < 4.5)) {
+      ctx.fillStyle = 'rgba(0, 240, 255, 0.14)';
+      ctx.fillRect(ex + 12, ly - 20, ew - 24, 28);
+    }
+    ctx.fillStyle = '#475b78';
+    ctx.fillText(String(i + 1).padStart(2, '0'), ex + 22, ly);
+    ctx.fillStyle = i >= 1 && i <= 3 ? '#00f0ff' : '#d6e4f7';
+    ctx.fillText(ln, ex + 58, ly);
+  });
+
+  // Live diff badge inside editor
+  roundRect(ex + 24, ey + eh - 74, ew - 48, 48, 8);
+  ctx.fillStyle = 'rgba(39, 201, 63, 0.12)';
+  ctx.fill();
+  ctx.strokeStyle = '#27c93f';
+  ctx.stroke();
+  ctx.fillStyle = '#27c93f';
+  ctx.font = '600 13px "SF Mono", monospace';
+  ctx.fillText('⚡ AST PATCH APPLIED IN 0.4ms — ZERO SCREEN RECORDING', ex + 42, ey + eh - 45);
+
+  // Right: Real-time Rendered Output Preview
+  const px = 630, py = 130, pw = 580, ph = 520;
+  roundRect(px, py, pw, ph, 14);
+  ctx.fillStyle = 'rgba(12, 17, 32, 0.95)';
+  ctx.fill();
+  const accentColor = stage2 > 0.5 ? '#ffbe2e' : '#00f0ff';
+  ctx.strokeStyle = accentColor;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.fillStyle = accentColor;
+  ctx.font = '700 12px "SF Mono", monospace';
+  ctx.fillText('LIVE CANVAS OUTPUT // PROCEDURAL VIEWPORT', px + 24, py + 30);
+
+  // Dynamic Visualization inside Preview
+  const vcx = px + pw / 2, vcy = py + 235;
+  const ringCount = 2 + Math.round(stage1 * 4);
+  for (let r = 0; r < ringCount; r++) {
+    const rad = 36 + r * 26;
+    ctx.beginPath();
+    ctx.arc(vcx, vcy, rad, 0, Math.PI * 2);
+    ctx.strokeStyle = stage2 > 0.1
+      ? `rgba(255, 190, 46, ${0.18 + (r / ringCount) * 0.35})`
+      : `rgba(0, 240, 255, ${0.18 + (r / ringCount) * 0.35})`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Orbiting satellites
+    const sats = 2 + r;
+    for (let s = 0; s < sats; s++) {
+      const a = lt * (1.2 + stage1 * 1.8) * (r % 2 ? -1 : 1) + (s / sats) * Math.PI * 2;
+      const sx = vcx + Math.cos(a) * rad;
+      const sy = vcy + Math.sin(a) * rad;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 4 + stage2 * 2, 0, Math.PI * 2);
+      ctx.fillStyle = accentColor;
+      ctx.fill();
+    }
+  }
+
+  // Center Core Metric
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '900 44px -apple-system, sans-serif';
+  const multNum = Math.round(1 + stage1 * 9);
+  ctx.fillText(`${multNum}x`, vcx, vcy + 14);
+
+  // Autonomous Lab Pods popping in when autonomousLabs = true
+  if (stage2 > 0) {
+    const podLabels = ['Robotics Pod', 'LLM Cluster', 'BioSynth Lab', 'Venture Foundry'];
+    podLabels.forEach((pl, i) => {
+      const bx = px + 32 + i * 134, by = py + 425;
+      ctx.save();
+      ctx.globalAlpha = stage2;
+      roundRect(bx, by, 122, 64, 10);
+      ctx.fillStyle = 'rgba(255, 190, 46, 0.14)';
+      ctx.fill();
+      ctx.strokeStyle = '#ffbe2e';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.fillStyle = '#ffbe2e';
+      ctx.font = '700 11px "SF Mono", monospace';
+      ctx.fillText('POD 0' + (i + 1), bx + 61, by + 25);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '600 12px -apple-system, sans-serif';
+      ctx.fillText(pl, bx + 61, by + 46);
+      ctx.restore();
+    });
+  }
+
+  // Animated cursor editing the script lines
+  const cX = ex + 265;
+  const cY = lt < 2.6 ? ey + 112 : ey + 160;
+  drawCursor(cX + Math.sin(lt * 5) * 8, cY, (lt > 1.4 && lt < 1.7) || (lt > 3.1 && lt < 3.4));
+  ctx.restore();
+}
+
+// ==========================================
+// SCENE 5: 21.0s - 25.5s | GLOBAL NETWORK & OUTCOMES
+// ==========================================
+function sceneOutcomes(t) {
+  const lt = t - 21.0;
+  const enter = easeOutCubic(norm(lt, 0, 0.6));
+
+  ctx.save();
+  ctx.globalAlpha = enter;
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#00f0ff';
+  ctx.font = '700 14px "SF Mono", monospace';
+  ctx.fillText('REAL-WORLD OUTCOMES // VERIFIED BY CODE', W / 2, 72);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '800 34px -apple-system, sans-serif';
+  ctx.fillText('Built for the Next Generation of Builders & Researchers', W / 2, 112);
+
+  // 3 High-impact comparison & metric cards
+  const cards = [
+    {
+      title: 'TIME TO MASTERY',
+      big: '2.0 Yrs',
+      old: 'Traditional College: 4.0+ Years',
+      desc: 'Competency-based progression powered by adaptive AI mastery graphs.',
+      color: '#00f0ff'
+    },
+    {
+      title: 'GRADUATE PLACEMENT',
+      big: '99.2%',
+      old: 'National Average: 52%',
+      desc: 'Direct engineering & research pipelines into top AI labs and startups.',
+      color: '#7b61ff'
+    },
+    {
+      title: 'PRODUCTION ENGINE',
+      big: '7,867',
+      old: '0 Screen Recordings Used',
+      desc: 'Every pixel, chart, and interaction in 10xColleges is deterministic code.',
+      color: '#27c93f'
+    }
+  ];
+
+  cards.forEach((c, i) => {
+    const cp = easeOutBack(norm(lt, 0.2 + i * 0.2, 0.9 + i * 0.2));
+    const cw = 350, ch = 310;
+    const cx = 95 + i * 370, cy = 160 + (1 - cp) * 40;
+
+    ctx.save();
+    ctx.globalAlpha = clamp(cp, 0, 1);
+    roundRect(cx, cy, cw, ch, 16);
+    ctx.fillStyle = 'rgba(12, 18, 34, 0.92)';
+    ctx.fill();
+    ctx.strokeStyle = c.color;
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = c.color;
+    ctx.font = '700 12px "SF Mono", monospace';
+    ctx.fillText(c.title, cx + 28, cy + 40);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '900 58px -apple-system, sans-serif';
+    ctx.fillText(c.big, cx + 28, cy + 112);
+
+    roundRect(cx + 28, cy + 134, cw - 56, 30, 6);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+    ctx.fill();
+    ctx.fillStyle = '#8da4c4';
+    ctx.font = '600 12px "SF Mono", monospace';
+    ctx.fillText(c.old, cx + 40, cy + 153);
+
+    // Animated progress bar
+    const barP = easeOutCubic(norm(lt, 0.6 + i * 0.2, 2.2));
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    roundRect(cx + 28, cy + 186, cw - 56, 10, 5);
+    ctx.fill();
+    ctx.fillStyle = c.color;
+    roundRect(cx + 28, cy + 186, (cw - 56) * barP, 10, 5);
+    ctx.fill();
+
+    ctx.fillStyle = '#c4d6ee';
+    ctx.font = '14px -apple-system, sans-serif';
+    const words = c.desc.split(' ');
+    let line = '', ly = cy + 230;
+    words.forEach(w => {
+      if ((line + w).length > 36) {
+        ctx.fillText(line, cx + 28, ly);
+        line = w + ' ';
+        ly += 22;
+      } else {
+        line += w + ' ';
+      }
+    });
+    ctx.fillText(line, cx + 28, ly);
+    ctx.restore();
+  });
+
+  // Bottom ticker of 7,867 frame signature
+  const stripY = 520;
+  roundRect(95, stripY, 1090, 110, 14);
+  ctx.fillStyle = 'rgba(0, 240, 255, 0.06)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0, 240, 255, 0.25)';
+  ctx.stroke();
+
+  // Procedural waveform of all 7,867 frames
+  ctx.beginPath();
+  for (let i = 0; i < 180; i++) {
+    const x = 125 + i * 5.75;
+    const h = 12 + Math.sin(i * 0.25 + lt * 6) * 18 * Math.sin(i * 0.05 + lt * 2);
+    ctx.moveTo(x, stripY + 55 - Math.abs(h));
+    ctx.lineTo(x, stripY + 55 + Math.abs(h));
+  }
+  ctx.strokeStyle = '#00f0ff';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '700 16px "SF Mono", monospace';
+  ctx.fillText('7,867 DETERMINISTIC FRAMES  •  ZERO CAMERAS  •  INFINITE ITERATION VELOCITY', W / 2, stripY + 95);
+  ctx.restore();
+}
+
+// ==========================================
+// SCENE 6: 25.5s - 30.0s | FINALE LAUNCH CTA
+// ==========================================
+function sceneFinale(t) {
+  const lt = t - 25.5;
+  const enter = easeOutQuint(norm(lt, 0, 1.0));
+
+  ctx.save();
+  ctx.translate(W / 2, H / 2 - 10);
+
+  // Expanding procedural rings
+  for (let i = 0; i < 4; i++) {
+    const rp = ((lt * 0.45 + i * 0.25) % 1);
+    ctx.beginPath();
+    ctx.arc(0, 0, 80 + rp * 420, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(0, 240, 255, ${(1 - rp) * 0.28})`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  ctx.scale(0.88 + 0.12 * enter, 0.88 + 0.12 * enter);
+  ctx.globalAlpha = enter;
+  ctx.textAlign = 'center';
+
+  // Top badge
+  roundRect(-240, -175, 480, 36, 18);
+  ctx.fillStyle = 'rgba(0, 240, 255, 0.14)';
+  ctx.fill();
+  ctx.strokeStyle = '#00f0ff';
+  ctx.lineWidth = 1.2;
+  ctx.stroke();
+  ctx.fillStyle = '#00f0ff';
+  ctx.font = '700 13px "SF Mono", monospace';
+  ctx.fillText('100% CODE-GENERATED LAUNCH  •  FRAME 7,867 / 7,867', 0, -152);
+
+  // Hero Brand Title
+  ctx.fillStyle = '#ffffff';
+  ctx.font = '900 92px -apple-system, BlinkMacSystemFont, sans-serif';
+  ctx.fillText('10xColleges', 0, -45);
+
+  ctx.fillStyle = '#b8d4f2';
+  ctx.font = '500 24px -apple-system, BlinkMacSystemFont, sans-serif';
+  ctx.fillText('Nothing was screen-recorded. Making a change means editing a script.', 0, 10);
+
+  // CTA Button
+  const pulse = 1 + Math.sin(lt * 6) * 0.025;
+  ctx.save();
+  ctx.scale(pulse, pulse);
+  roundRect(-190, 55, 380, 64, 32);
+  const btnGrad = ctx.createLinearGradient(-190, 55, 190, 119);
+  btnGrad.addColorStop(0, '#00f0ff');
+  btnGrad.addColorStop(1, '#7b61ff');
+  ctx.fillStyle = btnGrad;
+  ctx.fill();
+
+  ctx.fillStyle = '#040711';
+  ctx.font = '800 20px -apple-system, sans-serif';
+  ctx.fillText('APPLY FOR COHORT 01  →', 0, 94);
+  ctx.restore();
+
+  // Footer code signature
+  ctx.fillStyle = '#6886a6';
+  ctx.font = '600 14px "SF Mono", monospace';
+  ctx.fillText('10xColleges.edu   //   git commit -m "launch_the_future_of_college"', 0, 175);
+
+  ctx.restore();
+}
+
+// Smooth crossfade flash between scenes
+function drawTransitionFlash(t) {
+  const cuts = [4.5, 9.0, 15.0, 21.0, 25.5];
+  cuts.forEach(c => {
+    const dt = Math.abs(t - c);
+    if (dt < 0.22) {
+      const a = (1 - dt / 0.22) * 0.35;
+      ctx.fillStyle = `rgba(0, 240, 255, ${a})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+  });
+}
+
+// Master Render Loop driven strictly by performance.now()
+let t0 = null;
+function render(now) {
+  if (t0 === null) t0 = now;
+  const elapsed = (now - t0) / 1000 + startOffset;
+  const t = elapsed % window.DUR;
+
+  // Map time (0..DUR) proportionally to 1..7,867 frames
+  const currentFrame = Math.min(
+    TOTAL_FRAMES,
+    Math.max(1, Math.floor((t / window.DUR) * TOTAL_FRAMES) + 1)
+  );
+
+  // Dynamic background hue shift across acts
+  const hue = t < 9 ? 192 : (t < 15 ? 202 : (t < 21 ? 215 : 190));
+  drawBackground(t, hue);
+
+  if (t < 4.5) {
+    sceneMeta(t);
+  } else if (t < 9.0) {
+    sceneLegacyVs10x(t);
+  } else if (t < 15.0) {
+    sceneDashboard(t);
+  } else if (t < 21.0) {
+    sceneLiveCodeEdit(t);
+  } else if (t < 25.5) {
+    sceneOutcomes(t);
+  } else {
+    sceneFinale(t);
+  }
+
+  drawTransitionFlash(t);
+  drawHUD(t, t > 28.8 ? TOTAL_FRAMES : currentFrame);
+
+  requestAnimationFrame(render);
+}
+
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

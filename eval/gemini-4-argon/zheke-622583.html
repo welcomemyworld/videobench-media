@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>OPUS 5.5 — Motion Design Reel</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  #stage {
+    width: 1280px; height: 720px;
+    box-shadow: 0 0 80px rgba(0,0,0,0.9);
+    image-rendering: high-quality;
+  }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+(() => {
+  window.DUR = 24;
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const W = 1280, H = 720;
+
+  function resize() {
+    const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+    canvas.style.transform = `scale(${s})`;
+    canvas.style.transformOrigin = 'center center';
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const params = new URLSearchParams(window.location.search);
+  const startOffset = parseFloat(params.get('t') || '0');
+  let t0 = null;
+
+  // Palette
+  const C = {
+    dark: '#0A0B0E',
+    cream: '#F4F1EA',
+    orange: '#FF3E1D',
+    cobalt: '#1D4AFF',
+    acid: '#C5FF29',
+    cyan: '#00F0FF',
+    gray: '#6E727D'
+  };
+
+  // Easing & math helpers
+  const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const invLerp = (a, b, v) => clamp((v - a) / (b - a));
+  const easeOutExpo = x => x === 1 ? 1 : 1 - Math.pow(2, -10 * x);
+  const easeInExpo = x => x === 0 ? 0 : Math.pow(2, 10 * x - 10);
+  const easeInOutCubic = x => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+  const easeOutBack = x => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+  const easeOutElastic = x => {
+    if (x === 0 || x === 1) return x;
+    return Math.pow(2, -10 * x) * Math.sin((x * 10 - 0.75) * (2 * Math.PI) / 3) + 1;
+  };
+  const seg = (t, s, e, ease = x => x) => ease(invLerp(s, e, t));
+
+  // Precomputed 3D Icosahedron & Dodecahedron vertices for Scene 4
+  const phi = (1 + Math.sqrt(5)) / 2;
+  const icoVerts = [
+    [-1, phi, 0], [1, phi, 0], [-1, -phi, 0], [1, -phi, 0],
+    [0, -1, phi], [0, 1, phi], [0, -1, -phi], [0, 1, -phi],
+    [phi, 0, -1], [phi, 0, 1], [-phi, 0, -1], [-phi, 0, 1]
+  ].map(v => {
+    const l = Math.hypot(...v);
+    return v.map(c => c / l);
+  });
+  const icoEdges = [];
+  for (let i = 0; i < icoVerts.length; i++) {
+    for (let j = i + 1; j < icoVerts.length; j++) {
+      const d = Math.hypot(
+        icoVerts[i][0] - icoVerts[j][0],
+        icoVerts[i][1] - icoVerts[j][1],
+        icoVerts[i][2] - icoVerts[j][2]
+      );
+      if (d < 1.2) icoEdges.push([i, j]);
+    }
+  }
+
+  function rot3D(v, rx, ry, rz) {
+    let [x, y, z] = v;
+    let cy = Math.cos(rx), sy = Math.sin(rx);
+    [y, z] = [y * cy - z * sy, y * sy + z * cy];
+    let cx = Math.cos(ry), sx = Math.sin(ry);
+    [x, z] = [x * cx + z * sx, -x * sx + z * cx];
+    let cz = Math.cos(rz), sz = Math.sin(rz);
+    [x, y] = [x * cz - y * sz, x * sz + y * cz];
+    return [x, y, z];
+  }
+
+  // Swiss HUD frame drawn over everything
+  function drawHUD(t, darkTheme = true) {
+    const col = darkTheme ? 'rgba(244,241,234,0.45)' : 'rgba(10,11,14,0.45)';
+    const strong = darkTheme ? C.cream : C.dark;
+    ctx.save();
+    ctx.strokeStyle = col;
+    ctx.fillStyle = col;
+    ctx.lineWidth = 1;
+
+    // Corner registration marks
+    const m = 28, len = 10;
+    [[m, m, 1, 1], [W - m, m, -1, 1], [m, H - m, 1, -1], [W - m, H - m, -1, -1]].forEach(([x, y, dx, dy]) => {
+      ctx.beginPath();
+      ctx.moveTo(x, y + dy * len); ctx.lineTo(x, y); ctx.lineTo(x + dx * len, y);
+      ctx.stroke();
+    });
+
+    // Top metadata bar
+    ctx.font = '600 11px monospace';
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'left';
+    ctx.fillText('OPUS // 5.5 — MOTION DESIGN REEL', m + 16, m + 4);
+
+    // Chapter indicator
+    const chapters = [
+      '01 / IGNITION',
+      '02 / KINETIC TYPOGRAPHY',
+      '03 / BAUHAUS PRECISION',
+      '04 / DIMENSIONAL HARMONY',
+      '05 / LIQUID CHROMATICS',
+      '06 / FINALE'
+    ];
+    const chIdx = Math.min(5, Math.floor(t / 4));
+    ctx.textAlign = 'center';
+    ctx.fillStyle = strong;
+    ctx.fillText(`CHAPTER ${chapters[chIdx]}`, W / 2, m + 4);
+
+    // Timecode right
+    ctx.textAlign = 'right';
+    ctx.fillStyle = col;
+    const sec = Math.floor(t).toString().padStart(2, '0');
+    const frm = Math.floor((t % 1) * 60).toString().padStart(2, '0');
+    ctx.fillText(`TC 00:00:${sec}:${frm}  [60FPS]`, W - m - 16, m + 4);
+
+    // Bottom progress bar
+    const py = H - m - 4;
+    ctx.beginPath();
+    ctx.moveTo(m + 16, py);
+    ctx.lineTo(W - m - 16, py);
+    ctx.stroke();
+
+    const progX = lerp(m + 16, W - m - 16, t / window.DUR);
+    ctx.strokeStyle = C.orange;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(m + 16, py);
+    ctx.lineTo(progX, py);
+    ctx.stroke();
+
+    ctx.fillStyle = C.orange;
+    ctx.beginPath();
+    ctx.arc(progX, py, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Tick marks for scenes
+    for (let i = 1; i < 6; i++) {
+      const tx = lerp(m + 16, W - m - 16, i / 6);
+      ctx.fillStyle = col;
+      ctx.fillRect(tx - 0.5, py - 4, 1, 8);
+    }
+
+    ctx.restore();
+  }
+
+  // ============================================================================
+  // SCENE 1 (0 - 4s): IGNITION — Singularity to Precision Grid & Title
+  // ============================================================================
+  function scene1(t) {
+    ctx.fillStyle = C.dark;
+    ctx.fillRect(0, 0, W, H);
+
+    // Subtle perspective grid appearing
+    const gridFade = seg(t, 0.4, 2.0, easeOutExpo);
+    if (gridFade > 0) {
+      ctx.save();
+      ctx.strokeStyle = `rgba(244,241,234,${0.06 * gridFade})`;
+      ctx.lineWidth = 1;
+      const step = 64;
+      for (let x = 0; x <= W; x += step) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, H * gridFade);
+        ctx.stroke();
+      }
+      for (let y = 0; y <= H; y += step) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(W * gridFade, y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    const cx = W / 2, cy = H / 2;
+
+    // Singularity drop & shockwave
+    const pDrop = seg(t, 0.0, 0.45, easeOutBack);
+    const pBurst = seg(t, 0.45, 1.6, easeOutExpo);
+
+    // Concentric shockwaves
+    if (t > 0.4) {
+      for (let i = 0; i < 4; i++) {
+        const p = seg(t, 0.42 + i * 0.08, 1.7 + i * 0.15, easeOutExpo);
+        if (p > 0 && p < 1) {
+          ctx.save();
+          ctx.strokeStyle = i % 2 === 0 ? C.orange : C.cream;
+          ctx.globalAlpha = (1 - p) * 0.8;
+          ctx.lineWidth = (1 - p) * 14;
+          ctx.beginPath();
+          ctx.arc(cx, cy, p * 540, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+    }
+
+    // Radial precision rays
+    if (t > 0.5 && t < 2.5) {
+      const pRay = seg(t, 0.5, 2.2, easeOutExpo);
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(t * 0.25);
+      const n = 24;
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        const r1 = lerp(20, 420, easeInExpo(clamp((t - 0.5) / 1.2)));
+        const r2 = lerp(40, 460, pRay);
+        if (r2 > r1) {
+          ctx.strokeStyle = i % 3 === 0 ? C.orange : C.cream;
+          ctx.lineWidth = i % 3 === 0 ? 2 : 1;
+          ctx.beginPath();
+          ctx.moveTo(Math.cos(a) * r1, Math.sin(a) * r1);
+          ctx.lineTo(Math.cos(a) * r2, Math.sin(a) * r2);
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+
+    // Center dot / aperture
+    if (t < 1.3) {
+      const r = t < 0.45 ? pDrop * 18 : lerp(18, 0, seg(t, 0.45, 1.1, easeInOutCubic));
+      ctx.fillStyle = C.orange;
+      ctx.beginPath();
+      ctx.arc(cx, cy, Math.max(0, r), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Staggered kinetic letter reveal: "HELLO." -> "I AM OPUS 5.5"
+    if (t > 0.7) {
+      const splitShift = seg(t, 2.0, 2.7, easeInOutCubic);
+
+      // Top/Main Greeting
+      ctx.save();
+      ctx.translate(cx, cy - lerp(0, 75, splitShift));
+      const word1 = "HELLO.";
+      ctx.font = '900 132px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      // Clip box for clean mask reveal
+      ctx.beginPath();
+      ctx.rect(-500, -90, 1000, 180);
+      ctx.clip();
+
+      const w1In = seg(t, 0.75, 1.45, easeOutExpo);
+      const yOff1 = (1 - w1In) * 150;
+      ctx.fillStyle = C.cream;
+      ctx.fillText(word1, 0, yOff1);
+
+      // Accent orange period dot pulse
+      if (w1In > 0.8) {
+        ctx.fillStyle = C.orange;
+        ctx.beginPath();
+        ctx.arc(240, yOff1 + 36, 16 * easeOutBack(clamp((t - 1.1) * 3)), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+
+      // Secondary architectural badge: "I AM OPUS 5.5"
+      if (t > 2.0) {
+        const w2In = seg(t, 2.05, 2.8, easeOutExpo);
+        ctx.save();
+        ctx.translate(cx, cy + 68);
+
+        const pillW = lerp(60, 680, w2In);
+        const pillH = 86;
+        ctx.fillStyle = C.orange;
+        ctx.beginPath();
+        ctx.roundRect(-pillW / 2, -pillH / 2, pillW, pillH, 43);
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.roundRect(-pillW / 2, -pillH / 2, pillW, pillH, 43);
+        ctx.clip();
+
+        ctx.fillStyle = C.dark;
+        ctx.font = '900 54px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.letterSpacing = '4px';
+        ctx.fillText('I AM OPUS 5.5', 0, 2);
+        ctx.restore();
+      }
+
+      // Floating technical callouts
+      if (t > 1.5) {
+        const cIn = seg(t, 1.5, 2.3, easeOutExpo);
+        ctx.save();
+        ctx.strokeStyle = C.acid;
+        ctx.fillStyle = C.acid;
+        ctx.font = '600 12px monospace';
+        ctx.globalAlpha = cIn;
+
+        // Left callout
+        ctx.beginPath();
+        ctx.moveTo(cx - 280, cy - 110);
+        ctx.lineTo(cx - 340, cy - 150);
+        ctx.lineTo(cx - 460, cy - 150);
+        ctx.stroke();
+        ctx.fillText('SYS.VER // 5.5.0', cx - 460, cy - 160);
+
+        // Right callout
+        ctx.beginPath();
+        ctx.moveTo(cx + 280, cy + 68);
+        ctx.lineTo(cx + 380, cy + 120);
+        ctx.lineTo(cx + 500, cy + 120);
+        ctx.stroke();
+        ctx.textAlign = 'right';
+        ctx.fillText('MOTION ENGINE: ONLINE', cx + 500, cy + 110);
+        ctx.restore();
+      }
+    }
+
+    // Scene 1 -> 2 Wipe: Expanding cream shutter
+    if (t > 3.55) {
+      const w = seg(t, 3.55, 4.0, easeInOutCubic);
+      ctx.fillStyle = C.cream;
+      ctx.fillRect(0, H * (1 - w), W, H * w);
+    }
+
+    drawHUD(t, t < 3.75);
+  }
+
+  // ============================================================================
+  // SCENE 2 (4 - 8s): KINETIC TYPOGRAPHY — Swiss Poster in Motion
+  // ============================================================================
+  function scene2(t) {
+    const lt = t - 4.0;
+    ctx.fillStyle = C.cream;
+    ctx.fillRect(0, 0, W, H);
+
+    // Dynamic diagonal split background mid-scene
+    const diagP = seg(lt, 1.4, 2.2, easeInOutCubic);
+    if (diagP > 0) {
+      ctx.save();
+      ctx.fillStyle = C.orange;
+      ctx.beginPath();
+      ctx.moveTo(W * (1 - diagP * 0.48), 0);
+      ctx.lineTo(W, 0);
+      ctx.lineTo(W, H);
+      ctx.lineTo(W * (1 - diagP * 0.68), H);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Swiss grid lines
+    const gIn = seg(lt, 0.0, 0.8, easeOutExpo);
+    ctx.strokeStyle = 'rgba(10,11,14,0.12)';
+    ctx.lineWidth = 1.5;
+    [160, 560, 920].forEach(x => {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H * gIn); ctx.stroke();
+    });
+    [140, 360, 580].forEach(y => {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W * gIn, y); ctx.stroke();
+    });
+
+    // 3 Massive Horizontal Kinetic Tracks
+    const rows = [
+      { y: 140, h: 220, text: 'RHYTHM • FORM • VELOCITY • ', speed: -260, col: C.dark, weight: '900' },
+      { y: 360, h: 220, text: 'PRECISION IN EVERY FRAME • ', speed: 290, col: C.orange, strokeOnly: false },
+    ];
+
+    // Row 1: RHYTHM / FORM
+    {
+      const p = seg(lt, 0.05, 0.8, easeOutExpo);
+      ctx.save();
+      ctx.beginPath(); ctx.rect(60, 60, W - 120, 175); ctx.clip();
+      ctx.font = '900 138px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = C.dark;
+      const str = 'KINETIC ARCHITECTURE   KINETIC ARCHITECTURE';
+      const x = -lt * 280 + (1 - p) * 400;
+      ctx.fillText(str, x, 155);
+      ctx.restore();
+    }
+
+    // Row 2: Inverted dark bar with high-contrast acid/cream type
+    {
+      const barW = seg(lt, 0.2, 0.9, easeOutExpo) * (W - 120);
+      ctx.save();
+      ctx.fillStyle = C.dark;
+      ctx.fillRect(60, 250, barW, 210);
+      ctx.beginPath(); ctx.rect(60, 250, barW, 210); ctx.clip();
+
+      // Variable-width kinetic stretch word "MOTION"
+      const stretch = 1 + 0.32 * Math.sin(lt * 3.2);
+      ctx.translate(470, 355);
+      ctx.scale(stretch, 1);
+      ctx.font = '900 150px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = C.cream;
+      ctx.fillText('MOTION', 0, 5);
+      ctx.restore();
+
+      // Right counter-rotating badge inside Row 2
+      if (lt > 0.6) {
+        const bIn = seg(lt, 0.6, 1.3, easeOutBack);
+        ctx.save();
+        ctx.translate(1030, 355);
+        ctx.scale(bIn, bIn);
+        ctx.rotate(lt * 1.2);
+        ctx.fillStyle = C.acid;
+        ctx.beginPath();
+        const spikes = 12;
+        for (let i = 0; i < spikes * 2; i++) {
+          const r = i % 2 === 0 ? 82 : 62;
+          const a = (i / (spikes * 2)) * Math.PI * 2;
+          if (i === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+          else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+        }
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.rotate(-lt * 1.2);
+        ctx.fillStyle = C.dark;
+        ctx.font = '900 22px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('60 FPS', 0, -10);
+        ctx.font = '700 14px monospace';
+        ctx.fillText('PURE CODE', 0, 12);
+        ctx.restore();
+      }
+    }
+
+    // Row 3: Bottom bold statement + animated Swiss arrows
+    {
+      const p = seg(lt, 0.35, 1.1, easeOutExpo);
+      ctx.save();
+      ctx.beginPath(); ctx.rect(60, 470, W - 120, 190); ctx.clip();
+      ctx.font = '900 132px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = C.dark;
+      const y = 565 + (1 - p) * 160;
+      ctx.fillText('DESIGNED', 65, y);
+
+      // Outlined / solid alternating word on right
+      ctx.fillStyle = diagP > 0.5 ? C.cream : C.orange;
+      ctx.fillText('TO MOVE', 745 - lt * 25, y);
+      ctx.restore();
+    }
+
+    // Scene 2 -> 3 Transition: Expanding Bauhaus circles
+    if (lt > 3.5) {
+      const p = seg(lt, 3.5, 4.0, easeInOutCubic);
+      ctx.fillStyle = C.dark;
+      ctx.beginPath();
+      ctx.arc(W / 2, H / 2, p * 900, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    drawHUD(t, lt > 3.75);
+  }
+
+  // ============================================================================
+  // SCENE 3 (8 - 12s): BAUHAUS PRECISION — Geometric Ballet & Pendulums
+  // ============================================================================
+  function scene3(t) {
+    const lt = t - 8.0;
+    ctx.fillStyle = C.dark;
+    ctx.fillRect(0, 0, W, H);
+
+    const cols = 4, rows = 2;
+    const cellW = 260, cellH = 260;
+    const startX = (W - cols * cellW) / 2;
+    const startY = (H - rows * cellH) / 2 + 10;
+
+    //Title label top-left of grid
+    const enter = seg(lt, 0, 0.7, easeOutExpo);
+    ctx.save();
+    ctx.font = '700 14px monospace';
+    ctx.fillStyle = C.acid;
+    ctx.fillText('FIG. 03 — PROCEDURAL HARMONICS & MODULAR GEOMETRY', startX, startY - 22);
+    ctx.restore();
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const idx = r * cols + c;
+        const delay = idx * 0.06;
+        const p = seg(lt, delay, delay + 0.75, easeOutBack);
+        const x = startX + c * cellW;
+        const y = startY + r * cellH;
+        const cx = x + cellW / 2;
+        const cy = y + cellH / 2;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x, y, cellW, cellH);
+        ctx.clip();
+
+        // Cell border
+        ctx.strokeStyle = 'rgba(244,241,234,0.16)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x, y, cellW, cellH);
+
+        ctx.translate(cx, cy);
+        ctx.scale(p, p);
+
+        const phase = lt * 2.4 + idx * 0.7;
+
+        switch (idx) {
+          case 0: // Split rotating quarter-circles
+            for (let q = 0; q < 4; q++) {
+              ctx.save();
+              ctx.rotate(q * Math.PI / 2 + Math.floor(lt * 2) * 0.2 + Math.sin(phase) * 0.5);
+              ctx.fillStyle = q % 2 === 0 ? C.orange : C.cream;
+              ctx.beginPath();
+              ctx.moveTo(0, 0);
+              ctx.arc(0, 0, 96, 0, Math.PI / 2);
+              ctx.closePath();
+              ctx.fill();
+              ctx.restore();
+            }
+            break;
+
+          case 1: // Nested eccentric orbits
+            ctx.fillStyle = C.cobalt;
+            ctx.fillRect(-cellW / 2, -cellH / 2, cellW, cellH);
+            for (let k = 5; k >= 1; k--) {
+              const rad = k * 19;
+              const off = (5 - k) * 11;
+              const ox = Math.cos(phase * 1.2 + k) * off;
+              const oy = Math.sin(phase * 1.2 + k) * off;
+              ctx.fillStyle = k % 2 === 0 ? C.cream : C.dark;
+              ctx.beginPath();
+              ctx.arc(ox, oy, rad, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            break;
+
+          case 2: // Kinetic Venetian blinds wave
+            for (let i = -5; i <= 5; i++) {
+              const by = i * 20;
+              const h = 10 + 8 * Math.sin(lt * 4 + i * 0.5);
+              ctx.fillStyle = i === 0 ? C.acid : C.cream;
+              ctx.fillRect(-95, by - h / 2, 190, h);
+            }
+            break;
+
+          case 3: // Bauhaus eye / iris aperture
+            ctx.fillStyle = C.cream;
+            ctx.fillRect(-cellW / 2, -cellH / 2, cellW, cellH);
+            ctx.fillStyle = C.dark;
+            ctx.beginPath();
+            ctx.moveTo(-105, 0);
+            ctx.quadraticCurveTo(0, -95, 105, 0);
+            ctx.quadraticCurveTo(0, 95, -105, 0);
+            ctx.fill();
+            const px = Math.sin(lt * 3) * 28;
+            ctx.fillStyle = C.orange;
+            ctx.beginPath(); ctx.arc(px, 0, 38, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = C.cream;
+            ctx.beginPath(); ctx.arc(px, 0, 14, 0, Math.PI * 2); ctx.fill();
+            break;
+
+          case 4: // Pendulum wave matrix
+            for (let i = 0; i < 7; i++) {
+              const ang = Math.sin(lt * (2.5 + i * 0.35)) * 0.85;
+              const len = 32 + i * 11;
+              ctx.strokeStyle = 'rgba(244,241,234,0.35)';
+              ctx.beginPath();
+              ctx.moveTo(0, -95);
+              const bx = Math.sin(ang) * len;
+              const by = -95 + Math.cos(ang) * len * 1.6;
+              ctx.lineTo(bx, by);
+              ctx.stroke();
+              ctx.fillStyle = i % 2 === 0 ? C.acid : C.orange;
+              ctx.beginPath(); ctx.arc(bx, by, 7, 0, Math.PI * 2); ctx.fill();
+            }
+            break;
+
+          case 5: // Isometric expanding cube illusion
+            ctx.fillStyle = C.orange;
+            ctx.fillRect(-cellW / 2, -cellH / 2, cellW, cellH);
+            const s = 55 + 20 * Math.sin(lt * 3.5);
+            ctx.rotate(lt * 0.8);
+            ctx.strokeStyle = C.dark;
+            ctx.lineWidth = 5;
+            ctx.strokeRect(-s, -s, s * 2, s * 2);
+            ctx.rotate(Math.PI / 4);
+            ctx.fillStyle = C.cream;
+            ctx.fillRect(-s * 0.65, -s * 0.65, s * 1.3, s * 1.3);
+            break;
+
+          case 6: // Lissajous oscilloscope
+            ctx.strokeStyle = C.cyan;
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            for (let a = 0; a <= Math.PI * 2; a += 0.04) {
+              const lx = Math.sin(3 * a + lt * 2.2) * 88;
+              const ly = Math.sin(4 * a) * 88;
+              if (a === 0) ctx.moveTo(lx, ly);
+              else ctx.lineTo(lx, ly);
+            }
+            ctx.closePath();
+            ctx.stroke();
+            break;
+
+          case 7: // Bold Swiss typographic counter
+            ctx.fillStyle = C.acid;
+            ctx.fillRect(-cellW / 2, -cellH / 2, cellW, cellH);
+            ctx.fillStyle = C.dark;
+            ctx.font = '900 92px -apple-system, BlinkMacSystemFont, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            const num = Math.min(99, Math.floor(lt * 26)).toString().padStart(2, '0');
+            ctx.fillText(num, 0, 5);
+            ctx.font = '700 12px monospace';
+            ctx.fillText('ITERATIONS/SEC', 0, 68);
+            break;
+        }
+
+        ctx.restore();
+      }
+    }
+
+    drawHUD(t, true);
+  }
+
+  // ============================================================================
+  // SCENE 4 (12 - 16s): DIMENSIONAL HARMONY — 3D Polyhedra & Orbital Rings
+  // ============================================================================
+  function scene4(t) {
+    const lt = t - 12.0;
+
+    // Deep radial space gradient
+    const grad = ctx.createRadialGradient(W / 2, H / 2, 20, W / 2, H / 2, 700);
+    grad.addColorStop(0, '#131829');
+    grad.addColorStop(1, C.dark);
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    const cx = W / 2, cy = H / 2;
+    const scaleIn = seg(lt, 0, 0.9, easeOutBack);
+
+    // Background orbital rings in 3D
+    for (let r = 0; r < 3; r++) {
+      const radius = (210 + r * 65) * scaleIn;
+      ctx.save();
+      ctx.strokeStyle = r === 1 ? C.orange : 'rgba(244,241,234,0.22)';
+      ctx.lineWidth = r === 1 ? 2 : 1;
+      ctx.beginPath();
+      const steps = 90;
+      for (let i = 0; i <= steps; i++) {
+        const a = (i / steps) * Math.PI * 2;
+        const pt = rot3D(
+          [Math.cos(a) * radius, Math.sin(a) * radius, 0],
+          lt * (0.7 + r * 0.2) + r,
+          lt * (0.5 - r * 0.15) + r * 2,
+          r * 0.8
+        );
+        const persp = 700 / (700 + pt[2]);
+        const px = cx + pt[0] * persp;
+        const py = cy + pt[1] * persp;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Breathing / morphing Icosahedron
+    const rad = (155 + 22 * Math.sin(lt * 3.5)) * scaleIn;
+    const rx = lt * 0.95;
+    const ry = lt * 1.25;
+    const rz = lt * 0.6;
+
+    const proj = icoVerts.map(v => {
+      // Explode/pulse vertices outward along normal
+      const pulse = 1 + 0.18 * Math.sin(lt * 4 + v[0] * 2 + v[1] * 2);
+      const p3 = rot3D([v[0] * rad * pulse, v[1] * rad * pulse, v[2] * rad * pulse], rx, ry, rz);
+      const persp = 650 / (650 + p3[2]);
+      return { x: cx + p3[0] * persp, y: cy + p3[1] * persp, z: p3[2], s: persp };
+    });
+
+    // Draw edges sorted by depth
+    icoEdges.forEach(([i, j]) => {
+      const a = proj[i], b = proj[j];
+      const zAvg = (a.z + b.z) / 2;
+      const alpha = clamp(invLerp(180, -180, zAvg), 0.15, 0.95);
+      ctx.strokeStyle = zAvg < 0 ? `rgba(0, 240, 255, ${alpha})` : `rgba(244, 241, 234, ${alpha})`;
+      ctx.lineWidth = zAvg < 0 ? 2.4 : 1.1;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    });
+
+    // Draw glowing vertex nodes
+    proj.forEach((p, i) => {
+      const r = (p.z < 0 ? 5.5 : 3) * p.s;
+      ctx.fillStyle = i % 3 === 0 ? C.orange : C.acid;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    // Left & Right editorial typography framing the 3D object
+    const tIn = seg(lt, 0.3, 1.1, easeOutExpo);
+    ctx.save();
+    ctx.globalAlpha = tIn;
+    ctx.fillStyle = C.cream;
+    ctx.font = '900 62px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textBaseline = 'middle';
+
+    ctx.textAlign = 'left';
+    ctx.fillText('SPATIAL', 72 - (1 - tIn) * 60, cy - 34);
+    ctx.fillStyle = C.cyan;
+    ctx.fillText('CALCULUS', 72 - (1 - tIn) * 60, cy + 34);
+
+    ctx.textAlign = 'right';
+    ctx.fillStyle = C.cream;
+    ctx.fillText('REALTIME', W - 72 + (1 - tIn) * 60, cy - 34);
+    ctx.fillStyle = C.orange;
+    ctx.fillText('PROJECTION', W - 72 + (1 - tIn) * 60, cy + 34);
+
+    // Live telemetry numbers
+    ctx.font = '500 12px monospace';
+    ctx.fillStyle = 'rgba(244,241,234,0.6)';
+    ctx.textAlign = 'left';
+    ctx.fillText(`ROT.X: ${rx.toFixed(3)} rad`, 74, cy + 95);
+    ctx.fillText(`ROT.Y: ${ry.toFixed(3)} rad`, 74, cy + 113);
+    ctx.textAlign = 'right';
+    ctx.fillText(`FOV: 65.0° // VERTICES: 12`, W - 74, cy + 95);
+    ctx.fillText(`EDGES: 30 // Z-SORT: ACTIVE`, W - 74, cy + 113);
+    ctx.restore();
+
+    drawHUD(t, true);
+  }
+
+  // ============================================================================
+  // SCENE 5 (16 - 20s): LIQUID CHROMATICS — interference ribbons & flow field
+  // ============================================================================
+  function scene5(t) {
+    const lt = t - 16.0;
+    ctx.fillStyle = C.dark;
+    ctx.fillRect(0, 0, W, H);
+
+    const ribbonPalette = [C.orange, C.cobalt, C.acid, C.cyan, C.cream];
+    const numRibbons = 28;
+    const enter = seg(lt, 0, 0.9, easeOutExpo);
+
+    ctx.save();
+    for (let i = 0; i < numRibbons; i++) {
+      const norm = i / (numRibbons - 1);
+      const baseY = lerp(110, H - 110, norm);
+      const col = ribbonPalette[i % ribbonPalette.length];
+
+      ctx.strokeStyle = col;
+      ctx.lineWidth = i % 4 === 0 ? 3.2 : 1.5;
+      ctx.globalAlpha = (i % 4 === 0 ? 0.95 : 0.48) * enter;
+
+      ctx.beginPath();
+      for (let x = 0; x <= W; x += 16) {
+        const nx = x / W;
+        const env = Math.sin(nx * Math.PI); // pin ends smoothly
+        const w1 = Math.sin(nx * 5.5 - lt * 2.8 + i * 0.22) * 95;
+        const w2 = Math.cos(nx * 11.0 + lt * 1.9 - i * 0.35) * 42;
+        const y = baseY + (w1 + w2) * env * enter;
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Central floating glassmorphic monolith card
+    const cardIn = seg(lt, 0.25, 1.1, easeOutBack);
+    ctx.save();
+    ctx.translate(W / 2, H / 2);
+    ctx.scale(cardIn, cardIn);
+
+    const cw = 660, ch = 210;
+    ctx.fillStyle = 'rgba(10, 11, 14, 0.82)';
+    ctx.strokeStyle = C.cream;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(-cw / 2, -ch / 2, cw, ch, 16);
+    ctx.fill();
+    ctx.stroke();
+
+    // Accent corner pills
+    ctx.fillStyle = C.acid;
+    ctx.fillRect(-cw / 2 + 20, -ch / 2 + 20, 48, 6);
+    ctx.fillStyle = C.orange;
+    ctx.fillRect(cw / 2 - 68, ch / 2 - 26, 48, 6);
+
+    ctx.fillStyle = C.cream;
+    ctx.font = '900 72px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('FLUID DYNAMICS', 0, -16);
+
+    ctx.fillStyle = C.acid;
+    ctx.font = '600 16px monospace';
+    ctx.letterSpacing = '5px';
+    ctx.fillText('HARMONIC WAVE SYNTHESIS', 0, 48);
+    ctx.restore();
+
+    drawHUD(t, true);
+  }
+
+  // ============================================================================
+  // SCENE 6 (20 - 24s): FINALE — Grand Convergence & Loop back to Singularity
+  // ============================================================================
+  function scene6(t) {
+    const lt = t - 20.0;
+    ctx.fillStyle = C.dark;
+    ctx.fillRect(0, 0, W, H);
+
+    const cx = W / 2, cy = H / 2;
+    const outro = seg(lt, 3.15, 3.92, easeInExpo); // collapses cleanly into Scene 1 dot
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    const globalScale = 1 - outro;
+    ctx.scale(globalScale, globalScale);
+
+    // Rotating architectural sunburst ring
+    const ringIn = seg(lt, 0.0, 0.9, easeOutExpo);
+    const ticks = 60;
+    for (let i = 0; i < ticks; i++) {
+      const a = (i / ticks) * Math.PI * 2 + lt * 0.2;
+      const inner = 245 * ringIn;
+      const outer = inner + (i % 5 === 0 ? 28 : 12) * ringIn;
+      ctx.strokeStyle = i % 5 === 0 ? C.orange : 'rgba(244,241,234,0.3)';
+      ctx.lineWidth = i % 5 === 0 ? 2.5 : 1;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * inner, Math.sin(a) * inner);
+      ctx.lineTo(Math.cos(a) * outer, Math.sin(a) * outer);
+      ctx.stroke();
+    }
+
+    // Orbiting accent satellites
+    for (let k = 0; k < 3; k++) {
+      const ang = lt * (1.4 - k * 0.3) + k * 2.1;
+      const r = (220 + k * 36) * ringIn;
+      ctx.fillStyle = [C.acid, C.cyan, C.orange][k];
+      ctx.beginPath();
+      ctx.arc(Math.cos(ang) * r, Math.sin(ang) * r, 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Hero Lockup: OPUS 5.5
+    const lockIn = seg(lt, 0.15, 1.0, easeOutBack);
+    ctx.save();
+    ctx.scale(lockIn, lockIn);
+
+    // Subtle offset chromatic shadow
+    ctx.font = '900 148px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    const shift = (1 - seg(lt, 0.15, 0.85, easeOutExpo)) * 18;
+    if (shift > 0.2) {
+      ctx.fillStyle = C.orange;
+      ctx.fillText('OPUS 5.5', -shift, -18);
+      ctx.fillStyle = C.cobalt;
+      ctx.fillText('OPUS 5.5', shift, -18);
+    }
+
+    ctx.fillStyle = C.cream;
+    ctx.fillText('OPUS 5.5', 0, -18);
+
+    // Subtitle pill
+    const subIn = seg(lt, 0.45, 1.15, easeOutExpo);
+    ctx.globalAlpha = subIn;
+    ctx.fillStyle = C.acid;
+    ctx.beginPath();
+    ctx.roundRect(-235 * subIn, 62, 470 * subIn, 40, 20);
+    ctx.fill();
+
+    if (subIn > 0.6) {
+      ctx.fillStyle = C.dark;
+      ctx.font = '800 16px monospace';
+      ctx.letterSpacing = '4px';
+      ctx.fillText('IMAGINATION IN MOTION', 0, 83);
+    }
+    ctx.restore();
+
+    ctx.restore();
+
+    // Final singularity point remaining for seamless loop into t=0
+    if (outro > 0.7) {
+      const p = invLerp(0.7, 1.0, outro);
+      ctx.fillStyle = C.orange;
+      ctx.beginPath();
+      ctx.arc(cx, cy, (1 - p) * 26 + 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    drawHUD(t, true);
+  }
+
+  // Subtle film grain / scanline polish pass
+  function drawPostProcess(t) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,255,255,0.018)';
+    const offset = Math.floor((t * 60) % 4);
+    for (let y = offset; y < H; y += 4) {
+      ctx.fillRect(0, y, W, 1);
+    }
+    ctx.restore();
+  }
+
+  function frame(now) {
+    if (t0 === null) t0 = now;
+    const elapsed = (now - t0) / 1000 + startOffset;
+    const t = elapsed % window.DUR;
+
+    if (t < 4.0) scene1(t);
+    else if (t < 8.0) scene2(t);
+    else if (t < 12.0) scene3(t);
+    else if (t < 16.0) scene4(t);
+    else if (t < 20.0) scene5(t);
+    else scene6(t);
+
+    drawPostProcess(t);
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

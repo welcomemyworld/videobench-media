@@ -1,0 +1,1130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>灵境随记 FlowNote - 产品宣传动画</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #050508; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    font-family: "PingFang SC", "Microsoft YaHei", -apple-system, sans-serif;
+    user-select: none;
+  }
+  #stage {
+    width: 1280px; height: 720px;
+    box-shadow: 0 25px 70px rgba(0,0,0,0.75);
+    background: #0b0c14;
+  }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+(() => {
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const W = 1280, H = 720;
+  window.DUR = 30;
+
+  function resize() {
+    const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+    canvas.style.transform = `scale(${s})`;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const params = new URLSearchParams(location.search);
+  const tOffset = parseFloat(params.get('t') || '0');
+
+  // --- Easing & Math Helpers ---
+  const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const easeOutCubic = x => 1 - Math.pow(1 - clamp(x), 3);
+  const easeInOutCubic = x => {
+    x = clamp(x);
+    return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+  };
+  const easeOutBack = x => {
+    x = clamp(x);
+    const c1 = 1.70158, c3 = c1 + 1;
+    return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
+  };
+  constprog = (t, s, d) => clamp((t - s) / d);
+
+  // --- Procedural Ambient Electronic Music (Web Audio API) ---
+  let audioCtx = null;
+  let lastStep = -1;
+  let audioMuted = false;
+
+  const chords = [
+    [261.63, 329.63, 392.00, 493.88], // Cmaj7
+    [220.00, 261.63, 329.63, 392.00], // Am7
+    [174.61, 220.00, 261.63, 329.63], // Fmaj7
+    [196.00, 246.94, 293.66, 392.00]  // G6
+  ];
+  const arpPattern = [0, 1, 2, 3, 2, 1, 3, 2];
+
+  function initAudio() {
+    if (audioCtx) {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      return;
+    }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    audioCtx = new AC();
+  }
+
+  window.addEventListener('pointerdown', (e) => {
+    initAudio();
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (W / rect.width);
+    const y = (e.clientY - rect.top) * (H / rect.height);
+    if (x > W - 130 && y < 55) {
+      audioMuted = !audioMuted;
+    }
+  });
+  window.addEventListener('keydown', initAudio);
+  try { initAudio(); } catch(e) {}
+
+  function playNote(freq, dur, vol = 0.04, type = 'sine', cutoff = 1800) {
+    if (!audioCtx || audioCtx.state !== 'running' || audioMuted) return;
+    const now = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    const filter = audioCtx.createBiquadFilter();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, now);
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(cutoff, now);
+
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.linearRampToValueAtTime(vol, now + 0.03);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(now);
+    osc.stop(now + dur + 0.05);
+  }
+
+  function playClickSound(pitch = 900) {
+    playNote(pitch, 0.06, 0.03, 'triangle', 3000);
+  }
+
+  function updateMusic(t) {
+    const step = Math.floor(t * 4); // 4 sixteenth-notes per sec (120 BPM half-time feel)
+    if (step !== lastStep) {
+      lastStep = step;
+      const chordIdx = Math.floor(step / 16) % chords.length;
+      const chord = chords[chordIdx];
+      // Warm pad on bar start
+      if (step % 16 === 0) {
+        chord.forEach(f => playNote(f * 0.5, 3.8, 0.025, 'sine', 900));
+      }
+      // Gentle marimba/pluck arpeggio
+      const noteFreq = chord[arpPattern[step % 8]] * (step % 4 === 0 ? 2 : 1);
+      playNote(noteFreq, 0.45, 0.022, 'triangle', 1600);
+      // Soft bass pulse
+      if (step % 8 === 0) {
+        playNote(chord[0] * 0.25, 1.5, 0.04, 'sine', 400);
+      }
+    }
+  }
+
+  // --- UI Drawing Primitives ---
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, r);
+  }
+
+  function drawShadow(color, blur, ox = 0, oy = 12) {
+    ctx.shadowColor = color;
+    ctx.shadowBlur = blur;
+    ctx.shadowOffsetX = ox;
+    ctx.shadowOffsetY = oy;
+  }
+
+  function clearShadow() {
+    ctx.shadowColor = 'transparent';
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+  }
+
+  function drawBadge(text, x, y, color = '#7C3AED', bg = 'rgba(124,58,237,0.12)', alpha = 1) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.font = '600 14px "PingFang SC", sans-serif';
+    const tw = ctx.measureText(text).width + 28;
+    roundRect(x - tw / 2, y - 16, tw, 32, 16);
+    ctx.fillStyle = bg;
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x, y);
+    ctx.restore();
+  }
+
+  function drawCursor(x, y, clicking = false, scale = 1) {
+    ctx.save();
+    ctx.translate(x, y);
+    const s = scale * (clicking ? 0.85 : 1);
+    ctx.scale(s, s);
+    if (clicking) {
+      ctx.beginPath();
+      ctx.arc(4, 4, 22, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(124, 58, 237, 0.28)';
+      ctx.fill();
+    }
+    drawShadow('rgba(0,0,0,0.35)', 8, 2, 4);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, 22);
+    ctx.lineTo(6, 17);
+    ctx.lineTo(11, 26);
+    ctx.lineTo(15, 24);
+    ctx.lineTo(10, 15);
+    ctx.lineTo(18, 15);
+    ctx.closePath();
+    ctx.fillStyle = '#1E1B4B';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawLogo(x, y, size, t) {
+    ctx.save();
+    ctx.translate(x, y);
+    drawShadow('rgba(124, 58, 237, 0.35)', 25, 0, 10);
+    roundRect(-size/2, -size/2, size, size, size * 0.26);
+    const g = ctx.createLinearGradient(-size/2, -size/2, size/2, size/2);
+    g.addColorStop(0, '#8B5CF6');
+    g.addColorStop(0.5, '#6366F1');
+    g.addColorStop(1, '#06B6D4');
+    ctx.fillStyle = g;
+    ctx.fill();
+    clearShadow();
+
+    // Inner crystal / sparkle wave icon
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = size * 0.07;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    const r = size * 0.26;
+    ctx.beginPath();
+    ctx.moveTo(0, -r);
+    ctx.quadraticCurveTo(r * 0.2, 0, r, 0);
+    ctx.quadraticCurveTo(r * 0.2, 0, 0, r);
+    ctx.quadraticCurveTo(-r * 0.2, 0, -r, 0);
+    ctx.quadraticCurveTo(-r * 0.2, 0, 0, -r);
+    ctx.closePath();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fill();
+
+    // Orbiting dot
+    const ang = t * 2.2;
+    ctx.beginPath();
+    ctx.arc(Math.cos(ang) * r * 1.1, Math.sin(ang) * r * 1.1, size * 0.055, 0, Math.PI * 2);
+    ctx.fillStyle = '#A5F3FC';
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // --- Background Renderer ---
+  function drawAmbientBackground(t, darkFactor = 0) {
+    // Base light gradient mixed with darkFactor for Obsidian scene
+    const r1 = Math.round(lerp(248, 13, darkFactor));
+    const g1 = Math.round(lerp(250, 15, darkFactor));
+    const b1 = Math.round(lerp(255, 26, darkFactor));
+    ctx.fillStyle = `rgb(${r1},${g1},${b1})`;
+    ctx.fillRect(0, 0, W, H);
+
+    // Soft floating gradient orbs
+    const orbs = [
+      { x: 250 + Math.sin(t * 0.5) * 90, y: 180 + Math.cos(t * 0.4) * 60, r: 360, c: darkFactor > 0.5 ? 'rgba(124,58,237,0.18)' : 'rgba(139,92,246,0.12)' },
+      { x: 1020 + Math.cos(t * 0.6) * 80, y: 540 + Math.sin(t * 0.5) * 70, r: 400, c: darkFactor > 0.5 ? 'rgba(6,182,212,0.14)' : 'rgba(14,165,233,0.10)' },
+      { x: 640 + Math.sin(t * 0.3) * 110, y: 360 + Math.cos(t * 0.7) * 50, r: 310, c: darkFactor > 0.5 ? 'rgba(236,72,153,0.10)' : 'rgba(244,114,182,0.08)' }
+    ];
+    orbs.forEach(o => {
+      const grad = ctx.createRadialGradient(o.x, o.y, 10, o.x, o.y, o.r);
+      grad.addColorStop(0, o.c);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H);
+    });
+
+    // Subtle grid
+    ctx.strokeStyle = darkFactor > 0.5 ? 'rgba(255,255,255,0.025)' : 'rgba(15,23,42,0.028)';
+    ctx.lineWidth = 1;
+    const step = 48;
+    const offX = (t * 12) % step;
+    for (let x = -step + offX; x < W; x += step) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    }
+    for (let y = 0; y < H; y += step) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+  }
+
+  // --- SCENE 1: Pain Point to Brand Reveal (0.0s - 5.2s) ---
+  const messyCards = [
+    { title: '微信收藏链接', sub: '3天前 · 未读文章', color: '#10B981', ox: -310, oy: -130, rot: -0.18 },
+    { title: '手机备忘录', sub: '零散想法_最终版2.txt', color: '#F59E0B', ox: 290, oy: -140, rot: 0.15 },
+    { title: '网页书签 (99+)', sub: '稍后阅读 · 找不到在哪', color: '#3B82F6', ox: -330, oy: 120, rot: 0.12 },
+    { title: '桌面便签截图', sub: 'IMG_2025_会议纪要.png', color: '#EC4899', ox: 310, oy: 130, rot: -0.14 },
+    { title: 'Obsidian 笔记库', sub: '如何与手机快速同步？', color: '#8B5CF6', ox: 0, oy: -195, rot: 0.06 }
+  ];
+
+  function renderScene1(t) {
+    const convergeP = easeInOutCubic(theprog(t, 2.0, 1.1));
+    const revealP = easeOutBack(theprog(t, 2.7, 0.8));
+    const exitP = easeInOutCubic(theprog(t, 4.6, 0.6));
+
+    ctx.save();
+    ctx.translate(0, -exitP * 80);
+    ctx.globalAlpha = 1 - exitP;
+
+    // 1A: Messy floating cards converging into center
+    if (convergeP < 0.99) {
+      const introP = easeOutCubic(theprog(t, 0.1, 0.8));
+      messyCards.forEach((c, i) => {
+        const floatX = Math.sin(t * 2.5 + i) * 10;
+        const floatY = Math.cos(t * 2.2 + i * 1.5) * 10;
+        const x = lerp(W/2 + c.ox + floatX, W/2, convergeP);
+        const y = lerp(H/2 + c.oy + floatY, H/2 - 30, convergeP);
+        const s = lerp(introP, 0.1, convergeP);
+        const rot = lerp(c.rot + Math.sin(t + i) * 0.04, 0, convergeP);
+
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(rot);
+        ctx.scale(s, s);
+        ctx.globalAlpha = (1 - convergeP * 0.9) * introP;
+
+        drawShadow('rgba(15,23,42,0.08)', 20, 0, 8);
+        roundRect(-115, -42, 230, 84, 16);
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fill();
+        clearShadow();
+        ctx.strokeStyle = 'rgba(15,23,42,0.08)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(-82, 0, 16, 0, Math.PI * 2);
+        ctx.fillStyle = c.color + '22';
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(-82, 0, 7, 0, Math.PI * 2);
+        ctx.fillStyle = c.color;
+        ctx.fill();
+
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#1E293B';
+        ctx.font = '600 15px "PingFang SC", sans-serif';
+        ctx.fillText(c.title, -54, -6);
+        ctx.fillStyle = '#64748B';
+        ctx.font = '400 12px "PingFang SC", sans-serif';
+        ctx.fillText(c.sub, -54, 16);
+        ctx.restore();
+      });
+
+      // Pain point headline
+      const textAlpha = easeOutCubic(theprog(t, 0.2, 0.6)) * (1 - easeInOutCubic(theprog(t, 1.9, 0.6)));
+      ctx.save();
+      ctx.globalAlpha = textAlpha;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#0F172A';
+      ctx.font = '700 40px "PingFang SC", sans-serif';
+      ctx.fillText('灵感散落各处，笔记软件太难上手？', W/2, H/2 - 10);
+      ctx.fillStyle = '#64748B';
+      ctx.font = '400 20px "PingFang SC", sans-serif';
+      ctx.fillText('无需折腾复杂配置，让记录回归直觉与简单', W/2, H/2 + 38);
+      ctx.restore();
+    }
+
+    // 1B: Brand Logo & Product Positioning Reveal
+    if (t > 2.5) {
+      ctx.save();
+      ctx.translate(W/2, H/2 - 75);
+      ctx.scale(revealP, revealP);
+      drawLogo(0, 0, 108, t);
+      ctx.restore();
+
+      const tAlpha = easeOutCubic(theprog(t, 2.9, 0.7));
+      ctx.save();
+      ctx.globalAlpha = tAlpha;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#0F172A';
+      ctx.font = '700 46px "PingFang SC", sans-serif';
+      ctx.fillText('灵境随记 · FlowNote', W/2, H/2 + 45);
+
+      ctx.fillStyle = '#475569';
+      ctx.font = '400 22px "PingFang SC", sans-serif';
+      ctx.fillText('零门槛极简记录  ×  网页 · 桌面 · Obsidian 全生态无缝协同', W/2, H/2 + 92);
+
+      drawBadge('✨ 专为普通人打造的智能灵感中心', W/2, H/2 + 148, '#7C3AED', 'rgba(124,58,237,0.10)', tAlpha);
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  // --- SCENE 2: Web & Desktop Real Operation Demo (4.8s - 13.8s) ---
+  const typedString = "周末去景德镇看陶瓷展，记得提前订高铁票和民宿";
+  const tagsList = ["#旅行清单", "#周末生活", "#待办提醒"];
+
+  function renderScene2(t) {
+    const enterP = easeOutCubic(theprog(t, 4.8, 0.8));
+    const exitP = easeInOutCubic(theprog(t, 13.0, 0.8));
+    if (enterP <= 0 || exitP >= 1) return;
+
+    ctx.save();
+    const yOffset = (1 - enterP) * 70 - exitP * 70;
+    ctx.translate(0, yOffset);
+    ctx.globalAlpha = enterP * (1 - exitP);
+
+    // Top Section Title
+    drawBadge('独立客户端 & 网页版实机演示', W/2, 52, '#2563EB', 'rgba(37,99,235,0.10)');
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#0F172A';
+    ctx.font = '700 32px "PingFang SC", sans-serif';
+    ctx.fillText('打开即写，AI 自动帮你归类整理', W/2, 100);
+    ctx.fillStyle = '#64748B';
+    ctx.font = '400 16px "PingFang SC", sans-serif';
+    ctx.fillText('不懂排版也没关系，像发朋友圈一样随手记录，剩下的交给智能助手', W/2, 132);
+
+    // Main Desktop / Web Window
+    const wx = 150, wy = 160, ww = 980, wh = 500;
+    drawShadow('rgba(15, 23, 42, 0.14)', 45, 0, 20);
+    roundRect(wx, wy, ww, wh, 18);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fill();
+    clearShadow();
+    ctx.strokeStyle = '#E2E8F0';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Window Header Bar
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(wx, wy, ww, 46, [18, 18, 0, 0]);
+    ctx.fillStyle = '#F8FAFC';
+    ctx.fill();
+    ctx.strokeStyle = '#E2E8F0';
+    ctx.stroke();
+
+    // Traffic lights
+    ['#EF4444', '#F59E0B', '#10B981'].forEach((c, i) => {
+      ctx.beginPath();
+      ctx.arc(wx + 24 + i * 20, wy + 23, 6, 0, Math.PI * 2);
+      ctx.fillStyle = c;
+      ctx.fill();
+    });
+
+    // URL / App Mode Switch Pill
+    roundRect(wx + 330, wy + 9, 320, 28, 8);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fill();
+    ctx.strokeStyle = '#E2E8F0';
+    ctx.stroke();
+    ctx.fillStyle = '#64748B';
+    ctx.font = '500 12px "PingFang SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('🔒 app.flownote.cn  ·  Windows / Mac 桌面端已同步', wx + 490, wy + 27);
+    ctx.restore();
+
+    // Left Sidebar
+    const sideW = 210;
+    ctx.fillStyle = '#F8FAFC';
+    ctx.fillRect(wx + 1, wy + 46, sideW, wh - 47);
+    ctx.beginPath();
+    ctx.moveTo(wx + sideW, wy + 46);
+    ctx.lineTo(wx + sideW, wy + wh);
+    ctx.strokeStyle = '#E2E8F0';
+    ctx.stroke();
+
+    const navItems = [
+      { icon: '⚡', label: '闪念速记', active: true, count: '12' },
+      { icon: '✨', label: 'AI 智能整理', active: false, count: '新' },
+      { icon: '📅', label: '每日回顾', active: false, count: '' },
+      { icon: '💎', label: 'Obsidian 互联', active: false, count: '已开启' }
+    ];
+    navItems.forEach((item, idx) => {
+      const iy = wy + 70 + idx * 44;
+      if (item.active) {
+        roundRect(wx + 14, iy, sideW - 28, 36, 10);
+        ctx.fillStyle = '#EDE9FE';
+        ctx.fill();
+      }
+      ctx.textAlign = 'left';
+      ctx.font = item.active ? '600 14px "PingFang SC"' : '400 14px "PingFang SC"';
+      ctx.fillStyle = item.active ? '#6D28D9' : '#475569';
+      ctx.fillText(`${item.icon}   ${item.label}`, wx + 28, iy + 23);
+      if (item.count) {
+        ctx.textAlign = 'right';
+        ctx.font = '500 11px "PingFang SC"';
+        ctx.fillStyle = item.active ? '#7C3AED' : '#94A3B8';
+        ctx.fillText(item.count, wx + sideW - 26, iy + 22);
+      }
+    });
+
+    // Main Content Area inside Window
+    const cx = wx + sideW + 36;
+    const cy = wy + 72;
+    const cw = ww - sideW - 72;
+
+    // Input composer box
+    const isPolished = t > 9.3;
+    const polishP = easeOutCubic(theprog(t, 9.3, 0.7));
+
+    roundRect(cx, cy, cw, 155, 14);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fill();
+    ctx.strokeStyle = t > 5.8 && t < 9.5 ? '#8B5CF6' : '#CBD5E1';
+    ctx.lineWidth = t > 5.8 && t < 9.5 ? 2 : 1.2;
+    ctx.stroke();
+
+    // Typing simulation (5.8s -> 8.2s)
+    const typeP = clamp((t - 5.8) / 2.3);
+    const charCount = Math.floor(typeP * typedString.length);
+    const currentText = typedString.slice(0, charCount);
+
+    ctx.textAlign = 'left';
+    if (charCount === 0) {
+      ctx.fillStyle = '#94A3B8';
+      ctx.font = '400 16px "PingFang SC", sans-serif';
+      ctx.fillText('此刻在想什么？随便写下，无需考虑格式...', cx + 20, cy + 38);
+    } else {
+      ctx.fillStyle = '#1E293B';
+      ctx.font = '500 17px "PingFang SC", sans-serif';
+      ctx.fillText(currentText, cx + 20, cy + 38);
+      // Blinking Caret
+      if (t < 8.8 && Math.floor(t * 3) % 2 === 0) {
+        const tw = ctx.measureText(currentText).width;
+        ctx.fillStyle = '#7C3AED';
+        ctx.fillRect(cx + 22 + tw, cy + 20, 2.5, 22);
+      }
+    }
+
+    // Animated Tags popping in (7.8s -> 8.8s)
+    tagsList.forEach((tag, i) => {
+      const tp = easeOutBack(theprog(t, 7.7 + i * 0.22, 0.45));
+      if (tp > 0) {
+        ctx.save();
+        const tx = cx + 20 + i * 98;
+        const ty = cy + 72;
+        ctx.translate(tx + 40, ty + 14);
+        ctx.scale(tp, tp);
+        roundRect(-40, -14, 86, 28, 14);
+        ctx.fillStyle = '#F3E8FF';
+        ctx.fill();
+        ctx.fillStyle = '#7C3AED';
+        ctx.font = '500 12px "PingFang SC", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(tag, 3, 4);
+        ctx.restore();
+      }
+    });
+
+    // AI Polish Button inside composer
+    const btnX = cx + cw - 158, btnY = cy + 108, btnW = 140, btnH = 34;
+    const btnClicked = t > 9.05 && t < 9.35;
+    ctx.save();
+    ctx.translate(btnX + btnW/2, btnY + btnH/2);
+    if (btnClicked) ctx.scale(0.93, 0.93);
+    roundRect(-btnW/2, -btnH/2, btnW, btnH, 10);
+    const btnGrad = ctx.createLinearGradient(-btnW/2, 0, btnW/2, 0);
+    btnGrad.addColorStop(0, '#7C3AED');
+    btnGrad.addColorStop(1, '#3B82F6');
+    ctx.fillStyle = btnGrad;
+    ctx.fill();
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '600 13px "PingFang SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(isPolished ? '✓ 已生成行动卡片' : '✨ AI 一键整理', 0, 5);
+    ctx.restore();
+
+    // Generated Structured Card below composer (9.3s+)
+    if (polishP > 0) {
+      ctx.save();
+      const cardY = cy + 178 + (1 - polishP) * 25;
+      ctx.globalAlpha *= polishP;
+
+      drawShadow('rgba(124, 58, 237, 0.10)', 25, 0, 10);
+      roundRect(cx, cardY, cw, 215, 16);
+      ctx.fillStyle = '#FDFCFE';
+      ctx.fill();
+      clearShadow();
+      ctx.strokeStyle = '#DDD6FE';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Card Header
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#5B21B6';
+      ctx.font = '700 17px "PingFang SC", sans-serif';
+      ctx.fillText('🏺 景德镇周末看展计划（AI 已自动拆解待办）', cx + 22, cardY + 36);
+
+      // Sync status pill on right
+      const syncDone = t > 10.6;
+      roundRect(cx + cw - 195, cardY + 16, 175, 26, 13);
+      ctx.fillStyle = syncDone ? '#DCFCE7' : '#FEF3C7';
+      ctx.fill();
+      ctx.fillStyle = syncDone ? '#15803D' : '#B45309';
+      ctx.font = '600 12px "PingFang SC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(syncDone ? '● 已实时同步至 Obsidian' : '↻ 正在同步至全平台...', cx + cw - 107, cardY + 33);
+
+      // Checkboxes
+      const todos = [
+        { text: '预订往返景德镇北站高铁票（建议周五晚出发）', checked: t > 10.2 },
+        { text: '挑选陶溪川文创街区附近民宿', checked: t > 11.0 },
+        { text: '预约中国陶瓷博物馆门票（免费需提前预约）', checked: false }
+      ];
+      todos.forEach((td, i) => {
+        const ty = cardY + 72 + i * 42;
+        roundRect(cx + 24, ty - 14, 20, 20, 6);
+        if (td.checked) {
+          ctx.fillStyle = '#7C3AED';
+          ctx.fill();
+          ctx.strokeStyle = '#FFFFFF';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(cx + 29, ty - 4);
+          ctx.lineTo(cx + 33, ty + 1);
+          ctx.lineTo(cx + 40, ty - 8);
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fill();
+          ctx.strokeStyle = '#CBD5E1';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
+        ctx.textAlign = 'left';
+        ctx.font = '400 15px "PingFang SC", sans-serif';
+        ctx.fillStyle = td.checked ? '#94A3B8' : '#334155';
+        ctx.fillText(td.text, cx + 56, ty + 2);
+      });
+      ctx.restore();
+    }
+
+    // Animated Cursor Interaction
+    let curX = wx + 780, curY = wy + 380;
+    if (t < 6.0) {
+      const p = easeInOutCubic(theprog(t, 5.0, 0.8));
+      curX = lerp(wx + 820, cx + 140, p);
+      curY = lerp(wy + 420, cy + 40, p);
+    } else if (t < 8.4) {
+      curX = cx + 140 + Math.sin(t * 2) * 15;
+      curY = cy + 65;
+    } else if (t < 9.5) {
+      const p = easeInOutCubic(theprog(t, 8.4, 0.6));
+      curX = lerp(cx + 140, btnX + btnW / 2, p);
+      curY = lerp(cy + 65, btnY + btnH / 2, p);
+    } else {
+      const p = easeInOutCubic(theprog(t, 9.6, 0.7));
+      curX = lerp(btnX + btnW / 2, cx + 34, p);
+      curY = lerp(btnY + btnH / 2, cy + 250, p);
+    }
+    const isClick = (t > 5.7 && t < 5.9) || (t > 9.05 && t < 9.3) || (t > 10.15 && t < 10.35);
+    drawCursor(curX, curY, isClick);
+
+    ctx.restore();
+  }
+
+  // --- SCENE 3: Obsidian Plugin Seamless Sync & Visual Graph (13.3s - 22.8s) ---
+  function renderScene3(t) {
+    const enterP = easeOutCubic(theprog(t, 13.3, 0.9));
+    const exitP = easeInOutCubic(theprog(t, 22.0, 0.8));
+    if (enterP <= 0 || exitP >= 1) return;
+
+    ctx.save();
+    ctx.translate(0, (1 - enterP) * 70 - exitP * 70);
+    ctx.globalAlpha = enterP * (1 - exitP);
+
+    // Header in Dark Theme
+    drawBadge('Obsidian 官方认证插件 · 零配置即插即用', W/2, 50, '#A78BFA', 'rgba(167,139,250,0.15)');
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#F8FAFC';
+    ctx.font = '700 32px "PingFang SC", sans-serif';
+    ctx.fillText('无缝接入 Obsidian，小白也能拥有最强大脑', W/2, 98);
+    ctx.fillStyle = '#94A3B8';
+    ctx.font = '400 16px "PingFang SC", sans-serif';
+    ctx.fillText('不需要懂代码和折腾文件夹，在网页/手机随手记下的瞬间，自动变成你的本地双链笔记', W/2, 130);
+
+    // Obsidian Dark Window
+    const ox = 110, oy = 158, ow = 1060, oh = 505;
+    drawShadow('rgba(0, 0, 0, 0.55)', 50, 0, 24);
+    roundRect(ox, oy, ow, oh, 18);
+    ctx.fillStyle = '#161622';
+    ctx.fill();
+    clearShadow();
+    ctx.strokeStyle = '#2E2E42';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Top Titlebar
+    ctx.beginPath();
+    ctx.roundRect(ox, oy, ow, 42, [18, 18, 0, 0]);
+    ctx.fillStyle = '#1E1E2E';
+    ctx.fill();
+    ['#EF4444', '#F59E0B', '#10B981'].forEach((c, i) => {
+      ctx.beginPath();
+      ctx.arc(ox + 24 + i * 20, oy + 21, 5.5, 0, Math.PI * 2);
+      ctx.fillStyle = c;
+      ctx.fill();
+    });
+    ctx.fillStyle = '#94A3B8';
+    ctx.font = '500 13px "PingFang SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Obsidian Vault  —  已启用「灵境随记 FlowNote Sync」插件 v2.4', ox + ow/2, oy + 25);
+
+    // Left Vault File Tree (220px)
+    const treeW = 225;
+    ctx.fillStyle = '#12121C';
+    ctx.fillRect(ox + 1, oy + 42, treeW, oh - 43);
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#64748B';
+    ctx.font = '600 12px "PingFang SC", sans-serif';
+    ctx.fillText('📁 我的知识库 Vault', ox + 20, oy + 72);
+
+    const files = [
+      { name: '📄 2025旅行心愿单.md', isNew: false },
+      { name: '📄 景德镇看展攻略.md', isNew: false },
+      { name: '📄 生活灵感速记本.md', isNew: false }
+    ];
+    files.forEach((f, i) => {
+      ctx.fillStyle = '#94A3B8';
+      ctx.font = '400 13px "PingFang SC", sans-serif';
+      ctx.fillText(f.name, ox + 28, oy + 104 + i * 32);
+    });
+
+    // Newly synced file flying into file tree at t=14.8s
+    const syncInP = easeOutBack(theprog(t, 14.6, 0.7));
+    if (syncInP > 0) {
+      const fy = oy + 200;
+      ctx.save();
+      ctx.translate(ox + 16 + (1 - syncInP) * -40, fy);
+      ctx.globalAlpha *= clamp(syncInP);
+      roundRect(0, -18, treeW - 28, 32, 8);
+      ctx.fillStyle = 'rgba(139, 92, 246, 0.22)';
+      ctx.fill();
+      ctx.strokeStyle = '#8B5CF6';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = '#E9D5FF';
+      ctx.font = '600 13px "PingFang SC", sans-serif';
+      ctx.fillText('⚡ 景德镇周末计划.md', 10, 3);
+      ctx.restore();
+    }
+
+    // Plugin Status Card at bottom of sidebar
+    roundRect(ox + 14, oy + oh - 108, treeW - 28, 92, 12);
+    ctx.fillStyle = '#1E1E2E';
+    ctx.fill();
+    ctx.strokeStyle = '#3B3B54';
+    ctx.stroke();
+    ctx.fillStyle = '#A78BFA';
+    ctx.font = '600 13px "PingFang SC", sans-serif';
+    ctx.fillText('🔌 FlowNote 插件状态', ox + 28, oy + oh - 82);
+    ctx.fillStyle = '#10B981';
+    ctx.font = '400 12px "PingFang SC", sans-serif';
+    ctx.fillText('● 毫秒级云端双向同步中', ox + 28, oy + oh - 56);
+    ctx.fillStyle = '#64748B';
+    ctx.fillText('本地 Markdown 纯文本存储', ox + 28, oy + oh - 34);
+
+    // Center Markdown Editor Pane (470px)
+    const edX = ox + treeW + 1, edW = 485;
+    ctx.strokeStyle = '#2E2E42';
+    ctx.beginPath();
+    ctx.moveTo(edX, oy + 42); ctx.lineTo(edX, oy + oh);
+    ctx.moveTo(edX + edW, oy + 42); ctx.lineTo(edX + edW, oy + oh);
+    ctx.stroke();
+
+    // Markdown Note Content Appearing
+    const noteP = easeOutCubic(theprog(t, 14.9, 0.8));
+    if (noteP > 0) {
+      ctx.save();
+      ctx.globalAlpha *= noteP;
+      const nx = edX + 30, ny = oy + 82;
+
+      // YAML Frontmatter pill
+      roundRect(nx, ny - 16, edW - 60, 56, 8);
+      ctx.fillStyle = '#1E1E2E';
+      ctx.fill();
+      ctx.fillStyle = '#94A3B8';
+      ctx.font = '400 12px monospace';
+      ctx.fillText('tags: [旅行清单, 周末生活]   source: FlowNote桌面端', nx + 14, ny + 6);
+      ctx.fillStyle = '#A78BFA';
+      ctx.fillText('status: 自动归档完成 ✨', nx + 14, ny + 26);
+
+      // Note H1
+      ctx.fillStyle = '#F8FAFC';
+      ctx.font = '700 22px "PingFang SC", sans-serif';
+      ctx.fillText('🏺 景德镇周末看展计划', nx, ny + 80);
+
+      // Bi-directional Link highlight
+      ctx.fillStyle = '#CBD5E1';
+      ctx.font = '400 15px "PingFang SC", sans-serif';
+      ctx.fillText('关联笔记：', nx, ny + 120);
+
+      // Clickable WikiLink [[景德镇看展攻略]]
+      const linkHover = t > 16.5;
+      roundRect(nx + 78, ny + 102, 162, 26, 6);
+      ctx.fillStyle = linkHover ? 'rgba(139, 92, 246, 0.35)' : 'rgba(139, 92, 246, 0.15)';
+      ctx.fill();
+      ctx.fillStyle = '#C4B5FD';
+      ctx.font = '600 14px "PingFang SC", sans-serif';
+      ctx.fillText('[[景德镇看展攻略]]', nx + 86, ny + 120);
+
+      roundRect(nx + 250, ny + 102, 150, 26, 6);
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.15)';
+      ctx.fill();
+      ctx.fillStyle = '#7DD3FC';
+      ctx.fillText('[[2025旅行心愿单]]', nx + 258, ny + 120);
+
+      // Markdown Checklist
+      const mdLines = [
+        '- [x] 预订往返景德镇北站高铁票',
+        '- [x] 挑选陶溪川文创街区附近民宿',
+        '- [ ] 预约中国陶瓷博物馆门票'
+      ];
+      mdLines.forEach((line, i) => {
+        ctx.fillStyle = i < 2 ? '#10B981' : '#E2E8F0';
+        ctx.font = '400 15px "PingFang SC", sans-serif';
+        ctx.fillText(line, nx, ny + 170 + i * 34);
+      });
+
+      // AI Auto-Backlink Callout Box (appears at 16.8s)
+      const calloutP = easeOutBack(theprog(t, 16.8, 0.6));
+      if (calloutP > 0) {
+        ctx.save();
+        ctx.translate(nx, ny + 280 + (1 - calloutP) * 20);
+        ctx.globalAlpha *= clamp(calloutP);
+        roundRect(0, 0, edW - 60, 86, 10);
+        ctx.fillStyle = 'rgba(16, 185, 129, 0.10)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(16, 185, 129, 0.4)';
+        ctx.stroke();
+        ctx.fillStyle = '#34D399';
+        ctx.font = '600 13px "PingFang SC", sans-serif';
+        ctx.fillText('💡 插件智能发现关联：', 16, 28);
+        ctx.fillStyle = '#CBD5E1';
+        ctx.font = '400 13px "PingFang SC", sans-serif';
+        ctx.fillText('已自动将该随记与你 3 个月前收藏的《景德镇看展攻略》建立双链！', 16, 56);
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+
+    // Right Knowledge Graph Pane (350px)
+    const gx = edX + edW, gw = ow - treeW - edW;
+    ctx.fillStyle = '#94A3B8';
+    ctx.font = '600 12px "PingFang SC", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('🕸️ 知识图谱实时生长 (Graph View)', gx + 20, oy + 72);
+
+    // Graph Center & Nodes
+    const gcx = gx + gw / 2, gcy = oy + 280;
+    const nodes = [
+      { id: 0, label: '景德镇周末计划', x: 0, y: 0, r: 14, color: '#A855F7', appear: 15.2 },
+      { id: 1, label: '景德镇看展攻略', x: -85, y: -75, r: 10, color: '#38BDF8', appear: 13.8 },
+      { id: 2, label: '2025旅行心愿单', x: 90, y: -65, r: 10, color: '#38BDF8', appear: 13.8 },
+      { id: 3, label: '#周末生活', x: -75, y: 85, r: 9, color: '#10B981', appear: 15.8 },
+      { id: 4, label: '陶瓷博物馆', x: 85, y: 80, r: 9, color: '#F472B6', appear: 16.4 }
+    ];
+
+    // Draw Animated Edges
+    const linkP = easeInOutCubic(theprog(t, 16.0, 1.2));
+    nodes.slice(1).forEach((n, i) => {
+      if (t > n.appear) {
+        const nx = gcx + n.x + Math.sin(t * 1.5 + i) * 6;
+        const ny = gcy + n.y + Math.cos(t * 1.3 + i) * 6;
+        ctx.beginPath();
+        ctx.moveTo(gcx, gcy);
+        ctx.lineTo(lerp(gcx, nx, linkP), lerp(gcy, ny, linkP));
+        ctx.strokeStyle = 'rgba(167, 139, 250, 0.45)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Data pulse traveling along edge
+        if (linkP >= 1) {
+          const pulse = (t * 0.9 + i * 0.25) % 1;
+          const px = lerp(gcx, nx, pulse);
+          const py = lerp(gcy, ny, pulse);
+          ctx.beginPath();
+          ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+          ctx.fillStyle = '#E9D5FF';
+          ctx.fill();
+        }
+      }
+    });
+
+    // Draw Nodes
+    nodes.forEach((n, i) => {
+      const np = easeOutBack(theprog(t, n.appear, 0.5));
+      if (np > 0) {
+        const nx = gcx + (i === 0 ? 0 : n.x + Math.sin(t * 1.5 + i) * 6);
+        const ny = gcy + (i === 0 ? 0 : n.y + Math.cos(t * 1.3 + i) * 6);
+        ctx.save();
+        ctx.translate(nx, ny);
+        ctx.scale(np, np);
+
+        // Glow
+        ctx.beginPath();
+        ctx.arc(0, 0, n.r * 2.1, 0, Math.PI * 2);
+        ctx.fillStyle = n.color + '33';
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(0, 0, n.r, 0, Math.PI * 2);
+        ctx.fillStyle = n.color;
+        ctx.fill();
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        ctx.fillStyle = '#E2E8F0';
+        ctx.font = i === 0 ? '600 13px "PingFang SC"' : '400 12px "PingFang SC"';
+        ctx.textAlign = 'center';
+        ctx.fillText(n.label, 0, n.r + 18);
+        ctx.restore();
+      }
+    });
+
+    // Cursor hovering the bi-directional link in Obsidian
+    const curP = easeInOutCubic(theprog(t, 15.6, 1.0));
+    const curX = lerp(ox + 120, edX + 165, curP);
+    const curY = lerp(oy + 200, oy + 195, curP);
+    drawCursor(curX, curY, t > 16.6 && t < 16.85);
+
+    ctx.restore();
+  }
+
+  // --- SCENE 4: All-in-One Ecosystem & Final Call to Action (22.2s - 30.0s) ---
+  function renderScene4(t) {
+    const enterP = easeOutCubic(theprog(t, 22.2, 0.9));
+    if (enterP <= 0) return;
+
+    ctx.save();
+    ctx.globalAlpha = enterP;
+    ctx.translate(0, (1 - enterP) * 50);
+
+    // Top Headline
+    drawBadge('全平台覆盖 · 数据永远属于你自己', W/2, 62, '#7C3AED', 'rgba(124,58,237,0.12)');
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#0F172A';
+    ctx.font = '700 38px "PingFang SC", sans-serif';
+    ctx.fillText('无论你在哪里，灵感永不掉线', W/2, 114);
+
+    // Three Feature Cards (Web/Mobile, Desktop, Obsidian Plugin)
+    const cards = [
+      {
+        icon: '🌐',
+        tag: '网页端 & 手机小程序',
+        title: '随时随地，点开即记',
+        desc: '免安装打开浏览器就能用，微信文章、灵感语音一键收藏入库。',
+        color: '#3B82F6',
+        delay: 22.5
+      },
+      {
+        icon: '💻',
+        tag: 'Windows / macOS 桌面端',
+        title: '全局快捷键，一秒唤出',
+        desc: '工作学习时不打断思路，按下 Alt+Space 呼出悬浮窗，写完即走。',
+        color: '#8B5CF6',
+        delay: 22.8
+      },
+      {
+        icon: '💎',
+        tag: 'Obsidian 专属同步插件',
+        title: '本地文件，安全永久保存',
+        desc: '笔记自动转为通用 Markdown 存入电脑本地，不绑架数据，安心用十年。',
+        color: '#10B981',
+        delay: 23.1
+      }
+    ];
+
+    cards.forEach((c, i) => {
+      const cp = easeOutBack(theprog(t, c.delay, 0.65));
+      if (cp <= 0) return;
+      const cw = 330, ch = 225;
+      const cx = 115 + i * 360;
+      const cy = 165;
+
+      ctx.save();
+      ctx.translate(cx + cw/2, cy + ch/2);
+      ctx.scale(cp, cp);
+      ctx.translate(-cw/2, -ch/2);
+
+      drawShadow('rgba(15, 23, 42, 0.08)', 30, 0, 14);
+      roundRect(0, 0, cw, ch, 20);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fill();
+      clearShadow();
+      ctx.strokeStyle = '#E2E8F0';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Top accent bar
+      ctx.beginPath();
+      ctx.roundRect(0, 0, cw, 6, [20, 20, 0, 0]);
+      ctx.fillStyle = c.color;
+      ctx.fill();
+
+      // Icon Circle
+      ctx.beginPath();
+      ctx.arc(44, 48, 22, 0, Math.PI * 2);
+      ctx.fillStyle = c.color + '18';
+      ctx.fill();
+      ctx.font = '22px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(c.icon, 44, 56);
+
+      // Tag
+      ctx.textAlign = 'left';
+      ctx.fillStyle = c.color;
+      ctx.font = '600 13px "PingFang SC", sans-serif';
+      ctx.fillText(c.tag, 78, 53);
+
+      // Title
+      ctx.fillStyle = '#0F172A';
+      ctx.font = '700 20px "PingFang SC", sans-serif';
+      ctx.fillText(c.title, 26, 108);
+
+      // Wrapped Description (2 lines)
+      ctx.fillStyle = '#64748B';
+      ctx.font = '400 14px "PingFang SC", sans-serif';
+      const line1 = c.desc.slice(0, 19);
+      const line2 = c.desc.slice(19);
+      ctx.fillText(line1, 26, 144);
+      ctx.fillText(line2, 26, 168);
+
+      ctx.restore();
+    });
+
+    // Bottom Brand Outro & CTA Banner (24.0s+)
+    const ctaP = easeOutCubic(theprog(t, 23.8, 0.8));
+    if (ctaP > 0) {
+      ctx.save();
+      ctx.globalAlpha *= ctaP;
+      const by = 435;
+
+      drawLogo(W/2, by + 42, 74, t);
+
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#0F172A';
+      ctx.font = '700 30px "PingFang SC", sans-serif';
+      ctx.fillText('灵境随记 FlowNote  ·  让每一次闪念都有回响', W/2, by + 118);
+
+      // Glowing CTA Button
+      const pulse = 1 + Math.sin(t * 4) * 0.025;
+      ctx.save();
+      ctx.translate(W/2, by + 172);
+      ctx.scale(pulse, pulse);
+      drawShadow('rgba(124, 58, 237, 0.35)', 25, 0, 8);
+      roundRect(-190, -26, 380, 52, 26);
+      const g = ctx.createLinearGradient(-190, 0, 190, 0);
+      g.addColorStop(0, '#7C3AED');
+      g.addColorStop(0.5, '#4F46E5');
+      g.addColorStop(1, '#06B6D4');
+      ctx.fillStyle = g;
+      ctx.fill();
+      clearShadow();
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '600 17px "PingFang SC", sans-serif';
+      ctx.fillText('立即免费体验  ·  flownote.cn', 0, 6);
+      ctx.restore();
+
+      ctx.fillStyle = '#64748B';
+      ctx.font = '400 14px "PingFang SC", sans-serif';
+      ctx.fillText('支持 Web 网页版 / Windows / macOS / iOS / Android / Obsidian 插件市场直接搜索安装', W/2, by + 230);
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  // --- Audio & Progress HUD ---
+  function renderHUD(t, darkFactor) {
+    // Top-right sound indicator
+    ctx.save();
+    const isRunning = audioCtx && audioCtx.state === 'running' && !audioMuted;
+    roundRect(W - 128, 16, 112, 30, 15);
+    ctx.fillStyle = darkFactor > 0.5 ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.06)';
+    ctx.fill();
+    ctx.fillStyle = darkFactor > 0.5 ? '#CBD5E1' : '#475569';
+    ctx.font = '500 12px "PingFang SC", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(isRunning ? '🎵 纯音配乐中' : '🔇 点击开启配乐', W - 72, 35);
+    ctx.restore();
+
+    // Subtle bottom timeline progress bar
+    ctx.save();
+    ctx.fillStyle = 'rgba(124, 58, 237, 0.2)';
+    ctx.fillRect(0, H - 4, W, 4);
+    const grad = ctx.createLinearGradient(0, 0, W, 0);
+    grad.addColorStop(0, '#8B5CF6');
+    grad.addColorStop(1, '#06B6D4');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, H - 4, W * (t / window.DUR), 4);
+    ctx.restore();
+  }
+
+  // --- Discrete UI Sound Triggers ---
+  let lastTriggerSec = -1;
+  function checkUISounds(t) {
+    const sec10 = Math.floor(t * 10);
+    if (sec10 === lastTriggerSec) return;
+    lastTriggerSec = sec10;
+    // Typing subtle ticks in Scene 2
+    if (t > 5.8 && t < 8.1 && sec10 % 2 === 0) {
+      playClickSound(600 + (sec10 % 5) * 80);
+    }
+    // Button click chimes
+    if (sec10 === 91 || sec10 === 148 || sec10 === 168) {
+      playClickSound(1200);
+    }
+  }
+
+  // --- Main Render Loop ---
+  function frame(now) {
+    const t = ((now / 1000) + tOffset) % window.DUR;
+
+    updateMusic(t);
+    checkUISounds(t);
+
+    // Smooth dark mode factor during Scene 3 (Obsidian Demo: 13.3s -> 22.5s)
+    const toDark = easeInOutCubic(theprog(t, 13.2, 0.9));
+    const toLight = easeInOutCubic(theprog(t, 22.0, 0.9));
+    const darkFactor = clamp(toDark - toLight);
+
+    ctx.clearRect(0, 0, W, H);
+    drawAmbientBackground(t, darkFactor);
+
+    if (t < 5.3) renderScene1(t);
+    if (t >= 4.7 && t < 13.9) renderScene2(t);
+    if (t >= 13.2 && t < 22.9) renderScene3(t);
+    if (t >= 22.1) renderScene4(t);
+
+    renderHUD(t, darkFactor);
+
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

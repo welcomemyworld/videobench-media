@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>VELA — Motion</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#stage{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:center center;background:#000}
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+window.DUR = 15;
+const c = document.getElementById('stage');
+const x = c.getContext('2d');
+const q = new URLSearchParams(location.search);
+const tOff = parseFloat(q.get('t')) || 0;
+const tStart = performance.now() - tOff * 1000;
+
+function fit(){
+  const s = Math.min(innerWidth/1280, innerHeight/720);
+  c.style.transform = 'translate(-50%,-50%) scale('+s+')';
+}
+addEventListener('resize', fit);
+fit();
+
+function ease(t){ t=Math.max(0,Math.min(1,t)); return t*t*(3-2*t); }
+function eo(t){ t=Math.max(0,Math.min(1,t)); return 1-Math.pow(1-t,3); }
+function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+function seg(t,a,b){ return clamp((t-a)/(b-a),0,1); }
+
+const feats = [
+  ['SPATIAL AUDIO','Sound that wraps the room'],
+  ['30-HOUR PLAY','Power that outlasts the day'],
+  ['ADAPTIVE EQ','Tunes itself to your space']
+];
+
+function ring(cx,cy,r,w,col,a){
+  x.beginPath();
+  x.arc(cx,cy,r,0,Math.PI*2);
+  x.strokeStyle = col;
+  x.globalAlpha = a;
+  x.lineWidth = w;
+  x.stroke();
+  x.globalAlpha = 1;
+}
+
+function speaker(cx,cy,s,glow){
+  x.save();
+  x.translate(cx,cy);
+  x.scale(s,s);
+  const g = x.createLinearGradient(-90,-160,90,160);
+  g.addColorStop(0,'#2a241c');
+  g.addColorStop(0.45,'#14110e');
+  g.addColorStop(1,'#0a0908');
+  x.beginPath();
+  x.roundRect(-78,-168,156,336,78);
+  x.fillStyle = g;
+  x.fill();
+  x.strokeStyle = 'rgba(232,196,140,.35)';
+  x.lineWidth = 2;
+  x.stroke();
+  for(let i=0;i<5;i++){
+    ring(0,-40+i*0, 18+i*11, 1.4, 'rgba(232,196,140,'+(0.55-i*0.08)+')', 1);
+  }
+  x.beginPath();
+  x.arc(0,-40,16,0,Math.PI*2);
+  x.fillStyle = glow;
+  x.fill();
+  x.beginPath();
+  x.roundRect(-36,78,72,18,9);
+  x.fillStyle = 'rgba(232,196,140,.25)';
+  x.fill();
+  x.restore();
+}
+
+function word(str, px, py, size, weight, col, a, tracking){
+  x.save();
+  x.globalAlpha = a;
+  x.fillStyle = col;
+  x.font = weight+' '+size+'px Georgia, "Times New Roman", serif';
+  x.textAlign = 'center';
+  x.textBaseline = 'middle';
+  if(tracking){
+    const chars = str.split('');
+    let w = 0;
+    chars.forEach(ch => w += x.measureText(ch).width + tracking);
+    let cx = px - w/2;
+    chars.forEach(ch => {
+      const cw = x.measureText(ch).width;
+      x.fillText(ch, cx+cw/2, py);
+      cx += cw + tracking;
+    });
+  } else x.fillText(str, px, py);
+  x.restore();
+}
+
+function sans(str, px, py, size, col, a, align){
+  x.save();
+  x.globalAlpha = a;
+  x.fillStyle = col;
+  x.font = '500 '+size+'px system-ui, sans-serif';
+  x.textAlign = align || 'center';
+  x.textBaseline = 'middle';
+  x.fillText(str, px, py);
+  x.restore();
+}
+
+function frame(now){
+  const t = ((now - tStart)/1000) % window.DUR;
+  if(t < 0){ requestAnimationFrame(frame); return; }
+
+  x.clearRect(0,0,1280,720);
+  const bg = x.createRadialGradient(640,360,40,640,380,780);
+  bg.addColorStop(0,'#16120e');
+  bg.addColorStop(1,'#050403');
+  x.fillStyle = bg;
+  x.fillRect(0,0,1280,720);
+
+  const drift = Math.sin(t*0.7)*8;
+  for(let i=0;i<18;i++){
+    const a = (i/18)*Math.PI*2 + t*0.15;
+    const rr = 280 + (i%5)*26 + Math.sin(t+i)*6;
+    x.beginPath();
+    x.arc(640+Math.cos(a)*rr*0.15, 360+drift+Math.sin(a*2)*8, 1.2, 0, 6.28);
+    x.fillStyle = 'rgba(232,196,140,'+(0.15+(i%4)*0.08)+')';
+    x.fill();
+  }
+
+  // intro mark 0-3
+  const intro = seg(t,0.2,1.1);
+  const introOut = 1-seg(t,2.6,3.4);
+  if(t < 3.5){
+    const s = 0.4+eo(intro)*0.6;
+    x.save();
+    x.globalAlpha = intro*introOut;
+    x.translate(640, 300);
+    x.scale(s,s);
+    ring(0,0,46,2,'#e8c48c',1);
+    ring(0,0,28,1,'rgba(232,196,140,.5)',1);
+    x.beginPath();
+    x.arc(0,0,8,0,6.28);
+    x.fillStyle = '#e8c48c';
+    x.fill();
+    x.restore();
+    word('VELA', 640, 390, 72, '400', '#f4efe6', intro*introOut, 18);
+    sans('A SPEAKER THAT LISTENS BACK', 640, 448, 16, '#c9b89a', intro*introOut*0.9);
+  }
+
+  // features 3.2 - 9.2
+  if(t > 3.0 && t < 9.6){
+    feats.forEach((f,i)=>{
+      const a0 = 3.3 + i*1.85;
+      const k = eo(seg(t, a0, a0+0.55));
+      const out = 1-seg(t, a0+1.45, a0+1.75);
+      const a = k*out;
+      if(a<=0) return;
+      const y = 210 + i*150;
+      const slide = (1-k)*80;
+      x.save();
+      x.globalAlpha = a;
+      x.fillStyle = 'rgba(255,236,210,0.04)';
+      x.strokeStyle = 'rgba(232,196,140,0.28)';
+      x.lineWidth = 1;
+      x.beginPath();
+      x.roundRect(240-slide, y, 800, 120, 8);
+      x.fill();
+      x.stroke();
+      x.fillStyle = '#e8c48c';
+      x.fillRect(240-slide, y, 4, 120);
+      x.restore();
+      sans(String(i+1).padStart(2,'0'), 300-slide, y+60, 22, '#e8c48c', a, 'left');
+      word(f[0], 700-slide*0.4, y+46, 36, '400', '#f6f1e8', a, 2);
+      sans(f[1], 700-slide*0.2, y+86, 18, '#b7a890', a);
+    });
+  }
+
+  // product hero 9.2 - 12.6
+  if(t > 9.0 && t < 12.8){
+    const k = eo(seg(t,9.15,9.9));
+    const out = 1-seg(t,12.2,12.7);
+    const a = k*out;
+    const pulse = 1+Math.sin(t*4)*0.015;
+    for(let i=0;i<4;i++){
+      const rr = 90+i*38 + ((t*40)%38);
+      ring(460, 370, rr*pulse, 1, 'rgba(232,196,140,1)', a*(0.25-i*0.04));
+    }
+    x.save();
+    x.globalAlpha = a;
+    speaker(460, 360+ (1-k)*40, pulse, 'rgba(232,196,140,'+(0.7+Math.sin(t*6)*0.2)+')');
+    x.restore();
+    word('FORM', 860, 280, 54, '400', '#f4efe6', a, 8);
+    word('FOLLOWS', 860, 345, 54, '400', '#f4efe6', a*seg(t,9.5,10.1), 6);
+    word('FEELING', 860, 410, 54, '400', '#e8c48c', a*seg(t,9.8,10.4), 4);
+    sans('Hand-finished aluminum. One driver. No clutter.', 860, 480, 18, '#cbbba0', a*seg(t,10.1,10.6));
+  }
+
+  // end card 12.4 - 15
+  if(t > 12.3){
+    const k = eo(seg(t,12.45,13.2));
+    const fade = t>14.4 ? 1-seg(t,14.4,15) : 1;
+    const a = k*fade;
+    ring(640, 300, 36+ (1-k)*20, 1.5, '#e8c48c', a);
+    x.beginPath();
+    x.arc(640,300,6,0,6.28);
+    x.fillStyle = '#e8c48c';
+    x.globalAlpha = a;
+    x.fill();
+    x.globalAlpha = 1;
+    word('VELA', 640, 390, 64, '400', '#f7f2ea', a, 16);
+    sans('HEAR THE ROOM. OWN THE SILENCE.', 640, 450, 16, '#d7c6aa', a);
+    const bar = seg(t,13.2,14.6);
+    x.fillStyle = 'rgba(232,196,140,0.85)';
+    x.globalAlpha = a;
+    x.fillRect(540, 490, 200*bar, 2);
+    x.globalAlpha = 1;
+  }
+
+  // progress
+  x.fillStyle = 'rgba(232,196,140,0.35)';
+  x.fillRect(0,716,1280*(t/window.DUR),4);
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</html>

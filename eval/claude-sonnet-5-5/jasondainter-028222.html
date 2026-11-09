@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000;height:100%;overflow:hidden}canvas{position:absolute;left:50%;top:50%;transform-origin:0 0}</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+const c=document.getElementById('c'),g=c.getContext('2d');window.DUR=60;
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.transform`scale(${s})`;}
+function fit2(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.transform=`translate(${-640*s}px,${-360*s}px) scale(${s})`}
+fit2();onresize=fit2;
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t'))||0,st=performance.now();
+const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+function txt(s,x,y,sz,col,al){g.font=`bold ${sz}px sans-serif`;g.fillStyle=col||'#fff';g.textAlign=al||'center';g.fillText(s,x,y)}
+// characters: A=Sam-like (slim, tousled hair, light), D=Dario-like (curly big hair, glasses), E=Elon-like (stocky, receding hair, dark tee)
+const CH={
+A:{n:'Sam-ish',col:'#8cf',x:0},
+D:{n:'Dario-ish',col:'#fc8',x:0},
+E:{n:'Elon-ish',col:'#f88',x:0}};
+function head(k,x,y,r,mood){
+g.fillStyle='#111';g.strokeStyle='#fff';g.lineWidth=4;g.beginPath();g.arc(x,y,r,0,7);g.fill();g.stroke();
+g.lineWidth=3;
+if(k=='A'){g.beginPath();for(let i=0;i<5;i++){g.moveTo(x-r+i*r/2.2,y-r+4);g.lineTo(x-r+6+i*r/2.2,y-r-12);}g.stroke()}
+if(k=='D'){for(let i=0;i<9;i++){g.beginPath();g.arc(x-r+i*r/4,y-r+4-Math.sin(i*1.7)*3,7,0,7);g.stroke()}
+g.strokeRect(x-r*.8,y-6,r*.65,r*.5);g.strokeRect(x+r*.15,y-6,r*.65,r*.5);}
+if(k=='E'){g.beginPath();g.arc(x,y,r+2,Math.PI*1.15,Math.PI*1.85);g.stroke();g.beginPath();g.moveTo(x-8,y+r*.55);g.lineTo(x+8,y+r*.55);g.stroke()}
+g.fillStyle='#fff';if(k!='D'){g.fillRect(x-r*.45,y-4,5,5);g.fillRect(x+r*.3,y-4,5,5)}else{g.fillRect(x-r*.5,y,4,4);g.fillRect(x+r*.4,y,4,4)}
+g.beginPath();g.lineWidth=3;if(mood>0)g.arc(x,y+r*.25,r*.4,.15,Math.PI-.15);else if(mood<0)g.arc(x,y+r*.8,r*.35,Math.PI+.3,-.3);else{g.moveTo(x-8,y+r*.5);g.lineTo(x+8,y+r*.5)}g.stroke()}
+function man(k,x,y,t,o){ // o:{mood,arm,pose,flip,fall}
+const s=k=='E'?1.15:1,w=k=='E'?1.2:1;g.save();g.translate(x,y);g.rotate(o.rot||0);g.scale((o.flip||1)*s,s);
+g.strokeStyle=CH[k].col;g.lineWidth=6;g.lineCap='round';
+const sw=Math.sin(t*(o.spd||0)),hy=-120;
+g.beginPath();g.moveTo(0,hy+30);g.lineTo(0,-40);g.stroke();// torso
+if(k=='E'){g.lineWidth=14*w;g.beginPath();g.moveTo(0,hy+34);g.lineTo(0,-50);g.stroke();g.lineWidth=6}
+g.beginPath();g.moveTo(0,-40);g.lineTo(-18-sw*14,0);g.moveTo(0,-40);g.lineTo(18+sw*14,0);g.stroke();
+const a=o.arm||0,p=o.punch||0;
+g.beginPath();g.moveTo(0,hy+42);
+if(p){g.lineTo(40+p*30,hy+50-p*10);g.moveTo(0,hy+42);g.lineTo(-25,hy+75)}
+else{g.lineTo(-28,hy+70+Math.sin(t*3)*a*20-a*30);g.moveTo(0,hy+42);g.lineTo(28,hy+70-Math.cos(t*3)*a*20-a*30)}
+g.stroke();
+head(k,0,hy,22,o.mood);g.restore()}
+function bg(t,col){g.fillStyle=col;g.fillRect(0,0,1280,720);g.fillStyle='rgba(0,0,0,.35)';g.fillRect(0,600,1280,120);}
+function robot(x,y,t,sc,ph){g.save();g.translate(x,y);g.scale(sc,sc);g.strokeStyle='#9ab';g.fillStyle='#223';g.lineWidth=4;
+const b=Math.sin(t*4+ph)*4;g.fillRect(-25,-110+b,50,60);g.strokeRect(-25,-110+b,50,60);
+g.fillRect(-18,-170+b,36,50);g.strokeRect(-18,-170+b,36,50);
+g.fillStyle='#f22';g.fillRect(-12,-155+b,24,8);
+g.beginPath();g.moveTo(0,-170+b);g.lineTo(0,-185+b);g.stroke();g.beginPath();g.arc(0,-188+b,4,0,7);g.stroke();
+g.beginPath();g.moveTo(-25,-100+b);g.lineTo(-45,-60+Math.sin(t*4+ph)*10);g.moveTo(25,-100+b);g.lineTo(45,-60-Math.sin(t*4+ph)*10);
+g.moveTo(-12,-50+b);g.lineTo(-15,0);g.moveTo(12,-50+b);g.lineTo(15,0);g.stroke();g.restore()}
+const caps=[
+[0,8,"Three friends. One big idea."],
+[8,18,"Best buddies, building the future together"],
+[18,26,"Then... a disagreement about who gets the GPUs"],
+[26,32,"\"My model is safer.\"  \"Mine is bigger.\"  \"Mine tweets more.\""],
+[32,48,"FIGHT!"],
+[48,54,"Meanwhile..."],
+[54,60,"The robots take over."]];
+function draw(t){
+const bgc=t<18?'#1c2a44':t<48?'#3a1a1a':'#0b1410';
+bg(t,t<18?'#25406b':t<32?'#2d2540':t<48?'#401818':'#0a120e');
+// sun / sky detail
+if(t<18){g.fillStyle='#fd8';g.beginPath();g.arc(1050,120,50,0,7);g.fill()}
+g.strokeStyle='rgba(255,255,255,.2)';g.lineWidth=2;
+for(let i=0;i<8;i++){g.strokeRect(80+i*150,460-(i*37%90),60,140+(i*37%90))}
+const gy=600;
+const ps={A:{x:420},D:{x:640},E:{x:860}};
+let o={A:{},D:{},E:{}};
+if(t<18){ // friends: bounce, wave, hug
+const hug=clamp((t-12)/3,0,1);
+['A','D','E'].forEach((k,i)=>{ps[k].x=640+(i-1)*(220-hug*120);o[k]={mood:1,arm:1,spd:0,rot:0};ps[k].y=gy-Math.abs(Math.sin(t*3+i))*(t>4?20:0)});
+if(t>8&&t<12){g.fillStyle='#fff';txt('💡',640,300+Math.sin(t*4)*8,50)}
+}else if(t<26){const d=(t-18)/8;
+['A','D','E'].forEach((k,i)=>{ps[k].x=640+(i-1)*(100+d*220);o[k]={mood:-1,arm:1+Math.sin(t*8+i)*.5,rot:0};ps[k].y=gy});
+txt('GPUs?!',ps.E.x,gy-230,30,'#fff')
+}else if(t<32){['A','D','E'].forEach((k,i)=>{ps[k].x=640+(i-1)*320;o[k]={mood:-1,arm:1.5,flip:i==2?-1:1};ps[k].y=gy-Math.abs(Math.sin(t*6+i))*10});
+o.D.flip=-1;
+}else if(t<48){ // melee
+const u=t-32;
+['A','D','E'].forEach((k,i)=>{const a=u*1.3+i*2.1;ps[k].x=640+Math.sin(a)*(260+Math.sin(u*.7+i)*60)*(i==1?1:1)+ (i-1)*60;
+const pn=Math.sin(u*9+i*2);o[k]={mood:-1,punch:Math.max(0,pn),spd:14,flip:Math.cos(a)>0?-1:1,rot:Math.sin(u*9+i)*.08};ps[k].y=gy-Math.max(0,Math.sin(u*5+i))*40});
+// dust & pow
+for(let i=0;i<6;i++){const p=(u*2+i*.7)%1;g.fillStyle=`rgba(255,${200-i*20},50,${1-p})`;txt(['POW!','BAM!','ZAP!','THWACK!'][i%4],200+((i*211+Math.floor(u*2+i*.7)*97)%880),250+(i*53%200)-p*40,24+p*14,g.fillStyle)}
+if(u>12){const f=clamp((u-12)/4,0,1);['A','D','E'].forEach((k,i)=>{o[k].rot=f*(i-1)*.5+o[k].rot})}
+}else{
+const u=t-48;['A','D','E'].forEach((k,i)=>{const f=clamp(u/3,0,1);ps[k].x=420+i*220;ps[k].y=gy+10;o[k]={mood:-1,rot:(i==1?1:-1)*1.4*f,arm:0}});
+}
+// stickmen (drawn unless taken away at end)
+const taken=t>56?clamp((t-56)/2,0,1):0;
+['A','D','E'].forEach(k=>{const p=ps[k];const yy=p.y-taken*500;
+if(t>=48&&t<54){p.y=gy+(k=='D'?20:0)}
+man(k,p.x,yy,t,o[k]);
+if(t>=18){txt(CH[k].n,p.x,Math.min(yy+30,700),16,CH[k].col)}});
+if(t<18)['A','D','E'].forEach(k=>txt(CH[k].n,ps[k].x,gy+30,16,CH[k].col));
+// robots
+if(t>=46){const r=clamp((t-46)/8,0,1);const n=Math.floor(3+r*9);
+for(let i=0;i<n;i++){const dir=i%2?1:-1;const e=clamp((t-46-i*.5)/4,0,1);
+const x=dir<0?-80+e*(120+i*95):1360-e*(120+i*95);
+if(x>-100&&x<1380)robot(x,gy+20+(i%3)*14,t,.8+(i%3)*.15,i)}
+}
+if(t>=56){g.fillStyle=`rgba(255,0,0,${.15*Math.sin(t*6)**2})`;g.fillRect(0,0,1280,720)}
+if(t>=52){const a=clamp((t-52)/2,0,1);g.globalAlpha=a;txt('ROBOTS TAKING OVER',640,150,52,'#f33');g.globalAlpha=1}
+// caption
+let cap='';for(const k of caps)if(t>=k[0]&&t<k[1])cap=k[2];
+g.fillStyle='rgba(0,0,0,.55)';g.fillRect(0,0,1280,60);txt(cap,640,42,28,'#fff');
+txt('Parody. Any resemblance is a stick-figure coincidence.',640,712,13,'#aaa');
+if(t>=57.5){g.globalAlpha=clamp((t-57.5)/1.5,0,1);g.fillStyle='#000';g.fillRect(0,0,1280,720);g.globalAlpha=clamp((t-58)/1,0,1);txt('THE END',640,370,70,'#fff');g.globalAlpha=1}
+if(t<1.5){g.globalAlpha=1-t/1.5;g.fillStyle='#000';g.fillRect(0,0,1280,720);g.globalAlpha=1}
+}
+function loop(now){const t=((now-st)/1000+off)%DUR;draw(t);requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+</script></body></html>

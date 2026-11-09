@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>TeleBoost Promo</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+// 16s promo, 120 BPM grid (beat = 0.5s). Hit times exported for the Python soundtrack:
+window.DUR=16;
+const BEAT=0.5;
+window.HITS=[0,0.5,1,1.5,2,3,3.5,4,4.5,5,5.5,6,6.5,7,8,9,10,11,12,12.5,13,13.5,14,15];
+const cv=document.getElementById('c'),x=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px'}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)||0;const t0=performance.now();
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const eo=v=>1-Math.pow(1-cl(v),3);
+const eb=v=>{v=cl(v);const c=1.70158;return 1+(c+1)*Math.pow(v-1,3)+c*Math.pow(v-1,2)};
+function hitPulse(t){let p=0;for(const h of HITS){const d=t-h;if(d>=0&&d<0.4)p=Math.max(p,1-d/0.4)}return p}
+// stars
+const S=[];for(let i=0;i<180;i++)S.push({x:Math.random()*1280,y:Math.random()*720,z:Math.random()*2+.3});
+function bg(t,p){
+ const g=x.createRadialGradient(640,360,50,640,360,800);
+ g.addColorStop(0,`hsl(${205+20*Math.sin(t*.3)},80%,${14+p*8}%)`);g.addColorStop(1,'#02040c');
+ x.fillStyle=g;x.fillRect(0,0,1280,720);
+ x.fillStyle='#9cd8ff';
+ for(const s of S){const xx=(s.x-t*40*s.z)%1280;x.globalAlpha=.25*s.z;x.fillRect(xx<0?xx+1280:xx,s.y,s.z*1.3,s.z*1.3)}
+ x.globalAlpha=1;
+}
+function plane(cx,cy,r,rot){ // paper plane icon
+ x.save();x.translate(cx,cy);x.rotate(rot);x.scale(r/100,r/100);
+ x.fillStyle='#fff';x.beginPath();x.moveTo(-60,-5);x.lineTo(65,-50);x.lineTo(40,55);x.lineTo(5,25);x.closePath();x.fill();
+ x.fillStyle='#cfe8ff';x.beginPath();x.moveTo(5,25);x.lineTo(65,-50);x.lineTo(-10,30);x.lineTo(-5,55);x.closePath();x.fill();
+ x.restore();
+}
+function logo(cx,cy,r,t){
+ const g=x.createLinearGradient(cx-r,cy-r,cx+r,cy+r);g.addColorStop(0,'#3ec6ff');g.addColorStop(1,'#1f6bff');
+ x.shadowColor='#3ec6ff';x.shadowBlur=40;x.fillStyle=g;x.beginPath();x.arc(cx,cy,r,0,7);x.fill();x.shadowBlur=0;
+ plane(cx-r*.05,cy+r*.05,r*.7,0);
+}
+function txt(s,X,Y,sz,col,a=1,al='center',w='800'){x.globalAlpha=cl(a);x.fillStyle=col;x.font=`${w} ${sz}px Segoe UI,Helvetica,Arial,sans-serif`;x.textAlign=al;x.textBaseline='middle';x.fillText(s,X,Y);x.globalAlpha=1}
+function rr(X,Y,w,h,r){x.beginPath();x.roundRect?x.roundRect(X,Y,w,h,r):x.rect(X,Y,w,h)}
+function burst(cx,cy,age,n,col){if(age<0||age>1)return;x.strokeStyle=col;x.lineWidth=3*(1-age);
+ for(let i=0;i<n;i++){const a=i/n*6.283,r1=60+age*260,r2=r1+40*(1-age);x.globalAlpha=1-age;x.beginPath();x.moveTo(cx+Math.cos(a)*r1,cy+Math.sin(a)*r1);x.lineTo(cx+Math.cos(a)*r2,cy+Math.sin(a)*r2);x.stroke()}x.globalAlpha=1}
+function scene1(t){ // 0-3 logo intro, hits on 0,.5,1,1.5,2
+ const s=eb(t/0.6)*(1+.06*hitPulse(t));
+ for(let k=0;k<5;k++)burst(640,300,(t-k*.5)/.8,24,'#6fd3ff');
+ logo(640,300,110*s,t);
+ const a=eo((t-1)/.5);
+ txt('TeleBoost',640,470+(1-a)*30,86,'#fff',a);
+ txt('Grow your Telegram. Faster.',640,545,30,'#9fdcff',eo((t-1.5)/.5),'center','500');
+ if(t>2.6)x.fillStyle=`rgba(255,255,255,${(t-2.6)/0.4})`,x.fillRect(0,0,1280,720);
+}
+function scene2(t){ // 3-7 phone with growth, counter steps on beats
+ const T=t-3,k=Math.floor(T/BEAT),p=hitPulse(t);
+ if(T<.3){x.fillStyle=`rgba(255,255,255,${1-T/.3})`;x.fillRect(0,0,1280,720)}
+ const px=300,py=360+ (1-eo(T/.5))*500;
+ x.save();x.translate(px,py);x.rotate(-.06);
+ x.fillStyle='#0b1324';x.strokeStyle='#3ec6ff';x.lineWidth=4;rr(-140,-270,280,540,36);x.fill();x.stroke();
+ x.fillStyle='#17233d';rr(-120,-240,240,60,14);x.fill();logo(-85,-210,20,t);txt('My Channel',20,-210,22,'#fff',1,'center','700');
+ for(let i=0;i<Math.min(k+1,6);i++){const a=eo((T-i*BEAT)/.25);x.globalAlpha=a;x.fillStyle=i%2?'#1f6bff':'#25385e';rr(-110+(i%2)*40,-160+i*62,180,48,14);x.fill();
+  x.fillStyle='#ffffff55';x.fillRect(-95+(i%2)*40,-145+i*62,120,7);x.fillRect(-95+(i%2)*40,-130+i*62,80,7);}
+ x.globalAlpha=1;x.restore();
+ const n=Math.round(1200*Math.pow(1.9,Math.min(k,7)));
+ txt('SUBSCRIBERS',830,190,30,'#9fdcff',eo(T/.4),'center','600');
+ const sc=1+.12*p;x.save();x.translate(830,290);x.scale(sc,sc);txt(n.toLocaleString('en-US'),0,0,110,'#fff');x.restore();
+ // bar chart
+ for(let i=0;i<8;i++){const h=i<=k?eo((T-i*BEAT)/.3)*(30+i*i*4.2):0;
+  const g=x.createLinearGradient(0,620-h,0,620);g.addColorStop(0,'#3ec6ff');g.addColorStop(1,'#1f6bff');
+  x.fillStyle=g;rr(620+i*55,620-h,40,h,6);x.fill();}
+ txt('+'+Math.min(k*25,175)+'% reach',830,665,28,'#6fffb0',eo((T-1)/.4),'center','700');
+}
+const F=[['⚡','Instant Boost','Real growth in minutes'],['🎯','Smart Targeting','Reach your exact audience'],['📊','Live Analytics','Track every view & click']];
+function scene3(t){ // 7-11 feature cards, hits at 7,8,9,10
+ const T=t-7;
+ txt('Why TeleBoost?',640,130,58,'#fff',eo(T/.4));
+ F.forEach((f,i)=>{const st=1+i,a=eb((T-st)/.45);if(T<st)return;
+  const cx=260+i*380,cy=390+(1-a)*80;x.globalAlpha=cl(a);
+  const pu=hitPulse(t)*(Math.floor(T)===st?1:0);
+  x.save();x.translate(cx,cy);x.scale(1+pu*.05,1+pu*.05);
+  x.shadowColor='#3ec6ff';x.shadowBlur=20+pu*40;x.fillStyle='#0e1a33';x.strokeStyle='#3ec6ff';x.lineWidth=3;rr(-160,-150,320,300,26);x.fill();x.stroke();x.shadowBlur=0;
+  txt(f[0],0,-60,70,'#fff',cl(a),'center','400');txt(f[1],0,30,34,'#fff',cl(a));txt(f[2],0,85,22,'#9fdcff',cl(a),'center','500');
+  x.restore();x.globalAlpha=1;burst(cx,cy,(T-st)/.6,16,'#6fd3ff')});
+ if(T<.25){x.fillStyle=`rgba(62,198,255,${1-T/.25})`;x.fillRect(0,0,1280,720)}
+}
+function scene4(t){ // 11-16 CTA, hits 11,12,12.5,13,13.5,14,15
+ const T=t-11,p=hitPulse(t);
+ if(T<.3){x.fillStyle=`rgba(255,255,255,${1-T/.3})`;x.fillRect(0,0,1280,720)}
+ // flying planes
+ for(let i=0;i<10;i++){const u=((T*.35+i*.1)%1);x.globalAlpha=.35;plane(-100+u*1500,100+i*55+Math.sin(T*2+i)*20,26,.2);}
+ x.globalAlpha=1;
+ burst(640,250,(T-1)/.8,30,'#ffffff');burst(640,250,(T-4)/.8,30,'#6fd3ff');
+ logo(640,250,90*eb(T/.5)*(1+.08*p),t);
+ const words=['Boost.','Grow.','Win.'];
+ words.forEach((w,i)=>{const st=1.5+i*.5;if(T>st){const a=eb((T-st)/.3);txt(w,440+i*200,410,54*a,i==2?'#6fffb0':'#fff',1)}});
+ if(T>3){const a=eb((T-3)/.4),pu=1+.06*p;x.save();x.translate(640,530);x.scale(a*pu,a*pu);
+  const g=x.createLinearGradient(-200,0,200,0);g.addColorStop(0,'#3ec6ff');g.addColorStop(1,'#1f6bff');
+  x.shadowColor='#3ec6ff';x.shadowBlur=30;x.fillStyle=g;rr(-210,-42,420,84,42);x.fill();x.shadowBlur=0;
+  txt('Start Boosting Now',0,0,32,'#fff');x.restore()}
+ txt('teleboost.app',640,625,26,'#9fdcff',eo((T-3.5)/.4),'center','600');
+ if(T>4.5){x.fillStyle=`rgba(0,0,0,${(T-4.5)/.5})`;x.fillRect(0,0,1280,720)}
+}
+function frame(){
+ const t=(((performance.now()-t0)/1000+off)%DUR+DUR)%DUR,p=hitPulse(t);
+ x.save();const sh=p*p*5;x.translate((Math.random()-.5)*sh,(Math.random()-.5)*sh);
+ bg(t,p);
+ if(t<3)scene1(t);else if(t<7)scene2(t);else if(t<11)scene3(t);else scene4(t);
+ x.restore();
+ // vignette + beat flash
+ const v=x.createRadialGradient(640,360,300,640,360,800);v.addColorStop(0,'rgba(0,0,0,0)');v.addColorStop(1,'rgba(0,0,0,.6)');
+ x.fillStyle=v;x.fillRect(0,0,1280,720);
+ x.fillStyle=`rgba(62,198,255,${p*.06})`;x.fillRect(0,0,1280,720);
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></body></html>

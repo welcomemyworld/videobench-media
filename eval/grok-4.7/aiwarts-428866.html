@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>技术栈自述</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#stage{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:50% 50%}
+canvas{display:block}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+window.DUR=26;
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+const q=new URLSearchParams(location.search);
+const tOff=parseFloat(q.get('t')||'0')||0;
+const tOrigin=performance.now()-tOff*1000;
+function fit(){
+  const s=Math.min(innerWidth/1280,innerHeight/720);
+  document.getElementById('stage').style.transform='translate(-50%,-50%) scale('+s+')';
+}
+addEventListener('resize',fit);fit();
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const ease=t=>{t=clamp(t,0,1);return t*t*(3-2*t);};
+const seg=(t,a,b)=>ease((t-a)/(b-a));
+const STACK=[
+  {n:'Remotion',v:'4.0.528',r:'画面',d:'React 影片工程，负责全部画面',c:'#8B7CFF'},
+  {n:'React',v:'组件时间轴',r:'描述',d:'用组件与帧函数搭建每一镜',c:'#5CC8FF'},
+  {n:'Python',v:'配乐引擎',r:'配乐',d:'程序化生成整条音轨',c:'#3DDC97'},
+  {n:'ffmpeg',v:'由 Remotion 调用',r:'成片',d:'合成画面与配乐，输出成片',c:'#FF7A59'}
+];
+function rr(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,x+w,y+h,r);
+  ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);
+  ctx.arcTo(x,y,x+w,y,r);
+  ctx.closePath();
+}
+function frame(now){
+  let t=((now-tOrigin)/1000)%window.DUR;
+  if(t<0)t+=window.DUR;
+  const W=1280,H=720;
+  ctx.clearRect(0,0,W,H);
+  const bg=ctx.createLinearGradient(0,0,W,H);
+  bg.addColorStop(0,'#070910');
+  bg.addColorStop(1,'#121628');
+  ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+  ctx.save();
+  ctx.globalAlpha=0.12;ctx.strokeStyle='#6d7cff';ctx.lineWidth=1;
+  const drift=(t*18)%40;
+  for(let x=-40;x<W;x+=40){ctx.beginPath();ctx.moveTo(x+drift,0);ctx.lineTo(x+drift,H);ctx.stroke();}
+  for(let y=0;y<H;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+  ctx.restore();
+  const intro=seg(t,0.2,1.3);
+  const introHold=t<4.6?1:1-seg(t,4.6,5.6);
+  ctx.save();
+  ctx.globalAlpha=intro*introHold;
+  ctx.textAlign='center';
+  ctx.fillStyle='#9aa6ff';
+  ctx.font='600 18px sans-serif';
+  ctx.fillText('OPUS 5.5  ·  自述',640,250);
+  ctx.fillStyle='#fff';
+  ctx.font='700 72px sans-serif';
+  ctx.fillText('技术栈',640,340);
+  ctx.fillStyle='#b7c0de';
+  ctx.font='26px sans-serif';
+  ctx.fillText('画面 · 配乐 · 合成，由工程自己列出',640,400);
+  ctx.restore();
+  const head=seg(t,5.2,6.2)*(t<22.2?1:1-seg(t,22.2,23.2));
+  if(head>0){
+    ctx.save();ctx.globalAlpha=head;
+    ctx.fillStyle='#fff';ctx.font='700 32px sans-serif';ctx.textAlign='left';
+    ctx.fillText('技术栈清单',88,78);
+    ctx.fillStyle='#8b95b8';ctx.font='18px sans-serif';
+    ctx.fillText('Remotion 4.0.528  ·  React 影片工程',88,108);
+    ctx.restore();
+  }
+  STACK.forEach((it,i)=>{
+    const a=6.4+i*2.15,p=seg(t,a,a+0.9);
+    const fade=t<22.2?1:1-seg(t,22.2,23.2);
+    if(p<=0)return;
+    const y=148+i*112;
+    ctx.save();
+    ctx.globalAlpha=p*fade;
+    ctx.translate(0,(1-p)*28);
+    rr(88,y,1104,96,16);
+    ctx.fillStyle='rgba(16,20,36,0.92)';ctx.fill();
+    ctx.strokeStyle=it.c;ctx.lineWidth=2;ctx.stroke();
+    ctx.fillStyle=it.c;ctx.fillRect(88,y,8,96);
+    ctx.textAlign='left';
+    ctx.fillStyle='#7d88aa';ctx.font='700 16px sans-serif';
+    ctx.fillText('0'+(i+1),116,y+36);
+    ctx.fillStyle='#fff';ctx.font='700 30px sans-serif';
+    ctx.fillText(it.n,168,y+40);
+    ctx.fillStyle='#c5cce4';ctx.font='18px sans-serif';
+    ctx.fillText(it.v,168,y+70);
+    ctx.textAlign='right';
+    ctx.fillStyle=it.c;ctx.font='700 26px sans-serif';
+    ctx.fillText(it.r,900,y+42);
+    ctx.fillStyle='#9aa6c4';ctx.font='16px sans-serif';
+    ctx.fillText(it.d,1168,y+72);
+    const bar=seg(t,a+0.2,a+1.5);
+    ctx.fillStyle='rgba(255,255,255,0.08)';
+    rr(168,y+80,420,4,2);ctx.fill();
+    ctx.fillStyle=it.c;
+    rr(168,y+80,420*bar,4,2);ctx.fill();
+    ctx.restore();
+  });
+  const fin=seg(t,23.0,24.2)*(t<25.2?1:1-seg(t,25.2,25.9));
+  if(fin>0){
+    ctx.save();ctx.globalAlpha=fin;
+    ctx.textAlign='center';
+    ctx.fillStyle='#9aa6ff';ctx.font='600 18px sans-serif';
+    ctx.fillText('合成管线',640,250);
+    ctx.fillStyle='#fff';ctx.font='700 48px sans-serif';
+    ctx.fillText('Remotion 调 ffmpeg 合成成片',640,330);
+    const flow=['Remotion 画面','Python 配乐','ffmpeg 成片'];
+    flow.forEach((s,i)=>{
+      const x=280+i*360;
+      rr(x-120,390,240,64,12);
+      ctx.fillStyle='rgba(20,24,42,0.95)';ctx.fill();
+      ctx.strokeStyle=STACK[i===2?3:i].c;ctx.stroke();
+      ctx.fillStyle='#fff';ctx.font='22px sans-serif';
+      ctx.fillText(s,x,430);
+      if(i<2){
+        ctx.strokeStyle='#fff';ctx.lineWidth=2;
+        ctx.beginPath();ctx.moveTo(x+130,422);ctx.lineTo(x+210,422);ctx.stroke();
+      }
+    });
+    ctx.fillStyle='#b7c0de';ctx.font='20px sans-serif';
+    ctx.fillText('React 工程自列技术栈  ·  画面、配乐、成片一次完成',640,520);
+    ctx.restore();
+  }
+  ctx.fillStyle='rgba(0,0,0,0.35)';
+  ctx.fillRect(0,680,1280,40);
+  ctx.fillStyle='#8b95b8';ctx.font='16px sans-serif';ctx.textAlign='left';
+  ctx.fillText('Remotion 4.0.528   ·   Python 配乐   ·   ffmpeg 合成',48,706);
+  const prog=t/window.DUR;
+  ctx.fillStyle='#8B7CFF';ctx.fillRect(0,716,1280*prog,4);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

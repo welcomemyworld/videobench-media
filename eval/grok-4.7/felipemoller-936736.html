@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Orbe — gastos do dia</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#stage{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform:translate(-50%,-50%) scale(min(100vw/1280,100vh/720));transform-origin:center center}
+canvas{display:block}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+window.DUR=28;
+const qs=new URLSearchParams(location.search);
+const T0=performance.now()-((parseFloat(qs.get("t"))||0)*1000);
+const cv=document.getElementById("c");
+const g=cv.getContext("2d");
+const PX=437.5,PY=0,PW=405,PH=720;
+function clamp(v,a,b){return v<a?a:v>b?b:v}
+function ease(t){t=clamp(t,0,1);return t*t*(3-2*t)}
+function eo(t){t=clamp(t,0,1);return 1-Math.pow(1-t,3)}
+function seg(t,a,b){return clamp((t-a)/(b-a),0,1)}
+function rr(x,y,w,h,r){g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath()}
+function money(n){const s=n.toFixed(2).replace(".",",");const p=s.split(",");return "R$ "+p[0].replace(/\B(?=(\d{3})+(?!\d))/g,".")+","+p[1]}
+function orb(x,y,r,col){const grd=g.createRadialGradient(x-r*.3,y-r*.3,r*.1,x,y,r);grd.addColorStop(0,"#fff6d8");grd.addColorStop(.35,col);grd.addColorStop(1,"#1a1208");g.fillStyle=grd;g.beginPath();g.arc(x,y,r,0,7);g.fill();g.strokeStyle="rgba(255,220,150,.45)";g.lineWidth=1.5;g.stroke()}
+const scenes=[
+ {k:"intro",a:0,b:4.2},
+ {k:"mercado",a:4.2,b:11.2,title:"Mercado Aurora",sub:"Compras do dia",icon:"bag",items:[["Arroz 5 kg","28,90"],["Feijão 1 kg","9,40"],["Leite 12 un","47,88"],["Pão e frios","36,20"],["Hortifruti","41,15"],["Limpeza","22,87"]],total:186.40,tone:"#7ddea2"},
+ {k:"posto",a:11.2,b:18.2,title:"Posto Leste",sub:"Abastecimento",icon:"pump",items:[["Gasolina comum","5,89 / L"],["Volume","42,3 L"],["Etanol aditivado","—"],["Desconto app","− R$ 4,10"]],total:248.90,tone:"#f0c14a",liters:42.3},
+ {k:"rest",a:18.2,b:24.2,title:"Restaurante Lume",sub:"Almoço · 2 pessoas",icon:"plate",items:[["Entrada","32,00"],["Prato do dia","48,00"],["Suco natural","18,00"],["Serviço","14,00"]],total:112.00,tone:"#f08a6a"},
+ {k:"close",a:24.2,b:28}
+];
+function local(t,s){return (t-s.a)/(s.b-s.a)}
+function drawPanel(){
+ g.save();
+ rr(PX+8,18,PW-16,PH-36,28);
+ g.clip();
+ const bg=g.createLinearGradient(PX,0,PX,PH);
+ bg.addColorStop(0,"#12151e");bg.addColorStop(1,"#07080c");
+ g.fillStyle=bg;g.fillRect(PX,0,PW,PH);
+ g.restore();
+ g.save();
+ g.strokeStyle="rgba(255,220,160,.22)";g.lineWidth=1.5;
+ rr(PX+8,18,PW-16,PH-36,28);g.stroke();
+ g.restore();
+}
+function header(s,p){
+ const y=58;
+ g.globalAlpha=ease(p*3);
+ g.fillStyle="rgba(255,255,255,.55)";
+ g.font="12px system-ui,sans-serif";
+ g.textAlign="left";
+ g.fillText("ORBE",PX+36,y);
+ g.textAlign="right";
+ g.fillStyle="rgba(255,255,255,.4)";
+ g.fillText("hoje · 18:40",PX+PW-36,y);
+ g.globalAlpha=1;
+ g.fillStyle="#fff";
+ g.font="600 26px system-ui,sans-serif";
+ g.textAlign="left";
+ const ty=eo(seg(p,0.02,.22));
+ g.globalAlpha=ty;
+ g.fillText(s.title,PX+36,108+ (1-ty)*12);
+ g.font="14px system-ui,sans-serif";
+ g.fillStyle=s.tone;
+ g.fillText(s.sub,PX+36,132);
+ g.globalAlpha=1;
+}
+function icon(kind,x,y,p,tone){
+ g.save();g.translate(x,y);
+ if(kind==="bag"){
+  g.strokeStyle=tone;g.lineWidth=2.2;g.fillStyle="rgba(125,222,162,.12)";
+  rr(-16,-10,32,28,6);g.fill();g.stroke();
+  g.beginPath();g.arc(0,-10,8,Math.PI,0);g.stroke();
+ }else if(kind==="pump"){
+  g.strokeStyle=tone;g.lineWidth=2.2;g.fillStyle="rgba(240,193,74,.12)";
+  rr(-14,-16,22,34,4);g.fill();g.stroke();
+  g.beginPath();g.moveTo(8,-6);g.lineTo(16,-6);g.lineTo(16,8);g.stroke();
+  const h=18*ease(p);
+  g.fillStyle=tone;g.globalAlpha=.8;
+  g.fillRect(-10,12-h,14,h);
+ }else{
+  g.strokeStyle=tone;g.lineWidth=2.2;
+  g.beginPath();g.arc(0,2,16,0,7);g.stroke();
+  g.beginPath();g.arc(0,2,6,0,7);g.stroke();
+ }
+ g.restore();
+}
+function listScene(s,t){
+ const p=local(t,s);
+ header(s,p);
+ icon(s.icon,PX+PW-62,108,p,s.tone);
+ const items=s.items;
+ const top=168;
+ items.forEach((it,i)=>{
+  const ap=eo(seg(p,0.08+i*0.07,0.22+i*0.07));
+  const y=top+i*42+(1-ap)*16;
+  g.globalAlpha=ap;
+  g.fillStyle="rgba(255,255,255,.04)";
+  rr(PX+28,y-22,PW-56,36,10);g.fill();
+  g.fillStyle="#f4f1ea";
+  g.font="15px system-ui,sans-serif";
+  g.textAlign="left";
+  g.fillText(it[0],PX+44,y);
+  g.textAlign="right";
+  g.fillStyle="rgba(255,255,255,.72)";
+  g.fillText(it[1],PX+PW-44,y);
+  g.globalAlpha=1;
+ });
+ if(s.icon==="pump"){
+  const fp=ease(seg(p,.15,.72));
+  g.fillStyle="rgba(255,255,255,.08)";
+  rr(PX+28,352,PW-56,8,4);g.fill();
+  g.fillStyle=s.tone;
+  rr(PX+28,352,(PW-56)*fp,8,4);g.fill();
+  g.fillStyle="rgba(255,255,255,.7)";
+  g.font="12px system-ui,sans-serif";
+  g.textAlign="left";
+  g.fillText((s.liters*fp).toFixed(1).replace(".",",")+" L",PX+28,378);
+ }
+ const tot=s.total*ease(seg(p,.45,.85));
+ g.globalAlpha=ease(seg(p,.4,.6));
+ g.fillStyle="rgba(255,255,255,.06)";
+ rr(PX+28,560,PW-56,92,16);g.fill();
+ g.fillStyle="rgba(255,255,255,.5)";
+ g.font="12px system-ui,sans-serif";
+ g.textAlign="left";
+ g.fillText("TOTAL NO LOCAL",PX+46,592);
+ g.fillStyle="#fff";
+ g.font="600 32px system-ui,sans-serif";
+ g.fillText(money(tot),PX+46,632);
+ g.globalAlpha=1;
+}
+function intro(t){
+ const p=local(t,scenes[0]);
+ const cx=PX+PW/2, cy=300;
+ g.save();
+ g.globalAlpha=ease(seg(p,0,.25))* (1-ease(seg(p,.82,1)));
+ orb(cx,cy-40,54+Math.sin(t*1.4)*2,"#e8b86a");
+ g.fillStyle="#f7f1e6";
+ g.textAlign="center";
+ g.font="600 42px system-ui,sans-serif";
+ g.fillText("ORBE",cx,cy+56);
+ g.font="15px system-ui,sans-serif";
+ g.fillStyle="rgba(255,236,200,.75)";
+ g.fillText("Seus gastos, com clareza.",cx,cy+86);
+ const chips=["Mercado","Posto","Restaurante"];
+ chips.forEach((c,i)=>{
+  const ap=eo(seg(p,.28+i*.08,.48+i*.08));
+  const x=cx-118+i*118;
+  g.globalAlpha=ap*(1-ease(seg(p,.82,1)));
+  g.fillStyle="rgba(255,255,255,.06)";
+  rr(x-48,cy+114,96,32,16);g.fill();
+  g.fillStyle="#efe8dc";
+  g.font="13px system-ui,sans-serif";
+  g.fillText(c,x,cy+135);
+ });
+ g.restore();
+}
+function close(t){
+ const p=local(t,scenes[4]);
+ const rows=[["Mercado","186,40","#7ddea2"],["Posto","248,90","#f0c14a"],["Restaurante","112,00","#f08a6a"]];
+ g.save();
+ g.globalAlpha=ease(seg(p,0,.15));
+ g.fillStyle="rgba(255,255,255,.55)";
+ g.font="12px system-ui,sans-serif";
+ g.textAlign="left";
+ g.fillText("ORBE",PX+36,70);
+ g.fillStyle="#fff";
+ g.font="600 24px system-ui,sans-serif";
+ g.fillText("O dia, reunido.",PX+36,112);
+ g.font="14px system-ui,sans-serif";
+ g.fillStyle="rgba(255,236,200,.7)";
+ g.fillText("Três lugares. Um só olhar.",PX+36,138);
+ rows.forEach((r,i)=>{
+  const ap=eo(seg(p,.12+i*.08,.32+i*.08));
+  const y=190+i*78;
+  g.globalAlpha=ap;
+  g.fillStyle="rgba(255,255,255,.05)";
+  rr(PX+28,y,PW-56,64,14);g.fill();
+  g.fillStyle=r[2];
+  g.beginPath();g.arc(PX+52,y+32,6,0,7);g.fill();
+  g.fillStyle="#f4f1ea";
+  g.font="16px system-ui,sans-serif";
+  g.textAlign="left";
+  g.fillText(r[0],PX+70,y+38);
+  g.textAlign="right";
+  g.fillText("R$ "+r[1],PX+PW-46,y+38);
+ });
+ const tot=547.3*ease(seg(p,.4,.7));
+ g.globalAlpha=ease(seg(p,.38,.55));
+ g.textAlign="left";
+ g.fillStyle="rgba(255,255,255,.5)";
+ g.font="12px system-ui,sans-serif";
+ g.fillText("TOTAL DO DIA",PX+36,460);
+ g.fillStyle="#fff";
+ g.font="600 36px system-ui,sans-serif";
+ g.fillText(money(tot),PX+36,504);
+ g.fillStyle="#7ddea2";
+ g.font="14px system-ui,sans-serif";
+ g.fillText("12% abaixo da sua média.",PX+36,534);
+ g.globalAlpha=ease(seg(p,.62,.8));
+ g.fillStyle="rgba(232,184,106,.16)";
+ rr(PX+28,580,PW-56,64,16);g.fill();
+ g.strokeStyle="rgba(232,184,106,.45)";
+ rr(PX+28,580,PW-56,64,16);g.stroke();
+ g.fillStyle="#f6e7c4";
+ g.font="15px system-ui,sans-serif";
+ g.textAlign="center";
+ g.fillText("lp.meuorbe.com.br",PX+PW/2,618);
+ g.restore();
+}
+function particles(t){
+ for(let i=0;i<18;i++){
+  const x=PX+30+((i*97+t*18)% (PW-60));
+  const y=40+((i*53+t*28)%640);
+  g.fillStyle="rgba(255,220,160,"+(0.04+0.04*Math.sin(t+i))+")";
+  g.beginPath();g.arc(x,y,1.4,0,7);g.fill();
+ }
+}
+function frame(ts){
+ let t=((ts-T0)/1000)%window.DUR; if(t<0)t+=window.DUR;
+ g.clearRect(0,0,1280,720);
+ g.fillStyle="#000";g.fillRect(0,0,1280,720);
+ drawPanel();
+ g.save();
+ rr(PX+8,18,PW-16,PH-36,28);g.clip();
+ particles(t);
+ const s=scenes.find(sc=>t>=sc.a&&t<sc.b)||scenes[0];
+ if(s.k==="intro")intro(t);
+ else if(s.k==="close")close(t);
+ else listScene(s,t);
+ const fadeIn=ease(seg(t,s.a,s.a+.35));
+ const fadeOut=1-ease(seg(t,s.b-.35,s.b));
+ g.globalAlpha=1-Math.min(fadeIn,fadeOut);
+ g.fillStyle="#07080c";
+ g.fillRect(PX,0,PW,PH);
+ g.restore();
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

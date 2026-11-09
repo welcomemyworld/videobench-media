@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=15;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px';}
+fit();addEventListener('resize',fit);
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)*1000;const st=performance.now()-off;
+const E=t=>t<0?0:t>1?1:1-Math.pow(1-t,4);
+const EIO=t=>t<0?0:t>1?1:t<.5?8*t*t*t*t:1-Math.pow(-2*t+2,4)/2;
+const cl=(v,a,b)=>Math.max(a,Math.min(b,v));
+const pal=['#ff4d2e','#ffd23f','#2ec4b6','#3a86ff','#f5f0e6'];
+function txt(s,X,Y,size,col,a,ls,w){x.save();x.globalAlpha=a;x.fillStyle=col;x.font=(w||'700')+' '+size+'px "Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif';x.textAlign='center';x.textBaseline='middle';
+if(ls){x.letterSpacing=ls+'px';}x.fillText(s,X,Y);x.restore();}
+function frame(){
+const T=((performance.now()-st)/1000)%DUR;
+x.fillStyle='#0d0d10';x.fillRect(0,0,1280,720);
+// grid
+x.strokeStyle='rgba(255,255,255,0.04)';x.lineWidth=1;
+for(let i=0;i<=32;i++){x.beginPath();x.moveTo(i*40,0);x.lineTo(i*40,720);x.stroke();}
+for(let i=0;i<=18;i++){x.beginPath();x.moveTo(0,i*40);x.lineTo(1280,i*40);x.stroke();}
+const cx=640,cy=360;
+// Scene 1: 0-4 circles burst
+if(T<5){
+ const p=E(T/1.2),out=EIO((T-4)/1);
+ for(let i=0;i<5;i++){const r=(260-i*48)*p*(1-out);if(r<=0)continue;
+  x.fillStyle=pal[i];x.beginPath();x.arc(cx,cy,r,0,7);x.fill();}
+ for(let i=0;i<24;i++){const a=i/24*Math.PI*2+T*.6;const d=300*E((T-.5)/1.5)+20*Math.sin(T*3+i);
+  x.fillStyle=pal[i%5];x.globalAlpha=1-out;x.beginPath();x.arc(cx+Math.cos(a)*d,cy+Math.sin(a)*d,5,0,7);x.fill();}
+ x.globalAlpha=1;
+ txt('形',cx,cy,120,'#0d0d10',E((T-1.2)/.6)*(1-out),0,'900');
+}
+// Scene 2: 4-10 bars & rotating squares
+if(T>4&&T<10.5){
+ const t=T-4,inn=E(t/1),out=EIO((T-9.5)/1);
+ for(let i=0;i<16;i++){const h=(80+200*Math.abs(Math.sin(t*2.2+i*.5)))*inn*(1-out);
+  x.fillStyle=pal[i%5];x.fillRect(160+i*62,cy-h/2,40,h);}
+ x.save();x.translate(cx,cy);x.rotate(t*.8+out*2);const s=180*E((t-.6)/1)*(1-out);
+ x.strokeStyle='#f5f0e6';x.lineWidth=6;x.strokeRect(-s/2,-s/2,s,s);
+ x.rotate(Math.PI/4);x.strokeStyle='#ff4d2e';x.strokeRect(-s*.35,-s*.35,s*.7,s*.7);x.restore();
+ txt('节奏 · RHYTHM',cx,120,40,'#f5f0e6',E((t-1)/.8)*(1-out),12);
+ txt('MOTION / 02',cx,610,18,'#888',E((t-1.4)/.8)*(1-out),8,'400');
+}
+// Scene 3: 10-15 waves and title
+if(T>9.8){
+ const t=T-9.8,inn=E(t/1.2),fade=1-cl((T-14.4)/.6,0,1);
+ for(let k=0;k<5;k++){x.strokeStyle=pal[k];x.lineWidth=4;x.globalAlpha=inn*fade;x.beginPath();
+  for(let X=0;X<=1280*inn;X+=8){const Y=cy+(k-2)*28+Math.sin(X*.012+t*3+k*.7)*40*Math.sin(t+k);X?x.lineTo(X,Y):x.moveTo(X,Y);}x.stroke();}
+ x.globalAlpha=1;
+ const w=E((t-1)/.8);x.fillStyle='#0d0d10';x.globalAlpha=fade;x.fillRect(cx-300*w,cy-80,600*w,160);x.globalAlpha=1;
+ txt('动 态 之 美',cx,cy-12,72,'#f5f0e6',E((t-1.4)/.8)*fade,6,'900');
+ txt('THE BEAUTY OF MOTION',cx,cy+50,18,'#ffd23f',E((t-1.9)/.8)*fade,10,'400');
+}
+// frame marks
+x.fillStyle='#f5f0e6';x.globalAlpha=.6;x.font='14px Arial';x.textAlign='left';x.fillText('00:'+String(Math.floor(T)).padStart(2,'0'),40,680);
+x.textAlign='right';x.fillText('MG — 2025',1240,680);x.fillRect(40,40,1200*(T/DUR),2);x.globalAlpha=1;
+requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

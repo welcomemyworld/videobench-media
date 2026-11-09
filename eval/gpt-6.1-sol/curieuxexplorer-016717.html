@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Broken Message — Type 1 Diabetes</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#000;overflow:hidden}#stage{position:absolute;width:1280px;height:720px;left:50%;top:50%;transform:translate(-50%,-50%) scale(var(--scale,1));background:#071019}canvas{display:block;width:1280px;height:720px}#signal{position:absolute;left:96px;top:580px;width:706px;height:18px;accent-color:#65e1d2;cursor:pointer;display:none}button{position:absolute;background:#101f2b;border:1px solid #38515e;color:#dce9ef;font:12px system-ui;letter-spacing:1px;border-radius:6px;cursor:pointer;padding:8px 14px}#replay{right:36px;top:30px}button:hover{border-color:#65e1d2}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" width="1280" height="720" aria-label="Animated educational visualization of Type 1 diabetes"></canvas><input id="signal" type="range" min="0" max="100" value="100" aria-label="Beta-cell signal: broken to intact"><button id="replay" aria-label="Replay animation">REPLAY ↺</button></div>
+<script>
+'use strict';
+window.DUR=60;
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d'),stage=document.getElementById('stage'),slider=document.getElementById('signal');
+function fit(){stage.style.setProperty('--scale',Math.min(innerWidth/1280,innerHeight/720))}
+addEventListener('resize',fit);fit();
+const C={bg:'#071019',panel:'#0c1823',white:'#edf5f8',muted:'#93a8b7',dim:'#344a5c',cyan:'#65e1d2',blue:'#71acff',gold:'#ffd57a',red:'#ff747e',purple:'#b8a2ff'};
+const PI=Math.PI,TAU=PI*2;
+const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const lerp=(a,b,t)=>a+(b-a)*t;
+const smooth=(a,b,x)=>{let t=clamp((x-a)/(b-a));return t*t*(3-2*t)};
+const cuts=[0,8,16,24,33,43,50,60];
+const chapters=['THE BODY','THE ISLET','THE ATTACK','THE MESSAGE','THE COMPARISON','THE BALANCE','THE TECHNOLOGY'];
+const titles=['One body. A connected system.','A tiny source. A powerful signal.','The immune system targets itself.','The fuel is there. The message is missing.','Same meal. Three different responses.','Replacing the signal takes balance.','A better feedback loop.'];
+const subtitles=['01 / SYSTEM VIEW','02 / PANCREAS → ISLET','03 / AUTOIMMUNITY','04 / SINGLE-MOLECULE VIEW','05 / HEALTHY vs TYPE 1 vs INSULIN','06 / SAFETY & DAILY LIFE','07 / CGM → PUMP → AID'];
+const cards=[
+ {tag:'NOT A LIFESTYLE DISEASE',title:'Type 1 is autoimmune.',body:'It is not caused by eating sugar, body weight or lifestyle.\n\nThe immune system destroys insulin-producing beta cells in the pancreas.',foot:'An organ-level problem begins with a cell-level loss.'},
+ {tag:'SMALL CLUSTERS, BIG ROLE',title:'Meet the beta cells.',body:'Islets make up about 1–2% of the pancreas.\n\nAfter a meal, beta cells sense rising glucose and release insulin into the blood.',foot:'Insulin is a message, not the fuel.'},
+ {tag:'DRAG TO EXPLORE',title:'Watch the signal fade.',body:'Immune cells attack the beta cells. As those cells are lost, insulin production falls.\n\nIn Type 1, the body can no longer provide the signal adequately.',foot:'The slider represents signal loss, not a diagnostic test.'},
+ {tag:'FOLLOW THE GOLD MOLECULE',title:'Glucose needs a signal.',body:'Insulin helps muscle and fat take glucose in. It also tells the liver to release less glucose.\n\nWhen the signal is missing, glucose builds up in the blood.',foot:'Glucose: C₆H₁₂O₆\nInsulin: a signaling protein.'},
+ {tag:'ILLUSTRATIVE • NOT A PREDICTION',title:'The meal is identical.',body:'Healthy: beta cells respond with insulin.\n\nType 1: the glucose rise lacks that response.\n\nType 1 + insulin: replacement insulin helps glucose move toward range.',foot:'Real responses vary. These curves are conceptual, not dosing guidance.'},
+ {tag:'REPLACEMENT, NOT A CURE',title:'Every day is a balancing act.',body:'Insulin is delivered by injections or a pump.\n\nToo little: glucose rises.\nToo much: glucose can fall dangerously low.\n\nFood, exercise, stress and timing all change the picture.',foot:'DKA is a medical emergency.'},
+ {tag:'TECHNOLOGY HELPS',title:'Measure. Adjust. Repeat.',body:'A CGM estimates glucose from fluid under the skin every few minutes.\n\nAutomated insulin delivery (AID) uses those readings to adjust insulin through a pump.',foot:'Technology supports care; it does not cure Type 1.'}
+];
+let seed=23841;
+function rand(){seed=(seed*1664525+1013904223)>>>0;return seed/4294967296}
+const stars=Array.from({length:95},()=>({x:rand()*1280,y:90+rand()*540,r:rand()*1.3+.3,p:rand()*TAU}));
+const cells=Array.from({length:58},(_,i)=>{let a=i*2.39996,r=Math.sqrt((i+.5)/58);return{x:Math.cos(a)*r,y:Math.sin(a)*r,z:rand()*2-1,r:16+rand()*9,beta:i%5!==0}});
+const molecular=[];
+for(let i=0;i<6;i++){let a=i*TAU/6;molecular.push({x:Math.cos(a)*74,y:Math.sin(a)*74,z:i%2?15:-15,e:i===5?'O':'C'})}
+for(let i=0;i<6;i++){
+ let p=molecular[i],a=i*TAU/6;
+ molecular.push({x:p.x+Math.cos(a)*45,y:p.y+Math.sin(a)*45,z:25,e:'O',parent:i});
+ molecular.push({x:p.x+Math.cos(a+.45)*64,y:p.y+Math.sin(a+.45)*64,z:34,e:'H',parent:6+i*2});
+}
+const monoBonds=[];
+for(let i=0;i<6;i++)monoBonds.push([i,(i+1)%6],[i,6+i*2],[6+i*2,7+i*2]);
+for(let i=0;i<6;i++)molecular.push({x:molecular[i].x*.85,y:molecular[i].y*.85,z:-55,e:'H',parent:i});
+for(let i=18;i<24;i++)monoBonds.push([i-18,i]);
+const insulinPoints=Array.from({length:51},(_,i)=>{let a=i*.78;return{x:Math.cos(a)*(28+Math.sin(i*.23)*20)+(i<25?-31:31),y:(i%25-12)*4.2,z:Math.sin(a)*35,e:i%7===0?'S':'P'}});
+let start=performance.now(),offset=Number(new URLSearchParams(location.search).get('t'))||0,manualSignal=null,previousScene=-1,currentT=0;
+slider.addEventListener('input',()=>manualSignal=slider.value/100);
+document.getElementById('replay').onclick=()=>{start=performance.now();offset=0;manualSignal=null};
+canvas.addEventListener('pointerdown',e=>{
+ const b=canvas.getBoundingClientRect(),x=(e.clientX-b.left)*1280/b.width,y=(e.clientY-b.top)*720/b.height;
+ if(y>641&&y<677){let s=clamp(Math.floor((x-36)/174),0,6);offset=cuts[s]+.1;start=performance.now();manualSignal=null}
+});
+function text(str,x,y,size=16,color=C.white,weight=400,align='left'){
+ ctx.fillStyle=color;ctx.font=`${weight} ${size}px system-ui,-apple-system,Segoe UI,sans-serif`;ctx.textAlign=align;ctx.textBaseline='alphabetic';ctx.fillText(str,x,y)
+}
+function paragraph(str,x,y,width,size=18,color=C.muted,line=28){
+ let yy=y;
+ for(const part of str.split('\n')){
+  if(!part){yy+=line*.6;continue}
+  let words=part.split(' '),row='';
+  ctx.font=`400 ${size}px system-ui,-apple-system,Segoe UI,sans-serif`;
+  for(let word of words){let next=row?row+' '+word:word;if(ctx.measureText(next).width>width&&row){text(row,x,yy,size,color);yy+=line;row=word}else row=next}
+  if(row){text(row,x,yy,size,color);yy+=line}
+ }
+ return yy
+}
+function line(x1,y1,x2,y2,color=C.dim,width=1,alpha=1){ctx.save();ctx.globalAlpha=alpha;ctx.strokeStyle=color;ctx.lineWidth=width;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();ctx.restore()}
+function path(points,color,width=1,alpha=1,close=false){
+ ctx.save();ctx.globalAlpha=alpha;ctx.strokeStyle=color;ctx.lineWidth=width;ctx.beginPath();points.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));if(close)ctx.closePath();ctx.stroke();ctx.restore()
+}
+function round(x,y,w,h,r=12,fill=C.panel,stroke=null){
+ ctx.beginPath();ctx.roundRect(x,y,w,h,r);if(fill){ctx.fillStyle=fill;ctx.fill()}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.stroke()}
+}
+function dot(x,y,r,color,glow=0){
+ ctx.save();ctx.fillStyle=color;if(glow){ctx.shadowColor=color;ctx.shadowBlur=glow}ctx.beginPath();ctx.arc(x,y,r,0,TAU);ctx.fill();ctx.restore()
+}
+function sphere(x,y,r,color,alpha=1){
+ ctx.save();ctx.globalAlpha=alpha;
+ let g=ctx.createRadialGradient(x-r*.35,y-r*.45,0,x,y,r);g.addColorStop(0,'#f3ffff');g.addColorStop(.22,color);g.addColorStop(1,'#0b1a26');
+ ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,y,r,0,TAU);ctx.fill();ctx.strokeStyle=color;ctx.globalAlpha*=.45;ctx.lineWidth=.7;ctx.stroke();ctx.restore()
+}
+function tag(str,x,y,color=C.cyan){
+ ctx.font='600 11px system-ui';let w=ctx.measureText(str).width+20;round(x,y-17,w,24,5,'#102532');text(str,x+10,y,11,color,600);return w
+}
+function arrow(x1,y1,x2,y2,color,width=2){
+ line(x1,y1,x2,y2,color,width);let a=Math.atan2(y2-y1,x2-x1);line(x2,y2,x2-Math.cos(a-.5)*8,y2-Math.sin(a-.5)*8,color,width);line(x2,y2,x2-Math.cos(a+.5)*8,y2-Math.sin(a+.5)*8,color,width)
+}
+function label(str,x,y,tx,ty,color=C.muted,align='left'){
+ let elbow=align==='right'?x+15:x-15;path([{x:tx,y:ty},{x:elbow,y:y-5},{x:x,y:y-5}],color,1,.55);dot(tx,ty,2,color);text(str,x,y,13,color,500,align)
+}
+function grid(x,y,w,h){
+ ctx.save();ctx.strokeStyle='#162733';ctx.lineWidth=.6;
+ for(let i=x;i<=x+w;i+=40)line(i,y,i,y+h,'#162733',.6,.7);
+ for(let j=y;j<=y+h;j+=40)line(x,j,x+w,j,'#162733',.6,.7);
+ ctx.restore()
+}
+function project(p,cx,cy,scale,t){
+ let a=t*.23,ca=Math.cos(a),sa=Math.sin(a),x=p.x*ca+p.z*sa,z=-p.x*sa+p.z*ca;
+ let tilt=.24,y=p.y*Math.cos(tilt)-z*Math.sin(tilt);z=p.y*Math.sin(tilt)+z*Math.cos(tilt);
+ let f=500/(500+z);return{x:cx+x*scale*f,y:cy+y*scale*f,z,f}
+}
+function molecule(cx,cy,size,t,protein=false){
+ const pts=protein?insulinPoints:molecular;
+ let ps=pts.map(p=>project(p,cx,cy,size,t));
+ let bonds=protein?pts.slice(1).map((_,i)=>[i,i+1]):monoBonds;
+ bonds.forEach(([a,b])=>line(ps[a].x,ps[a].y,ps[b].x,ps[b].y,protein?C.cyan:'#acb4c3',protein?3:4,.55));
+ ps.map((p,i)=>({...p,i})).sort((a,b)=>b.z-a.z).forEach(p=>{
+  let e=pts[p.i].e,col=protein?(e==='S'?C.gold:C.cyan):e==='O'?C.red:e==='H'?'#d4e1ee':C.gold;
+  let r=protein?7: e==='H'?6:e==='O'?12:13;sphere(p.x,p.y,r*size*p.f,col);
+ });
+}
+function bg(t){
+ ctx.fillStyle=C.bg;ctx.fillRect(0,0,1280,720);
+ let g=ctx.createRadialGradient(420,360,30,480,370,710);g.addColorStop(0,'#102b35');g.addColorStop(.65,'#091723');g.addColorStop(1,C.bg);ctx.fillStyle=g;ctx.fillRect(0,0,1280,720);
+ stars.forEach(s=>{ctx.globalAlpha=.12+.12*Math.sin(t*.5+s.p);dot(s.x,s.y,s.r,C.blue)});ctx.globalAlpha=1;
+ text('ATLAS / HUMAN SYSTEMS',36,43,12,C.cyan,600);
+ text('THE BROKEN MESSAGE',36,89,34,C.white,650);
+ text('TYPE 1 DIABETES',899,84,12,C.muted,600);
+ line(36,108,1244,108,C.dim,1,.65);
+}
+function frame(scene,t){
+ text(subtitles[scene],36,143,11,C.cyan,600);
+ text(titles[scene],36,178,scene===3?26:27,C.white,550);
+ round(36,198,828,422,16,'#0a1721','#1b3342');
+ ctx.save();ctx.beginPath();ctx.roundRect(36,198,828,422,16);ctx.clip();grid(36,198,828,422);ctx.restore();
+ line(892,202,892,608,C.dim,1,.6);
+ const card=cards[scene];
+ text(card.tag,916,220,11,scene===5?C.gold:C.cyan,600);
+ paragraph(card.title,916,259,318,25,C.white,33);
+ paragraph(card.body,916,315,308,18,C.muted,27);
+ paragraph(card.foot,916,561,302,13,scene===5?C.red:C.cyan,20);
+ for(let i=0;i<7;i++){
+  let x=36+i*174,w=i===6?164:158;
+  round(x,647,w,3,1,'#243847');
+  if(i<scene)round(x,647,w,3,1,C.cyan);
+  else if(i===scene)round(x,647,w*clamp((t-cuts[i])/(cuts[i+1]-cuts[i])),3,1,C.cyan);
+  text(chapters[i],x,673,10,i===scene?C.white:C.muted,i===scene?650:400);
+ }
+ text('EDUCATIONAL VISUALIZATION · NOT MEDICAL ADVICE',36,703,10,C.muted,500);
+ text('TYPE 1 CHANGES THE SYSTEM. IT DOESN’T DEFINE THE PERSON.',1244,703,10,C.muted,500,'right');
+}
+function body(cx,cy,s,t,highlight=true){
+ ctx.save();ctx.translate(cx,cy);ctx.scale(s,s);
+ const outline=new Path2D('M 0 -160 C -28 -160 -34 -124 -18 -110 L -20 -91 C -62 -89 -69 -71 -77 -33 L -95 44 Q -98 61 -87 63 Q -80 63 -76 49 L -53 -24 L -45 18 Q -41 40 -35 53 L -40 137 Q -43 158 -29 158 Q -21 157 -20 141 L -7 68 L 7 68 L 20 141 Q 21 157 29 158 Q 43 158 40 137 L 35 53 Q 41 40 45 18 L 53 -24 L 76 49 Q 80 63 87 63 Q 98 61 95 44 L 77 -33 C 69 -71 62 -89 20 -91 L 18 -110 C 34 -124 28 -160 0 -160 Z');
+ let g=ctx.createLinearGradient(-90,0,90,0);g.addColorStop(0,'#0c2433');g.addColorStop(.5,'#183a48');g.addColorStop(1,'#0b2331');
+ ctx.fillStyle=g;ctx.fill(outline);ctx.strokeStyle='#6396ac';ctx.lineWidth=1;ctx.stroke(outline);
+ ctx.save();ctx.clip(outline);
+ for(let y=-150;y<155;y+=9){
+  let radius=y<-109?25:y<-85?19:y<30?57:y<57?37:38;
+  const p=[];for(let j=0;j<=30;j++){let a=j*TAU/30;p.push({x:Math.sin(a)*radius,y:y+Math.cos(a)*4})}path(p,C.blue,.5,.18);
+ }
+ for(let x=-80;x<=80;x+=11)path([{x:x*.4,y:-150},{x,y:-60},{x:x*.7,y:40},{x:x*.5,y:150}],C.blue,.5,.14);
+ ctx.restore();
+ const vessels=[
+ [{x:0,y:-91},{x:3,y:-57},{x:0,y:-22},{x:0,y:40},{x:-23,y:132}],
+ [{x:0,y:40},{x:23,y:132}],
+ [{x:0,y:-68},{x:-45,y:-60},{x:-76,y:38}],
+ [{x:0,y:-68},{x:45,y:-60},{x:76,y:38}]
+ ];
+ vessels.forEach(p=>path(p,'#e17483',1.8,.45));
+ for(let k=0;k<16;k++){let f=(t*.12+k/16)%1,seg=f*4,idx=Math.min(3,Math.floor(seg)),p=vessels[0];dot(lerp(p[idx].x,p[idx+1].x,seg-idx),lerp(p[idx].y,p[idx+1].y,seg-idx),1.6,C.gold,5)}
+ // Liver
+ ctx.beginPath();ctx.moveTo(-39,-44);ctx.bezierCurveTo(-15,-59,13,-52,18,-40);ctx.bezierCurveTo(13,-23,-13,-22,-35,-28);ctx.closePath();ctx.fillStyle='#69514b';ctx.fill();ctx.strokeStyle='#b0886b';ctx.stroke();
+ // Pancreas
+ ctx.beginPath();ctx.moveTo(-22,-16);ctx.bezierCurveTo(-6,-28,15,-23,35,-32);ctx.bezierCurveTo(42,-23,20,-13,-20,-10);ctx.closePath();ctx.fillStyle=C.gold;ctx.shadowColor=C.gold;ctx.shadowBlur=highlight?14:0;ctx.fill();ctx.shadowBlur=0;
+ // Heart
+ ctx.fillStyle='#ca7786';ctx.beginPath();ctx.ellipse(6,-69,9,13,-.3,0,TAU);ctx.fill();
+ round(-45,-15,9,50,4,'#406481');round(36,-15,9,50,4,'#406481');
+ ctx.restore();
+}
+function pancreas(cx,cy,scale,t){
+ ctx.save();ctx.translate(cx,cy);ctx.scale(scale,scale);ctx.rotate(-.09);
+ ctx.beginPath();ctx.moveTo(-170,28);ctx.bezierCurveTo(-191,-19,-148,-43,-105,-35);ctx.bezierCurveTo(-65,-31,-23,-48,30,-31);ctx.bezierCurveTo(70,-23,128,-49,173,-42);ctx.bezierCurveTo(203,-29,133,-3,92,6);ctx.bezierCurveTo(50,24,-1,18,-59,35);ctx.bezierCurveTo(-108,49,-155,56,-170,28);ctx.closePath();
+ let g=ctx.createLinearGradient(0,-50,0,50);g.addColorStop(0,'#f4b884');g.addColorStop(.4,'#b97958');g.addColorStop(1,'#573f3c');ctx.fillStyle=g;ctx.fill();ctx.strokeStyle='#e7bc90';ctx.lineWidth=1.5;ctx.stroke();
+ ctx.save();ctx.clip();
+ for(let i=0;i<120;i++){let x=-176+(i*37%360),y=-37+(i*29%83),r=8+i%8;sphere(x,y,r,'#cb9369',.36)}
+ ctx.restore();
+ path([{x:-159,y:20},{x:-104,y:15},{x:-55,y:2},{x:5,y:-2},{x:66,y:-7},{x:152,y:-31}],'#ffe1ad',2,.6);
+ for(let i=0;i<13;i++){let x=-151+i*23,y=9+Math.sin(i*.8)*16;dot(x,y,3.5,C.cyan,9)}
+ ctx.restore();
+}
+function sceneBody(u,t){
+ body(343,403,1.12,t);
+ tag('WHOLE BODY',61,228,C.blue);
+ label('LIVER',105,339,315,361,C.muted);
+ label('PANCREAS',585,398,367,383,C.gold);
+ label('MUSCLE + FAT',570,485,391,446,C.blue);
+ // meal to blood
+ round(77,499,146,83,10,'#111f29','#2b4151');
+ text('AFTER A MEAL',91,520,10,C.muted,600);
+ for(let i=0;i<5;i++)dot(96+i*22,541+Math.sin(i)*6,4,C.gold,6);
+ text('Glucose enters blood',91,568,11,C.gold);
+ arrow(224,539,270,499,C.gold);
+ let pulse=.5+.5*Math.sin(t*3);ctx.save();ctx.globalAlpha=.5+pulse*.3;ctx.strokeStyle=C.gold;ctx.lineWidth=1;ctx.beginPath();ctx.arc(352,384,20+pulse*6,0,TAU);ctx.stroke();ctx.restore();
+ round(570,248,255,102,10,'#0e222d','#274550');
+ text('THE NORMAL MESSAGE',587,273,11,C.cyan,600);
+ text('Beta cell → insulin → tissue',587,302,16,C.white,500);
+ text('Glucose moves into cells.',587,326,13,C.muted);
+ for(let k=0;k<5;k++){let f=(u*.2+k/5)%1;dot(409+f*143,383-Math.sin(f*PI)*80,3,C.cyan,10)}
+ tag('INSULIN = SIGNAL',571,567,C.cyan);
+}
+function drawIslet(cx,cy,r,t,alive=1,attack=false){
+ ctx.save();
+ let g=ctx.createRadialGradient(cx,cy,r*.1,cx,cy,r);g.addColorStop(0,'#244854');g.addColorStop(.8,'#12323f');g.addColorStop(1,'#0c1b29');
+ ctx.fillStyle=g;ctx.beginPath();ctx.arc(cx,cy,r,0,TAU);ctx.fill();ctx.strokeStyle='#577587';ctx.lineWidth=1;ctx.stroke();
+ const rotation=t*.055;
+ cells.slice().sort((a,b)=>a.z-b.z).forEach((p,i)=>{
+  let x=p.x*Math.cos(rotation)-p.y*Math.sin(rotation),y=p.x*Math.sin(rotation)+p.y*Math.cos(rotation);
+  let dead=p.beta&&i/58>alive;
+  let alpha=dead?.13:.85;
+  sphere(cx+x*r*.8,cy+y*r*.8,p.r*r/162,dead?'#475763':p.beta?C.cyan:C.purple,alpha);
+  if(!dead){dot(cx+x*r*.8+3,cy+y*r*.8+3,p.r*r/162*.23,p.beta?'#185b63':'#584a7d')}
+ });
+ if(attack){
+  for(let i=0;i<9;i++){
+   let a=i*TAU/9+t*.08,rr=r+20+Math.sin(t+i)*10,x=cx+Math.cos(a)*rr,y=cy+Math.sin(a)*rr;
+   sphere(x,y,14,C.red,.95);
+   for(let j=0;j<7;j++){let b=j*TAU/7+t*.2;line(x+Math.cos(b)*12,y+Math.sin(b)*12,x+Math.cos(b)*20,y+Math.sin(b)*20,C.red,2)}
+   if(i%3===0){let target={x:cx+Math.cos(a)*r*.76,y:cy+Math.sin(a)*r*.76};line(x,y,target.x,target.y,C.red,1,.3+.3*Math.sin(t*5+i))}
+  }
+ }
+ ctx.restore();
+}
+function sceneIslet(u,t){
+ tag('ORGAN',64,229,C.gold);
+ pancreas(251,344,.91,t);
+ label('Pancreas',87,446,146,360,C.gold);
+ tag('ZOOM × 250',554,231);
+ path([{x:299,y:339},{x:432,y:269},{x:573,y:277}],C.cyan,1,.6);
+ path([{x:299,y:339},{x:432,y:499},{x:573,y:497}],C.cyan,1,.6);
+ dot(299,339,7,C.cyan,16);
+ drawIslet(675,384,125,t);
+ label('Beta cells',612,544,646,414,C.cyan);
+ label('Other islet cells',812,554,718,440,C.purple,'right');
+ for(let i=0;i<16;i++){let f=(u*.21+i/16)%1;dot(675+Math.sin(i*2.4)*85+f*45,384+f*149,2.5,C.cyan,7)}
+ round(72,488,330,90,10,'#10232c','#254350');
+ text('1–2%',90,527,32,C.cyan,650);
+ text('of the pancreas',192,524,16,C.white,500);
+ text('Tiny islets house insulin-producing beta cells.',90,554,12,C.muted);
+}
+function sceneAttack(u,t){
+ let intact=manualSignal===null?1-smooth(.7,6.7,u):manualSignal;
+ if(manualSignal===null)slider.value=intact*100;
+ tag('AUTOIMMUNE ATTACK',64,230,C.red);
+ drawIslet(314,391,128,t,intact,true);
+ label('Immune cells',87,272,200,283,C.red);
+ text('ISLET',314,559,11,C.muted,600,'center');
+ round(535,257,276,259,12,'#0d202b','#29424f');
+ text('INSULIN OUTPUT',555,284,11,C.muted,600);
+ for(let i=0;i<8;i++){let h=130*(.15+.85*Math.sin(i*.7)**2)*intact;round(557+i*29,447-h,15,h,4,C.cyan);if(h<2)line(557+i*29,447,572+i*29,447,C.red,2)}
+ text(Math.round(intact*100)+'%',555,492,32,intact>.25?C.cyan:C.red,600);
+ text('signal remaining',646,492,13,C.muted);
+ for(let i=0;i<20*intact;i++){let f=(u*.2+i/20)%1;dot(421+f*103,383+Math.sin(i*2)*43,3,C.cyan,9)}
+ text('BROKEN',96,573,10,C.red,600);text('INTACT',802,573,10,C.cyan,600,'right');
+ text('Drag the slider to change the signal',449,552,12,C.muted,400,'center');
+}
+function sceneMessage(u,t){
+ const healthy=u<4.2;
+ tag(healthy?'SIGNAL PRESENT':'SIGNAL MISSING',62,230,healthy?C.cyan:C.red);
+ // blood channel
+ round(66,414,766,93,45,'#281b29','#64414a');
+ path(Array.from({length:55},(_,i)=>({x:78+i*14,y:461+Math.sin(i*.23)*9})),'#a86473',1,.3);
+ for(let i=0;i<25;i++){
+  let f=(t*.045+i/25)%1,x=83+f*736,y=439+(i%4)*14;
+  if(healthy&&x>552&&i%3===0)continue;
+  dot(x,y,3.3,C.gold,5);
+ }
+ text('BLOOD',87,488,10,'#d99fac',600);
+ // tissue / membrane
+ round(431,247,395,135,16,'#102d34','#3e7b7d');
+ for(let i=0;i<33;i++){dot(445+i*11,376,3.8,C.cyan);dot(445+i*11,387,3.8,'#3b8c8c');line(445+i*11,380,445+i*11,383,C.cyan,1,.4)}
+ text('MUSCLE / FAT CELL',450,270,11,C.cyan,600);
+ // receptor
+ path([{x:528,y:343},{x:528,y:375},{x:550,y:375},{x:550,y:343}],healthy?C.cyan:C.dim,6);
+ path([{x:520,y:341},{x:534,y:350},{x:546,y:350},{x:558,y:341}],healthy?C.cyan:C.dim,5);
+ text('INSULIN RECEPTOR',453,310,10,C.muted,500);
+ if(healthy){
+  molecule(541,327,.23,t,true);
+  arrow(581,353,655,353,C.cyan,2);
+  round(674,365,25,27,5,'#0c1823',C.cyan);
+  text('GLUCOSE TRANSPORTER',634,290,10,C.cyan,500);
+ }else{
+  round(674,365,25,27,5,'#22313c','#546477');
+  line(675,376,698,376,'#8394a1',3);
+  text('LESS UPTAKE',696,311,12,C.red,500,'center');
+ }
+ // Followed molecule enlarges then moves
+ let f=clamp(u/4.2),mx,my,ms;
+ if(u<2.2){mx=lerp(230,398,smooth(1.1,2.2,u));my=lerp(330,455,smooth(1.1,2.2,u));ms=lerp(.63,.18,smooth(1.1,2.2,u))}
+ else if(healthy){let p=smooth(2.2,4,u);mx=lerp(398,687,p);my=455-Math.sin(p*PI/2)*124;ms=.18}
+ else{mx=180+((u-4.2)*124)%565;my=459;ms=.18}
+ molecule(mx,my,ms,t);
+ if(u<1.5){text('ONE GLUCOSE MOLECULE',230,253,10,C.gold,600,'center');text('C₆H₁₂O₆',230,401,17,C.gold,500,'center')}
+ ctx.save();ctx.setLineDash([3,5]);ctx.strokeStyle=C.gold;ctx.beginPath();ctx.arc(mx,my,ms*130+8,0,TAU);ctx.stroke();ctx.restore();
+ round(68,538,759,56,9,'#111f2a','#293d4c');
+ text(healthy?'Insulin also tells the liver to release less glucose.':'Without enough insulin, glucose accumulates in the blood.',88,573,17,healthy?C.cyan:C.gold,500);
+}
+function comparisonCurve(mode,x){
+ if(mode===0)return .30+.31*Math.exp(-((x-.31)/.20)**2)-.015*x;
+ if(mode===1)return .30+.53*(1-Math.exp(-x*4))-.04*x;
+ return .30+.38*Math.exp(-((x-.4)/.26)**2)+.04*x;
+}
+function sceneCompare(u,t){
+ let progress=clamp(u/7.7);
+ const names=['HEALTHY','TYPE 1','TYPE 1 + INSULIN'],cols=[C.cyan,C.red,C.blue],desc=['Automatic signal','Missing signal','Replacement signal'];
+ for(let m=0;m<3;m++){
+  let x=57+m*263;
+  round(x,221,249,367,12,'#0d1d28','#2b404e');
+  text(names[m],x+16,249,14,cols[m],650);
+  text(desc[m],x+16,271,12,C.muted);
+  // miniature cell and glucose
+  sphere(x+57,310,16,m===1?'#4b5662':cols[m],m===1?.55:1);
+  arrow(x+82,310,x+155,310,m===1?C.dim:cols[m]);
+  round(x+171,295,38,31,6,'#1b3440',cols[m]);
+  for(let j=0;j<4;j++){let f=(u*.3+j/4)%1;dot(x+85+f*77,309,2.8,m===1?C.gold:cols[m],5)}
+  let gx=x+28,gy=361,gw=202,gh=158;
+  round(gx,gy+gh*.53,gw,gh*.28,0,'#143b38');
+  for(let j=0;j<4;j++)line(gx,gy+j*gh/3,gx+gw,gy+j*gh/3,'#29414c',.7,.5);
+  line(gx,gy,gx,gy+gh,C.dim);line(gx,gy+gh,gx+gw,gy+gh,C.dim);
+  let points=[];for(let j=0;j<=100*progress;j++){let q=j/100;points.push({x:gx+q*gw,y:gy+gh*(1-comparisonCurve(m,q))})}path(points,cols[m],2.8);
+  let py=gy+gh*(1-comparisonCurve(m,progress));dot(gx+progress*gw,py,4,cols[m],10);
+  text('meal',gx,gy+gh+19,10,C.gold);text('time →',gx+gw,gy+gh+19,10,C.muted,400,'right');
+  text(m===1?'Glucose stays high':m===0?'Responds, then settles':'Moves toward range',x+16,570,13,cols[m],500);
+ }
+ text('Relative blood glucose',68,354,10,C.muted);
+ text('SAME MEAL • SAME START • DIFFERENT SIGNAL',450,609,10,C.gold,600,'center');
+}
+function syringe(x,y,t){
+ ctx.save();ctx.translate(x,y);ctx.rotate(-.45);
+ round(-36,-9,74,18,3,'#d4e1e5','#95abb4');round(-24,-6,45,12,2,'#416d89');
+ for(let i=0;i<5;i++)line(-23+i*9,-8,-23+i*9,-2,'#172d3c',1);
+ line(38,0,71,0,C.white,1.4);line(-38,0,-57,0,C.white,4);line(-58,-15,-58,15,C.white,4);line(-38,-15,-38,15,C.white,3);
+ ctx.restore()
+}
+function sceneBalance(u,t){
+ let dka=u<3.15;
+ tag(dka?'VERY LITTLE INSULIN':'INSULIN THERAPY',61,229,dka?C.red:C.blue);
+ if(dka){
+  const xs=[174,421,700],ys=[340,340,340];
+  round(96,277,156,120,14,'#35292d','#6d514b');
+  for(let i=0;i<9;i++)sphere(123+i%3*44,300+Math.floor(i/3)*35,12,C.gold,.75);
+  text('FAT BREAKDOWN',174,430,12,C.gold,600,'center');
+  arrow(269,337,337,337,C.gold,2);
+  round(342,277,158,120,14,'#30212a','#644454');
+  ctx.save();ctx.translate(421,337);ctx.scale(1.2,1.2);ctx.beginPath();ctx.moveTo(-46,-20);ctx.bezierCurveTo(-12,-42,35,-29,43,-13);ctx.bezierCurveTo(28,22,-15,25,-39,10);ctx.closePath();ctx.fillStyle='#a87165';ctx.fill();ctx.restore();
+  text('LIVER',421,430,12,C.muted,600,'center');
+  arrow(519,337,590,337,C.red,2);
+  for(let i=0;i<15;i++){let a=i*2.4,r=22+Math.sqrt(i)*15;let x=697+Math.cos(a+t*.2)*r,y=337+Math.sin(a+t*.2)*r;dot(x,y,5,C.red,8);line(x-8,y-5,x+8,y+5,C.red,1)}
+  text('KETONES BUILD UP',699,430,12,C.red,600,'center');
+  round(80,473,740,107,12,'#2b1b27','#743f4a');
+  text('DIABETIC KETOACIDOSIS / DKA',101,501,12,C.red,650);
+  text('Rapid fat breakdown → ketones → blood becomes too acidic',101,532,18,C.white,500);
+  text('DKA is a medical emergency.',101,559,15,C.red,600);
+ }else{
+  syringe(184,296,t);text('INJECTION',184,353,11,C.blue,600,'center');
+  round(330,254,70,75,12,'#243d4b','#82a6bc');round(342,267,46,30,4,'#0c1923');text('PUMP',365,286,10,C.cyan,600,'center');dot(365,312,5,C.blue);
+  path([{x:398,y:298},{x:430,y:298},{x:441,y:324},{x:486,y:324}],C.blue,2);text('OR PUMP',366,353,11,C.blue,600,'center');
+  text('REPLACE THE MISSING SIGNAL',580,292,17,C.blue,600);
+  text('Not a cure. Essential support.',580,321,13,C.muted);
+  let x=93,y=400,w=716;
+  round(x,y,w,96,12,'#182b34','#314855');
+  round(x,y,w*.30,96,12,'#302938');round(x+w*.69,y,w*.31,96,12,'#34242d');round(x+w*.30,y,w*.39,96,0,'#163b37');
+  text('TOO MUCH INSULIN',x+16,y+29,11,C.blue,600);text('BALANCE',x+w*.495,y+29,12,C.cyan,650,'center');text('TOO LITTLE INSULIN',x+w-16,y+29,11,C.red,600,'right');
+  text('Glucose can fall low',x+16,y+70,13,C.white);text('Glucose rises',x+w-16,y+70,13,C.white,400,'right');
+  let bx=x+w*(.5+.32*Math.sin((u-3.15)*1.8));
+  dot(bx,y+51,6,C.white,14);
+  const factors=['FOOD','EXERCISE','STRESS','TIMING'];
+  factors.forEach((f,i)=>{let xx=103+i*185;round(xx,535,166,42,8,'#10232e','#314552');text(f,xx+83,561,11,C.muted,600,'center')});
+ }
+}
+function sensor(x,y){
+ ctx.save();ctx.translate(x,y);ctx.beginPath();ctx.ellipse(0,0,38,24,-.15,0,TAU);ctx.fillStyle='#c8d9e3';ctx.fill();ctx.strokeStyle='#8098a7';ctx.stroke();ctx.beginPath();ctx.ellipse(0,-3,24,14,-.15,0,TAU);ctx.fillStyle='#e8f3f7';ctx.fill();ctx.stroke();dot(6,-4,4,C.cyan);line(0,21,0,42,C.white,2);ctx.restore()
+}
+function pump(x,y){
+ round(x-37,y-54,74,108,13,'#365063','#9bb4c3');round(x-27,y-42,54,63,5,'#071c28','#78929f');text('AID',x,y-21,11,C.cyan,600,'center');text('AUTO',x,y+3,9,C.white,500,'center');dot(x,y+37,7,'#bdced9');dot(x,y+37,3,C.dim);
+ path([{x:x+35,y:y-30},{x:x+58,y:y-33},{x:x+65,y:y+17},{x:x+100,y:y+20}],C.blue,2);
+}
+function sceneTech(u,t){
+ if(u>=7){
+  ctx.save();ctx.globalAlpha=smooth(7,8,u);
+  round(60,219,779,381,14,'#0b1c27','#355965');
+  body(264,412,.93,t,false);
+  text('TYPE 1 DIABETES',432,296,12,C.cyan,600);
+  text('Changes the system.',432,349,30,C.white,550);
+  text('Doesn’t define',432,397,30,C.white,550);
+  text('the person.',432,437,30,C.white,550);
+  text('A missing message can be replaced.',433,501,16,C.muted);
+  tag('UNDERSTAND • SUPPORT • LIVE',433,552,C.cyan);
+  ctx.restore();
+  if(u>=8)return;
+ }
+ ctx.save();ctx.globalAlpha=1-smooth(7,8,u);
+ tag('AUTOMATED INSULIN DELIVERY',62,230,C.cyan);
+ sensor(167,315);text('CGM',167,387,15,C.cyan,600,'center');
+ text('Senses glucose',167,409,12,C.muted,400,'center');
+ text('under the skin',167,428,12,C.muted,400,'center');
+ // phone algorithm
+ round(367,255,97,124,13,'#263e4d','#94aebd');round(376,266,79,98,6,'#071a24');text('AID',416,287,12,C.cyan,600,'center');
+ let p=[];for(let i=0;i<33;i++)p.push({x:382+i*2.1,y:329-Math.sin(i*.13)*12-Math.cos(i*.31+u)*5});path(p,C.cyan,1.7);text('ADJUST',416,352,9,C.muted,600,'center');
+ text('ALGORITHM',416,408,13,C.cyan,600,'center');text('Uses CGM readings',416,428,12,C.muted,400,'center');
+ pump(690,314);text('PUMP',690,408,13,C.blue,600,'center');text('Delivers insulin',690,428,12,C.muted,400,'center');
+ arrow(224,320,338,320,C.cyan,2);arrow(486,320,619,320,C.blue,2);
+ for(let i=0;i<4;i++){let f=(u*.45+i/4)%1;dot(228+f*105,320,3,C.cyan,7);dot(487+f*127,320,3,C.blue,7)}
+ path([{x:794,y:336},{x:807,y:452},{x:167,y:452},{x:167,y:442}],C.dim,1.4);
+ arrow(167,451,167,442,C.dim,1.4);
+ text('FEEDBACK',452,447,9,C.muted,600,'center');
+ // CGM strip
+ round(76,478,743,115,10,'#0d202b','#294650');
+ text('CGM TREND',91,499,10,C.cyan,600);
+ let gx=185,gy=503,gw=520,gh=64;
+ round(gx,gy+12,gw,36,2,'#133b36');
+ for(let j=0;j<4;j++)line(gx,gy+j*20,gx+gw,gy+j*20,C.dim,.6,.4);
+ let pts=[];for(let i=0;i<=120;i++){let f=i/120;pts.push({x:gx+f*gw,y:gy+30+Math.sin(f*TAU*1.4-u*.25)*11+Math.sin(f*21)*4})}path(pts,C.cyan,2);
+ for(let i=0;i<=12;i++){let f=i/12;dot(gx+f*gw,gy+30+Math.sin(f*TAU*1.4-u*.25)*11+Math.sin(f*21)*4,2.4,C.cyan)}
+ text('Readings every few minutes',91,579,11,C.muted);
+ text('Adjustments are automatic; daily care still matters.',804,579,11,C.muted,400,'right');
+ ctx.restore();
+}
+const scenes=[sceneBody,sceneIslet,sceneAttack,sceneMessage,sceneCompare,sceneBalance,sceneTech];
+function render(now){
+ let t=((now-start)/1000+offset)%window.DUR;if(t<0)t+=window.DUR;currentT=t;
+ let s=0;while(s<6&&t>=cuts[s+1])s++;
+ if(s!==previousScene){slider.style.display=s===2?'block':'none';previousScene=s}
+ bg(t);frame(s,t);
+ let u=t-cuts[s];
+ ctx.save();
+ // A brief cinematic reveal at each new scale.
+ ctx.globalAlpha=smooth(0,.45,u);
+ scenes[s](u,t);
+ ctx.restore();
+ requestAnimationFrame(render);
+}
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

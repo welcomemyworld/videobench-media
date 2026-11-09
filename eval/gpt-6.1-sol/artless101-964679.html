@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PELAGIC — Dawn Launch</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000}body{display:flex;align-items:center;justify-content:center}#stage{position:relative;width:1280px;height:720px;flex-shrink:0;transform-origin:center}canvas{position:absolute;inset:0;width:1280px;height:720px}#hud{pointer-events:none}#view{cursor:grab}#view:active{cursor:grabbing}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="view" width="1280" height="720"></canvas><canvas id="hud" width="1280" height="720"></canvas></div>
+<script>
+'use strict';
+/* All geometry, water, clouds, lighting and exhaust are generated locally.
+   A compact, dependency-free WebGL renderer keeps this film fully offline. */
+window.DUR=36;
+const stage=document.getElementById('stage'),canvas=document.getElementById('view'),hud=document.getElementById('hud'),ctx=hud.getContext('2d');
+function fit(){stage.style.transform='scale('+Math.min(innerWidth/1280,innerHeight/720)+')'}fit();addEventListener('resize',fit);
+const gl=canvas.getContext('webgl',{antialias:true,alpha:false,preserveDrawingBuffer:true});
+const PI=Math.PI,TAU=PI*2,clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),mix=(a,b,t)=>a+(b-a)*t,smooth=(a,b,t)=>{t=clamp((t-a)/(b-a));return t*t*(3-2*t)};
+const V=(a,b)=>a.map((x,i)=>x-b[i]),dot=(a,b)=>a.reduce((s,x,i)=>s+x*b[i],0),cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],norm=a=>{let l=Math.hypot(...a);return a.map(v=>v/l)};
+function shader(type,src){let s=gl.createShader(type);gl.shaderSource(s,src);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s}
+function program(v,f){let p=gl.createProgram();gl.attachShader(p,shader(gl.VERTEX_SHADER,v));gl.attachShader(p,shader(gl.FRAGMENT_SHADER,f));gl.linkProgram(p);if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(p));return p}
+const bg=program(`
+attribute vec2 p;varying vec2 uv;void main(){uv=p;gl_Position=vec4(p,0.,1.);}`,`
+precision highp float;
+varying vec2 uv;uniform vec3 eye,forward,right,up;uniform float time;
+float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+1.),f.x),f.y);}
+float fbm(vec2 p){float s=0.,a=.5;for(int i=0;i<5;i++){s+=a*noise(p);p=p*2.03+vec2(3.2,1.7);a*=.5;}return s;}
+vec3 sun=normalize(vec3(-.68,.115,-.73));
+vec3 sky(vec3 r){
+ float h=max(r.y,0.);float a=exp(-h*5.5);
+ vec3 c=mix(vec3(.075,.15,.26),vec3(.76,.44,.31),a);
+ c=mix(c,vec3(.32,.38,.45),exp(-h*22.)*.4);
+ float sd=max(dot(r,sun),0.);
+ c+=vec3(1.,.46,.18)*pow(sd,90.)*.53;
+ c+=vec3(1.,.76,.41)*smoothstep(.9995,.99982,sd)*2.2;
+ if(r.y>0.012){
+  vec2 q=r.xz/(r.y+.12)*2.7;
+  float cloud=fbm(q+vec2(time*.009,0.));
+  float bands=smoothstep(.48,.72,cloud)*smoothstep(.012,.12,r.y)*(1.-smoothstep(.35,.85,r.y));
+  c=mix(c,vec3(.46,.41,.42)+vec3(.52,.26,.12)*pow(sd,8.),bands*.73);
+  float wisps=fbm(q*vec2(.35,3.)+7.);
+  c+=vec3(.16,.11,.12)*smoothstep(.57,.75,wisps)*smoothstep(.05,.2,r.y)*.4;
+ }
+ return c;
+}
+float wave(vec2 p){
+ return sin(p.x*.21+p.y*.13+time*.7)*.26+sin(p.x*.45-p.y*.32-time*.9)*.13+sin(p.x*1.5+p.y*.9+time*1.8)*.055+sin(p.x*3.6-p.y*2.1+time*2.6)*.025;
+}
+void main(){
+ vec3 r=normalize(forward+right*uv.x*1.7777778*.41421356+up*uv.y*.41421356);
+ vec3 c=sky(r);
+ if(r.y<-.0001){
+  float d=-eye.y/r.y;vec3 p=eye+r*d;
+  for(int i=0;i<3;i++){d=(wave(p.xz)-eye.y)/r.y;p=eye+r*d;}
+  float e=.12;float dx=(wave(p.xz+vec2(e,0))-wave(p.xz-vec2(e,0)))/(2.*e);
+  float dz=(wave(p.xz+vec2(0,e))-wave(p.xz-vec2(0,e)))/(2.*e);
+  vec3 n=normalize(vec3(-dx,1.,-dz));vec3 refl=reflect(r,n);
+  float fres=pow(1.-max(dot(-r,n),0.),4.);
+  vec3 sea=mix(vec3(.014,.065,.085),sky(refl)*.67,.25+fres*.7);
+  float spec=pow(max(dot(refl,sun),0.),160.);
+  sea+=vec3(1.,.56,.25)*spec*2.;
+  float sparkle=pow(max(dot(refl,sun),0.),22.)*pow(noise(p.xz*5.),12.);
+  sea+=vec3(.8,.44,.2)*sparkle;
+  float foam=smoothstep(.8,.98,noise(p.xz*.9+time*.12))*smoothstep(.32,.43,wave(p.xz));
+  sea+=vec3(.1,.14,.15)*foam;
+  float fog=1.-exp(-d*.0009);
+  c=mix(sea,sky(vec3(r.x,.008,r.z)),fog);
+ }
+ c=c/(1.+c*.35);c=pow(c,vec3(.88));
+ float vign=1.-.15*dot(uv,uv);
+ gl_FragColor=vec4(c*vign,1.);
+}`);
+const solid=program(`
+attribute vec3 p,n,c;uniform mat4 vp;uniform vec3 shift;varying vec3 world,normal,color;
+void main(){world=p+shift;normal=n;color=c;gl_Position=vp*vec4(world,1.);}`,`
+precision highp float;varying vec3 world,normal,color;uniform vec3 eye;uniform float time,ignition;
+void main(){
+ vec3 n=normalize(normal),v=normalize(eye-world),l=normalize(vec3(-.68,.25,-.73));
+ float light=max(dot(n,l),0.);
+ float sky=max(n.y,0.);
+ vec3 c=color*(vec3(.22,.3,.4)+vec3(.97,.65,.40)*light*.95+sky*.12);
+ float spec=pow(max(dot(n,normalize(l+v)),0.),48.);
+ c+=vec3(.8,.57,.36)*spec*.3;
+ float rim=pow(1.-max(dot(n,v),0.),3.)*.13;c+=vec3(.24,.4,.5)*rim;
+ float fire=ignition*exp(-length(world-vec3(0.,7.,0.))*.14);
+ c+=color*vec3(1.,.3,.025)*fire*1.7;
+ float fog=1.-exp(-length(world-eye)*.0015);
+ c=mix(c,vec3(.47,.39,.37),fog);
+ c=c/(1.+c*.23);gl_FragColor=vec4(pow(c,vec3(.91)),1.);
+}`);
+const particle=program(`
+attribute vec3 p;attribute vec4 info;uniform mat4 vp;uniform vec3 eye;varying vec4 data;
+void main(){gl_Position=vp*vec4(p,1.);float d=length(p-eye);gl_PointSize=clamp(info.x*870./d,1.,220.);data=info;}`,`
+precision mediump float;varying vec4 data;uniform float time;
+float h(vec2 p){return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453);}
+void main(){vec2 q=gl_PointCoord*2.-1.;float r=length(q);if(r>1.)discard;
+ float a=pow(1.-r*r,1.6)*data.y;
+ vec3 c;
+ if(data.z>.5){c=mix(vec3(1.,.17,.012),vec3(1.,.85,.36),data.w);a*=1.2;}
+ else{float tex=.78+.22*sin(q.x*13.+data.w*31.)*sin(q.y*17.+data.w*23.);a*=tex;c=mix(vec3(.26,.29,.31),vec3(.76,.65,.52),data.w);c+=vec3(.28,.07,.0)*exp(-data.w*5.);}
+ gl_FragColor=vec4(c,a);}`);
+const flame=program(`
+attribute vec3 p;uniform mat4 vp;uniform vec3 origin;uniform float lengthF,widthF;varying vec3 local;
+void main(){local=p;vec3 w=origin+vec3(p.x*widthF,p.y*lengthF,p.z*widthF);gl_Position=vp*vec4(w,1.);}`,`
+precision highp float;varying vec3 local;uniform float time,power;
+void main(){float h=-local.y;float flick=.8+.2*sin(h*65.-time*45.+local.x*12.);vec3 c=mix(vec3(.55,.73,1.),vec3(1.,.55,.07),smoothstep(.02,.35,h));c=mix(c,vec3(1.,.11,.003),h*h);c+=vec3(.8,.7,.3)*(1.-h)*flick;gl_FragColor=vec4(c,(1.-h*.8)*power*.7);}`);
+function loc(p,n){return gl.getUniformLocation(p,n)}
+function matVP(eye,target){
+ let z=norm(V(eye,target)),x=norm(cross([0,1,0],z)),y=cross(z,x);
+ let view=[x[0],y[0],z[0],0,x[1],y[1],z[1],0,x[2],y[2],z[2],0,-dot(x,eye),-dot(y,eye),-dot(z,eye),1];
+ let f=1/Math.tan(PI/8),near=.3,far=3500,proj=[f/(1280/720),0,0,0,0,f,0,0,0,0,(far+near)/(near-far),-1,0,0,2*far*near/(near-far),0],out=[];
+ for(let c=0;c<4;c++)for(let r=0;r<4;r++){let sum=0;for(let k=0;k<4;k++)sum+=proj[k*4+r]*view[c*4+k];out[c*4+r]=sum}
+ return {vp:new Float32Array(out),right:x,up:y,forward:z.map(v=>-v)};
+}
+class Geometry{
+ constructor(){this.a=[]}
+ tri(a,b,c,n,col){for(let p of [a,b,c])this.a.push(...p,...n,...col)}
+ quad(a,b,c,d,n,col){this.tri(a,b,c,n,col);this.tri(a,c,d,n,col)}
+ box(x,y,z,w,h,d,col){
+ let a=x-w/2,b=x+w/2,c=y-h/2,e=y+h/2,f=z-d/2,g=z+d/2;
+ this.quad([a,c,g],[b,c,g],[b,e,g],[a,e,g],[0,0,1],col);
+ this.quad([b,c,f],[a,c,f],[a,e,f],[b,e,f],[0,0,-1],col);
+ this.quad([b,c,g],[b,c,f],[b,e,f],[b,e,g],[1,0,0],col);
+ this.quad([a,c,f],[a,c,g],[a,e,g],[a,e,f],[-1,0,0],col);
+ this.quad([a,e,g],[b,e,g],[b,e,f],[a,e,f],[0,1,0],col);
+ this.quad([a,c,f],[b,c,f],[b,c,g],[a,c,g],[0,-1,0],col);
+ }
+ cyl(x,y,z,r1,r2,h,col,s=48){
+  for(let i=0;i<s;i++){
+   let a=i*TAU/s,b=(i+1)*TAU/s,ca=Math.cos(a),sa=Math.sin(a),cb=Math.cos(b),sb=Math.sin(b);
+   let A=[x+ca*r1,y,z+sa*r1],B=[x+cb*r1,y,z+sb*r1],C=[x+cb*r2,y+h,z+sb*r2],D=[x+ca*r2,y+h,z+sa*r2];
+   let n=norm([Math.cos((a+b)/2),(r1-r2)/h,Math.sin((a+b)/2)]);
+   this.quad(A,B,C,D,n,col);
+   this.tri([x,y,z],B,A,[0,-1,0],col);this.tri([x,y+h,z],D,C,[0,1,0],col);
+  }
+ }
+ beam(a,b,r,col,s=8){
+  let d=norm(V(b,a)),u=norm(cross(d,Math.abs(d[1])>.9?[1,0,0]:[0,1,0])),v=cross(d,u);
+  for(let i=0;i<s;i++){
+   let point=(p,t)=>p.map((q,k)=>q+r*(u[k]*Math.cos(t)+v[k]*Math.sin(t)));
+   let t=i*TAU/s,t2=(i+1)*TAU/s,n=u.map((q,k)=>q*Math.cos((t+t2)/2)+v[k]*Math.sin((t+t2)/2));
+   this.quad(point(a,t),point(a,t2),point(b,t2),point(b,t),n,col);
+  }
+ }
+ upload(){this.buf=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,this.buf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(this.a),gl.STATIC_DRAW);this.count=this.a.length/9;this.a=[];return this}
+}
+const metal=[.27,.32,.34],dark=[.07,.095,.11],steel=[.52,.58,.60],white=[.86,.85,.78],orange=[.9,.32,.07],yellow=[.88,.64,.13];
+let deck=new Geometry(),rocket=new Geometry();
+deck.box(0,4.8,0,44,2,32,dark);deck.box(0,5.85,0,43.7,.12,31.7,metal);
+for(let x of [-18,18])for(let z of [-12,12]){
+ deck.cyl(x,-5,z,2,2,9.8,dark,24);deck.cyl(x,-.25,z,2.05,2.05,.45,orange,24);
+ deck.box(x,3.3,z,4,2.5,4,metal);
+}
+for(let x=-20;x<=20;x+=5){deck.box(x,5.94,0,.055,.025,30,[.38,.4,.4]);deck.box(x,3.7,0,.3,1.1,31,steel)}
+for(let z=-15;z<=15;z+=5)deck.box(0,5.96,z,42,.025,.05,[.38,.4,.4]);
+deck.cyl(0,5.95,0,7,7,.05,[.15,.18,.19],96);
+deck.cyl(0,6,0,5.85,5.85,.055,yellow,96);deck.cyl(0,6.07,0,5.65,5.65,.04,dark,96);
+deck.cyl(0,6.12,0,3.4,3.4,.1,metal,64);
+for(let i=0;i<12;i++){
+ let a=i*TAU/12,x=Math.cos(a)*6.45,z=Math.sin(a)*6.45;
+ deck.box(x,6.02,z,.32,.08,.32,white);
+}
+for(let x=-21;x<=21;x+=3)for(let z of [-15.5,15.5]){
+ deck.beam([x,5.9,z],[x,7.1,z],.045,steel);
+}
+for(let z=-15;z<=15;z+=3)for(let x of [-21.5,21.5])deck.beam([x,5.9,z],[x,7.1,z],.045,steel);
+for(let z of [-15.5,15.5])for(let y of [6.5,7.1])deck.beam([-21,y,z],[21,y,z],.04,steel);
+for(let x of [-21.5,21.5])for(let y of [6.5,7.1])deck.beam([x,y,-15],[x,y,15],.04,steel);
+deck.box(15,7.7,-7,8,3.5,6,[.45,.47,.44]);deck.box(15,9.6,-7,8.4,.35,6.4,steel);
+for(let x=12;x<=18;x+=2)deck.box(x,8.3,-3.98,1.5,1.1,.07,[.025,.1,.15]);
+deck.box(15,10.3,-7,3,1,3,white);deck.cyl(17,9.8,-9,.08,.06,6,steel,12);
+for(let y=11;y<15;y++)deck.beam([16.4,y,-9],[17.6,y,-9],.035,steel);
+for(let x of [11,13,15,17]){deck.box(x,6.5,10,1.1,1.1,2.5,dark);deck.box(x,7.1,10,1.2,.15,2.7,steel)}
+for(let z of [-10,-7,-4]){deck.cyl(-17,6,z,1,1,3.2,white,32);deck.cyl(-17,7.8,z,1.02,1.02,.25,orange,32)}
+// Service tower: open, cross-braced steelwork.
+for(let x of [-11.5,-8.5])for(let z of [-4.5,-1.5])deck.beam([x,6,z],[x,37,z],.15,steel);
+for(let y=6;y<37;y+=3.5){
+ for(let z of [-4.5,-1.5]){
+  deck.beam([-11.5,y,z],[-8.5,y+3.5,z],.08,metal);
+  deck.beam([-8.5,y,z],[-11.5,y+3.5,z],.08,metal);
+ }
+ for(let x of [-11.5,-8.5])deck.beam([x,y,-4.5],[x,y+3.5,-1.5],.08,metal);
+ deck.box(-10,y,-3,3.7,.15,3.7,steel);
+}
+deck.box(-10,37.3,-3,4,.65,4,white);
+deck.beam([-10,37.6,-3],[-10,43,-3],.06,steel);
+deck.box(-6,28,-3,6,.45,1.4,metal);deck.box(-6,20,-3,6,.45,1.4,metal);
+for(let y=7;y<=36;y+=.65)deck.beam([-11.6,y,-1.3],[-10.9,y,-1.3],.035,yellow);
+for(let z of [-5,5]){
+ deck.beam([-12,6.2,z],[-4,6.2,z],.18,steel);
+ deck.beam([-4,6.2,z],[-2,6.6,z*.35],.18,steel);
+}
+for(let x of [-20,20])for(let z of [-14,14]){
+ deck.cyl(x,6,z,.13,.13,3,steel,12);
+ deck.box(x,9.1,z,.45,.25,.45,[1,.54,.16]);
+}
+for(let i=0;i<16;i++){
+ let x=8+i*.65;deck.box(x,6.02,13,.32,.04,1.6,i%2?dark:yellow);
+}
+deck.upload();
+// Rocket: tapered composite fairing, interstage, panels and engine bells.
+rocket.cyl(0,2,0,2,2,21.5,white,80);
+rocket.cyl(0,23.5,0,2,2.06,1.1,dark,80);
+rocket.cyl(0,24.6,0,2.06,2.06,2.8,white,80);
+for(let i=0;i<18;i++){
+ let a=i/18,b=(i+1)/18;
+ let r=t=>2.06*Math.cos(t*PI/2);
+ rocket.cyl(0,27.4+a*5,0,r(a),r(b),5/18,white,80);
+}
+rocket.cyl(0,1.7,0,1.85,2,.4,dark,64);
+rocket.cyl(0,2.1,0,2.02,2.02,.25,steel,80);
+for(let y of [4.5,11,18.7,23.3,26.5])rocket.cyl(0,y,0,2.015,2.015,.075,[.49,.50,.47],80);
+rocket.cyl(0,20.2,0,2.022,2.022,1.5,dark,80);
+for(let i=0;i<16;i++){
+ let a=i*TAU/16,x=2.02*Math.cos(a),z=2.02*Math.sin(a);
+ rocket.beam([x,3,z],[x,19.8,z],.015,[.55,.56,.53],6);
+}
+for(let i=0;i<4;i++){
+ let a=i*PI/2,x=Math.cos(a)*1.02,z=Math.sin(a)*1.02;
+ rocket.cyl(x,0,z,.62,.34,1.15,dark,32);rocket.cyl(x,1.1,z,.35,.35,.7,steel,24);
+ let u=[Math.cos(a),0,Math.sin(a)],v=[-Math.sin(a),0,Math.cos(a)];
+ let pt=(r,y,w)=>[u[0]*r+v[0]*w,y,u[2]*r+v[2]*w];
+ rocket.tri(pt(1.98,3,-.09),pt(3.3,2.5,-.09),pt(1.98,7,-.09),v.map(x=>-x),dark);
+ rocket.tri(pt(1.98,3,.09),pt(1.98,7,.09),pt(3.3,2.5,.09),v,dark);
+ rocket.box(Math.cos(a)*2.01,22,Math.sin(a)*2.01,.24,.8,.24,steel);
+}
+rocket.cyl(0,-.12,0,.72,.4,1.35,dark,40);
+rocket.cyl(0,0,0,.74,.74,.13,steel,40);
+// Pixel-built identification on the camera-facing hull.
+const glyph={P:['111','101','111','100','100'],E:['111','100','110','100','111'],L:['100','100','100','100','111'],A:['010','101','111','101','101'],G:['111','100','101','101','111'],I:['111','010','010','010','111'],C:['111','100','100','100','111']};
+'PELAGIC'.split('').forEach((ch,i)=>glyph[ch].forEach((row,j)=>row.split('').forEach((b,k)=>{if(b==='1')rocket.box(-.38+k*.25,17.8-i*.98-j*.145,1.986,.18,.105,.045,dark)})));
+rocket.box(.75,18.9,1.85,.38,.25,.08,orange);
+rocket.upload();
+let flameGeo=new Geometry();flameGeo.cyl(0,0,0,1,.03,-1,white,48);flameGeo.upload();
+let quad=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,quad);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);
+let smokeBuf=gl.createBuffer(),fireBuf=gl.createBuffer();
+function attr(p,name,size,stride,offset){let a=gl.getAttribLocation(p,name);if(a>=0){gl.enableVertexAttribArray(a);gl.vertexAttribPointer(a,size,gl.FLOAT,false,stride,offset)}}
+function drawMesh(geo,shift,vp,eye,t,ign){
+ gl.useProgram(solid);gl.bindBuffer(gl.ARRAY_BUFFER,geo.buf);attr(solid,'p',3,36,0);attr(solid,'n',3,36,12);attr(solid,'c',3,36,24);
+ gl.uniformMatrix4fv(loc(solid,'vp'),false,vp);gl.uniform3fv(loc(solid,'shift'),shift);gl.uniform3fv(loc(solid,'eye'),eye);
+ gl.uniform1f(loc(solid,'time'),t);gl.uniform1f(loc(solid,'ignition'),ign);gl.drawArrays(gl.TRIANGLES,0,geo.count);
+}
+function rand(i){let v=Math.sin(i*127.13+1.73)*43758.54;return v-Math.floor(v)}
+function altitude(t){let q=Math.max(0,t-10);return .62*q*q+.025*q*q*q}
+let orbit=0,tilt=0,drag=false,px=0,py=0,epoch=performance.now(),offset=Number(new URLSearchParams(location.search).get('t'))||0;
+canvas.addEventListener('pointerdown',e=>{drag=true;px=e.clientX;py=e.clientY;canvas.setPointerCapture(e.pointerId)});
+canvas.addEventListener('pointermove',e=>{if(drag){orbit+=(e.clientX-px)*.005;tilt=clamp(tilt+(e.clientY-py)*.07,-14,16);px=e.clientX;py=e.clientY}});
+canvas.addEventListener('pointerup',()=>drag=false);
+addEventListener('keydown',e=>{if(e.code==='KeyR'){epoch=performance.now();offset=0;orbit=tilt=0}});
+canvas.addEventListener('dblclick',()=>{orbit=tilt=0});
+function drawParticles(arr,buf,vp,eye,t,add){
+ if(!arr.length)return;
+ gl.useProgram(particle);gl.bindBuffer(gl.ARRAY_BUFFER,buf);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(arr),gl.DYNAMIC_DRAW);
+ attr(particle,'p',3,28,0);attr(particle,'info',4,28,12);
+ gl.uniformMatrix4fv(loc(particle,'vp'),false,vp);gl.uniform3fv(loc(particle,'eye'),eye);gl.uniform1f(loc(particle,'time'),t);
+ gl.blendFunc(gl.SRC_ALPHA,add?gl.ONE:gl.ONE_MINUS_SRC_ALPHA);gl.drawArrays(gl.POINTS,0,arr.length/7);
+}
+function exhaust(t,alt,power,eye){
+ let smoke=[],fire=[],q=t-7.6;
+ if(q<0)return {smoke,fire};
+ // Expanding steam on the deck; individual births remain deterministic.
+ for(let i=0;i<340;i++){
+  let birth=7.6+rand(i+34)*7.4,age=t-birth;if(age<0||age>16)continue;
+  let angle=rand(i+11)*TAU,speed=1.5+rand(i+80)*2.2,r=age*speed;
+  let x=Math.cos(angle)*r+Math.sin(age+i)*.5,z=Math.sin(angle)*r;
+  let y=5.7+age*.38+rand(i+55)*2;
+  let size=(2.1+age*.58)*(1+rand(i+47)*.35),a=.24*(1-smooth(9,16,age))*smooth(0,.7,age);
+  smoke.push(x,y,z,size,a,0,clamp(age/9));
+ }
+ if(t>10){
+  for(let i=0;i<390;i++){
+   let age=rand(i+381)*Math.min(t-10,6.5),birth=t-age;
+   let y=7+altitude(birth)-age*(4+rand(i+5)*3),r=(.8+age*1.1),a=i*2.399;
+   let x=Math.cos(a)*r*rand(i+701)+age*.35,z=Math.sin(a)*r*rand(i+503);
+   smoke.push(x,y,z,1.8+age*1.25,.2*(1-age/7),0,.25+age*.1);
+  }
+ }
+ let len=4+power*13;
+ for(let i=0;i<380;i++){
+  let f=rand(i+91),a=i*2.399+t*(2+rand(i)),r=(.25+f*.9)*rand(i+51);
+  fire.push(Math.cos(a)*r,7+alt-f*len,Math.sin(a)*r,.3+f*.8,(1-f)*power*.8,1,1-f);
+ }
+ // Back-to-front sorting for translucent steam.
+ let parts=[];for(let i=0;i<smoke.length;i+=7){let p=smoke.slice(i,i+7);p.push((p[0]-eye[0])**2+(p[1]-eye[1])**2+(p[2]-eye[2])**2);parts.push(p)}
+ parts.sort((a,b)=>b[7]-a[7]);smoke=[];for(let p of parts)smoke.push(...p.slice(0,7));
+ return {smoke,fire};
+}
+function text(s,x,y,size=12,color='#bfd3d9',font='monospace',align='left'){
+ ctx.font=(font==='sans-serif'?'500 ':'')+size+'px '+font;ctx.fillStyle=color;ctx.textAlign=align;ctx.fillText(s,x,y);
+}
+function line(x,y,x2,y2,color='#7999a055'){ctx.strokeStyle=color;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x2,y2);ctx.stroke()}
+function hudDraw(t,alt,power){
+ ctx.clearRect(0,0,1280,720);
+ ctx.fillStyle='#02060b';ctx.fillRect(0,0,1280,31);ctx.fillRect(0,683,1280,37);
+ let fade=smooth(0,1.5,t)*(1-smooth(34.5,36,t));ctx.globalAlpha=fade;
+ text('P E L A G I C',48,79,23,'#f0f0e7','sans-serif');
+ text('01  /  OCEAN LAUNCH SYSTEM',49,102,10,'#a4bac1');
+ line(49,117,274,117);
+ text('DAWN WINDOW',48,144,11,'#e6bd8b');
+ text('05:42 UTC   /   NORTH ATLANTIC',48,162,10,'#a8b8be');
+ text('31° 24′ N     47° 08′ W',48,180,10,'#8da3ad');
+ text('AUTONOMOUS FLIGHT',1230,66,10,'#a3bac4','monospace','right');
+ ctx.fillStyle='#96d5b4';ctx.beginPath();ctx.arc(1093,62,3,0,TAU);ctx.fill();
+ const phase=t<7.6?'PRE-LAUNCH':t<10?'ENGINE IGNITION':t<15?'TOWER CLEAR':t<25?'POWERED ASCENT':'FLIGHT NOMINAL';
+ const g=ctx.createLinearGradient(990,0,1280,0);g.addColorStop(0,'#03101a00');g.addColorStop(1,'#03101a88');ctx.fillStyle=g;ctx.fillRect(985,204,295,318);
+ text('TELEMETRY  /  LIVE',1228,229,10,'#91b6bf','monospace','right');
+ line(1064,242,1228,242);
+ text('ALTITUDE',1064,270,10,'#8aa5b1');
+ text(alt<1000?String(Math.round(alt)).padStart(4,'0'):(alt/1000).toFixed(2),1062,309,34,'#edf2ed');
+ text(alt<1000?'METERS AGL':'KILOMETERS AGL',1065,328,9,'#90aab4');
+ let q=Math.max(0,t-10),speed=1.24*q+.075*q*q;
+ text('VERTICAL SPEED',1064,369,10,'#8aa5b1');
+ text(speed.toFixed(1),1062,402,28,'#edf2ed');text('M / S',1190,400,10,'#90aab4');
+ text('THRUST',1064,441,10,'#8aa5b1');
+ for(let i=0;i<24;i++){ctx.fillStyle=i<Math.round(power*24)?'#eab886':'#68869435';ctx.fillRect(1064+i*6.7,456,4.4,14)}
+ text(Math.round(power*100)+'% RATED',1228,490,10,'#bacad0','monospace','right');
+ text('SEA STATE  02   ·   WIND  04 KT',1228,517,9,'#8aa5b1','monospace','right');
+ let count=t<10?'T − '+(10-t).toFixed(1).padStart(4,'0'):'T + '+(t-10).toFixed(1).padStart(4,'0');
+ text(count,48,602,32,'#f1ede4');
+ text(phase,49,626,12,t<10?'#e8b986':'#aacdbb');
+ let caption=t<7.6?'Every horizon is a beginning.':t<10?'Seven engines. One trajectory.':t<15?'Release the ocean.':t<25?'Beyond the platform. Beyond the horizon.':'The dawn belongs to the next frontier.';
+ text(caption,640,643,16,'#d6d9d6','sans-serif','center');
+ line(49,658,1230,658,'#b8ced52b');
+ const marks=[['CHECKOUT',0],['IGNITION',7.6],['LIFTOFF',10],['ASCENT',20],['NOMINAL',30]];
+ for(let [name,at] of marks){let x=50+at/36*1178;ctx.fillStyle=t>=at?'#e5bb8b':'#68808c';ctx.beginPath();ctx.arc(x,658,2.5,0,TAU);ctx.fill();text(name,x,675,8,t>=at?'#c5c6b8':'#70858d')}
+ ctx.fillStyle='#e6bd8b';ctx.fillRect(49,657,1180*t/36,2);
+ text('PELAGIC  /  FLIGHT 001',48,706,9,'#788e99');
+ text('DRAG TO ORBIT   ·   DOUBLE-CLICK RESET VIEW   ·   R REPLAY',1230,706,9,'#788e99','monospace','right');
+ // Restrained central tracking reticle, free of the vehicle silhouette.
+ if(t>15){ctx.globalAlpha=fade*.45;line(921,347,938,347);line(929,339,929,355);text('TRACK LOCK',943,351,8,'#add1cf')}
+ ctx.globalAlpha=1;
+ let black=1-smooth(0,1,t)+smooth(34.8,36,t);if(black>0){ctx.fillStyle='rgba(0,0,0,'+clamp(black)+')';ctx.fillRect(0,31,1280,652)}
+}
+function frame(now){
+ let t=((now-epoch)/1000+offset)%window.DUR;if(t<0)t+=window.DUR;
+ let alt=altitude(t),power=smooth(7.6,9.7,t);
+ // Three continuous camera beats: approach, release, then a rising chase.
+ let angle=mix(.72,.38,smooth(0,9,t))+mix(0,-.45,smooth(13,32,t))+orbit;
+ let distance=mix(88,68,smooth(0,7,t));distance=mix(distance,93,smooth(9,16,t));distance=mix(distance,67,smooth(18,30,t));
+ let target=[0,19+alt,0],height=mix(27,19,smooth(0,8,t));height=mix(height,24,smooth(10,18,t));height=mix(height,5,smooth(19,29,t));
+ let eye=[Math.sin(angle)*distance,alt+height+tilt,Math.cos(angle)*distance];
+ target[0]=5;target[1]=alt+19;let camera=matVP(eye,target);
+ gl.viewport(0,0,1280,720);gl.clearColor(0,0,0,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+ gl.disable(gl.DEPTH_TEST);gl.disable(gl.BLEND);gl.depthMask(false);
+ gl.useProgram(bg);gl.bindBuffer(gl.ARRAY_BUFFER,quad);attr(bg,'p',2,8,0);
+ for(let k of ['eye','forward','right','up'])gl.uniform3fv(loc(bg,k),k==='eye'?eye:camera[k]);
+ gl.uniform1f(loc(bg,'time'),t);gl.drawArrays(gl.TRIANGLES,0,6);
+ gl.depthMask(true);gl.enable(gl.DEPTH_TEST);
+ drawMesh(deck,[0,0,0],camera.vp,eye,t,power*(1-smooth(12,17,t)));
+ drawMesh(rocket,[0,7+alt,0],camera.vp,eye,t,power*(1-smooth(12,17,t)));
+ gl.enable(gl.BLEND);gl.depthMask(false);
+ let p=exhaust(t,alt,power,eye);drawParticles(p.smoke,smokeBuf,camera.vp,eye,t,false);
+ if(power>.001){
+  gl.useProgram(flame);gl.bindBuffer(gl.ARRAY_BUFFER,flameGeo.buf);attr(flame,'p',3,36,0);
+  gl.uniformMatrix4fv(loc(flame,'vp'),false,camera.vp);gl.uniform1f(loc(flame,'time'),t);gl.uniform1f(loc(flame,'power'),power);
+  gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
+  for(let i=0;i<5;i++){
+   let a=i*PI/2,x=i<4?Math.cos(a)*1.02:0,z=i<4?Math.sin(a)*1.02:0;
+   gl.uniform3fv(loc(flame,'origin'),[x,6.9+alt,z]);
+   gl.uniform1f(loc(flame,'lengthF'),(i<4?8:13)*power*(1+.055*Math.sin(t*37+i)));
+   gl.uniform1f(loc(flame,'widthF'),i<4?.48:.65);
+   gl.drawArrays(gl.TRIANGLES,0,flameGeo.count);
+  }
+  drawParticles(p.fire,fireBuf,camera.vp,eye,t,true);
+ }
+ gl.depthMask(true);gl.disable(gl.BLEND);
+ hudDraw(t,alt,power);requestAnimationFrame(frame);
+}
+if(gl)requestAnimationFrame(frame);
+</script>
+</body>
+</html>

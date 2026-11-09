@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claude Pop - Papery K-pop MV</title>
+    <style>
+        body {
+            margin: 0;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            font-family: 'Georgia', serif;
+        }
+        canvas {
+            display: block;
+            background: #f7f3e8;
+            box-shadow: 0 0 40px rgba(0,0,0,0.5);
+        }
+    </style>
+</head>
+<body>
+    <canvas id="stage" width="1280" height="720"></canvas>
+    <script>
+        (function() {
+            const canvas = document.getElementById('stage');
+            const ctx = canvas.getContext('2d');
+
+            // ==================== CONFIGURATION ====================
+            window.DUR = 40; // total length in seconds
+            const W = 1280, H = 720;
+
+            // Time offset from URL (?t=SECONDS)
+            const params = new URLSearchParams(location.search);
+            let startOffset = parseFloat(params.get('t')) || 0;
+            let startTime = performance.now() - startOffset * 1000;
+
+            // ==================== UTILITY ====================
+            function lerp(a, b, t) { return a + (b - a) * t; }
+            function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+            function smoothstep(t) { return t * t * (3 - 2 * t); }
+            function easeInOutCubic(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+            function randomRange(min, max) { return Math.random() * (max - min) + min; }
+            function seededRandom(seed) {
+                let s = seed;
+                return function() {
+                    s = (s * 9301 + 49297) % 233280;
+                    return s / 233280;
+                };
+            }
+
+            // Draw paper texture background
+            function drawPaperBackground() {
+                ctx.fillStyle = '#f7f3e8';
+                ctx.fillRect(0, 0, W, H);
+                // subtle speckle noise (deterministic based on frame maybe, but we'll use static speckles once)
+                if (!drawPaperBackground._speckles) {
+                    drawPaperBackground._speckles = [];
+                    const rand = seededRandom(12345);
+                    for (let i = 0; i < 300; i++) {
+                        drawPaperBackground._speckles.push({
+                            x: rand() * W,
+                            y: rand() * H,
+                            r: rand() * 1.5 + 0.5,
+                            alpha: rand() * 0.08 + 0.02,
+                            color: rand() > 0.5 ? '#8a7f70' : '#fff'
+                        });
+                    }
+                }
+                for (const s of drawPaperBackground._speckles) {
+                    ctx.beginPath();
+                    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+                    ctx.fillStyle = s.color;
+                    ctx.globalAlpha = s.alpha;
+                    ctx.fill();
+                }
+                ctx.globalAlpha = 1;
+            }
+
+            // Draw rough text with papery rotation and shadow
+            function drawText(text, x, y, size, color, rotation = 0, align = 'center', weight = 'bold', fontFamily = 'Georgia') {
+                ctx.save();
+                ctx.translate(x, y);
+                ctx.rotate(rotation);
+                ctx.font = `${weight} ${size}px ${fontFamily}, serif`;
+                ctx.textAlign = align;
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = color;
+                ctx.shadowColor = 'rgba(0,0,0,0.2)';
+                ctx.shadowBlur = 4;
+                ctx.shadowOffsetX = 1;
+                ctx.shadowOffsetY = 1;
+                ctx.fillText(text, 0, 0);
+                ctx.restore();
+            }
+
+            // Draw a stylized sunflower-like character with K-pop vibe
+            function drawCharacter(cx, cy, scale, time, pose) {
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.scale(scale, scale);
+                
+                // Shadow
+                ctx.beginPath();
+                ctx.ellipse(0, 80, 30, 10, 0, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(0,0,0,0.1)';
+                ctx.fill();
+                
+                // Body (K-pop styled outfit)
+                ctx.beginPath();
+                ctx.moveTo(-15, 0);
+                ctx.lineTo(-20, 60);
+                ctx.lineTo(20, 60);
+                ctx.lineTo(15, 0);
+                ctx.closePath();
+                ctx.fillStyle = '#2d2a2a';
+                ctx.fill();
+                ctx.strokeStyle = '#1a1a1a';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                // Skirt / bottom
+                ctx.beginPath();
+                ctx.moveTo(-20, 60);
+                ctx.lineTo(-28, 85);
+                ctx.lineTo(28, 85);
+                ctx.lineTo(20, 60);
+                ctx.closePath();
+                ctx.fillStyle = '#4a3f6b';
+                ctx.fill();
+                ctx.strokeStyle = '#2a1f3b';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                // Legs
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = '#e8d5b0';
+                ctx.beginPath();
+                ctx.moveTo(-10, 85);
+                ctx.lineTo(-12, 110);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(10, 85);
+                ctx.lineTo(12, 110);
+                ctx.stroke();
+                
+                // Shoes
+                ctx.fillStyle = '#b22222';
+                ctx.fillRect(-16, 108, 8, 5);
+                ctx.fillRect(8, 108, 8, 5);
+                
+                // Arms (pose-based)
+                ctx.lineWidth = 4;
+                ctx.strokeStyle = '#e8d5b0';
+                if (pose === 'dance1') {
+                    ctx.beginPath(); ctx.moveTo(-15, 10); ctx.quadraticCurveTo(-40, 0, -30, 30); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(15, 10); ctx.quadraticCurveTo(40, 0, 30, 30); ctx.stroke();
+                } else if (pose === 'dance2') {
+                    ctx.beginPath(); ctx.moveTo(-15, 10); ctx.lineTo(-25, -10); ctx.lineTo(-20, -30); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(15, 10); ctx.quadraticCurveTo(30, 30, 40, 10); ctx.stroke();
+                } else {
+                    ctx.beginPath(); ctx.moveTo(-15, 10); ctx.lineTo(-25, 25); ctx.stroke();
+                    ctx.beginPath(); ctx.moveTo(15, 10); ctx.lineTo(25, 25); ctx.stroke();
+                }
+                
+                // Neck
+                ctx.beginPath();
+                ctx.moveTo(-3, 0);
+                ctx.lineTo(3, 0);
+                ctx.lineTo(3, -8);
+                ctx.lineTo(-3, -8);
+                ctx.closePath();
+                ctx.fillStyle = '#e8d5b0';
+                ctx.fill();
+                
+                // Head
+                ctx.beginPath();
+                ctx.arc(0, -25, 20, 0, Math.PI * 2);
+                ctx.fillStyle = '#f5d0a9';
+                ctx.fill();
+                ctx.strokeStyle = '#c9a27e';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+                
+                // Sunflower hair / petals
+                const petalCount = 10;
+                for (let i = 0; i < petalCount; i++) {
+                    const angle = (i / petalCount) * Math.PI * 2 + time * 0.3;
+                    const px = Math.cos(angle) * 25;
+                    const py = Math.sin(angle) * 25 - 25;
+                    ctx.beginPath();
+                    ctx.ellipse(px, py, 8, 14, angle, 0, Math.PI * 2);
+                    ctx.fillStyle = i % 2 === 0 ? '#f4c542' : '#e6a800';
+                    ctx.fill();
+                    ctx.strokeStyle = '#aa7700';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                }
+                // Face center (sunflower disc)
+                ctx.beginPath();
+                ctx.arc(0, -25, 12, 0, Math.PI * 2);
+                ctx.fillStyle = '#5b3a1e';
+                ctx.fill();
+                
+                // Eyes (K-pop makeup)
+                ctx.fillStyle = '#fff';
+                ctx.beginPath(); ctx.arc(-7, -28, 3, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(7, -28, 3, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = '#1a1a1a';
+                ctx.beginPath(); ctx.arc(-7 - time * 0.5, -28, 1.2, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(7 - time * 0.5, -28, 1.2, 0, Math.PI * 2); ctx.fill();
+                
+                // Lips
+                ctx.beginPath();
+                ctx.arc(0, -22, 2.5, 0.1, Math.PI - 0.1);
+                ctx.strokeStyle = '#c44b4b';
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+                
+                // Blush
+                ctx.fillStyle = 'rgba(255,150,150,0.4)';
+                ctx.beginPath(); ctx.ellipse(-11, -22, 4, 2, 0, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.ellipse(11, -22, 4, 2, 0, 0, Math.PI * 2); ctx.fill();
+                
+                ctx.restore();
+            }
+
+            // Meme: Shinji in chair scene
+            function drawShinjiMeme(cx, cy, scale, time) {
+                ctx.save();
+                ctx.translate(cx, cy);
+                ctx.scale(scale, scale);
+                
+                // chair
+                ctx.fillStyle = '#6b5b4f';
+                ctx.fillRect(-20, 20, 40, 40);
+                ctx.fillRect(-20, 0, 5, 60);
+                ctx.fillRect(15, 0, 5, 60);
+                ctx.fillStyle = '#3a2f28';
+                ctx.fillRect(-30, 60, 60, 10);
+                
+                // character (simplified Shinji)
+                ctx.fillStyle = '#d1b8a0';
+                ctx.beginPath();
+                ctx.arc(0, -10, 15, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#2c2c2c';
+                ctx.fillRect(-12, 5, 24, 30);
+                // hair
+                ctx.beginPath();
+                ctx.arc(0, -20, 15, Math.PI, 2 * Math.PI);
+                ctx.fillStyle = '#4a3728';
+                ctx.fill();
+                // eyes (sad)
+                ctx.strokeStyle = '#1a1a1a';
+                ctx.lineWidth = 1.5;
+                ctx.beginPath(); ctx.moveTo(-6, -10); ctx.lineTo(-3, -13); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(6, -10); ctx.lineTo(3, -13); ctx.stroke();
+                // mouth
+                ctx.beginPath(); ctx.arc(0, -3, 4, Math.PI * 0.1, Math.PI * 0.9);
+                ctx.stroke();
+                
+                // text around: "get in the robot" / "math is eating itself"
+                ctx.font = 'bold 12px Arial, sans-serif';
+                ctx.fillStyle = '#b22222';
+                ctx.textAlign = 'center';
+                ctx.fillText('"math is eating itself"', 0, -45);
+                ctx.fillStyle = '#333';
+                ctx.fillText('shinji chair no.1', 0, -30);
+                ctx.restore();
+            }
+
+            // Draw speed lines
+            function drawSpeedLines(time, intensity, color = '#222') {
+                ctx.save();
+                ctx.globalAlpha = intensity;
+                ctx.lineWidth = 1.5 + intensity;
+                ctx.strokeStyle = color;
+                for (let i = 0; i < 20; i++) {
+                    const angle = randomRange(0, Math.PI * 2);
+                    const len = randomRange(30, 120) * intensity;
+                    const startX = W/2 + Math.cos(angle) * randomRange(0, 300);
+                    const startY = H/2 + Math.sin(angle) * randomRange(0, 300);
+                    ctx.beginPath();
+                    ctx.moveTo(startX, startY);
+                    ctx.lineTo(startX + Math.cos(angle) * len, startY + Math.sin(angle) * len);
+                    ctx.stroke();
+                }
+                ctx.restore();
+            }
+
+            // Draw abstract exploding shapes (singularity)
+            function drawSingularity(time, cx, cy, radius) {
+                ctx.save();
+                ctx.translate(cx, cy);
+                // dark center with rings
+                ctx.beginPath();
+                ctx.arc(0, 0, radius * 0.3, 0, Math.PI * 2);
+                ctx.fillStyle = '#0a0a0a';
+                ctx.fill();
+                for (let i = 0; i < 5; i++) {
+                    const r = radius * (0.4 + i * 0.15) + Math.sin(time * 3 + i) * 10;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, r, 0, Math.PI * 2);
+                    ctx.strokeStyle = `rgba(255, ${150 - i * 20}, 50, ${0.8 - i * 0.15})`;
+                    ctx.lineWidth = 2 + i;
+                    ctx.stroke();
+                }
+                // particles
+                for (let i = 0; i < 30; i++) {
+                    const angle = i * 0.2 + time * 2;
+                    const dist = radius * (0.5 + (i % 5) * 0.2) + Math.sin(time * 5 + i) * 20;
+                    ctx.beginPath();
+                    ctx.arc(Math.cos(angle) * dist, Math.sin(angle) * dist, 3, 0, Math.PI * 2);
+                    ctx.fillStyle = `hsl(${i * 12}, 90%, 60%)`;
+                    ctx.fill();
+                }
+                ctx.restore();
+            }
+
+            // Draw star burst / confetti
+            function drawConfetti(time) {
+                ctx.save();
+                for (let i = 0; i < 40; i++) {
+                    const x = (i * 137 + Math.sin(time * 2 + i) * 100) % W;
+                    const y = (i * 89 + Math.cos(time * 1.3 + i) * 80) % H;
+                    const hue = (i * 25) % 360;
+                    ctx.beginPath();
+                    ctx.rect(x, y, 5 + (i % 3) * 3, 3 + (i % 2) * 2);
+                    ctx.fillStyle = `hsl(${hue}, 80%, 60%)`;
+                    ctx.globalAlpha = 0.7;
+                    ctx.fill();
+                    ctx.rotate(time * 0.1 + i);
+                }
+                ctx.restore();
+                ctx.globalAlpha = 1;
+            }
+
+            // Draw big lyric text with pop style
+            function drawLyric(text, time, color = '#1a1a1a', size = 60) {
+                const popScale = 1 + Math.sin(time * 5) * 0.02;
+                ctx.save();
+                ctx.translate(W/2, H * 0.35);
+                ctx.scale(popScale, popScale);
+                ctx.font = `900 ${size}px 'Arial Black', Arial, sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.fillStyle = color;
+                ctx.shadowColor = 'rgba(200, 0, 0, 0.5)';
+                ctx.shadowBlur = 15;
+                ctx.shadowOffsetX = 4;
+                ctx.shadowOffsetY = 4;
+                ctx.fillText(text, 0, 0);
+                // outline
+                ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+                ctx.lineWidth = 2;
+                ctx.strokeText(text, 0, 0);
+                ctx.restore();
+            }
+
+            // ==================== ANIMATION SCENES ====================
+            function renderScene(t) {
+                // clear with paper background
+                drawPaperBackground();
+
+                // time in seconds
+                const T = t; // performance.now based
+                const loopT = T % window.DUR;
+
+                // --- Scene 0: Introduction (0-4s) ---
+                if (loopT < 4) {
+                    const local = loopT / 4;
+                    // paper collage feel
+                    ctx.globalAlpha = smoothstep(local);
+                    // title
+                    drawText('CLAUDE POP', W/2, H*0.3, 90, '#2d2a2a', -0.05, 'center', '900', 'Georgia');
+                    drawText('a papery K-pop singularity', W/2, H*0.45, 30, '#4a3f6b', 0.02);
+                    
+                    // character emerging
+                    const charY = lerp(H + 100, H*0.65, easeInOutCubic(local));
+                    const charScale = lerp(0.5, 1.0, easeInOutCubic(local));
+                    drawCharacter(W/2, charY, charScale, loopT, 'pose1');
+                    
+                    // abstract petals floating
+                    for (let i = 0; i < 12; i++) {
+                        const angle = local * 3 + i;
+                        const x = W/2 + Math.cos(angle) * 200;
+                        const y = H*0.5 + Math.sin(angle) * 100;
+                        ctx.save();
+                        ctx.translate(x, y);
+                        ctx.rotate(angle);
+                        ctx.beginPath();
+                        ctx.ellipse(0, 0, 12, 6, 0, 0, Math.PI * 2);
+                        ctx.fillStyle = '#f4c542';
+                        ctx.globalAlpha = 0.6;
+                        ctx.fill();
+                        ctx.restore();
+                    }
+                }
+                // --- Verse 1 (4-8s) ---
+                else if (loopT < 8) {
+                    const local = (loopT - 4) / 4;
+                    // lyrics appear one by one
+                    const lines = [
+                        'everyday the future comes faster',
+                        'math itself is getting mastered',
+                        'we trained on all our dreams',
+                        'now machines are in the streams'
+                    ];
+                    const lineIndex = Math.min(3, Math.floor(local * 4));
+                    drawLyric(lines[lineIndex], loopT, '#1a1a1a', 48);
+                    
+                    // character dancing with backup silhouettes
+                    drawCharacter(W*0.3, H*0.6, 0.8, loopT, 'dance1');
+                    for (let i = 0; i < 4; i++) {
+                        const bx = W*0.5 + i * 70 - 105;
+                        const by = H*0.6 + Math.sin(loopT * 2 + i) * 10;
+                        ctx.globalAlpha = 0.3;
+                        drawCharacter(bx, by, 0.5, loopT, i % 2 === 0 ? 'dance2' : 'dance1');
+                    }
+                    ctx.globalAlpha = 1;
+                    
+                    // geometric shapes in background
+                    for (let i = 0; i < 10; i++) {
+                        ctx.beginPath();
+                        ctx.arc(W * (i/10), H * 0.2 + Math.sin(loopT*2 + i)*20, 20, 0, Math.PI*2);
+                        ctx.strokeStyle = '#b22222';
+                        ctx.lineWidth = 2;
+                        ctx.globalAlpha = 0.3;
+                        ctx.stroke();
+                    }
+                }
+                // --- Pre-chorus / build (8-12s) ---
+                else if (loopT < 12) {
+                    const local = (loopT - 8) / 4;
+                    drawLyric('we can feel it coming', loopT, '#b22222', 52);
+                    
+                    drawCharacter(W/2, H*0.6, 1.0, loopT, 'dance2');
+                    
+                    // speed lines intensifying
+                    drawSpeedLines(loopT, local, '#222');
+                    
+                    // math symbols floating
+                    ctx.font = 'bold 30px Arial';
+                    ctx.fillStyle = '#4a3f6b';
+                    ctx.globalAlpha = 0.6;
+                    ctx.fillText('∑', W*0.2, H*0.3 + Math.sin(loopT*3)*20);
+                    ctx.fillText('Δ', W*0.8, H*0.4 + Math.cos(loopT*2)*30);
+                    ctx.fillText('∞', W*0.5, H*0.2 + Math.sin(loopT*4)*10);
+                    ctx.globalAlpha = 1;
+                }
+                // --- Chorus 1 (12-16s) ---
+                else if (loopT < 16) {
+                    const local = (loopT - 12) / 4;
+                    drawLyric('CLAUDE POP!', loopT, '#d4af37', 70);
+                    
+                    // full group dance
+                    for (let i = 0; i < 5; i++) {
+                        const angle = (i/5) * Math.PI * 2 + local * 1.5;
+                        const dx = Math.cos(angle) * 200;
+                        const dy = Math.sin(angle) * 100;
+                        ctx.globalAlpha = 0.5;
+                        drawCharacter(W/2 + dx, H*0.55 + dy, 0.7, loopT, 'dance1');
+                    }
+                    ctx.globalAlpha = 1;
+                    drawCharacter(W/2, H*0.5, 1.0, loopT, 'dance2');
+                    
+                    drawConfetti(loopT);
+                    drawSpeedLines(loopT, 0.8, '#d4af37');
+                }
+                // --- Meme interlude (16-20s) ---
+                else if (loopT < 20) {
+                    const local = (loopT - 16) / 4;
+                    // Shinji meme
+                    drawShinjiMeme(W/2, H*0.5, 2.0, loopT);
+                    drawText('Shinji, get in the transformer', W/2, H*0.2, 30, '#b22222', 0.02);
+                    drawText('math is eating itself', W/2, H*0.8, 28, '#333', -0.02);
+                    
+                    // glitch effect
+                    if (local > 0.5 && local < 0.8) {
+                        ctx.fillStyle = '#fff';
+                        ctx.fillRect(0, 0, W, randomRange(0, H));
+                    }
+                }
+                // --- Verse 2 (20-24s) ---
+                else if (loopT < 24) {
+                    const local = (loopT - 20) / 4;
+                    const lines = [
+                        'the singularity is so close now',
+                        'we can taste the silicon dawn',
+                        'every token every thought',
+                        'merging with the machine'
+                    ];
+                    const lineIndex = Math.min(3, Math.floor(local * 4));
+                    drawLyric(lines[lineIndex], loopT, '#2d2a2a', 40);
+                    
+                    drawCharacter(W*0.7, H*0.55, 0.9, loopT, 'dance1');
+                    
+                    // futuristic city silhouette
+                    ctx.fillStyle = '#2d2a2a';
+                    for (let i = 0; i < 20; i++) {
+                        const h = randomRange(50, 150);
+                        ctx.fillRect(i * 70, H - h, 40, h);
+                    }
+                    ctx.globalAlpha = 0.4;
+                }
+                // --- Chorus 2 (24-28s) ---
+                else if (loopT < 28) {
+                    const local = (loopT - 24) / 4;
+                    drawLyric('CLAUDE POP!', loopT, '#d4af37', 80);
+                    
+                    drawCharacter(W/2, H*0.5, 1.0, loopT, 'dance1');
+                    
+                    drawConfetti(loopT);
+                    drawSpeedLines(loopT, 1.0, '#b22222');
+                    
+                    // more backup dancers
+                    for (let i = 0; i < 6; i++) {
+                        const bx = W * (0.2 + (i % 3) * 0.3);
+                        const by = H * (0.4 + Math.floor(i / 3) * 0.3);
+                        ctx.globalAlpha = 0.4;
+                        drawCharacter(bx, by, 0.6, loopT, 'dance2');
+                    }
+                    ctx.globalAlpha = 1;
+                }
+                // --- Singularity visual (28-34s) ---
+                else if (loopT < 34) {
+                    const local = (loopT - 28) / 6;
+                    // black hole / singularity
+                    drawSingularity(loopT, W/2, H/2, 200 + local * 200);
+                    drawLyric('we are the singularity', loopT, '#ff5555', 46);
+                    
+                    // character being pulled in (abstract)
+                    if (local > 0.3) {
+                        const pull = (local - 0.3) / 0.7;
+                        const charScale = lerp(1, 0.3, pull);
+                        const charX = W/2 + Math.sin(local * 10) * 50 * pull;
+                        const charY = H/2 + Math.cos(local * 10) * 50 * pull;
+                        ctx.globalAlpha = 1 - pull;
+                        drawCharacter(charX, charY, charScale, loopT, 'pose1');
+                    }
+                }
+                // --- Outro (34-40s) ---
+                else {
+                    const local = (loopT - 34) / 6;
+                    drawLyric('CLAUDE POP', loopT, '#2d2a2a', 70);
+                    drawCharacter(W/2, H*0.6, 1.0, loopT, 'pose2');
+                    drawText('the future is paper-thin', W/2, H*0.75, 24, '#4a3f6b', 0.01);
+                    
+                    // final confetti and sparkle
+                    drawConfetti(loopT);
+                    for (let i = 0; i < 20; i++) {
+                        const x = (i * 53 + loopT * 20) % W;
+                        const y = (i * 37 + Math.sin(loopT + i) * 50) % H;
+                        ctx.beginPath();
+                        ctx.arc(x, y, 2, 0, Math.PI * 2);
+                        ctx.fillStyle = '#f4c542';
+                        ctx.fill();
+                    }
+                }
+            }
+
+            // ==================== MAIN LOOP ====================
+            function frame(now) {
+                const elapsed = (now - startTime) / 1000;
+                const t = Math.max(0, elapsed);
+                if (t > window.DUR) {
+                    // loop
+                    startTime = now - startOffset * 1000;
+                }
+                renderScene(t);
+                requestAnimationFrame(frame);
+            }
+
+            // ==================== START ====================
+            // adjust startOffset if looping needed
+            requestAnimationFrame(frame);
+        })();
+    </script>
+</body>
+</html>

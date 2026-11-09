@@ -1,0 +1,267 @@
+<html>
+<meta charset="utf-8">
+<style>
+html,body{margin:0;height:100%;background:#000;overflow:hidden}
+#stage{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:50% 50%}
+</style>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=42;
+const canvas=document.getElementById("c");
+const ctx=canvas.getContext("2d");
+const stage=canvas;
+stage.id="stage";
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);stage.style.transform="translate(-50%,-50%) scale("+s+")";}
+addEventListener("resize",fit);fit();
+const q=new URLSearchParams(location.search).get("t");
+const OFF=q?parseFloat(q)||0:0;
+function clamp(v,a,b){return v<a?a:v>b?b:v;}
+function seg(t,a,b){return clamp((t-a)/(b-a),0,1);}
+function eio(x){return x<.5?2*x*x:1-Math.pow(-2*x+2,2)/2;}
+function eo(x){return 1-Math.pow(1-x,3);}
+function lerp(a,b,t){return a+(b-a)*t;}
+const W=1280,H=720,CX=860,CY=390,R=230;
+function sky(g){
+  const grd=ctx.createLinearGradient(0,0,0,H);
+  grd.addColorStop(0,"#07060e");grd.addColorStop(.55,"#140c18");grd.addColorStop(1,"#2a140c");
+  ctx.fillStyle=grd;ctx.fillRect(0,0,W,H);
+  ctx.fillStyle="rgba(255,180,80,.05)";
+  ctx.beginPath();ctx.ellipse(900,620,700,90,0,0,7);ctx.fill();
+}
+function strip(alpha){
+  ctx.save();ctx.globalAlpha=alpha;ctx.fillStyle="#0a0608";
+  const b=[40,520,90,500,150,470,200,510,250,440,310,500,360,460,420,530,500,480,560,510];
+  ctx.beginPath();ctx.moveTo(0,720);
+  for(let i=0;i<b.length;i+=2){ctx.lineTo(b[i],b[i+1]);}
+  ctx.lineTo(620,560);ctx.lineTo(620,720);ctx.fill();
+  ctx.fillStyle="#ffb45a";
+  for(let i=0;i<8;i++){ctx.globalAlpha=alpha*(.25+((i*3)%5)*.08);ctx.fillRect(70+i*62,500+((i*17)%40),8,40+((i*13)%50));}
+  ctx.restore();
+}
+function project(x,y,z,rot){
+  const c=Math.cos(rot),s=Math.sin(rot);
+  const x2=x*c-z*s,z2=x*s+z*c;
+  const f=520/(520+z2);
+  return [CX+x2*f,CY+y*f*.92,z2,f];
+}
+function sphere(t,build,glow,rot){
+  const pts=[];
+  const N=28,M=18;
+  for(let i=0;i<=M;i++){
+    const lat=-Math.PI/2+Math.PI*i/M;
+    for(let j=0;j<=N;j++){
+      const lon=Math.PI*2*j/N;
+      const x=Math.cos(lat)*Math.cos(lon)*R;
+      const y=Math.sin(lat)*R;
+      const z=Math.cos(lat)*Math.sin(lon)*R;
+      const grow=build;
+      if((y+R)/(2*R)>grow+0.02) continue;
+      pts.push(project(x,y,z,rot).concat([i,j,lat,lon,y]));
+    }
+  }
+  ctx.save();
+  ctx.strokeStyle="rgba(255,196,120,"+(0.15+build*0.35)+")";
+  ctx.lineWidth=1.2;
+  // meridians
+  for(let j=0;j<N;j+=2){
+    ctx.beginPath();let on=false;
+    for(let i=0;i<=M;i++){
+      const lat=-Math.PI/2+Math.PI*i/M;
+      const y=Math.sin(lat)*R;
+      if((y+R)/(2*R)>build) continue;
+      const lon=Math.PI*2*j/N;
+      const p=project(Math.cos(lat)*Math.cos(lon)*R,y,Math.cos(lat)*Math.sin(lon)*R,rot);
+      if(p[2]>40){on?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]);on=true;}else on=false;
+    }
+    ctx.stroke();
+  }
+  for(let i=2;i<M;i+=2){
+    const lat=-Math.PI/2+Math.PI*i/M;
+    const y=Math.sin(lat)*R;
+    if((y+R)/(2*R)>build) continue;
+    ctx.beginPath();let on=false;
+    for(let j=0;j<=N;j++){
+      const lon=Math.PI*2*j/N;
+      const p=project(Math.cos(lat)*Math.cos(lon)*R,y,Math.cos(lat)*Math.sin(lon)*R,rot);
+      if(p[2]>-20){on?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]);on=true;}else on=false;
+    }
+    ctx.stroke();
+  }
+  if(glow>0){
+    const cols=[[255,90,40],[255,200,80],[80,180,255],[180,80,255],[255,255,255]];
+    for(let i=1;i<M;i++){
+      for(let j=0;j<N;j++){
+        const lat=-Math.PI/2+Math.PI*i/M;
+        const y=Math.sin(lat)*R;
+        if((y+R)/(2*R)>build) continue;
+        const lon=Math.PI*2*(j+.5)/N;
+        const p=project(Math.cos(lat)*Math.cos(lon)*R,y,Math.cos(lat)*Math.sin(lon)*R,rot);
+        if(p[2]< -30) continue;
+        const face=clamp((p[2]+R)/(2*R),0,1);
+        const wave=Math.sin(lat*4+lon*3-t*2.2);
+        const band=Math.sin(lat*8-t*3);
+        const idx=Math.floor(((wave+1)*2+j)%cols.length);
+        const col=cols[idx];
+        const a=glow*face*(0.35+0.65*Math.max(0,wave))*(0.4+0.6*Math.max(0,band));
+        ctx.fillStyle="rgba("+col[0]+","+col[1]+","+col[2]+","+(a*0.9)+")";
+        const s=1.6+p[3]*2.2;
+        ctx.fillRect(p[0]-s/2,p[1]-s/2,s,s);
+      }
+    }
+    const halo=ctx.createRadialGradient(CX,CY,R*.3,CX,CY,R*1.35);
+    halo.addColorStop(0,"rgba(255,140,60,"+(glow*0.18)+")");
+    halo.addColorStop(1,"rgba(0,0,0,0)");
+    ctx.fillStyle=halo;ctx.beginPath();ctx.arc(CX,CY,R*1.4,0,7);ctx.fill();
+  }
+  ctx.restore();
+}
+function crane(x,base,h,sway){
+  ctx.save();ctx.translate(x,base);ctx.strokeStyle="#c8b49a";ctx.lineWidth=3;
+  ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(0,-h);ctx.stroke();
+  ctx.save();ctx.translate(0,-h);ctx.rotate(sway);
+  ctx.beginPath();ctx.moveTo(-30,0);ctx.lineTo(120,0);ctx.stroke();
+  ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(90,-18);ctx.lineTo(110,0);ctx.stroke();
+  ctx.restore();ctx.restore();
+}
+function card(x,y,lines,alpha,title){
+  ctx.save();ctx.globalAlpha=alpha;
+  ctx.fillStyle="rgba(8,6,10,.55)";
+  const h=36+lines.length*34+(title?28:0);
+  round(x-24,y-28,500,h+20,16);ctx.fill();
+  ctx.strokeStyle="rgba(255,190,110,.35)";ctx.stroke();
+  let yy=y;
+  if(title){ctx.fillStyle="#e7b56a";ctx.font="600 15px Georgia,serif";ctx.fillText(title,x,yy);yy+=30;}
+  ctx.fillStyle="#f6efe6";ctx.font="28px Georgia,serif";
+  lines.forEach(function(ln,i){ctx.fillText(ln,x,yy+i*34);});
+  ctx.restore();
+}
+function round(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+function label(txt,x,y,a){
+  ctx.save();ctx.globalAlpha=a;ctx.fillStyle="#e7b56a";ctx.font="600 13px Georgia,serif";
+  ctx.fillText(txt,x,y);ctx.restore();
+}
+function interior(t,a){
+  ctx.save();ctx.globalAlpha=a;
+  ctx.fillStyle="#050308";ctx.fillRect(0,0,W,H);
+  const g=ctx.createRadialGradient(640,300,40,640,340,520);
+  g.addColorStop(0,"#3a1860");g.addColorStop(.45,"#14102a");g.addColorStop(1,"#050308");
+  ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  // wrap screen
+  ctx.beginPath();ctx.ellipse(640,250,560,210,0,0,7);
+  const sg=ctx.createLinearGradient(200,80,1000,400);
+  const hue=(t*40)%360;
+  sg.addColorStop(0,"hsl("+(hue)+",70%,42%)");
+  sg.addColorStop(.5,"hsl("+((hue+80)%360)+",80%,50%)");
+  sg.addColorStop(1,"hsl("+((hue+160)%360)+",70%,30%)");
+  ctx.fillStyle=sg;ctx.fill();
+  ctx.globalAlpha=a*0.35;ctx.strokeStyle="#fff";ctx.lineWidth=1;
+  for(let i=-4;i<=4;i++){ctx.beginPath();ctx.ellipse(640,250,560,210,0,0,7);ctx.stroke();}
+  ctx.globalAlpha=a;
+  // stage
+  ctx.fillStyle="#1a1020";
+  ctx.beginPath();ctx.moveTo(280,430);ctx.lineTo(1000,430);ctx.lineTo(1080,560);ctx.lineTo(200,560);ctx.fill();
+  ctx.fillStyle="#0e0a12";ctx.fillRect(200,545,880,80);
+  // band
+  const spots=[[430,470],[560,455],[700,460],[820,475]];
+  spots.forEach(function(p,i){
+    const bob=Math.sin(t*3+i)*6;
+    ctx.fillStyle="#111";
+    ctx.beginPath();ctx.ellipse(p[0],p[1]+bob,18,28,0,0,7);ctx.fill();
+    ctx.beginPath();ctx.arc(p[0],p[1]-36+bob,12,0,7);ctx.fill();
+    if(i===1){ctx.strokeStyle="#ccc";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(p[0]+8,p[1]-10);ctx.lineTo(p[0]+28,p[1]-40);ctx.stroke();}
+  });
+  // drums
+  ctx.fillStyle="#222";ctx.beginPath();ctx.ellipse(700,500,26,10,0,0,7);ctx.fill();
+  ctx.strokeStyle="#888";ctx.beginPath();ctx.arc(730,478,10,0,7);ctx.stroke();
+  // crowd
+  ctx.fillStyle="#0a0610";
+  for(let r=0;r<5;r++){
+    for(let i=0;i<28;i++){
+      const x=160+i*34+(r%2)*12;
+      const y=590+r*22;
+      const hop=Math.sin(t*4+i*.4+r)*3;
+      ctx.globalAlpha=a*(0.45+r*0.08);
+      ctx.beginPath();ctx.arc(x,y+hop,7,0,7);ctx.fill();
+    }
+  }
+  ctx.globalAlpha=a*0.25;
+  ctx.fillStyle="#ffd2a8";
+  ctx.beginPath();ctx.moveTo(500,80);ctx.lineTo(430,430);ctx.lineTo(560,430);ctx.fill();
+  ctx.beginPath();ctx.moveTo(780,60);ctx.lineTo(720,430);ctx.lineTo(860,430);ctx.fill();
+  ctx.restore();
+}
+function bars(t){
+  const p=t/window.DUR;
+  ctx.fillStyle="rgba(255,255,255,.15)";ctx.fillRect(80,690,1120,3);
+  ctx.fillStyle="#e7b56a";ctx.fillRect(80,690,1120*p,3);
+}
+function titleBlock(a,sub){
+  ctx.save();ctx.globalAlpha=a;ctx.textAlign="center";
+  ctx.fillStyle="#f7f1ea";ctx.font="72px Georgia,serif";ctx.fillText("THE SPHERE",640,300);
+  ctx.fillStyle="#e7b56a";ctx.font="22px Georgia,serif";ctx.fillText(sub,640,344);
+  ctx.restore();ctx.textAlign="left";
+}
+function render(t){
+  sky();
+  const intro=seg(t,0,1.2), introOut=1-seg(t,4.2,5.4);
+  const s1=seg(t,5.2,6.4)*(1-seg(t,12.6,13.6));
+  const s2=seg(t,13.2,14.4)*(1-seg(t,21.2,22.2));
+  const s3=seg(t,21.6,22.8)*(1-seg(t,30.2,31.2));
+  const s4=seg(t,30.6,31.6)*(1-seg(t,38.4,39.2));
+  const s5=seg(t,38.6,39.6);
+  if(t<13.8){
+    strip(0.9);
+    const build=t<5?lerp(0.08,0.22,eo(seg(t,0.4,3))):lerp(0.22,0.72,eo(seg(t,5.5,12)));
+    const glow=t<5?0:seg(t,9,12.5)*0.35;
+    sphere(t,build,glow,t*0.15);
+    if(t>6&&t<13){crane(690,560,180+Math.sin(t)*4,Math.sin(t*0.7)*0.04);crane(1040,575,150,Math.sin(t*0.5)*-0.05);}
+  } else if(t<22.4){
+    strip(0.55);
+    sphere(t,1,lerp(0.4,1,eo(seg(t,13.4,18))),t*0.35);
+  } else if(t<31.4){
+    interior(t,Math.min(1,seg(t,21.8,23)));
+  } else {
+    strip(0.7);
+    sphere(t,1,1,t*0.25);
+  }
+  if(t<5.6) titleBlock(Math.min(intro,introOut)* (t<4.2?1:introOut),"Las Vegas  ·  a short history");
+  if(s1>0){
+    label("2018",70,86,s1);
+    card(70,120,["A perfect room is announced","east of the Strip — steel,","sound, and a blank round sky."],s1,"ANNOUNCED");
+  }
+  if(s2>0){
+    label("2019  —  2023",70,86,s2);
+    card(70,120,["Cranes draw a 366-foot dome.","The shell becomes a canvas:","1.2 million LED pucks."],s2,"RISING");
+  }
+  if(s3>0){
+    label("SEPTEMBER 29, 2023",80,78,s3);
+    card(80,110,["U2 opens the venue live.","Bands play inside a 16K screen","with beam-formed concert sound."],s3,"FIRST SHOW");
+    ctx.save();ctx.globalAlpha=s3;ctx.fillStyle="#f6efe6";ctx.font="18px Georgia,serif";
+    ctx.fillText("Not a backdrop. A building that performs with the band.",80,280);
+    ctx.restore();
+  }
+  if(s4>0){
+    label("THE LIVE PAGE",80,86,s4);
+    card(80,120,["Residencies turn the night","into a moving poster the","whole city can read outside."],s4,"AFTER DARK");
+  }
+  if(s5>0){
+    titleBlock(s5,"From a line on paper  ·  to the brightest room on Earth");
+    ctx.save();ctx.globalAlpha=s5;ctx.textAlign="center";ctx.fillStyle="#e7b56a";ctx.font="18px Georgia,serif";
+    ctx.fillText("Exosphere   ·   wraparound stage   ·   still playing",640,390);
+    ctx.restore();ctx.textAlign="left";
+  }
+  bars(t);
+  ctx.fillStyle="rgba(255,255,255,.45)";ctx.font="12px Georgia,serif";
+  ctx.fillText("THE SPHERE  ·  LAS VEGAS",80,676);
+}
+let t0=null;
+function frame(now){
+  if(t0===null) t0=now-OFF*1000;
+  let elapsed=(now-t0)/1000;
+  let t=((elapsed%window.DUR)+window.DUR)%window.DUR;
+  render(t);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</html>

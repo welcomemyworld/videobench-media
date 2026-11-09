@@ -1,0 +1,383 @@
+<html>
+<head>
+<meta charset="utf-8">
+<title>Claude Pop</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#wrap{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform:translate(-50%,-50%);transform-origin:center center}
+canvas{display:block;width:1280px;height:720px}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+window.DUR = 42;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = 1280, H = 720;
+const q = new URLSearchParams(location.search);
+const T0 = Math.max(0, parseFloat(q.get('t')) || 0);
+function fit(){
+  const s = Math.min(innerWidth/W, innerHeight/H);
+  document.getElementById('wrap').style.transform = 'translate(-50%,-50%) scale('+s+')';
+}
+addEventListener('resize', fit); fit();
+
+const PAPER = '#f3ecdf', INK = '#16110d', GOLD = '#e2a322', MAG = '#e23d78', TEAL = '#1c8a86', INDIGO = '#241a44';
+
+function hash(n){ n = Math.sin(n*127.1+311.7)*43758.5453; return n-Math.floor(n); }
+function noise(x,y){
+  const x0=Math.floor(x), y0=Math.floor(y);
+  const fx=x-x0, fy=y-y0;
+  const a=hash(x0+y0*57), b=hash(x0+1+y0*57), c=hash(x0+(y0+1)*57), d=hash(x0+1+(y0+1)*57);
+  const u=fx*fx*(3-2*fx), v=fy*fy*(3-2*fy);
+  return a+(b-a)*u+(c-a)*v+(a-b-c+d)*u*v;
+}
+function paperFill(t){
+  ctx.fillStyle = PAPER;
+  ctx.fillRect(0,0,W,H);
+  ctx.save();
+  ctx.globalAlpha = 0.09;
+  for(let i=0;i<900;i++){
+    const x = (hash(i*3.1)+hash(i+t*0.02)*0.02)*W;
+    const y = (hash(i*7.7)+0.01)*H;
+    const g = 150+hash(i)*70;
+    ctx.fillStyle = 'rgb('+g+','+(g-8)+','+(g-20)+')';
+    ctx.fillRect(x,y,1.4+hash(i+2)*2.2, 0.6+hash(i+4));
+  }
+  ctx.restore();
+  const vg = ctx.createRadialGradient(640,360,80,640,380,720);
+  vg.addColorStop(0,'rgba(0,0,0,0)');
+  vg.addColorStop(1,'rgba(40,24,12,0.18)');
+  ctx.fillStyle = vg; ctx.fillRect(0,0,W,H);
+}
+function tornRect(x,y,w,h,seed,rot){
+  ctx.save();
+  ctx.translate(x,y); ctx.rotate(rot||0);
+  ctx.beginPath();
+  const steps = 18;
+  for(let i=0;i<=steps;i++){
+    const px = -w/2 + (w*i)/steps;
+    const j = (hash(seed+i)*2-1)*6;
+    ctx.lineTo(px, -h/2 + j*(i%3===0?1.6:0.4));
+  }
+  for(let i=0;i<=steps;i++){
+    const py = -h/2 + (h*i)/steps;
+    ctx.lineTo(w/2+(hash(seed+40+i)*2-1)*5, py);
+  }
+  for(let i=steps;i>=0;i--){
+    const px = -w/2 + (w*i)/steps;
+    ctx.lineTo(px, h/2+(hash(seed+80+i)*2-1)*6);
+  }
+  for(let i=steps;i>=0;i--){
+    const py = -h/2 + (h*i)/steps;
+    ctx.lineTo(-w/2+(hash(seed+120+i)*2-1)*5, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+function ease(t){ return t<0.5 ? 2*t*t : -1+(4-2*t)*t; }
+function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+function lerp(a,b,t){ return a+(b-a)*t; }
+function seg(t,a,b){ return clamp((t-a)/(b-a),0,1); }
+
+const LINES = [
+  [0.2, 3.4, 'THE CURVE', 'DOESN\'T WAIT', 1],
+  [3.6, 6.6, 'FASTER', 'THAN MORNING', 1],
+  [6.8, 10.2, 'math is melting', 'in the margins', 0],
+  [10.4, 14.0, 'WE ARE', 'THE WEATHER', 1],
+  [14.2, 17.6, 'hold the note', 'hold the world', 0],
+  [17.8, 21.4, 'PAPER HEARTS', 'SILICON VEINS', 1],
+  [21.6, 25.2, 'don\'t blink', 'the chorus doubled', 0],
+  [25.4, 29.2, 'EVERYTHING', 'AT ONCE', 1],
+  [29.4, 33.2, 'a sunflower', 'learning the city', 0],
+  [33.4, 37.2, 'SINGULARITY', 'IN THE HOOK', 1],
+  [37.4, 41.6, 'CLAUDE POP', 'keep up', 1]
+];
+
+function drawPetals(x,y,s,spin,open){
+  ctx.save();
+  ctx.translate(x,y); ctx.rotate(spin);
+  for(let i=0;i<14;i++){
+    ctx.save();
+    ctx.rotate(i/14*Math.PI*2);
+    ctx.fillStyle = i%2 ? '#f0b429' : '#d99212';
+    ctx.beginPath();
+    ctx.ellipse(0, -28*s*open, 11*s, 26*s*open, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.fillStyle = '#5c3412';
+  ctx.beginPath(); ctx.arc(0,0,16*s,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#2a1608';
+  for(let i=0;i<8;i++){
+    ctx.beginPath();
+    ctx.arc(Math.cos(i)*6*s, Math.sin(i*1.7)*5*s, 2.2*s, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+function face(x,y,s,blink,sing){
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.fillStyle = '#f7d7b8';
+  ctx.beginPath(); ctx.ellipse(0, 8*s, 22*s, 26*s, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = INK;
+  const ey = blink>0.82 ? 0.15 : 1;
+  ctx.save(); ctx.translate(-8*s, 4*s); ctx.scale(1, ey);
+  ctx.beginPath(); ctx.ellipse(0,0,3.2*s,3.6*s,0,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+  ctx.save(); ctx.translate(8*s, 4*s); ctx.scale(1, ey);
+  ctx.beginPath(); ctx.ellipse(0,0,3.2*s,3.6*s,0,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = INK; ctx.lineWidth = 1.6*s; ctx.lineCap='round';
+  ctx.beginPath(); ctx.arc(-8*s, 2*s, 6*s, Math.PI*1.15, Math.PI*1.85); ctx.stroke();
+  ctx.beginPath(); ctx.arc(8*s, 2*s, 6*s, Math.PI*1.15, Math.PI*1.85); ctx.stroke();
+  ctx.fillStyle = MAG;
+  ctx.beginPath();
+  const mw = 5*s + sing*6*s;
+  ctx.ellipse(0, 18*s, mw, 3*s+sing*7*s, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+}
+function body(x,y,s,phase,arm){
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.fillStyle = '#f6f1e8';
+  ctx.strokeStyle = INK; ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.moveTo(-18*s, 10*s);
+  ctx.quadraticCurveTo(-26*s, 70*s, -8*s, 92*s);
+  ctx.lineTo(8*s, 92*s);
+  ctx.quadraticCurveTo(26*s, 70*s, 18*s, 10*s);
+  ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = MAG;
+  ctx.fillRect(-16*s, 28*s, 32*s, 8*s);
+  ctx.strokeStyle = INK; ctx.lineWidth = 3*s;
+  ctx.beginPath();
+  ctx.moveTo(-14*s, 22*s);
+  ctx.quadraticCurveTo(-40*s, 30*s+arm*18*s, -28*s-arm*20*s, 8*s-arm*30*s);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(14*s, 24*s);
+  ctx.quadraticCurveTo(36*s, 40*s, 24*s+Math.sin(phase)*10*s, 70*s);
+  ctx.stroke();
+  ctx.lineWidth = 3*s;
+  ctx.beginPath(); ctx.moveTo(-6*s, 90*s); ctx.lineTo(-10*s, 118*s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(6*s, 90*s); ctx.lineTo(12*s, 118*s); ctx.stroke();
+  ctx.restore();
+}
+function dancer(x,y,s,ph,col){
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 3; ctx.lineCap='round';
+  ctx.beginPath(); ctx.arc(0,-46*s,10*s,0,Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0,-36*s); ctx.lineTo(0,8*s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0,-20*s); ctx.lineTo(-22*s+Math.sin(ph)*10, -4*s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0,-20*s); ctx.lineTo(22*s, -30*s+Math.cos(ph)*8); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0,8*s); ctx.lineTo(-12*s, 40*s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0,8*s); ctx.lineTo(14*s, 40*s); ctx.stroke();
+  ctx.restore();
+}
+function curveField(t, accel){
+  ctx.save();
+  ctx.globalAlpha = 0.85;
+  for(let i=0;i<7;i++){
+    ctx.beginPath();
+    ctx.strokeStyle = i%2 ? MAG : TEAL;
+    ctx.lineWidth = 2.2;
+    const sp = 0.35 + accel*1.8 + i*0.08;
+    for(let x=0;x<=W;x+=8){
+      const y = 520 - Math.pow((x/W), 1.6+accel)*280 - Math.sin(x*0.02+t*sp+i)*18 - i*16;
+      if(x===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+function shards(t, n, accel){
+  for(let i=0;i<n;i++){
+    const spd = 40+accel*220+hash(i)*80;
+    const x = (hash(i*9)*W + t*spd) % (W+120) - 60;
+    const y = hash(i*4)*H*0.72 + 40;
+    ctx.save();
+    ctx.translate(x,y);
+    ctx.rotate(hash(i+3)*2 + t*(0.4+accel));
+    ctx.fillStyle = i%3===0 ? GOLD : (i%3===1 ? '#fff' : MAG);
+    ctx.globalAlpha = 0.85;
+    tornRect(0,0, 28+hash(i)*40, 16+hash(i+1)*22, i, 0);
+    ctx.restore();
+  }
+}
+function bigType(text, x, y, size, rot, fill, stroke){
+  ctx.save();
+  ctx.translate(x,y); ctx.rotate(rot);
+  ctx.font = '900 '+size+'px Georgia, Times, serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.lineWidth = Math.max(2, size*0.035);
+  ctx.strokeStyle = stroke || INK;
+  ctx.strokeText(text, 2, 3);
+  ctx.fillStyle = fill || PAPER;
+  ctx.fillText(text, 0, 0);
+  ctx.restore();
+}
+function smallType(text, x, y, size, fill){
+  ctx.save();
+  ctx.font = '700 '+size+'px Georgia, Times, serif';
+  ctx.fillStyle = fill || INK;
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText(text, x, y);
+  ctx.restore();
+}
+function cockpit(t){
+  ctx.save();
+  ctx.translate(860, 430);
+  ctx.strokeStyle = INK; ctx.lineWidth = 3; ctx.fillStyle = 'rgba(36,26,68,0.08)';
+  ctx.beginPath(); ctx.ellipse(0,0,150,90, -0.2, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-40,20); ctx.lineTo(-20,70); ctx.lineTo(30,70); ctx.lineTo(10,18); ctx.stroke();
+  ctx.fillStyle = INK;
+  ctx.beginPath(); ctx.arc(-8,-6,16,0,Math.PI*2); ctx.stroke();
+  const words = ['WAIT','FASTER','MORE','NOW','AGAIN'];
+  words.forEach((w,i)=>{
+    const a = t*1.4 + i;
+    ctx.globalAlpha = 0.55+0.45*Math.sin(a);
+    smallType(w, Math.cos(a)*90-20, Math.sin(a*1.3)*40-10, 16, MAG);
+  });
+  ctx.restore();
+}
+function city(t, accel){
+  ctx.save();
+  const base = 560;
+  for(let i=0;i<18;i++){
+    const h = 40+hash(i)*180 + accel*40;
+    const x = 40+i*70 + Math.sin(t+i)*4;
+    ctx.fillStyle = i%2 ? '#2a211c' : '#3d3128';
+    ctx.fillRect(x, base-h, 48, h);
+    ctx.fillStyle = GOLD;
+    for(let r=0;r<4;r++){
+      if(hash(i*10+r+Math.floor(t*2))>0.45){
+        ctx.globalAlpha = 0.8;
+        ctx.fillRect(x+8+ (r%2)*18, base-h+16+r*22, 8, 6);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+
+let origin = null;
+function frame(now){
+  if(origin===null) origin = now - T0*1000;
+  let t = ((now-origin)/1000) % window.DUR;
+  if(t<0) t += window.DUR;
+  const beat = t * (2.05 + seg(t,18,40)*1.4);
+  const pulse = 0.5+0.5*Math.sin(beat*Math.PI*2);
+  const accel = seg(t, 8, 40);
+
+  paperFill(t);
+  ctx.save();
+  ctx.globalAlpha = 0.35+accel*0.3;
+  ctx.strokeStyle = 'rgba(22,17,13,0.25)';
+  ctx.lineWidth = 1;
+  const off = (t*40*(1+accel*3))%40;
+  for(let y=-40;y<H+40;y+=40){
+    ctx.beginPath();
+    for(let x=0;x<=W;x+=20){
+      const yy = y + Math.sin(x*0.01+t+y*0.002)*6*accel;
+      if(x===0) ctx.moveTo(x,yy+off*0); else ctx.lineTo(x,yy);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  city(t, accel);
+  curveField(t, accel);
+  shards(t, 10+Math.floor(accel*16), accel);
+
+  if(t>20 && t<29) cockpit(t);
+
+  const cx = lerp(860, 980, Math.sin(t*0.7)*0.5+0.5);
+  const cy = 250 + Math.sin(beat*Math.PI*2)*10;
+  const sing = pulse>0.62 ? (pulse-0.62)/0.38 : 0;
+  const arm = Math.sin(beat*Math.PI*2);
+  for(let i=0;i<3;i++){
+    const dx = 180+i*70;
+    dancer(dx, 470, 1.05, beat*2+i, i===1?MAG:INK);
+  }
+  body(cx, cy+70, 1.35, beat, arm);
+  drawPetals(cx, cy+8, 1.55, Math.sin(t*0.8)*0.08, 0.92+pulse*0.08);
+  face(cx, cy+46, 1.35, (Math.sin(t*3)>0.92)?1:0, sing);
+
+  ctx.save();
+  ctx.translate(cx-70, cy+20); ctx.rotate(-0.4+arm*0.2);
+  ctx.fillStyle = GOLD;
+  tornRect(0,0,70,28,3,0);
+  ctx.fillStyle = INK;
+  ctx.font = '700 14px Georgia, serif';
+  ctx.textAlign='center'; ctx.fillText('POP', 0, 4);
+  ctx.restore();
+
+  LINES.forEach((L, idx)=>{
+    const a=L[0], b=L[1], big=L[4];
+    if(t<a || t>b) return;
+    const u = seg(t,a,a+0.28);
+    const o = 1-seg(t,b-0.25,b);
+    const k = ease(u)*o;
+    ctx.save();
+    ctx.globalAlpha = k;
+    if(big){
+      const slam = 1+ (1-u)*0.18;
+      const left = idx%2===0;
+      bigType(L[2], left?360:420, 250, 92*slam, (left?-1:1)*0.04, idx%3===0?MAG:(idx%3===1?INDIGO:INK), PAPER);
+      bigType(L[3], left?400:460, 360, 78*slam, (left?1:-1)*0.03, INK, GOLD);
+    } else {
+      ctx.fillStyle = 'rgba(243,236,223,0.92)';
+      tornRect(640, 620, 760, 92, idx+9, 0);
+      ctx.fillStyle = INK;
+      ctx.font = '700 36px Georgia, Times, serif';
+      ctx.textAlign='center';
+      ctx.fillText(L[2]+'  /  '+L[3], 640, 624);
+    }
+    ctx.restore();
+  });
+
+  ctx.save();
+  ctx.globalAlpha = 0.9;
+  ctx.fillStyle = INK;
+  ctx.fillRect(48, 48, 210, 36);
+  ctx.fillStyle = GOLD;
+  ctx.font = '700 18px Georgia, serif';
+  ctx.textAlign='left';
+  ctx.fillText('CLAUDE POP', 60, 72);
+  const ticks = 28;
+  for(let i=0;i<ticks;i++){
+    const on = i/ticks < (t/window.DUR);
+    ctx.fillStyle = on ? MAG : 'rgba(22,17,13,0.25)';
+    ctx.fillRect(48+i*8, 96, 5, on?14:6);
+  }
+  ctx.restore();
+
+  if(t>33){
+    ctx.save();
+    const u = seg(t,33,37);
+    ctx.globalAlpha = u*0.55;
+    ctx.fillStyle = GOLD;
+    ctx.beginPath();
+    ctx.arc(640, 360, 40+u*520, 0, Math.PI*2);
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.fill();
+    ctx.restore();
+  }
+  if(t>40.2){
+    ctx.fillStyle = 'rgba(243,236,223,'+seg(t,40.2,41.8)+')';
+    ctx.fillRect(0,0,W,H);
+    bigType('KEEP UP', 640, 340, 110, 0, INK, GOLD);
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

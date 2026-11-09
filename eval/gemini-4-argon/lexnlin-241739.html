@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Aethelgard: Architectural Expedition</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+    color: #fff; user-select: none;
+  }
+  #stage {
+    position: relative; width: 1280px; height: 720px;
+    background: #000; overflow: hidden;
+    box-shadow: 0 0 60px rgba(0,0,0,0.9);
+    transform-origin: center center;
+  }
+  canvas {
+    position: absolute; top: 0; left: 0;
+    width: 1280px; height: 720px; display: block;
+  }
+  #ui { pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="gl" width="1280" height="720"></canvas>
+  <canvas id="ui" width="1280" height="720"></canvas>
+</div>
+<script>
+window.DUR = 48;
+
+const stage = document.getElementById('stage');
+const glCanvas = document.getElementById('gl');
+const uiCanvas = document.getElementById('ui');
+const ctx = uiCanvas.getContext('2d');
+
+function resize() {
+  const s = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+  stage.style.transform = `scale(${s})`;
+}
+window.addEventListener('resize', resize);
+resize();
+
+const gl = glCanvas.getContext('webgl', { preserveDrawingBuffer: true, antialias: false });
+
+const vsSource = `
+attribute vec2 p;
+void main() {
+  gl_Position = vec4(p, 0.0, 1.0);
+}
+`;
+
+const fsSource = `
+precision highp float;
+uniform vec2 u_res;
+uniform float u_time;
+uniform vec3 u_ro;
+uniform vec3 u_ta;
+uniform float u_roll;
+uniform float u_fov;
+
+mat2 rot(float a) {
+  float s = sin(a), c = cos(a);
+  return mat2(c, -s, s, c);
+}
+
+float hash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+
+float noise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+             mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+
+float smin(float a, float b, float k) {
+  float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+  return mix(b, a, h) - k * h * (1.0 - h);
+}
+
+float sdBox(vec3 p, vec3 b) {
+  vec3 q = abs(p) - b;
+  return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+}
+
+float sdTorus(vec3 p, vec2 t) {
+  vec2 q = vec2(length(p.xz) - t.x, p.y);
+  return length(q) - t.y;
+}
+
+float sdOctahedron(vec3 p, float s) {
+  p = abs(p);
+  return (p.x + p.y + p.z - s) * 0.57735027;
+}
+
+// Procedural multi-scale brutalist/alien surface carvings
+float greeble(vec3 p) {
+  vec3 q1 = abs(fract(p * 0.35) - 0.5);
+  float d1 = min(q1.x, min(q1.y, q1.z));
+  vec3 q2 = abs(fract(p * 1.4 + 0.25) - 0.5);
+  float d2 = max(q2.x, max(q2.y, q2.z));
+  return (d1 * 0.6 + d2 * 0.4) - 0.18;
+}
+
+// Fast smooth terrain heightfield for valleys, cliffs, and rivers
+float terrainH(vec2 p) {
+  vec2 q = p * 0.014;
+  float n = sin(q.x)*cos(q.y)*1.2 + sin(q.x*2.3 - q.y*1.7)*0.5 + cos(q.x*5.1 + q.y*4.3)*0.22;
+  float ridge = 1.0 - abs(n * 0.65);
+  ridge = pow(clamp(ridge, 0.0, 1.0), 2.5);
+  float valley = smoothstep(10.0, 68.0, abs(p.x - sin(p.y * 0.015) * 32.0));
+  float h = ridge * 46.0 * valley - 3.5;
+  h += floor(h * 0.35) * 1.4 * smoothstep(10.0, 35.0, h);
+  return h;
+}
+
+// Zone 1: Infinite Cantilevered Brutalist Arches & Aqueducts
+float sdAqueducts(vec3 p) {
+  vec3 q = p;
+  q.z = mod(p.z + 20.0, 40.0) - 20.0;
+  q.x = abs(p.x) - 34.0;
+  q.x = mod(q.x + 18.0, 36.0) - 18.0;
+  
+  float pillar = sdBox(q - vec3(0.0, 20.0, 0.0), vec3(3.2, 26.0, 3.2));
+  float arch = length(q.xy - vec2(18.0, 24.0)) - 14.5;
+  float span = max(sdBox(q - vec3(0.0, 32.0, 0.0), vec3(19.0, 7.0, 4.2)), -arch);
+  float d = min(pillar, span);
+  
+  vec3 qr = p;
+  qr.y -= 39.0;
+  qr.x = abs(qr.x) - 34.0;
+  float cant = sdBox(qr, vec3(24.0, 1.8, 1e5));
+  vec3 qc = qr;
+  qc.z = mod(qc.z + 4.0, 8.0) - 4.0;
+  cant = min(cant, sdBox(qc, vec3(28.0, 0.9, 1.2)));
+  
+  return min(d, cant);
+}
+
+// Zone 2: The Gyroscopic Citadel & Fractal Spire
+vec2 sdCitadel(vec3 p) {
+  vec3 c = p - vec3(0.0, 30.0, 115.0);
+  float bound = length(c) - 65.0;
+  if (bound > 2.0) return vec2(bound, 2.0);
+  
+  vec3 q = c;
+  for (int i = 0; i < 4; i++) {
+    q = abs(q) - vec3(7.5, 11.5, 7.5);
+    q.xz *= rot(0.785398);
+    q.xy *= rot(0.42);
+  }
+  float fractal = sdBox(q, vec3(2.2, 7.5, 2.2));
+  
+  vec3 r1 = c;
+  r1.xy *= rot(u_time * 0.12 + 0.4);
+  r1.yz *= rot(0.55);
+  float ring1 = sdTorus(r1, vec2(32.0, 2.2));
+  ring1 = max(ring1, -sdBox( mod(r1 + 4.0, 8.0) - 4.0, vec3(5.0, 1.2, 1.2) ));
+  
+  vec3 r2 = c;
+  r2.yz *= rot(-u_time * 0.18 + 1.1);
+  r2.xz *= rot(0.35);
+  float ring2 = sdTorus(r2, vec2(42.0, 1.4));
+  
+  vec3 r3 = c;
+  r3.xz *= rot(u_time * 0.1);
+  float core = sdOctahedron(r3, 13.0);
+  
+  float dStruct = min(fractal, min(ring1, ring2));
+  if (core < dStruct) return vec2(core, 3.0);
+  return vec2(dStruct, 2.0);
+}
+
+// Zone 3: Hanging Inverted Ziggurat & Sacred Monoliths
+vec2 sdSanctuary(vec3 p) {
+  vec3 c = p - vec3(0.0, 38.0, 255.0);
+  float bound = length(c) - 85.0;
+  if (bound > 2.0) return vec2(bound, 2.0);
+  
+  vec3 q = c;
+  q.xz *= rot(0.785398);
+  float stepY = floor(q.y * 0.25) * 4.0;
+  float w = max(2.0, (stepY + 26.0) * 0.72);
+  float zig = sdBox(q, vec3(w, 26.0, w));
+  zig = max(zig, -sdBox(q, vec3(w * 0.65, 28.0, w * 0.65)));
+  zig = max(zig, -sdBox(c, vec3(80.0, 6.0, 5.5)));
+  zig = max(zig, -sdBox(c, vec3(5.5, 6.0, 80.0)));
+  
+  float a = atan(c.z, c.x);
+  float r = length(c.xz);
+  float na = mod(a + 3.14159 / 12.0, 3.14159 / 6.0) - 3.14159 / 12.0;
+  vec3 mp = vec3(cos(na) * r - 56.0, c.y + 16.0, sin(na) * r);
+  float mono = sdBox(mp, vec3(1.8, 30.0, 4.5));
+  mono = max(mono, -sdBox(mp - vec3(0.0, 10.0, 0.0), vec3(3.0, 4.5, 2.0)));
+  
+  vec3 b = c - vec3(0.0, -9.0, 0.0);
+  b.xz *= rot(-u_time * 0.35);
+  b.xy *= rot(u_time * 0.25);
+  float beacon = sdOctahedron(b, 6.5);
+  
+  float d = min(zig, mono);
+  if (beacon < d) return vec2(beacon, 3.0);
+  return vec2(d, 2.0);
+}
+
+vec2 map(vec3 p) {
+  float water = p.y;
+  
+  float h = terrainH(p.xz);
+  float ter = (p.y - h) * 0.65;
+  
+  // Stylized pine forest canopy domes on mid-elevation slopes
+  vec2 fcell = floor(p.xz * 0.55);
+  vec2 fpos = fract(p.xz * 0.55) - 0.5;
+  float fh = hash(fcell);
+  float forestMask = smoothstep(2.5, 6.0, h) * smoothstep(26.0, 14.0, h) * step(0.35, fh);
+  if (forestMask > 0.01) {
+    float tree = length(vec3(fpos.x, max(0.0, p.y - h - 1.2) * 0.45, fpos.y)) - (0.32 * forestMask);
+    ter = smin(ter, tree, 0.4);
+  }
+  
+  float aq = sdAqueducts(p);
+  vec2 cit = sdCitadel(p);
+  vec2 sanc = sdSanctuary(p);
+  
+  float arch = min(aq, min(cit.x, sanc.x));
+  
+  // Apply intricate architectural surface relief when close
+  if (arch < 2.5) {
+    float g = greeble(p);
+    arch += g * 0.22;
+  }
+  
+  float glow = 1e5;
+  if (cit.y > 2.5) glow = min(glow, cit.x);
+  if (sanc.y > 2.5) glow = min(glow, sanc.x);
+  
+  // Recurring illuminated vertical runes on aqueducts
+  vec3 rq = p;
+  rq.z = mod(p.z + 20.0, 40.0) - 20.0;
+  rq.x = abs(p.x) - 30.7;
+  float rune = sdBox(rq - vec3(0.0, 22.0, 0.0), vec3(0.15, 9.0, 0.35));
+  glow = min(glow, rune);
+  
+  float d = water;
+  float m = 0.0;
+  if (ter < d) { d = ter; m = 1.0; }
+  if (arch < d) { d = arch; m = 2.0; }
+  if (glow < d) { d = glow; m = 3.0; }
+  
+  return vec2(d, m);
+}
+
+vec3 calcNormal(vec3 p, float t) {
+  float e = 0.0015 * t + 0.002;
+  vec2 h = vec2(e, -e);
+  return normalize(
+    h.xyy * map(p + h.xyy).x +
+    h.yyx * map(p + h.yyx).x +
+    h.yxy * map(p + h.yxy).x +
+    h.xxx * map(p + h.xxx).x
+  );
+}
+
+float calcAO(vec3 pos, vec3 nor) {
+  float occ = 0.0;
+  float sca = 1.0;
+  for (int i = 0; i < 4; i++) {
+    float h = 0.08 + 0.35 * float(i);
+    float d = map(pos + h * nor).x;
+    occ += (h - d) * sca;
+    sca *= 0.65;
+  }
+  return clamp(1.0 - 0.8 * occ, 0.0, 1.0);
+}
+
+float calcShadow(vec3 ro, vec3 rd) {
+  float res = 1.0;
+  float t = 0.3;
+  for (int i = 0; i < 24; i++) {
+    float h = map(ro + rd * t).x;
+    res = min(res, 10.0 * h / t);
+    t += clamp(h, 0.25, 3.5);
+    if (res < 0.01 || t > 65.0) break;
+  }
+  return clamp(res, 0.0, 1.0);
+}
+
+vec3 getSky(vec3 rd, vec3 sunDir) {
+  float sun = clamp(dot(rd, sunDir), 0.0, 1.0);
+  vec3 top = vec3(0.05, 0.13, 0.24);
+  vec3 hor = vec3(0.68, 0.42, 0.28);
+  vec3 col = mix(hor, top, pow(max(rd.y, 0.0), 0.45));
+  
+  // Celestial gas giant / ring arc in sky
+  vec2 sp = rd.xy + vec2(-0.35, -0.32);
+  float planet = length(sp) - 0.16;
+  if (rd.z > 0.0 && planet < 0.0) {
+    float limb = sqrt(max(0.0, 0.16*0.16 - dot(sp, sp))) / 0.16;
+    float pLight = clamp(dot(normalize(vec3(sp, limb * 0.16)), sunDir), 0.0, 1.0);
+    col = mix(col, vec3(0.85, 0.55, 0.4) * pLight, 0.65 * smoothstep(0.0, -0.01, planet));
+  }
+  
+  // High altitude clouds
+  if (rd.y > 0.02) {
+    vec2 uv = rd.xz / (rd.y + 0.15) * 1.2 + vec2(u_time * 0.015, 0.0);
+    float cl = noise(uv * 2.0) * 0.6 + noise(uv * 5.0) * 0.3;
+    cl = smoothstep(0.48, 0.78, cl) * smoothstep(0.02, 0.25, rd.y);
+    col = mix(col, vec3(0.95, 0.68, 0.48), cl * 0.45);
+  }
+  
+  col += vec3(1.0, 0.55, 0.25) * pow(sun, 6.0) * 0.55;
+  col += vec3(1.0, 0.92, 0.75) * pow(sun, 64.0) * 1.1;
+  return col;
+}
+
+vec3 shade(vec3 pos, vec3 nor, vec3 rd, float dist, float mat, vec3 sunDir) {
+  vec3 sky = getSky(rd, sunDir);
+  if (mat < -0.5) return sky;
+  
+  if (mat > 2.5) {
+    // Ancient glowing energy cores & runes
+    float pulse = 0.85 + 0.15 * sin(u_time * 4.0 + pos.y * 0.5);
+    vec3 em = mix(vec3(0.1, 0.85, 1.0), vec3(1.0, 0.55, 0.15), clamp((pos.y - 10.0) / 35.0, 0.0, 1.0));
+    return em * 2.6 * pulse;
+  }
+  
+  float occ = calcAO(pos, nor);
+  float sha = calcShadow(pos + nor * 0.08, sunDir);
+  float dif = clamp(dot(nor, sunDir), 0.0, 1.0) * sha;
+  float amb = clamp(0.5 + 0.5 * nor.y, 0.0, 1.0);
+  float bac = clamp(dot(nor, normalize(vec3(-sunDir.x, 0.0, -sunDir.z))), 0.0, 1.0);
+  
+  vec3 col = vec3(0.0);
+  if (mat < 1.5) {
+    // Cliffs, valleys, and moss/forest
+    vec3 rock = vec3(0.16, 0.15, 0.18);
+    float strata = sin(pos.y * 1.8 + noise(pos.xz * 0.2) * 3.0) * 0.5 + 0.5;
+    rock = mix(rock, vec3(0.28, 0.22, 0.19), strata * 0.5);
+    vec3 foliage = mix(vec3(0.08, 0.22, 0.14), vec3(0.26, 0.34, 0.12), noise(pos.xz * 0.4));
+    float fMask = smoothstep(0.55, 0.82, nor.y) * smoothstep(1.5, 5.0, pos.y) * smoothstep(32.0, 18.0, pos.y);
+    col = mix(rock, foliage, fMask);
+  } else {
+    // Monumental brutalist architecture with gold/bronze inlay
+    float gr = greeble(pos * 1.5);
+    col = mix(vec3(0.22, 0.23, 0.26), vec3(0.36, 0.34, 0.31), smoothstep(-0.1, 0.1, gr));
+    float goldBand = smoothstep(0.88, 0.93, sin(pos.y * 1.25));
+    col = mix(col, vec3(0.78, 0.58, 0.28), goldBand * 0.7);
+  }
+  
+  vec3 lin = vec3(0.0);
+  lin += dif * vec3(1.55, 1.10, 0.78);
+  lin += amb * vec3(0.18, 0.28, 0.42) * occ;
+  lin += bac * vec3(0.25, 0.18, 0.14) * occ;
+  
+  vec3 h = normalize(sunDir - rd);
+  float spe = pow(clamp(dot(nor, h), 0.0, 1.0), 24.0) * dif;
+  float fre = pow(clamp(1.0 + dot(nor, rd), 0.0, 1.0), 4.0);
+  
+  vec3 res = col * lin + spe * 0.35 * vec3(1.0, 0.85, 0.65) + fre * 0.18 * vec3(0.5, 0.6, 0.8) * occ;
+  
+  // Height-based valley mist & atmospheric perspective
+  float fog = 1.0 - exp(-0.000085 * dist * dist);
+  float valleyMist = exp(-max(0.0, pos.y) * 0.11) * (1.0 - exp(-0.006 * dist));
+  vec3 mistCol = mix(vec3(0.65, 0.45, 0.35), vec3(0.35, 0.48, 0.62), 0.4);
+  res = mix(res, mistCol, clamp(valleyMist * 0.55, 0.0, 1.0));
+  res = mix(res, sky, clamp(fog, 0.0, 1.0));
+  return res;
+}
+
+void main() {
+  vec2 uv = (gl_FragCoord.xy - 0.5 * u_res) / u_res.y;
+  
+  vec3 ww = normalize(u_ta - u_ro);
+  vec3 uu = normalize(cross(ww, vec3(sin(u_roll), cos(u_roll), 0.0)));
+  vec3 vv = normalize(cross(uu, ww));
+  vec3 rd = normalize(uv.x * uu + uv.y * vv + u_fov * ww);
+  
+  vec3 sunDir = normalize(vec3(0.55, 0.28, 0.78));
+  
+  float t = 0.2;
+  float m = -1.0;
+  for (int i = 0; i < 96; i++) {
+    vec3 p = u_ro + rd * t;
+    vec2 h = map(p);
+    if (h.x < 0.0018 * t || t > 250.0) {
+      m = h.y;
+      break;
+    }
+    t += h.x;
+  }
+  if (t > 250.0) m = -1.0;
+  
+  vec3 pos = u_ro + rd * t;
+  vec3 nor = (m > -0.5) ? calcNormal(pos, t) : vec3(0.0, 1.0, 0.0);
+  vec3 col = vec3(0.0);
+  
+  if (m > -0.5 && m < 0.5) {
+    // Water surface with normal ripples and planar/raymarched reflection
+    vec2 wuv = pos.xz * 1.4;
+    float w1 = sin(wuv.x * 2.1 + u_time * 1.8) * cos(wuv.y * 1.9 - u_time * 1.4);
+    float w2 = sin(wuv.x * 5.3 - u_time * 2.5) * sin(wuv.y * 4.7 + u_time * 2.1);
+    nor = normalize(vec3((w1 + w2 * 0.5) * 0.025, 1.0, (w1 - w2 * 0.5) * 0.025));
+    
+    vec3 rrd = reflect(rd, nor);
+    rrd.y = max(0.01, rrd.y);
+    vec3 rro = pos + vec3(0.0, 0.08, 0.0);
+    float rt = 0.1;
+    float rm = -1.0;
+    for (int j = 0; j < 32; j++) {
+      vec2 rh = map(rro + rrd * rt);
+      if (rh.x < 0.02 * rt || rt > 140.0) { rm = rh.y; break; }
+      rt += rh.x * 1.25;
+    }
+    if (rt > 140.0) rm = -1.0;
+    vec3 rpos = rro + rrd * rt;
+    vec3 rnor = (rm > -0.5) ? calcNormal(rpos, rt + t) : vec3(0.0, 1.0, 0.0);
+    vec3 reflCol = shade(rpos, rnor, rrd, rt, rm, sunDir);
+    
+    float fre = pow(clamp(1.0 + dot(nor, rd), 0.0, 1.0), 4.0);
+    vec3 waterDeep = vec3(0.02, 0.11, 0.15);
+    
+    // Shoreline foam
+    float th = terrainH(pos.xz);
+    float foam = smoothstep(0.65, 0.0, abs(th)) * (0.6 + 0.4 * sin(pos.x * 4.0 + u_time * 3.0));
+    
+    col = mix(waterDeep, reflCol, 0.35 + 0.65 * fre);
+    col = mix(col, vec3(0.85, 0.88, 0.92), foam * 0.45);
+    
+    float fog = 1.0 - exp(-0.000085 * t * t);
+    col = mix(col, getSky(rd, sunDir), clamp(fog, 0.0, 1.0));
+  } else {
+    col = shade(pos, nor, rd, t, m, sunDir);
+  }
+  
+  // Volumetric sun god-rays / atmospheric scatter
+  float godRay = 0.0;
+  float gt = 2.0;
+  for (int k = 0; k < 8; k++) {
+    vec3 gp = u_ro + rd * gt;
+    float sh = map(gp + sunDir * 3.5).x;
+    godRay += smoothstep(0.0, 3.0, sh) * exp(-max(0.0, gp.y) * 0.04);
+    gt += 7.5;
+  }
+  float sunAlign = pow( max(0.0, dot(rd, sunDir)), 2.5 );
+  col += vec3(1.0, 0.62, 0.32) * (godRay / 8.0) * sunAlign * 0.28;
+  
+  // ACES Filmic Tone Mapping & Vignette
+  col = (col * (2.51 * col + 0.03)) / (col * (2.43 * col + 0.59) + 0.14);
+  col = pow(clamp(col, 0.0, 1.0), vec3(1.0 / 2.2));
+  
+  vec2 quv = gl_FragCoord.xy / u_res;
+  col *= 0.5 + 0.5 * pow(16.0 * quv.x * quv.y * (1.0 - quv.x) * (1.0 - quv.y), 0.18);
+  
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
+function compileShader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  return s;
+}
+
+const prog = gl.createProgram();
+gl.attachShader(prog, compileShader(gl.VERTEX_SHADER, vsSource));
+gl.attachShader(prog, compileShader(gl.FRAGMENT_SHADER, fsSource));
+gl.linkProgram(prog);
+gl.useProgram(prog);
+
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
+const pLoc = gl.getAttribLocation(prog, 'p');
+gl.enableVertexAttribArray(pLoc);
+gl.vertexAttribPointer(pLoc, 2, gl.FLOAT, false, 0, 0);
+
+const uRes = gl.getUniformLocation(prog, 'u_res');
+const uTime = gl.getUniformLocation(prog, 'u_time');
+const uRo = gl.getUniformLocation(prog, 'u_ro');
+const uTa = gl.getUniformLocation(prog, 'u_ta');
+const uRoll = gl.getUniformLocation(prog, 'u_roll');
+const uFov = gl.getUniformLocation(prog, 'u_fov');
+
+// Optional interactive mouse look override while keeping seamless autopilot
+let mouseYaw = 0, mousePitch = 0, targetYaw = 0, targetPitch = 0;
+window.addEventListener('mousemove', (e) => {
+  const rect = stage.getBoundingClientRect();
+  const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  const ny = ((e.clientY - rect.top) / rect.height) * 2 - 1;
+  targetYaw = nx * 0.35;
+  targetPitch = -ny * 0.25;
+});
+
+function smoothstep(a, b, x) {
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+function lerp3(a, b, t) {
+  return [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
+}
+
+// 4-Act Cinematic Camera Choreography
+function getCameraShot(t) {
+  if (t < 12.0) {
+    // Act I: Skimming low over the mirror river through the Brutalist Aqueducts
+    const u = t / 12.0;
+    const s = smoothstep(0, 1, u);
+    return {
+      ro: [Math.sin(u * 3.1415) * 7.5, lerp(4.2, 16.5, s), lerp(-48.0, 38.0, u)],
+      ta: [Math.sin(u * 3.1415 + 0.5) * 4.0, lerp(14.0, 26.0, s), lerp(-10.0, 88.0, u)],
+      roll: Math.sin(u * 6.28) * 0.05,
+      fov: 1.45,
+      zone: "SECTOR I // THE CANTILEVERED AQUEDUCTS",
+      title: "VALLEY OF THE MONOLITHIC SPANS",
+      sub: "Brutalist Viaducts & Submerged Terraces  |  Elevation 142m",
+      localT: t,
+      actDur: 12.0
+    };
+  } else if (t < 24.0) {
+    // Act II: Sweeping orbital ascent around the Gyroscopic Citadel & Fractal Spire
+    const u = (t - 12.0) / 12.0;
+    const ang = lerp(-2.15, 0.85, u);
+    const rad = lerp(52.0, 40.0, Math.sin(u * 3.1415));
+    return {
+      ro: [Math.sin(ang) * rad, lerp(15.0, 44.0, smoothstep(0, 1, u)), 115.0 + Math.cos(ang) * rad],
+      ta: [0.0, lerp(27.0, 34.0, u), 115.0],
+      roll: -0.09 * Math.sin(u * 3.1415),
+      fov: 1.35,
+      zone: "SECTOR II // THE GYROSCOPIC CITADEL",
+      title: "ASTRAL RING SPIRE OF AETHELGARD",
+      sub: "Non-Euclidean Kinetic Architecture  |  Elevation 480m",
+      localT: t - 12.0,
+      actDur: 12.0
+    };
+  } else if (t < 36.0) {
+    // Act III: Threading the canyon forest towards the Hanging Inverted Ziggurat
+    const u = (t - 24.0) / 12.0;
+    const ang = lerp(-1.65, 1.35, u);
+    const rad = lerp(66.0, 44.0, u);
+    return {
+      ro: [Math.sin(ang) * rad, lerp(20.0, 36.0, u), 255.0 + Math.cos(ang) * rad],
+      ta: [0.0, lerp(31.0, 38.0, u), 255.0],
+      roll: 0.08 * Math.cos(u * 3.1415),
+      fov: 1.30,
+      zone: "SECTOR III // THE INVERTED SANCTUARY",
+      title: "SUSPENDED ZIGGURAT & RING OF STELE",
+      sub: "Sub-Harmonic Levitation Ruins  |  Elevation 615m",
+      localT: t - 24.0,
+      actDur: 12.0
+    };
+  } else {
+    // Act IV: High-altitude celestial vista overlooking the entire architectural valley
+    const u = (t - 36.0) / 12.0;
+    const s = smoothstep(0, 1, u);
+    return {
+      ro: [lerp(42.0, -56.0, s), lerp(68.0, 88.0, s), lerp(215.0, 70.0, s)],
+      ta: [0.0, lerp(26.0, 20.0, s), lerp(180.0, 115.0, s)],
+      roll: lerp(0.06, -0.06, s),
+      fov: 1.55,
+      zone: "SECTOR IV // PANORAMIC OVERLOOK",
+      title: "THE ETERNAL EXPANSE OF AETHELGARD",
+      sub: "Full Planetary Survey  |  Elevation 1,240m",
+      localT: t - 36.0,
+      actDur: 12.0
+    };
+  }
+}
+
+function drawUI(t, cam) {
+  ctx.clearRect(0, 0, 1280, 720);
+  
+  // Subtle anamorphic cinema bars
+  ctx.fillStyle = "rgba(0, 0, 0, 0.88)";
+  ctx.fillRect(0, 0, 1280, 38);
+  ctx.fillRect(0, 682, 1280, 38);
+  
+  ctx.strokeStyle = "rgba(255, 215, 160, 0.22)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, 38.5); ctx.lineTo(1280, 38.5);
+  ctx.moveTo(0, 681.5); ctx.lineTo(1280, 681.5);
+  ctx.stroke();
+
+  // Top Compass Tape
+  const yaw = Math.atan2(cam.ta[0] - cam.ro[0], cam.ta[2] - cam.ro[2]);
+  const deg = ((yaw * 180 / Math.PI) + 360) % 360;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(440, 8, 400, 26);
+  ctx.clip();
+  ctx.fillStyle = "rgba(255, 235, 205, 0.65)";
+  ctx.font = "600 10px 'Segoe UI', sans-serif";
+  ctx.textAlign = "center";
+  for (let d = -180; d <= 540; d += 15) {
+    const offset = (d - deg) * 4.5;
+    const x = 640 + offset;
+    if (x > 430 && x < 850) {
+      const isMajor = d % 45 === 0;
+      ctx.fillRect(x - 0.5, isMajor ? 22 : 26, 1, isMajor ? 8 : 4);
+      if (isMajor) {
+        const normD = ((d % 360) + 360) % 360;
+        const labels = {0:"N", 45:"NE", 90:"E", 135:"SE", 180:"S", 225:"SW", 270:"W", 315:"NW"};
+        ctx.fillText(labels[normD] || normD, x, 18);
+      }
+    }
+  }
+  ctx.restore();
+  
+  // Center compass caret
+  ctx.fillStyle = "rgba(255, 190, 110, 0.9)";
+  ctx.beginPath();
+  ctx.moveTo(640, 35); ctx.lineTo(636, 30); ctx.lineTo(644, 30);
+  ctx.closePath();
+  ctx.fill();
+
+  // Top-left & Top-right telemetry
+  ctx.fillStyle = "rgba(255, 230, 200, 0.7)";
+  ctx.font = "500 11px 'Segoe UI', monospace";
+  ctx.textAlign = "left";
+  const cX = cam.ro[0].toFixed(1), cY = cam.ro[1].toFixed(1), cZ = cam.ro[2].toFixed(1);
+  ctx.fillText(`EXPEDITION CAM // POS [${cX}, ${cY}, ${cZ}]`, 36, 24);
+  
+  ctx.textAlign = "right";
+  const mins = Math.floor(t / 60);
+  const secs = (t % 60).toFixed(2).padStart(5, '0');
+  ctx.fillText(`AUTOPILOT DRONE  |  T+ 0${mins}:${secs} / 00:48.00`, 1244, 24);
+
+  // Subtle architectural framing reticles
+  ctx.strokeStyle = "rgba(255, 230, 190, 0.16)";
+  const m = 56, cl = 16;
+  ctx.beginPath();
+  ctx.moveTo(m, m + cl); ctx.lineTo(m, m); ctx.lineTo(m + cl, m);
+  ctx.moveTo(1280 - m - cl, m); ctx.lineTo(1280 - m, m); ctx.lineTo(1280 - m, m + cl);
+  ctx.moveTo(m, 720 - m - cl); ctx.lineTo(m, 720 - m); ctx.lineTo(m + cl, 720 - m);
+  ctx.moveTo(1280 - m - cl, 720 - m); ctx.lineTo(1280 - m, 720 - m); ctx.lineTo(1280 - m, 720 - m - cl);
+  ctx.stroke();
+
+  // Location Title Card fade in/out per Act
+  const cardAlpha = smoothstep(0.4, 2.0, cam.localT) * (1.0 - smoothstep(cam.actDur - 2.2, cam.actDur - 0.5, cam.localT));
+  if (cardAlpha > 0.01) {
+    ctx.save();
+    ctx.globalAlpha = cardAlpha;
+    ctx.textAlign = "left";
+    
+    // Accent vertical bar
+    ctx.fillStyle = "rgba(255, 185, 100, 0.9)";
+    ctx.fillRect(74, 578, 3, 66);
+    
+    ctx.font = "600 11px 'Segoe UI', sans-serif";
+    ctx.fillStyle = "rgba(255, 195, 125, 0.95)";
+    ctx.letterSpacing = "3px";
+    ctx.fillText(cam.zone, 90, 592);
+    
+    ctx.font = "300 26px 'Segoe UI', sans-serif";
+    ctx.fillStyle = "#ffffff";
+    ctx.letterSpacing = "4px";
+    ctx.fillText(cam.title, 90, 622);
+    
+    ctx.font = "400 12px 'Segoe UI', sans-serif";
+    ctx.fillStyle = "rgba(220, 230, 245, 0.75)";
+    ctx.letterSpacing = "1px";
+    ctx.fillText(cam.sub, 90, 642);
+    ctx.restore();
+  }
+
+  // Bottom timeline progress bar
+  ctx.fillStyle = "rgba(255, 255, 255, 0.14)";
+  ctx.fillRect(36, 699, 1208, 2);
+  ctx.fillStyle = "rgba(255, 190, 115, 0.85)";
+  ctx.fillRect(36, 699, 1208 * (t / window.DUR), 2);
+
+  // Seamless cut transitions between acts & loop boundary
+  let fade = 0.0;
+  const cutTimes = [0.0, 12.0, 24.0, 36.0, 48.0];
+  for (let i = 0; i < cutTimes.length; i++) {
+    const dt = Math.abs(t - cutTimes[i]);
+    if (dt < 0.65) {
+      fade = Math.max(fade, 1.0 - (dt / 0.65));
+    }
+  }
+  if (fade > 0.01) {
+    ctx.fillStyle = `rgba(6, 9, 14, ${(fade * fade).toFixed(3)})`;
+    ctx.fillRect(0, 0, 1280, 720);
+  }
+}
+
+const urlParams = new URLSearchParams(window.location.search);
+const timeOffset = parseFloat(urlParams.get('t')) || 0;
+let startTime = null;
+
+function render(now) {
+  if (startTime === null) startTime = now;
+  const elapsed = (now - startTime) * 0.001 + timeOffset;
+  const t = ((elapsed % window.DUR) + window.DUR) % window.DUR;
+
+  mouseYaw += (targetYaw - mouseYaw) * 0.06;
+  mousePitch += (targetPitch - mousePitch) * 0.06;
+
+  const cam = getCameraShot(t);
+  
+  // Apply subtle organic handheld/drone breathing + optional user mouse glance
+  const dx = cam.ta[0] - cam.ro[0];
+  const dy = cam.ta[1] - cam.ro[1];
+  const dz = cam.ta[2] - cam.ro[2];
+  const dist = Math.hypot(dx, dz);
+  const baseYaw = Math.atan2(dx, dz) + mouseYaw;
+  const basePitch = Math.atan2(dy, dist) + mousePitch;
+
+  const finalTa = [
+    cam.ro[0] + Math.sin(baseYaw) * dist,
+    cam.ro[1] + Math.tan(basePitch) * dist + Math.sin(t * 1.7) * 0.25,
+    cam.ro[2] + Math.cos(baseYaw) * dist
+  ];
+
+  gl.viewport(0, 0, 1280, 720);
+  gl.uniform2f(uRes, 1280, 720);
+  gl.uniform1f(uTime, t);
+  gl.uniform3f(uRo, cam.ro[0], cam.ro[1], cam.ro[2]);
+  gl.uniform3f(uTa, finalTa[0], finalTa[1], finalTa[2]);
+  gl.uniform1f(uRoll, cam.roll);
+  gl.uniform1f(uFov, cam.fov);
+
+  gl.drawArrays(gl.TRIANGLES, 0, 6);
+  drawUI(t, cam);
+
+  requestAnimationFrame(render);
+}
+
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

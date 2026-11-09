@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>終電のホーム — ElevenLabs v4 お試し</title>
+<style>
+html,body{margin:0;height:100%;background:#000;overflow:hidden}
+body{display:flex;align-items:center;justify-content:center}
+#stage{width:min(100vw,177.7778vh);height:min(56.25vw,100vh);position:relative;background:#000}
+canvas{display:block;width:100%;height:100%}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+const W=1280,H=720,DUR=26; window.DUR=DUR;
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+const serif='"Shippori Mincho B1","Yu Mincho","Hiragino Mincho ProN","MS PMincho",serif';
+const mono='ui-monospace,Menlo,Consolas,monospace';
+const cl=(v,a=0,b=1)=>v<a?a:(v>b?b:v);
+const sm=(a,b,t)=>{const x=cl((t-a)/(b-a));return x*x*(3-2*x);};
+const win=(t,a,b,c,d)=>sm(a,b,t)*(1-sm(c,d,t));
+function rr(g,x,y,w,h,r){g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath();}
+let seed=20240917; const R=()=>((seed=(seed*1664525+1013904223)>>>0)/4294967296);
+function layer(fn){const c=document.createElement('canvas');c.width=W;c.height=H;fn(c.getContext('2d'));return c;}
+
+/* 9枚の静止画。以降は座標変換だけ。 */
+const L=[];
+/* 01 闇とトンネル */
+L.push({z:980,c:layer(g=>{
+  const gr=g.createLinearGradient(0,0,0,H);gr.addColorStop(0,'#04060a');gr.addColorStop(.55,'#0a0f15');gr.addColorStop(1,'#040609');g.fillStyle=gr;g.fillRect(0,0,W,H);
+  g.save();g.translate(790,332);
+  for(let i=0;i<10;i++){const r=64+i*33;g.strokeStyle=`rgba(48,64,76,${.22-i*.019})`;g.lineWidth=2;g.beginPath();g.ellipse(0,0,r,r*.72,0,0,7);g.stroke();}
+  g.fillStyle='#010203';g.beginPath();g.ellipse(0,0,62,44,0,0,7);g.fill();g.restore();
+  const h=g.createRadialGradient(790,332,8,790,332,440);h.addColorStop(0,'rgba(86,108,122,.15)');h.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=h;g.fillRect(0,0,W,H);
+})});
+/* 02 レール遠景・信号 */
+L.push({z:860,c:layer(g=>{
+  const vx=790,vy=336;
+  g.strokeStyle='rgba(158,174,184,.32)';g.lineWidth=2.4;
+  [[-260,778],[120,784],[620,796],[1500,802]].forEach(p=>{g.beginPath();g.moveTo(p[0],720);g.lineTo(p[1],vy);g.stroke();});
+  for(let i=0;i<26;i++){const p=i/26,y=vy+(720-vy)*p*p,half=8+330*p*p;g.strokeStyle=`rgba(96,106,112,${.10+.24*p})`;g.lineWidth=1+3*p;g.beginPath();g.moveTo(vx-half,y);g.lineTo(vx+half,y);g.stroke();}
+  const sg=g.createRadialGradient(812,318,1,812,318,26);sg.addColorStop(0,'rgba(255,74,66,.95)');sg.addColorStop(1,'rgba(255,40,30,0)');g.fillStyle=sg;g.fillRect(780,286,64,64);
+  g.fillStyle='#ff6a5c';g.beginPath();g.arc(812,318,3,0,7);g.fill();
+  const gl=g.createRadialGradient(742,326,1,742,326,18);gl.addColorStop(0,'rgba(120,220,170,.7)');gl.addColorStop(1,'rgba(80,200,150,0)');g.fillStyle=gl;g.fillRect(720,304,44,44);
+})});
+/* 03 天井・蛍光灯 */
+L.push({z:740,c:layer(g=>{
+  g.fillStyle='#080b0f';g.beginPath();g.moveTo(0,0);g.lineTo(W,0);g.lineTo(900,250);g.lineTo(680,250);g.closePath();g.fill();
+  g.strokeStyle='rgba(70,84,94,.35)';g.lineWidth=2;
+  for(let i=0;i<9;i++){g.beginPath();g.moveTo(i*180-160,0);g.lineTo(790,286);g.stroke();}
+  for(let i=0;i<6;i++){const y=34+i*i*9.2,w=560-i*76,h=Math.max(2.5,9-i*1.1),x=790-w/2-i*7;
+    g.save();g.shadowColor='rgba(178,220,238,.75)';g.shadowBlur=26;g.fillStyle=`rgba(214,236,244,${.86-i*.08})`;g.fillRect(x,y,w,h);g.restore();
+    g.fillStyle='rgba(255,255,255,.55)';g.fillRect(x+4,y+1,w-8,1);}
+  g.strokeStyle='rgba(60,72,82,.55)';g.lineWidth=1;g.beginPath();g.moveTo(1040,0);g.bezierCurveTo(1030,90,1010,140,980,190);g.stroke();
+})});
+/* 04 柱と時刻表 */
+L.push({z:610,c:layer(g=>{
+  [[40,196],[358,150],[952,168],[1232,214]].forEach((p,i)=>{
+    const x=p[0],w=p[1],gr=g.createLinearGradient(x,0,x+w,0);
+    gr.addColorStop(0,'#10161b');gr.addColorStop(.35,'#202a30');gr.addColorStop(.7,'#141b20');gr.addColorStop(1,'#080c10');
+    g.fillStyle=gr;g.fillRect(x,170,w,470);
+    g.fillStyle='rgba(190,205,210,.10)';g.fillRect(x,170,3,470);
+    g.fillStyle='rgba(0,0,0,.35)';for(let k=0;k<9;k++)g.fillRect(x,196+k*52,w,1);
+    if(i===1){g.fillStyle='#c9d2ce';g.fillRect(x+24,278,96,74);g.fillStyle='#1b2428';g.font='14px '+serif;g.fillText('終 電',x+44,304);g.font='10px '+mono;g.fillText('23:58',x+48,326);g.fillStyle='rgba(40,55,60,.7)';for(let k=0;k<4;k++)g.fillRect(x+32,334+k*7,72,2);}
+  });
+})});
+/* 05 ホーム端・点字ブロック */
+L.push({z:480,c:layer(g=>{
+  const gr=g.createLinearGradient(0,468,0,720);gr.addColorStop(0,'#161c20');gr.addColorStop(.3,'#0d1216');gr.addColorStop(1,'#05080b');
+  g.fillStyle=gr;g.beginPath();g.moveTo(0,486);g.lineTo(W,462);g.lineTo(W,720);g.lineTo(0,720);g.closePath();g.fill();
+  g.strokeStyle='rgba(210,220,220,.28)';g.lineWidth=3;g.beginPath();g.moveTo(0,492);g.lineTo(W,468);g.stroke();
+  g.fillStyle='rgba(198,162,58,.55)';g.beginPath();g.moveTo(0,506);g.lineTo(W,480);g.lineTo(W,502);g.lineTo(0,530);g.closePath();g.fill();
+  for(let x=8;x<W;x+=24){const y=514-(x/W)*24;g.fillStyle='rgba(232,196,92,.5)';g.beginPath();g.arc(x,y,3.1,0,7);g.fill();g.beginPath();g.arc(x+8,y+13-(x/W)*1.5,2.4,0,7);g.fill();}
+  g.strokeStyle='rgba(0,0,0,.45)';g.lineWidth=1;for(let i=0;i<14;i++){const x=R()*W;g.beginPath();g.moveTo(x,560+R()*60);g.lineTo(x+20+R()*70,600+R()*100);g.stroke();}
+})});
+/* 06 自販機の光 */
+L.push({z:350,c:layer(g=>{
+  g.save();g.shadowColor='rgba(120,200,225,.45)';g.shadowBlur=60;g.fillStyle='#0a1418';rr(g,982,292,158,236,6);g.fill();g.restore();
+  g.fillStyle='#0d1a20';rr(g,988,298,146,224,4);g.fill();
+  const pg=g.createLinearGradient(994,0,1124,0);pg.addColorStop(0,'rgba(150,220,238,.30)');pg.addColorStop(1,'rgba(90,160,190,.10)');g.fillStyle=pg;g.fillRect(994,304,134,150);
+  for(let r=0;r<4;r++)for(let c=0;c<6;c++){g.fillStyle=`rgba(${120+R()*70|0},${190+R()*50|0},${205+R()*40|0},${.35+R()*.4})`;rr(g,1000+c*21,310+r*35,13,25,3);g.fill();}
+  g.fillStyle='rgba(200,235,245,.18)';g.fillRect(994,462,134,3);
+  g.fillStyle='#05090b';g.fillRect(988,522,146,6);
+  const spill=g.createLinearGradient(980,0,860,0);spill.addColorStop(0,'rgba(110,190,215,.16)');spill.addColorStop(1,'rgba(110,190,215,0)');g.fillStyle=spill;g.fillRect(860,300,120,230);
+})});
+/* 07 濡れた床の反射 */
+L.push({z:230,c:layer(g=>{
+  for(let i=0;i<6;i++){const x=790-i*7-260+i*88,gr=g.createLinearGradient(0,480,0,720);gr.addColorStop(0,`rgba(150,205,225,${.13-i*.012})`);gr.addColorStop(1,'rgba(90,150,180,0)');g.fillStyle=gr;g.fillRect(x-16,480,32,240);}
+  for(let i=0;i<9;i++){const x=R()*W,y=560+R()*150,rx=30+R()*90;g.fillStyle=`rgba(110,165,185,${.04+R()*.05})`;g.beginPath();g.ellipse(x,y,rx,4+R()*7,0,0,7);g.fill();}
+  const vg=g.createLinearGradient(1000,470,1000,720);vg.addColorStop(0,'rgba(120,205,230,.16)');vg.addColorStop(1,'rgba(80,150,180,0)');g.fillStyle=vg;g.fillRect(960,470,190,250);
+})});
+/* 08 女の背中（顔は描かない） */
+L.push({z:120,c:layer(g=>{
+  g.fillStyle='#07090d';g.beginPath();g.moveTo(586,720);g.bezierCurveTo(592,530,628,436,690,414);g.lineTo(806,414);g.bezierCurveTo(868,436,902,530,908,720);g.closePath();g.fill();
+  g.strokeStyle='rgba(132,176,196,.20)';g.lineWidth=3;g.beginPath();g.moveTo(806,416);g.bezierCurveTo(868,438,902,530,908,720);g.stroke();
+  g.fillStyle='#050608';g.beginPath();g.ellipse(748,350,61,73,0,0,7);g.fill();
+  g.fillStyle='#030406';g.beginPath();g.moveTo(686,338);g.bezierCurveTo(674,430,692,540,670,606);g.bezierCurveTo(720,630,780,630,828,606);g.bezierCurveTo(806,536,822,430,810,338);g.closePath();g.fill();
+  for(let i=0;i<22;i++){const x=690+i*5.4;g.strokeStyle=`rgba(${90+R()*60|0},${120+R()*60|0},${140+R()*60|0},${.035+R()*.06})`;g.lineWidth=.8+R()*1.3;g.beginPath();g.moveTo(x,360);g.bezierCurveTo(x-8,450,x+10,540,x-4+R()*8,600);g.stroke();}
+  g.strokeStyle='rgba(155,200,220,.14)';g.lineWidth=2;g.beginPath();g.moveTo(808,346);g.bezierCurveTo(820,440,806,540,824,600);g.stroke();
+  g.strokeStyle='rgba(120,160,180,.08)';g.lineWidth=2;g.beginPath();g.moveTo(698,430);g.lineTo(690,720);g.stroke();
+})});
+/* 09 唇だけのクローズ（目・鼻はマスクで不在） */
+L.push({z:70,c:layer(g=>{
+  g.save();
+  g.fillStyle='rgba(5,6,8,.94)';rr(g,846,224,250,192,14);g.fill();
+  g.strokeStyle='rgba(150,175,185,.16)';g.lineWidth=1;rr(g,846,224,250,192,14);g.stroke();
+  g.beginPath();rr(g,858,238,226,158,9);g.clip();
+  const sk=g.createLinearGradient(0,240,0,396);sk.addColorStop(0,'#332023');sk.addColorStop(.5,'#6a4140');sk.addColorStop(1,'#29191b');g.fillStyle=sk;g.fillRect(858,238,226,158);
+  const mask=g.createLinearGradient(0,238,0,306);mask.addColorStop(0,'rgba(3,4,6,1)');mask.addColorStop(1,'rgba(3,4,6,0)');g.fillStyle=mask;g.fillRect(858,238,226,70);
+  g.strokeStyle='rgba(22,7,10,.9)';g.lineWidth=5;g.beginPath();g.moveTo(914,326);g.bezierCurveTo(938,313,1002,313,1028,326);g.stroke();
+  g.fillStyle='#8d4a4d';g.beginPath();g.moveTo(914,326);g.bezierCurveTo(936,305,957,315,971,323);g.bezierCurveTo(986,314,1008,305,1028,326);g.bezierCurveTo(1004,341,938,341,914,326);g.fill();
+  g.fillStyle='rgba(242,214,208,.30)';g.beginPath();g.ellipse(971,329,40,3.5,0,0,7);g.fill();
+  g.fillStyle='rgba(255,186,188,.12)';g.beginPath();g.moveTo(914,327);g.bezierCurveTo(940,352,1002,352,1028,327);g.bezierCurveTo(1002,368,940,368,914,327);g.fill();
+  g.restore();
+  g.font='11px '+mono;g.fillStyle='rgba(155,178,186,.62)';g.fillText('FACE: OFF  /  背中・唇のみ',858,412);
+})});
+
+/* フィルムグレイン */
+const nz=document.createElement('canvas');nz.width=nz.height=128;const ng=nz.getContext('2d');const id=ng.createImageData(128,128);
+for(let i=0;i<id.data.length;i+=4){const v=40+R()*150;id.data[i]=id.data[i+1]=id.data[i+2]=v;id.data[i+3]=255;}
+ng.putImageData(id,0,0);const grain=ctx.createPattern(nz,'repeat');
+
+const lines=[
+ {k:'m',a:3.8,b:6.4,s:'終電、まだ来ないよな？',amp:3,tag:'[nervous]'},
+ {k:'f',a:6.8,b:10.2,s:'……うしろ、見ないで',sp:.30,tag:'[whispering]'},
+ {k:'m',a:10.6,b:13.4,s:'さっきから誰もいないだろ',amp:8,tag:'[nervous]'},
+ {k:'f',a:13.8,b:17.4,s:'……わたし、ここにいるよ',sp:.31,tag:'[whispering]'},
+ {k:'m',a:17.8,b:19.6,s:'そっち、どっちだ……！',amp:17,tag:'[shouting]'},
+ {k:'f',a:19.8,b:22.2,s:'……もう、隣だよ',sp:.38,tag:'[whispering]  [laughs softly]'}
+];
+
+function lipsA(t){return win(t,14.2,15.5,22.0,22.5);}
+function drawLayers(t){
+  const dolly=sm(0,22,t)*1.0+(t>17.7&&t<18.3?.16*sm(17.7,18.3,t):0);
+  const camX=Math.sin(t*.33)*.55+Math.sin(t*.91)*.12-sm(20.3,21.8,t)*.30;
+  for(const l of L){
+    const k=(1000-l.z)/1000;
+    let s=1+dolly*k*.46,dx=-camX*k*86,dy=-dolly*k*22+Math.sin(t*.47)*k*3,a=1;
+    if(l.z===70){s=1+dolly*.10;dx=-camX*9;dy=-dolly*4;a=lipsA(t);}
+    ctx.save();ctx.globalAlpha=a;
+    if(l.z===230)ctx.globalCompositeOperation='lighter';
+    ctx.translate(W/2+dx,H/2+dy);ctx.scale(s,s);ctx.translate(-W/2,-H/2);
+    ctx.drawImage(l.c,0,0);ctx.restore();
+  }
+}
+function lights(t){
+  const hl=win(t,17.4,18.4,19.0,19.8);
+  if(hl>0){ctx.save();ctx.globalCompositeOperation='lighter';const rg=ctx.createRadialGradient(790,336,3,790,336,320);
+    rg.addColorStop(0,`rgba(224,238,244,${.55*hl})`);rg.addColorStop(.35,`rgba(140,180,200,${.20*hl})`);rg.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=rg;ctx.fillRect(400,20,780,640);ctx.restore();}
+  let fl=.90+.10*Math.sin(t*11.3)*Math.sin(t*5.1);
+  if((t>17.85&&t<18.18)||(t>18.84&&t<18.97)||(t>21.94&&t<22.32))fl=.14;
+  if(t>19.02&&t<19.78)fl=.07;
+  ctx.fillStyle=`rgba(0,0,0,${(1-fl)*.66})`;ctx.fillRect(0,0,W,H);
+  if(lipsA(t)>0){const b=.5+.5*Math.sin(t*2.4);ctx.save();ctx.globalAlpha=lipsA(t)*.12*b;ctx.fillStyle='#e8f2f4';
+    for(let i=0;i<5;i++){ctx.beginPath();ctx.ellipse(946+i*13,318-i*7-((t*14+i*9)%26),7+i*2,3,0,0,7);ctx.fill();}ctx.restore();}
+  const adj=sm(20.5,21.7,t)*(1-sm(22.0,22.4,t));
+  if(adj>0){ctx.save();ctx.globalAlpha=adj*.85;ctx.fillStyle='#020305';ctx.beginPath();ctx.moveTo(-30,720);ctx.bezierCurveTo(-10,520,40,470,104,486);ctx.bezierCurveTo(140,560,150,650,156,720);ctx.closePath();ctx.fill();
+    ctx.strokeStyle='rgba(150,190,205,.18)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(104,486);ctx.bezierCurveTo(140,560,150,650,156,720);ctx.stroke();ctx.restore();}
+}
+function male(ln,t){
+  const e=win(t,ln.a-.1,ln.a+.25,ln.b-.35,ln.b+.15);if(e<=0)return;
+  const ch=[...ln.s],step=49,amp=ln.amp*(.62+.38*Math.abs(Math.sin(t*5.3)));
+  ctx.save();ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.font='12px '+mono;ctx.fillStyle=`rgba(196,152,152,${e*.55})`;ctx.fillText(ln.tag,640,566);
+  ctx.font='46px '+serif;
+  for(let i=0;i<ch.length;i++){
+    const x=640+(i-(ch.length-1)/2)*step;
+    const jx=(Math.sin(t*53+i*2.7)+Math.sin(t*79+i*4.1))*.5*amp;
+    const jy=(Math.cos(t*61+i*3.3)+Math.sin(t*43+i*1.9))*.35*amp;
+    ctx.save();ctx.translate(x+jx,620+jy);ctx.rotate(Math.sin(t*37+i)*amp*.003);
+    ctx.fillStyle=`rgba(186,38,42,${e*.48})`;ctx.fillText(ch[i],2,1);
+    ctx.shadowColor=`rgba(255,232,228,${e*.5})`;ctx.shadowBlur=11;
+    ctx.fillStyle=`rgba(238,240,237,${e})`;ctx.fillText(ch[i],0,0);ctx.restore();
+  }
+  ctx.restore();
+}
+function female(ln,t){
+  const e=win(t,ln.a-.1,ln.a+.5,ln.b-.3,ln.b+.35);if(e<=0)return;
+  const ch=[...ln.s],n=cl(Math.floor((t-ln.a)/ln.sp)+1,0,ch.length);
+  ctx.save();ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.font='12px '+mono;ctx.fillStyle=`rgba(216,170,180,${e*.62})`;ctx.fillText(ln.tag,1178,136);
+  ctx.strokeStyle=`rgba(180,202,208,${e*.17})`;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(1146,154);ctx.lineTo(1146,154+ch.length*36);ctx.stroke();
+  ctx.font='30px '+serif;
+  for(let i=0;i<n;i++){
+    const a=e*sm(0,1,cl((t-(ln.a+i*ln.sp))/.28));
+    const x=1178+Math.sin(t*1.5+i*.9)*1.6,y=176+i*36;
+    ctx.save();ctx.globalAlpha=a;ctx.shadowColor='rgba(255,182,192,.55)';ctx.shadowBlur=12;
+    ctx.fillStyle='#dfe5e3';ctx.fillText(ch[i],x,y);
+    if(i===ch.length-1&&ln.b>21){ctx.shadowBlur=24;ctx.fillStyle='#ffdada';ctx.fillText(ch[i],x,y);}
+    ctx.restore();
+  }
+  ctx.restore();
+}
+function hud(t){
+  const a=win(t,.6,1.6,4.6,5.6);
+  if(a>0){ctx.save();ctx.globalAlpha=a;ctx.textAlign='left';
+    ctx.font='20px '+serif;ctx.fillStyle='#d9dfdc';ctx.fillText('ElevenLabs v4 お試し ／ 終電のホーム',54,62);
+    ctx.font='12px '+mono;ctx.fillStyle='rgba(152,178,188,.82)';ctx.fillText('TAKE 01   2 voices / 1 pass   9 stills + depth   NO VIDEO-GEN',54,86);ctx.restore();}
+  const c=win(t,.9,1.7,4.8,5.6);
+  if(c>0){ctx.save();ctx.globalAlpha=c;ctx.textAlign='right';ctx.font='11px '+mono;ctx.fillStyle='rgba(146,172,182,.75)';
+    ctx.fillText('Three.js camera  /  dolly + parallax',1226,60);
+    ctx.fillText('9 STILLS   z: 980 860 740 610 480 350 230 120 070',1226,82);
+    ctx.fillText('Playwright → 1 frame at a time → ffmpeg',1226,104);ctx.restore();}
+  const b=win(t,2.2,2.9,4.7,5.6);
+  if(b>0){ctx.save();ctx.globalAlpha=b;ctx.textAlign='left';ctx.font='13px '+mono;
+    ctx.fillStyle='rgba(176,200,206,.88)';ctx.fillText('stability',54,158);
+    ctx.strokeStyle='rgba(150,180,190,.38)';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(190,154);ctx.lineTo(390,154);ctx.stroke();
+    for(let i=0;i<=4;i++){ctx.fillStyle='rgba(150,180,190,.3)';ctx.fillRect(190+i*50,150,1,8);}
+    const p=.5-.2*sm(2.7,3.9,t),kx=190+p*200;
+    ctx.fillStyle='rgba(220,236,240,.95)';ctx.beginPath();ctx.arc(kx,154,5,0,7);ctx.fill();
+    ctx.fillStyle='rgba(196,216,222,.9)';ctx.fillText('0.5 → 0.3',406,158);
+    ctx.fillStyle='rgba(166,192,200,.86)';ctx.fillText('VOICE B   ○ ○ ●   息の多い低い声 ／ 最後まで小声',54,190);
+    ctx.fillText('台詞はそのまま  +  [whispering]  [laughs softly]',54,212);
+    ctx.restore();}
+  const m=1-sm(22.0,22.5,t);
+  if(m>0){let lvl=0;for(const ln of lines)lvl=Math.max(lvl,win(t,ln.a,ln.a+.3,ln.b-.3,ln.b+.2));
+    ctx.save();ctx.globalAlpha=.62*m;ctx.textAlign='left';ctx.font='10px '+mono;ctx.fillStyle='#9fb4bb';ctx.fillText('VOICE / v4  +  ROOM TONE',54,644);
+    for(let i=0;i<20;i++){const h=2+Math.abs(Math.sin(t*8+i*1.7))*(3+lvl*17);
+      ctx.fillStyle=`rgba(${140+lvl*90|0},${180-lvl*40|0},190,${.22+lvl*.62})`;ctx.fillRect(54+i*7,678-h,4,h);}ctx.restore();}
+}
+const creditRows=[
+ ['Claude Code / Opus 5.5','企画・演出・動きと字幕のコード・仕上がりチェック'],
+ ['ElevenLabs v4','2人の声の掛け合いと環境音（1回で生成）'],
+ ['Codex','静止画9枚'],
+ ['Three.js','静止画に奥行きをつけてカメラを動かす'],
+ ['しっぽり明朝 B1','字幕の書体（女＝縦書き／男＝横書き）'],
+ ['Playwright','ブラウザで1コマずつ書き出し'],
+ ['ffmpeg','動画の書き出し']
+];
+function credits(t){
+  const a=win(t,22.5,23.1,25.5,26.0);if(a<=0)return;
+  ctx.save();ctx.textAlign='left';
+  ctx.font='22px '+serif;ctx.fillStyle=`rgba(226,231,229,${a})`;ctx.fillText('使用ツール',330,180);
+  ctx.fillStyle=`rgba(120,150,160,${a*.7})`;ctx.fillRect(330,192,620,1);
+  creditRows.forEach((r,i)=>{const aa=a*sm(22.7+i*.09,23.1+i*.09,t);
+    ctx.font='18px '+serif;ctx.fillStyle=`rgba(216,226,224,${aa})`;ctx.fillText(r[0],330,236+i*34);
+    ctx.fillStyle=`rgba(150,172,178,${aa*.92})`;ctx.fillText(r[1],640,236+i*34);});
+  ctx.textAlign='center';ctx.font='18px '+serif;ctx.fillStyle=`rgba(212,197,197,${a})`;
+  ctx.fillText('動画生成AIはなし。静止画9枚に奥行きを、台詞に演技だけを足した。',640,522);
+  ctx.font='11px '+mono;ctx.fillStyle=`rgba(132,156,166,${a*.8})`;ctx.fillText('LOOP / 26s   ·   明朝字幕   ·   [whispering] / [laughs softly]',640,552);
+  ctx.restore();
+}
+function finish(t){
+  ctx.fillStyle=`rgba(0,0,0,${sm(22.0,22.6,t)})`;ctx.fillRect(0,0,W,H);
+  credits(t);
+  ctx.fillStyle=`rgba(0,0,0,${1-sm(0,.9,t)})`;ctx.fillRect(0,0,W,H);
+  ctx.save();ctx.globalAlpha=.038;ctx.translate((t*97)%128-128,(t*53)%128-128);ctx.fillStyle=grain;ctx.fillRect(0,0,W+256,H+256);ctx.restore();
+  const vg=ctx.createRadialGradient(640,360,170,640,360,770);vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(0,0,0,.80)');ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);
+  ctx.fillStyle='#000';ctx.fillRect(0,0,W,22);ctx.fillRect(0,H-22,W,22);
+  ctx.fillStyle='rgba(120,145,155,.22)';ctx.fillRect(0,22,W,1);ctx.fillRect(0,H-23,W,1);
+  const f=Math.floor(t*24);
+  ctx.textAlign='right';ctx.font='10px '+mono;ctx.fillStyle='rgba(150,172,182,.6)';
+  ctx.fillText(`FRAME ${String(Math.floor(t*24)).padStart(4,'0')}   00:00:${String(Math.floor(t)).padStart(2,'0')}:${String(f%24).padStart(2,'0')}`,1226,H-8);
+}
+const off=Math.max(0,parseFloat(new URLSearchParams(location.search).get('t'))||0);
+let base=null;
+function frame(now){
+  if(base===null)base=now-off*1000;
+  const t=((now-base)/1000)%DUR;
+  ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
+  drawLayers(t);lights(t);hud(t);
+  for(const ln of lines)ln.k==='m'?male(ln,t):female(ln,t);
+  finish(t);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

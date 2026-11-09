@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>T3P Academy — Launch</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=32;
+const c=document.getElementById('c'),x=c.getContext('2d'),W=1280,H=720;
+function fit(){const s=Math.min(innerWidth/W,innerHeight/H);c.style.width=W*s+'px';c.style.height=H*s+'px'}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t')||0)||0,t0=performance.now();
+const cl=v=>v<0?0:v>1?1:v,eo=v=>1-Math.pow(1-cl(v),3),eio=v=>{v=cl(v);return v<.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2};
+const back=v=>{v=cl(v);const a=1.7;return 1+(a+1)*Math.pow(v-1,3)+a*Math.pow(v-1,2)};
+const PINK='#ff90e8',YEL='#ffc900',TEAL='#23a094',INK='#111';
+const F=(s,w)=>`${w||700} ${s}px "Helvetica Neue",Helvetica,Arial,sans-serif`;
+function rr(X,Y,w,h,r){x.beginPath();x.roundRect(X,Y,w,h,r)}
+function txt(s,X,Y,size,col,al,w,a){x.globalAlpha=a==null?1:a;x.font=F(size,w);x.fillStyle=col;x.textAlign=al||'center';x.textBaseline='middle';x.fillText(s,X,Y);x.globalAlpha=1}
+// word-by-word kinetic line
+function kin(words,X,Y,size,t,cols){x.font=F(size,800);let tw=0;const ws=words.map(w=>{const m=x.measureText(w+' ').width;tw+=m;return m});let px=X-tw/2;
+ words.forEach((w,i)=>{const p=eo((t-i*.12)/.5);x.save();x.beginPath();x.rect(px-5,Y-size*.75,ws[i]+10,size*1.5);x.clip();
+ txt(w,px,Y+(1-p)*size*1.3,size,cols?cols[i%cols.length]:'#fff','left',800);x.restore();px+=ws[i]})}
+const parts=[...Array(90)].map((_,i)=>({a:Math.random()*6.28,r:200+Math.random()*500,s:.2+Math.random(),z:Math.random()}));
+function bg(t,dark){
+ const g=x.createLinearGradient(0,0,W,H);
+ if(dark){g.addColorStop(0,'#0b0b12');g.addColorStop(1,'#1a0f1c')}else{g.addColorStop(0,'#fff6fd');g.addColorStop(1,'#fff3d1')}
+ x.fillStyle=g;x.fillRect(0,0,W,H);
+ x.strokeStyle=dark?'rgba(255,255,255,.04)':'rgba(0,0,0,.05)';x.lineWidth=1;const o=(t*20)%60;
+ for(let i=-60;i<W+60;i+=60){x.beginPath();x.moveTo(i+o,0);x.lineTo(i+o,H);x.stroke()}
+ for(let j=-60;j<H+60;j+=60){x.beginPath();x.moveTo(0,j+o);x.lineTo(W,j+o);x.stroke()}
+ parts.forEach(p=>{const a=p.a+t*.05*p.s;x.globalAlpha=.15+p.z*.3;x.fillStyle=dark?PINK:'#ff5fd2';
+ x.beginPath();x.arc(W/2+Math.cos(a)*p.r,H/2+Math.sin(a)*p.r*.6,1+p.z*2,0,7);x.fill()});x.globalAlpha=1}
+function logo(X,Y,s,rot){x.save();x.translate(X,Y);x.rotate(rot||0);x.scale(s,s);
+ rr(-60,-60,120,120,28);x.fillStyle=INK;x.fill();rr(-66,-66,120,120,28);x.fillStyle=PINK;x.fill();x.lineWidth=5;x.strokeStyle=INK;x.stroke();
+ txt('T3P',-6,-6,44,INK,'center',900);x.restore()}
+function cursor(X,Y,click){x.save();x.translate(X,Y);if(click>0){x.strokeStyle=PINK;x.lineWidth=3;x.globalAlpha=1-click;x.beginPath();x.arc(0,0,10+click*30,0,7);x.stroke();x.globalAlpha=1}
+ x.beginPath();x.moveTo(0,0);x.lineTo(0,26);x.lineTo(7,20);x.lineTo(13,32);x.lineTo(18,30);x.lineTo(12,18);x.lineTo(21,18);x.closePath();x.fillStyle='#fff';x.fill();x.strokeStyle=INK;x.lineWidth=2;x.stroke();x.restore()}
+const prods=[['Trading Masterclass','$49',PINK],['Risk Playbook','$29',YEL],['Chart Pattern Pack','$19',TEAL],['Mentorship Bundle','$99','#90a8ff']];
+function card(X,Y,w,h,p,i,hl){x.save();rr(X+6,Y+6,w,h,14);x.fillStyle=INK;x.fill();rr(X,Y,w,h,14);x.fillStyle='#fff';x.fill();x.lineWidth=3;x.strokeStyle=INK;x.stroke();
+ x.save();rr(X,Y,w,h*.55,14);x.clip();x.fillStyle=p[2];x.fillRect(X,Y,w,h*.55);
+ x.strokeStyle='rgba(0,0,0,.25)';x.lineWidth=3;x.beginPath();for(let k=0;k<=10;k++){const vx=X+k*w/10,vy=Y+h*.35-Math.sin(k*.9+i)*h*.1-k*h*.012;k?x.lineTo(vx,vy):x.moveTo(vx,vy)}x.stroke();x.restore();
+ x.beginPath();x.moveTo(X,Y+h*.55);x.lineTo(X+w,Y+h*.55);x.stroke();
+ txt(p[0],X+16,Y+h*.68,19,INK,'left',800);txt('★★★★★',X+16,Y+h*.84,15,'#e0a800','left',700);
+ rr(X+w-74,Y+h*.78,60,28,6);x.fillStyle=hl?PINK:YEL;x.fill();x.lineWidth=2;x.stroke();txt(p[1],X+w-44,Y+h*.78+14,16,INK,'center',800);x.restore()}
+function frame(T){
+ x.clearRect(0,0,W,H);
+ if(T<4.5){ // logo reveal
+  bg(T,true);const p=back(T/1.2);logo(W/2,H/2-40-eio((T-1.6)/.8)*30,p*1.1,(1-p)*-1.2);
+  const r=eo((T-.2)/1);x.strokeStyle=PINK;x.lineWidth=3;x.globalAlpha=1-r;x.beginPath();x.arc(W/2,H/2-40,100+r*400,0,7);x.stroke();x.globalAlpha=1;
+  kin(['T3P','Academy'],W/2,H/2+90,56,T-1.8,['#fff',PINK]);
+  txt('NOW LIVE ON GUMROAD',W/2,H/2+150,18,'#aaa','center',600,eo((T-2.6)/.6));
+  if(T>3.9){x.fillStyle=PINK;x.fillRect(0,0,W*eio((T-3.9)/.6),H)}
+ }else if(T<9.5){const t=T-4.5;bg(T,false);
+  kin(['Stop','guessing.'],W/2,260,92,t-.1,[INK,INK]);
+  kin(['Start','trading','with','a','plan.'],W/2,380,72,t-1.2,[INK,'#e2349f',INK,INK,'#e2349f']);
+  const u=eo((t-2.4)/.6);x.fillStyle=YEL;x.fillRect(W/2-260,440,520*u,10);
+  txt('Courses, playbooks & mentorship — in one place.',W/2,500,26,'#444','center',500,eo((t-2.8)/.6));
+  if(t>4.6){x.fillStyle=INK;x.fillRect(0,H*(1-eio((t-4.6)/.4)),W,H)}
+ }else if(T<16){const t=T-9.5;bg(T,true); // storefront
+  txt('Your entire toolkit. One storefront.',W/2,70,38,'#fff','center',800,eo(t/.5));
+  const s=eo((t-.2)/.8),bx=140,by=120+(1-s)*500,bw=1000,bh=560;
+  x.save();rr(bx,by,bw,bh,18);x.fillStyle='#fff';x.fill();x.clip();
+  x.fillStyle='#f1f1f1';x.fillRect(bx,by,bw,40);['#ff5f57','#febc2e','#28c840'].forEach((cc,i)=>{x.fillStyle=cc;x.beginPath();x.arc(bx+22+i*20,by+20,6,0,7);x.fill()});
+  rr(bx+300,by+10,400,22,11);x.fillStyle='#fff';x.fill();txt('t3pacademy.gumroad.com',bx+500,by+21,13,'#666','center',500);
+  x.fillStyle=PINK;x.fillRect(bx,by+40,bw,90);logo(bx+60,by+86,.35);txt('T3P Academy',bx+105,by+86,28,INK,'left',900);
+  rr(bx+bw-150,by+68,120,36,8);x.fillStyle=INK;x.fill();txt('Follow',bx+bw-90,by+86,15,'#fff','center',700);
+  const cw=215,chh=300;let hi=-1;
+  const cx=bx+40+1*(cw+20)+cw/2,cy=by+160+chh*.86;
+  const curP=eio((t-3)/1.2),mx=1100+(cx-1100)*curP,my=650+(cy-650)*curP,clk=cl((t-4.3)/.5);
+  prods.forEach((p,i)=>{const a=back((t-.9-i*.15)/.6);if(a<=0)return;const lift=(i==1&&t>4.1)?-8*eo((t-4.1)/.3):0;
+   x.save();x.globalAlpha=cl(a);card(bx+40+i*(cw+20),by+160+(1-a)*80+lift,cw,chh,p,i,i==1&&t>4.3);x.restore()});
+  x.restore();
+  if(t>4.4){const p=back((t-4.4)/.5);x.save();x.translate(cx,by+120);x.scale(p,p);rr(-90,-24,180,48,24);x.fillStyle=TEAL;x.fill();txt('✓ Added — instant access',0,0,14,'#fff','center',700);x.restore()}
+  if(t>2.6)cursor(mx,my,clk>0&&clk<1?clk:0);
+  if(t>6)x.fillStyle='#fff',x.globalAlpha=eio((t-6)/.5),x.fillRect(0,0,W,H),x.globalAlpha=1;
+ }else if(T<22.5){const t=T-16;bg(T,false); // features
+  kin(['Built','for','serious','traders.'],W/2,110,58,t,[INK,INK,'#e2349f',INK]);
+  const fs=[['⚡','Instant Access','Download the moment you buy. Learn on any device.',PINK],['♾','Lifetime Updates','Every new lesson & strategy, free forever.',YEL],['👥','Private Community','Trade ideas with members and mentors.',TEAL]];
+  fs.forEach((f,i)=>{const a=back((t-.8-i*.25)/.6);if(a<=0)return;const X=110+i*360,Y=220+(1-a)*120,w=340,h=330;
+   x.save();x.globalAlpha=cl(a*1.5);x.translate(X+w/2,Y+h/2);x.rotate((1-a)*.15*(i-1));x.translate(-X-w/2,-Y-h/2);
+   rr(X+8,Y+8,w,h,20);x.fillStyle=INK;x.fill();rr(X,Y,w,h,20);x.fillStyle='#fff';x.fill();x.lineWidth=3;x.strokeStyle=INK;x.stroke();
+   const fl=Math.sin(T*2+i)*5;x.beginPath();x.arc(X+w/2,Y+95+fl,52,0,7);x.fillStyle=f[3];x.fill();x.stroke();
+   txt(f[0],X+w/2,Y+97+fl,46,INK,'center',400);txt(f[1],X+w/2,Y+190,28,INK,'center',800);
+   x.font=F(18,500);const words=f[2].split(' ');let line='',ly=Y+235;words.forEach(wd=>{if(x.measureText(line+wd).width>w-60){txt(line,X+w/2,ly,18,'#555','center',500);line='';ly+=26}line+=wd+' '});txt(line,X+w/2,ly,18,'#555','center',500);
+   x.restore()});
+  if(t>6){x.fillStyle=INK;x.beginPath();x.arc(W/2,H/2,eio((t-6)/.5)*800,0,7);x.fill()}
+ }else if(T<27.5){const t=T-22.5;bg(T,true); // stats
+  txt('Results that compound.',W/2,80,44,'#fff','center',800,eo(t/.5));
+  const gx=120,gy=150,gw=640,gh=430;rr(gx,gy,gw,gh,18);x.fillStyle='rgba(255,255,255,.05)';x.fill();x.strokeStyle='rgba(255,255,255,.15)';x.lineWidth=1;x.stroke();
+  txt('Student portfolio growth',gx+30,gy+36,18,'#bbb','left',600);
+  const pr=eio((t-.5)/2.5),N=40,pts=[];for(let i=0;i<=N;i++){const v=i/N;pts.push([gx+30+v*(gw-60),gy+gh-40-(v*v*.75+.1+Math.sin(i*1.3)*.04)*(gh-120)])}
+  const n=Math.floor(pr*N);if(n>0){const gr=x.createLinearGradient(0,gy,0,gy+gh);gr.addColorStop(0,'rgba(255,144,232,.45)');gr.addColorStop(1,'rgba(255,144,232,0)');
+   x.beginPath();x.moveTo(pts[0][0],gy+gh-40);for(let i=0;i<=n;i++)x.lineTo(pts[i][0],pts[i][1]);x.lineTo(pts[n][0],gy+gh-40);x.fillStyle=gr;x.fill();
+   x.beginPath();for(let i=0;i<=n;i++)i?x.lineTo(pts[i][0],pts[i][1]):x.moveTo(pts[i][0],pts[i][1]);x.strokeStyle=PINK;x.lineWidth=4;x.stroke();
+   x.fillStyle='#fff';x.beginPath();x.arc(pts[n][0],pts[n][1],7,0,7);x.fill()}
+  const st=[[10000,'+','Students enrolled',PINK],[4.9,'/5','Average rating',YEL],[120,'+','Video lessons',TEAL]];
+  st.forEach((s,i)=>{const a=eo((t-.6-i*.3)/.6),Y=170+i*140;if(a<=0)return;x.globalAlpha=a;
+   rr(820+(1-a)*60,Y,340,115,16);x.fillStyle='rgba(255,255,255,.06)';x.fill();x.fillStyle=s[3];x.fillRect(820+(1-a)*60,Y+20,5,75);
+   const v=s[0]*eio((t-.6-i*.3)/1.8),vs=s[0]<10?v.toFixed(1):Math.round(v).toLocaleString('en-US');
+   txt(vs+s[1],850+(1-a)*60,Y+46,46,'#fff','left',900);txt(s[2],850+(1-a)*60,Y+88,17,'#aaa','left',500);x.globalAlpha=1});
+  if(t>4.6){x.fillStyle=PINK;x.fillRect(0,0,W,H*eio((t-4.6)/.4))}
+ }else{const t=T-27.5;x.fillStyle=PINK;x.fillRect(0,0,W,H); // CTA
+  x.strokeStyle='rgba(0,0,0,.08)';x.lineWidth=40;for(let i=-10;i<20;i++){x.beginPath();x.moveTo(i*120+((t*60)%120),0);x.lineTo(i*120-400+((t*60)%120),H);x.stroke()}
+  logo(W/2,190,back(t/.6)*.9,0);
+  kin(['Your','edge','starts','today.'],W/2,330,76,t-.3,[INK,'#fff',INK,INK]);
+  const b=back((t-1.2)/.6);if(b>0){x.save();x.translate(W/2,450);x.scale(b,b);const pu=1+Math.sin(T*5)*.02;x.scale(pu,pu);
+   rr(-250+7,-38+7,500,76,14);x.fillStyle=INK;x.fill();rr(-250,-38,500,76,14);x.fillStyle=YEL;x.fill();x.lineWidth=4;x.strokeStyle=INK;x.stroke();
+   txt('t3pacademy.gumroad.com  →',0,0,28,INK,'center',800);x.restore()}
+  txt('Get instant access — available now',W/2,540,22,INK,'center',600,eo((t-1.8)/.6));
+  if(t>4)x.fillStyle='#000',x.globalAlpha=eio((t-4)/.5),x.fillRect(0,0,W,H),x.globalAlpha=1;
+ }
+}
+function loop(){const T=((performance.now()-t0)/1000+off)%window.DUR;frame(T);requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+</script></body></html>

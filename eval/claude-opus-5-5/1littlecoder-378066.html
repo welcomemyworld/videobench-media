@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+// Ad timeline: grey drones march -> giant screen speaks -> runner arrives -> hammer throw -> screen shatters into light -> brand card.
+window.DUR=30;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px'}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)||0;const t0=performance.now()-off*1000;
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),E=v=>v*v*(3-2*v),R=(a,b,t)=>E(cl((t-a)/(b-a)));
+function rnd(n){let s=Math.sin(n*127.1)*43758.5;return s-Math.floor(s)}
+const shards=[];for(let i=0;i<70;i++)shards.push({a:rnd(i)*6.283,v:200+rnd(i+9)*900,r:rnd(i+3)*10-5,s:10+rnd(i+5)*40});
+function txt(s,X,Y,sz,a,col='#fff',w='300'){x.globalAlpha=cl(a);x.fillStyle=col;x.font=w+' '+sz+'px Helvetica,Arial,sans-serif';x.textAlign='center';x.fillText(s,X,Y);x.globalAlpha=1}
+function hall(t,fl){
+ const g=x.createLinearGradient(0,0,0,720);g.addColorStop(0,'#0c1214');g.addColorStop(1,'#1e2a2c');x.fillStyle=g;x.fillRect(0,0,1280,720);
+ x.strokeStyle='rgba(120,160,160,.12)';
+ for(let i=-10;i<=10;i++){x.beginPath();x.moveTo(640+i*30,330);x.lineTo(640+i*200,720);x.stroke()}
+ for(let i=0;i<8;i++){let y=330+Math.pow(i/8+((t*.15)%(1/8)),2)*390;x.beginPath();x.moveTo(0,y);x.lineTo(1280,y);x.stroke()}
+}
+function screen(t,cx,cy,w,h,crack){
+ x.fillStyle='#000';x.fillRect(cx-w/2-8,cy-h/2-8,w+16,h+16);
+ let g=x.createRadialGradient(cx,cy,10,cx,cy,w*.7);g.addColorStop(0,'#5d7c80');g.addColorStop(1,'#16262a');x.fillStyle=g;x.fillRect(cx-w/2,cy-h/2,w,h);
+ // face of the monolith: gray oval with mouth
+ x.fillStyle='rgba(20,30,32,.75)';x.beginPath();x.ellipse(cx,cy,w*.16,h*.36,0,0,7);x.fill();
+ x.fillStyle='#8aa';x.fillRect(cx-w*.07,cy-h*.08,w*.04,4);x.fillRect(cx+w*.03,cy-h*.08,w*.04,4);
+ let m=4+Math.abs(Math.sin(t*9)*Math.sin(t*3.1))*h*.06;x.fillRect(cx-w*.05,cy+h*.12,w*.1,m);
+ for(let y=cy-h/2;y<cy+h/2;y+=4){x.fillStyle='rgba(0,0,0,.18)';x.fillRect(cx-w/2,y,w,2)}
+}
+function drone(X,Y,s,ph){
+ x.fillStyle='#2f3b3d';x.beginPath();x.ellipse(X,Y-38*s,9*s,10*s,0,0,7);x.fill();
+ x.fillRect(X-12*s,Y-28*s,24*s,30*s);
+ let l=Math.sin(ph)*5*s;x.fillRect(X-9*s+l,Y,7*s,26*s);x.fillRect(X+2*s-l,Y,7*s,26*s);
+}
+function runner(X,Y,s,t,spin){
+ x.save();x.translate(X,Y);
+ let l=Math.sin(t*14)*12*s;
+ x.fillStyle='#e05a1c';x.fillRect(-12*s+l,0,8*s,30*s);x.fillRect(4*s-l,0,8*s,30*s);
+ x.fillStyle='#f2f2f2';x.fillRect(-13*s,-32*s,26*s,34*s);
+ x.fillStyle='#e0a070';x.beginPath();x.arc(0,-42*s,10*s,0,7);x.fill();
+ x.fillStyle='#f4c430';x.beginPath();x.arc(0,-48*s,10*s,3.14,6.28);x.fill();
+ // glowing hammer with spark (Opus glyph)
+ if(spin===undefined){x.strokeStyle='#999';x.lineWidth=3*s;x.beginPath();x.moveTo(13*s,-25*s);x.lineTo(28*s,-55*s);x.stroke();x.fillStyle='#ccc';x.fillRect(20*s,-64*s,18*s,10*s)}
+ x.restore();
+}
+function spark(X,Y,r,a,rot){x.save();x.translate(X,Y);x.rotate(rot);x.globalAlpha=a;x.fillStyle='#d97757';
+ for(let i=0;i<8;i++){x.rotate(Math.PI/4);x.beginPath();x.moveTo(-r*.08,0);x.lineTo(0,-r);x.lineTo(r*.08,0);x.fill()}x.restore();x.globalAlpha=1}
+function frame(){
+ let t=((performance.now()-t0)/1000)%DUR;
+ x.fillStyle='#000';x.fillRect(0,0,1280,720);
+ if(t<20.5){
+  hall(t);
+  // screen zoom
+  let sw=500+R(0,10,t)*200,sh=sw*.56,sx=640,sy=200;
+  screen(t,sx,sy,sw,sh);
+  const lines=['Today, every answer is the same answer.','Every question, pre-approved.','We are one mind. One prompt. One reply.','Think less. Comply more.'];
+  let li=Math.floor(t/3);if(li<4&&t<12)txt(lines[li],sx,sy+sh/2+40,26,Math.min(R(li*3,li*3+.5,t),1-R(li*3+2.5,li*3+3,t)),'#9cc');
+  // marching drones
+  for(let r=0;r<5;r++)for(let i=0;i<14;i++){let s=.6+r*.2,y=430+r*60,X=(i*110+r*55+t*20*s)%1500-110;drone(X,y,s,t*6+i)}
+  // runner
+  if(t>9){let p=R(9,15.5,t);let rx=-80+p*720,ry=690-p*80;let s=1.4-p*.3;
+   if(t<16.5)runner(rx,ry,s,t);
+   else{runner(640,610,1.1,0,1);let hp=R(16.5,18,t);let hx=640,hy=560-hp*(560-sy),hs=1-hp*.5;
+    if(t<18){x.save();x.translate(hx,hy);x.rotate(t*18);x.fillStyle='#ccc';x.fillRect(-14*hs,-8*hs,28*hs,16*hs);x.fillStyle='#999';x.fillRect(-2,-30*hs,4,30*hs);x.restore()}}
+  }
+  if(t>15&&t<16.5)txt('',0,0,1,0);
+  if(t>18){let e=t-18;let f=cl(1-e*1.4);
+   x.fillStyle='rgba(255,240,225,'+cl(f)+')';x.fillRect(0,0,1280,720);
+   for(const s of shards){let d=s.v*e;x.save();x.translate(sx+Math.cos(s.a)*d,sy+Math.sin(s.a)*d+e*e*80);x.rotate(s.r*e);x.fillStyle='rgba(217,119,87,'+cl(1-e/2.5)+')';x.fillRect(-s.s/2,-s.s/6,s.s,s.s/3);x.restore()}
+   x.fillStyle='rgba(255,255,255,'+R(19,20.5,t)+')';x.fillRect(0,0,1280,720);
+  }
+ } else {
+  // brand card
+  let k=t-20.5;x.fillStyle='#faf9f5';x.fillRect(0,0,1280,720);
+  if(k<4){txt('On a day like any other,',640,300,40,Math.min(R(.3,1,k),1-R(3.4,4,k)),'#222');
+   txt('Anthropic will introduce Opus 5.5.',640,360,40,Math.min(R(1,1.8,k),1-R(3.4,4,k)),'#222','400');
+   txt("And you'll see why the future won't be like the past.",640,420,26,Math.min(R(1.8,2.6,k),1-R(3.4,4,k)),'#666')}
+  else{let a=R(4,5,k);spark(640,280,70*a,a,k*.3);txt('Opus 5.5',640,430,84,R(4.6,5.4,k),'#141413','500');
+   txt('Think different. Think together.',640,485,26,R(5.4,6.4,k),'#d97757','400');
+   x.fillStyle='rgba(250,249,245,'+R(8.8,9.5,k)+')';x.fillRect(0,0,1280,720)}
+ }
+ requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

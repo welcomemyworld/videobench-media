@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Engrave</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden;}
+#wrap{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:50% 50%;}
+canvas{display:block;background:#000;}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+window.DUR=50;
+const BONE="#E6DCC8", ORG="#E25B12", INK="#070707";
+const cv=document.getElementById("c"), ctx=cv.getContext("2d");
+const wrap=document.getElementById("wrap");
+function fit(){wrap.style.transform="translate(-50%,-50%) scale("+Math.min(innerWidth/1280,innerHeight/720)+")";}
+addEventListener("resize",fit);fit();
+const q=new URLSearchParams(location.search);
+const Toff=parseFloat(q.get("t")||"0")||0;
+const tAnchor=performance.now()-Toff*1000;
+const SC=[
+ {ly:"wires remember the night",w:"NIGHT",cam:"low orbit, slow yaw",show:"cable lattice and a bone moon"},
+ {ly:"bone light on the glass",w:"BONE",cam:"push through panes",show:"tower of glass, a single lamp"},
+ {ly:"orange cuts the black",w:"CUT",cam:"dutch tilt slash",show:"one incision across the void"},
+ {ly:"the city engraves itself",w:"CITY",cam:"crane over roofs",show:"hatched blocks, wire streets"},
+ {ly:"drums in the hollow chest",w:"DRUMS",cam:"pulse dolly",show:"ring kit, beating cavity"},
+ {ly:"a voice splits the stem",w:"VOICE",cam:"rack focus bands",show:"four stems peeling apart"},
+ {ly:"four hands write the frame",w:"HANDS",cam:"quad split orbit",show:"four agents etching lines"},
+ {ly:"sixteen stills, one breath",w:"STILLS",cam:"contact lock-off",show:"4×4 proof sheet"},
+ {ly:"volume finds its line",w:"LINE",cam:"level glide",show:"meters settling to −14"},
+ {ly:"play it back in fire",w:"FIRE",cam:"rise and flare",show:"playback flames, loop mark"}
+];
+function pr(x,y,z,cam){
+  const cy=Math.cos(cam.yaw),sy=Math.sin(cam.yaw);
+  let x1=x*cy-z*sy,z1=x*sy+z*cy;
+  const cp=Math.cos(cam.pitch),sp=Math.sin(cam.pitch);
+  let y1=y*cp-z1*sp,z2=y*sp+z1*cp;
+  z2+=cam.dist;
+  if(z2<0.4) return null;
+  const f=cam.f/z2;
+  return [640+x1*f+cam.ox, 360+y1*f+cam.oy, z2];
+}
+function seg(a,b,cam,col,w){
+  const A=pr(a[0],a[1],a[2],cam), B=pr(b[0],b[1],b[2],cam);
+  if(!A||!B) return;
+  ctx.strokeStyle=col; ctx.lineWidth=w||1.1;
+  ctx.beginPath(); ctx.moveTo(A[0],A[1]); ctx.lineTo(B[0],B[1]); ctx.stroke();
+}
+function box(cam,x,y,z,sx,sy,sz,col,step){
+  step=step||18;
+  for(let i=-sx;i<=sx;i+=step){
+    seg([x+i,y-sy,z-sz],[x+i,y-sy,z+sz],cam,col);
+    seg([x+i,y+sy,z-sz],[x+i,y+sy,z+sz],cam,col);
+    seg([x-sx,y+i,z-sz],[x+sx,y+i,z-sz],cam,col);
+    seg([x-sx,y+i,z+sz],[x+sx,y+i,z+sz],cam,col);
+  }
+  for(let i=-sy;i<=sy;i+=step){
+    seg([x-sx,y+i,z-sz],[x-sx,y+i,z+sz],cam,col);
+    seg([x+sx,y+i,z-sz],[x+sx,y+i,z+sz],cam,col);
+  }
+}
+function ring(cam,y,r,col,n,tilt){
+  n=n||48; tilt=tilt||0;
+  let px=null;
+  for(let i=0;i<=n;i++){
+    const a=i/n*Math.PI*2;
+    const p=[Math.cos(a)*r, y+Math.sin(a)*tilt, Math.sin(a)*r];
+    if(px) seg(px,p,cam,col);
+    px=p;
+  }
+}
+function sceneGeom(i,u,cam){
+  const o=ORG, b=BONE;
+  if(i===0){
+    ring(cam,40,70,b,40,8);
+    for(let k=0;k<14;k++){
+      const a=k*0.45+u*0.4, r=90+k*8;
+      const y=-80+Math.sin(u*2+k)*20;
+      seg([Math.cos(a)*40,y,Math.sin(a)*40],[Math.cos(a+1.2)*r,y-30,Math.sin(a+1.2)*r],cam,k%3?b:o,1);
+    }
+    for(let k=0;k<8;k++) seg([-120,120-k*28,-40],[140,-40+k*10,40],cam,"#3a342c",0.6);
+  } else if(i===1){
+    for(let k=-3;k<=3;k++){
+      seg([k*28,-140,-20],[k*28,140,-20],cam,b,1.2);
+      seg([-90,k*36,0],[90,k*36,0],cam,"#6d6456",0.7);
+    }
+    box(cam,0,20,10,18,28,18,o,8);
+    seg([0,48,10],[0,140,30],cam,o,1.4);
+  } else if(i===2){
+    for(let k=-8;k<=8;k++){
+      const yy=k*16;
+      seg([-160,yy,-30],[160,yy,30],cam,k%4===0?o:b,k%4===0?1.6:0.7);
+    }
+    const s=Math.sin(u*3)*20;
+    seg([-150,-130+s,40],[160,120-s,-40],cam,o,2.4);
+    seg([-140,-110+s,40],[150,140-s,-40],cam,o,1);
+  } else if(i===3){
+    for(let k=0;k<9;k++){
+      const x=-160+k*40, h=40+((k*37)%90), z=-40+(k%3)*25;
+      box(cam,x,80-h/2,z,16,h/2,16,k%3===0?o:b,10);
+    }
+    for(let k=-4;k<=4;k++) seg([-180,90,k*18],[180,90,k*18],cam,"#8a7d68",0.8);
+  } else if(i===4){
+    const p=0.5+0.5*Math.sin(u*Math.PI*8);
+    ring(cam,0,40+p*18,o,36,0);
+    ring(cam,0,78,b,48,0);
+    ring(cam,10,110,b,56,6);
+    box(cam,0,0,0,26,50,22,"#cbbba4",12);
+    for(let k=0;k<6;k++) seg([0,0,0],[Math.cos(k+u)*90,Math.sin(k*2)*40,Math.sin(k+u)*90],cam,o,1);
+  } else if(i===5){
+    const names=[-60,-20,20,60];
+    for(let s=0;s<4;s++){
+      let prev=null;
+      for(let k=0;k<=32;k++){
+        const x=-150+k*9.4;
+        const amp=(s===0?28:s===1?18:s===2?22:14)*(0.6+0.4*Math.sin(u*6+s));
+        const y=names[s]+Math.sin(k*0.55+u*(3+s))*amp;
+        const p=[x,y,s*8-12];
+        if(prev) seg(prev,p,cam,s===0?o:b,s===0?1.6:1);
+        prev=p;
+      }
+    }
+  } else if(i===6){
+    for(let q=0;q<4;q++){
+      const ox=(q%2?70:-70), oy=(q<2?-50:50);
+      box(cam,ox,oy,0,40,32,6,b,14);
+      const n=6+((q*3)%5);
+      for(let k=0;k<n;k++){
+        const y=oy-24+k*8+Math.sin(u*3+q+k)*2;
+        seg([ox-30,y,8],[ox+10+((k*17)%28),y,8],cam,q===Math.floor(u*2)%4?o:b,1);
+      }
+    }
+  } else if(i===7){
+    for(let r=0;r<4;r++) for(let c=0;c<4;c++){
+      const x=-105+c*70, y=-105+r*70;
+      box(cam,x,y,0,28,22,2,b,20);
+      const ph=(r*4+c);
+      seg([x-18,y,4],[x+18,y+Math.sin(u*2+ph)*10,4],cam,ph===Math.floor(u*8)%16?o:b,1.2);
+    }
+  } else if(i===8){
+    for(let k=0;k<7;k++){
+      const h=30+Math.abs(Math.sin(u*5+k))*70;
+      const x=-120+k*40;
+      seg([x,80,-10],[x,80-h,-10],cam,k===3?o:b,3);
+      seg([x-8,80,-10],[x+8,80,-10],cam,b,1);
+    }
+    const lv=-14;
+    seg([-150,20,0],[150,20,0],cam,o,1.6);
+    ring(cam,-40,22,b,24,0);
+  } else {
+    for(let k=0;k<18;k++){
+      const x=-80+k*9+Math.sin(u*3+k)*6;
+      const h=40+Math.abs(Math.sin(u*4+k*0.7))*90;
+      seg([x,70,k-9],[x+Math.sin(k+u)*12,70-h,k-9],cam,k%3===0?o:b,1.3);
+    }
+    ring(cam,80,50,o,32,0);
+    seg([-20,80,0],[20,80,0],cam,o,2);
+  }
+}
+function label(x,y,s,col,size,align){
+  ctx.fillStyle=col; ctx.font=size+"px Georgia, serif";
+  ctx.textAlign=align||"left"; ctx.textBaseline="top";
+  ctx.fillText(s,x,y);
+}
+function rule(x,y,w){ctx.strokeStyle=BONE;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+w,y);ctx.stroke();}
+function draw(t){
+  const n=SC.length, sl=window.DUR/n;
+  let si=Math.floor(t/sl); if(si>=n) si=n-1;
+  const u=(t-si*sl)/sl;
+  const S=SC[si];
+  ctx.fillStyle=INK; ctx.fillRect(0,0,1280,720);
+  ctx.save();
+  ctx.strokeStyle="#2a241c"; ctx.lineWidth=1;
+  for(let y=0;y<720;y+=7){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(1280,y+Math.sin(y*0.02+t)*2);ctx.stroke();}
+  ctx.restore();
+  const px=449, py=18, pw=382, ph=680;
+  ctx.strokeStyle=BONE; ctx.lineWidth=1.5;
+  ctx.strokeRect(px-8,py-6,pw+16,ph+12);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(px,py,pw,ph); ctx.clip();
+  ctx.fillStyle="#050505"; ctx.fillRect(px,py,pw,ph);
+  const cam={
+    yaw: (si*0.35)+u*0.55 + (si===2?-0.35:0),
+    pitch: -0.18+Math.sin(u*Math.PI)*0.12 + (si===0?-0.15:0),
+    dist: 520 - Math.sin(u*Math.PI)*40,
+    f: 520,
+    ox: 0, oy: 18
+  };
+  if(si===3) cam.pitch=-0.45;
+  if(si===8) cam.yaw=0.1;
+  sceneGeom(si,u,cam);
+  ctx.fillStyle="rgba(0,0,0,0.45)";
+  ctx.fillRect(px,py+ph-118,pw,118);
+  label(px+16,py+16,"SCENE "+String(si+1).padStart(2,"0")+"  /  10",BONE,13);
+  label(px+16,py+ph-108,S.w,ORG,42);
+  ctx.font="15px Georgia, serif"; ctx.fillStyle=BONE;
+  ctx.fillText(S.ly, px+16, py+ph-58);
+  ctx.restore();
+  ctx.strokeStyle=ORG; ctx.lineWidth=2;
+  const tick=(u*pw);
+  ctx.beginPath(); ctx.moveTo(px,py+ph+6); ctx.lineTo(px+tick,py+ph+6); ctx.stroke();
+  label(36,28,"ENGRAVE",ORG,28);
+  label(36,62,"programmatic plate  ·  50s",BONE,14);
+  rule(36,88,360);
+  const steps=["01  song bed locked","02  stems split","03  vocal align","04  storyboard","05  four agents","06  contact sheet","07  1080 plate","08  −14 line"];
+  steps.forEach((s,i)=>{
+    const on=i<=Math.floor(t/6.25);
+    label(36,110+i*28,s,on? (i===Math.floor(t/6.25)?ORG:BONE) : "#5c5348",16);
+  });
+  label(900,28,"STORYBOARD",ORG,22);
+  rule(900,58,340);
+  label(900,76,"WHAT TO SHOW",ORG,12);
+  wrapText(S.show,900,96,330,18,BONE,15);
+  label(900,168,"CAMERA",ORG,12);
+  label(900,188,S.cam,BONE,16);
+  label(900,230,"MAIN WORD",ORG,12);
+  label(900,250,S.w,ORG,36);
+  label(900,310,"LYRIC LINE",ORG,12);
+  wrapText(S.ly,900,330,330,20,BONE,16);
+  label(900,400,"PLATE",ORG,12);
+  label(900,420,"Black  ·  Bone  ·  Orange",BONE,15);
+  label(900,448,"lines only  ·  no fill wash",BONE,14);
+  const bx=900, by=490;
+  ctx.strokeStyle="#5c5348"; ctx.strokeRect(bx,by,340,150);
+  for(let r=0;r<4;r++) for(let c=0;c<4;c++){
+    const id=r*4+c;
+    const x=bx+12+c*80, y=by+12+r*34;
+    ctx.strokeStyle=id===si?ORG:BONE;
+    ctx.strokeRect(x,y,68,26);
+    if(id<si){ctx.fillStyle=ORG; ctx.fillRect(x+2,y+2,64,22);}
+    else if(id===si){ctx.fillStyle=ORG; ctx.fillRect(x+2,y+2,64*u,22);}
+  }
+  label(36,640,"t  "+t.toFixed(2)+"s",BONE,14);
+  label(36,664,"1 line  =  1 scene", "#8a7d68",13);
+  const bw=900, bh=8, bxx=180, byy=688;
+  ctx.strokeStyle=BONE; ctx.strokeRect(bxx,byy,bw,bh);
+  ctx.fillStyle=ORG; ctx.fillRect(bxx,byy,(t/window.DUR)*bw,bh);
+  for(let i=1;i<n;i++){
+    ctx.strokeStyle="#000"; ctx.beginPath();
+    ctx.moveTo(bxx+i*(bw/n),byy); ctx.lineTo(bxx+i*(bw/n),byy+bh); ctx.stroke();
+  }
+}
+function wrapText(text,x,y,maxW,lh,col,size){
+  ctx.fillStyle=col; ctx.font=size+"px Georgia, serif"; ctx.textAlign="left"; ctx.textBaseline="top";
+  const words=text.split(" "); let line="", yy=y;
+  for(const w of words){
+    const test=line?line+" "+w:w;
+    if(ctx.measureText(test).width>maxW){ctx.fillText(line,x,yy); line=w; yy+=lh;}
+    else line=test;
+  }
+  if(line) ctx.fillText(line,x,yy);
+}
+function loop(now){
+  let t=((now-tAnchor)/1000)%window.DUR;
+  if(t<0) t+=window.DUR;
+  draw(t);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

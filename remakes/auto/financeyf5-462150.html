@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>NEON PULSE</title>
+<style>html,body{margin:0;background:#000;overflow:hidden;height:100%}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=32;
+const cv=document.getElementById('c'),x=cv.getContext('2d'),W=1280,H=720,BPM=120,SPB=60/BPM;
+function fit(){const s=Math.min(innerWidth/W,innerHeight/H);cv.style.width=W*s+'px';cv.style.height=H*s+'px'}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t')||0)||0;let t0=null;
+const hash=n=>{const s=Math.sin(n*127.1+311.7)*43758.5453;return s-Math.floor(s)};
+// lyrics: [startBeat, endBeat, text]
+const LY=[[2,7,"NEON PULSE"],[8,11,"city lights are calling"],[12,15,"wires hum beneath my skin"],[16,19,"every heartbeat falling"],[20,23,"into the static, let me in"],
+[24,27,"hold on"],[28,31,"HOLD ON"],[32,35,"we run on electric dreams"],[36,39,"brighter than the morning"],[40,43,"nothing's ever what it seems"],
+[44,47,"feel the night ignite"],[48,51,"we run on electric dreams"],[52,55,"never stop the signal"],[56,59,"glow forever"],[60,63,"NEON PULSE"]];
+function sect(b){return b<16?0:b<32?1:b<56?2:3}
+function draw(t){
+ const beat=t/SPB,b=Math.floor(beat),ph=beat-b,S=sect(b);
+ const kickOn=S===0?(b%2===0):S===1?true:S===2?true:(b%2===0);
+ let kick=kickOn?Math.exp(-ph*6):0;
+ if(S===1&&b>=28){const sb=beat*4;kick=Math.max(kick,Math.exp(-(sb%1)*5)*0.7)}
+ const snare=(S>=2&&b%2===1)?Math.exp(-ph*8):0;
+ const hat=Math.exp(-((beat*2)%1)*10)*(S>=1?1:0.3);
+ const energy=[0.35,0.6,1,0.45][S]*(S===1?0.6+0.4*(beat-16)/16:1);
+ const hue=(200+t*8+(S===2?120:0))%360;
+ x.save();
+ let sh=S===2?kick*10:kick*2;x.translate((hash(b*3.1)-.5)*sh,(hash(b*7.7)-.5)*sh);
+ // bg
+ const g=x.createRadialGradient(W/2,H/2,0,W/2,H/2,800);
+ g.addColorStop(0,`hsl(${hue},70%,${8+kick*10*energy}%)`);g.addColorStop(1,`hsl(${(hue+60)%360},80%,2%)`);
+ x.fillStyle=g;x.fillRect(-20,-20,W+40,H+40);
+ // grid floor
+ x.strokeStyle=`hsla(${(hue+180)%360},100%,60%,${0.25+0.4*kick*energy})`;x.lineWidth=1.5;
+ const hz=H*0.58;
+ for(let i=0;i<24;i++){const z=((i+(t*energy*2)%1)/24);const y=hz+Math.pow(z,2.4)*(H-hz+40);x.globalAlpha=z;x.beginPath();x.moveTo(-20,y);x.lineTo(W+20,y);x.stroke()}
+ x.globalAlpha=1;
+ for(let i=-20;i<=20;i++){x.beginPath();x.moveTo(W/2+i*8,hz);x.lineTo(W/2+i*140,H+20);x.stroke()}
+ // sun
+ const sr=150+kick*20*energy;const sg=x.createLinearGradient(0,hz-sr*2,0,hz);
+ sg.addColorStop(0,`hsl(${(hue+40)%360},100%,65%)`);sg.addColorStop(1,`hsl(${(hue+320)%360},100%,50%)`);
+ x.save();x.beginPath();x.rect(0,0,W,hz);x.clip();x.fillStyle=sg;x.shadowColor=`hsl(${hue},100%,60%)`;x.shadowBlur=60;
+ x.beginPath();x.arc(W/2,hz,sr,Math.PI,0);x.fill();x.shadowBlur=0;
+ x.fillStyle=`hsl(${(hue+60)%360},80%,4%)`;
+ for(let i=0;i<7;i++){const y=hz-i*18-((t*30)%18);x.fillRect(W/2-sr,y,sr*2,2+i*1.2)}
+ x.restore();
+ // circular spectrum
+ const cx=W/2,cy=H*0.4,R=110+kick*30*energy;
+ x.save();x.translate(cx,cy);x.rotate(t*0.2);x.globalCompositeOperation='lighter';
+ const N=96;
+ for(let i=0;i<N;i++){const a=i/N*Math.PI*2;const f=i/N;
+  let v=(0.5+0.5*Math.sin(t*6+i*0.7)*Math.sin(t*2.3+i*0.31))*energy;
+  v*= f<0.15||f>0.85?(0.5+kick):(0.4+hat*0.6+snare*0.5);
+  const L=10+v*120;x.strokeStyle=`hsla(${(hue+f*180)%360},100%,60%,0.85)`;x.lineWidth=4;
+  x.beginPath();x.moveTo(Math.cos(a)*R,Math.sin(a)*R);x.lineTo(Math.cos(a)*(R+L),Math.sin(a)*(R+L));x.stroke()}
+ // rings
+ for(let k=0;k<3;k++){const p=((beat+k/3)%1);x.strokeStyle=`hsla(${(hue+k*60)%360},100%,70%,${(1-p)*energy})`;x.lineWidth=3;
+  x.beginPath();for(let j=0;j<=6;j++){const a=j/6*Math.PI*2+t*(k%2?1:-1);const r=R*0.6+p*350;j?x.lineTo(Math.cos(a)*r,Math.sin(a)*r):x.moveTo(Math.cos(a)*r,Math.sin(a)*r)}x.stroke()}
+ x.restore();
+ // particles
+ x.save();x.globalCompositeOperation='lighter';
+ for(let i=0;i<180;i++){const sp=0.3+hash(i)*1.2,a=hash(i+9)*6.283;const life=((t*sp*energy*0.6+hash(i+3))%1);
+  const d=life*900;const px=cx+Math.cos(a)*d,py=cy+Math.sin(a)*d*0.7;const s=1+life*3*(1+kick);
+  x.fillStyle=`hsla(${(hue+hash(i+5)*120)%360},100%,70%,${(1-life)*0.9})`;x.fillRect(px,py,s,s)}
+ x.restore();
+ // lyrics
+ for(const [s,e,txt] of LY){if(beat<s||beat>=e+0.6)continue;const lt=beat-s,out=Math.max(0,beat-e);
+  const big=txt===txt.toUpperCase();x.save();x.font=`900 ${big?96:54}px Arial Black,Arial,sans-serif`;x.textAlign='left';x.textBaseline='middle';
+  const tw=x.measureText(txt).width;let px=W/2-tw/2;const py=H*0.83;
+  for(let i=0;i<txt.length;i++){const ch=txt[i],cw=x.measureText(ch).width;const ap=Math.min(1,Math.max(0,(lt*4-i*0.15)));
+   const sc=1+(1-ap)*1.5+kick*0.08,al=ap*(1-out/0.6);
+   x.save();x.translate(px+cw/2,py+Math.sin(t*4+i*0.5)*3);x.scale(sc,sc);x.globalAlpha=Math.max(0,al);
+   x.fillStyle=`hsl(${(hue+150)%360},100%,55%)`;x.fillText(ch,-cw/2+3,3);
+   x.fillStyle='#fff';x.shadowColor=`hsl(${hue},100%,60%)`;x.shadowBlur=20+kick*20;x.fillText(ch,-cw/2,0);x.restore();px+=cw}
+  x.restore()}
+ x.restore();
+ // flashes & scanlines
+ if(b===32||b===56){x.fillStyle=`rgba(255,255,255,${Math.exp(-ph*4)})`;x.fillRect(0,0,W,H)}
+ if(S===2&&snare>0.5){x.fillStyle=`hsla(${hue},100%,70%,${(snare-0.5)*0.3})`;x.fillRect(0,0,W,H)}
+ x.fillStyle='rgba(0,0,0,0.18)';for(let y=0;y<H;y+=4)x.fillRect(0,y,W,1);
+ const vg=x.createRadialGradient(W/2,H/2,300,W/2,H/2,780);vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(0,0,0,0.75)');x.fillStyle=vg;x.fillRect(0,0,W,H);
+ // HUD
+ x.font='bold 16px monospace';x.fillStyle='rgba(255,255,255,0.6)';x.textAlign='left';
+ x.fillText(`BPM ${BPM}  BAR ${String(Math.floor(b/4)+1).padStart(2,'0')}.${b%4+1}`,30,40);
+ x.textAlign='right';x.fillText(['INTRO','BUILD','DROP','OUTRO'][S],W-30,40);
+ x.fillStyle=`hsl(${hue},100%,60%)`;x.fillRect(30,H-30,(W-60)*(t/DUR),3);
+ // fade in/out
+ const fa=Math.max(0,1-t/1.2,(t-(DUR-1.2))/1.2);if(fa>0){x.fillStyle=`rgba(0,0,0,${Math.min(1,fa)})`;x.fillRect(0,0,W,H)}
+}
+function loop(now){if(t0===null)t0=now;const t=((now-t0)/1000+off)%DUR;draw(t);requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+</script></body></html>

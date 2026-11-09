@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Hoeffding's D</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#0d1117}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=56;
+const cv=document.getElementById('c'),g=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)||0;
+const t0=performance.now()-off*1000;
+let seed=7;function rnd(){seed=(seed*16807)%2147483647;return seed/2147483647;}
+function gauss(){return Math.sqrt(-2*Math.log(rnd()+1e-9))*Math.cos(6.2832*rnd());}
+const N=140;
+function mk(f){const p=[];for(let i=0;i<N;i++)p.push(f(i));return p;}
+const sets={
+ ind:mk(()=>[rnd(),rnd()]),
+ lin:mk(()=>{const x=rnd();return [x,Math.min(1,Math.max(0,x+0.08*gauss()))]}),
+ par:mk(()=>{const x=rnd();return [x,Math.min(1,Math.max(0,4*(x-.5)**2*.85+.06+.04*gauss()))]}),
+ cir:mk(()=>{const a=rnd()*6.283;const r=.38+.025*gauss();return [.5+r*Math.cos(a),.5+r*Math.sin(a)]})
+};
+function pearson(p){let mx=0,my=0;p.forEach(a=>{mx+=a[0];my+=a[1]});mx/=p.length;my/=p.length;let sx=0,sy=0,sxy=0;p.forEach(a=>{const dx=a[0]-mx,dy=a[1]-my;sx+=dx*dx;sy+=dy*dy;sxy+=dx*dy});return sxy/Math.sqrt(sx*sy);}
+function stats(p){const n=p.length;return p.map(a=>{let j=0,fx=0,fy=0;p.forEach(b=>{const lx=b[0]<=a[0],ly=b[1]<=a[1];if(lx)fx++;if(ly)fy++;if(lx&&ly)j++;});return {F:j/n,Fx:fx/n,Fy:fy/n};});}
+function Dstat(p){const s=stats(p);let m=0;s.forEach(o=>m+=(o.F-o.Fx*o.Fy)**2);return 30*m/p.length;}
+const R={};for(const k in sets){R[k]={r:pearson(sets[k]),D:Dstat(sets[k]),s:stats(sets[k])};}
+const BL='#58c4dd',YE='#ffd84d',GR='#83c167',RD='#fc6255',WH='#ece6e2';
+const ease=x=>x<0?0:x>1?1:x*x*(3-2*x);
+function txt(s,x,y,sz,c,al,a){g.globalAlpha=a==null?1:a;g.fillStyle=c||WH;g.font=sz+'px Georgia,serif';g.textAlign=al||'center';g.fillText(s,x,y);g.globalAlpha=1;}
+function axes(x,y,w,h,a){g.globalAlpha=a;g.strokeStyle='#8899aa';g.lineWidth=2;g.beginPath();g.moveTo(x,y);g.lineTo(x,y+h);g.lineTo(x+w,y+h);g.stroke();g.globalAlpha=1;}
+function scatter(p,x,y,w,h,a,col,k){const n=Math.floor(p.length*(k==null?1:k));g.globalAlpha=a;g.fillStyle=col||BL;for(let i=0;i<n;i++){g.beginPath();g.arc(x+p[i][0]*w,y+h-p[i][1]*h,3.2,0,6.283);g.fill();}g.globalAlpha=1;}
+function fade(t,a,b){return Math.min(ease((t-a)/.8),ease((b-t)/.8));}
+const caps=[[0,6,"Pearson correlation is great at spotting straight lines…"],[6,15,"…but some relationships aren't lines at all. Here r ≈ 0, yet y clearly depends on x."],
+[15,24,"Hoeffding's idea: pick a point (x, y) and count how many points lie to its lower-left."],
+[24,33,"If X and Y were independent, that joint fraction F(x,y) would equal F(x)·G(y)."],
+[33,43,"Hoeffding's D measures how far these are apart, squared, averaged over all points."],
+[43,56,"D ≈ 0 means independence; D > 0 catches dependence of any shape."]];
+function frame(){
+ let t=((performance.now()-t0)/1000)%DUR;if(t<0)t+=DUR;
+ g.clearRect(0,0,1280,720);g.fillStyle='#0d1117';g.fillRect(0,0,1280,720);
+ // title
+ if(t<6){const a=fade(t,-1,5.5);txt("Hoeffding's D",640,300,78,WH,'center',a);txt("a test for dependence of any shape",640,360,30,BL,'center',a*ease(t-1));
+  const pa=ease((t-2)/1.5)*a;axes(470,400,340,200,pa*0);scatter(sets.lin,540,400,200,180,pa*.8,BL);}
+ // scene 2: pearson fails
+ if(t>5.5&&t<15.5){const a=fade(t,5.5,15.5);
+  axes(160,140,400,400,a);scatter(sets.par,160,140,400,400,a,BL,ease((t-6)/2));
+  txt("parabola",360,580,26,WH,'center',a);txt("r = "+R.par.r.toFixed(2),360,620,30,YE,'center',a*ease(t-8));
+  axes(720,140,400,400,a);scatter(sets.cir,720,140,400,400,a,BL,ease((t-9)/2));
+  txt("circle",920,580,26,WH,'center',a);txt("r = "+R.cir.r.toFixed(2),920,620,30,YE,'center',a*ease(t-11));}
+ // scene 3/4: quadrant counting
+ if(t>14.5&&t<43.5){const a=fade(t,14.5,43.5);const X=120,Y=110,W=440,H=440,p=sets.par;
+  axes(X,Y,W,H,a);
+  const u=(t-15)/28;const idx=Math.floor((Math.sin(u*6.283)*.5+.5)*(N-1));
+  const ord=p.map((v,i)=>i).sort((i,j)=>p[i][0]-p[j][0]);const pi=ord[idx];const pt=p[pi];
+  const px=X+pt[0]*W,py=Y+H-pt[1]*H;
+  g.globalAlpha=.18*a;g.fillStyle=YE;g.fillRect(X,py,px-X,Y+H-py);g.globalAlpha=1;
+  scatter(p,X,Y,W,H,a*.45,'#5a7480');
+  g.globalAlpha=a;g.fillStyle=YE;p.forEach(b=>{if(b[0]<=pt[0]&&b[1]<=pt[1]){g.beginPath();g.arc(X+b[0]*W,Y+H-b[1]*H,3.4,0,6.283);g.fill();}});
+  g.setLineDash([6,6]);g.strokeStyle=WH;g.lineWidth=1.5;g.beginPath();g.moveTo(px,Y);g.lineTo(px,Y+H);g.moveTo(X,py);g.lineTo(X+W,py);g.stroke();g.setLineDash([]);
+  g.fillStyle=RD;g.beginPath();g.arc(px,py,7,0,6.283);g.fill();g.globalAlpha=1;
+  const s=R.par.s[pi];const bx=660;
+  txt("F(x,y) = "+s.F.toFixed(3),bx,170,32,YE,'left',a);
+  const a2=a*ease((t-24)/1);
+  txt("F(x)·G(y) = "+s.Fx.toFixed(2)+" × "+s.Fy.toFixed(2)+" = "+(s.Fx*s.Fy).toFixed(3),bx,225,28,GR,'left',a2);
+  // bars
+  const bw=300;g.globalAlpha=a;g.fillStyle=YE;g.fillRect(bx,260,bw*s.F,18);g.globalAlpha=a2;g.fillStyle=GR;g.fillRect(bx,286,bw*s.Fx*s.Fy,18);g.globalAlpha=1;
+  const a3=a*ease((t-33)/1);
+  if(a3>0){txt("D  ∝  Σᵢ [ F(xᵢ,yᵢ) − F(xᵢ)G(yᵢ) ]²",bx,370,32,WH,'left',a3);
+   // difference histogram along x
+   const hx=bx,hy=560,hw=520,hh=130;g.globalAlpha=a3;g.strokeStyle='#8899aa';g.beginPath();g.moveTo(hx,hy);g.lineTo(hx+hw,hy);g.stroke();
+   const k=ease((t-34)/5);ord.forEach((i,j)=>{if(j/N>k)return;const o=R.par.s[i];const d=(o.F-o.Fx*o.Fy)**2;g.fillStyle=i===pi?RD:BL;g.fillRect(hx+j*hw/N,hy-d*hh*40,hw/N-.6,d*hh*40);});
+   g.globalAlpha=1;txt("squared gap at each point (sorted by x)",hx,600,20,'#aab','left',a3);}}
+ // scene 5 comparison
+ if(t>42.5){const a=fade(t,42.5,57);const keys=[['ind','independent'],['lin','line'],['par','parabola'],['cir','circle']];
+  keys.forEach((k,i)=>{const x=70+i*300,y=150,w=240,h=240;const ai=a*ease((t-43-i*.7)/1);
+   axes(x,y,w,h,ai);scatter(sets[k[0]],x,y,w,h,ai,BL);txt(k[1],x+w/2,y+h+40,26,WH,'center',ai);
+   txt("r = "+R[k[0]].r.toFixed(2),x+w/2,y+h+85,26,YE,'center',ai);
+   const ad=a*ease((t-47-i*.6)/1);const D=Math.max(0,R[k[0]].D);
+   txt("D ≈ "+D.toFixed(2),x+w/2,y+h+125,28,GR,'center',ad);
+   g.globalAlpha=ad;g.fillStyle=GR;g.fillRect(x+20,y+h+140,(w-40)*Math.min(1,D),10);g.globalAlpha=1;});}
+ // narration captions
+ caps.forEach(c=>{const a=fade(t,c[0],c[1]);if(a>0){g.globalAlpha=a*.7;g.fillStyle='#000';g.fillRect(90,655,1100,46);g.globalAlpha=1;txt(c[2],640,686,24,WH,'center',a);}});
+ requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

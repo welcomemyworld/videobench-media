@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#000;overflow:hidden;height:100%}
+#s{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+</style></head><body><canvas id="s" width="1280" height="720"></canvas><script>
+const C=document.getElementById('s'),X=C.getContext('2d');window.DUR=40;
+function fit(){const k=Math.min(innerWidth/1280,innerHeight/720);C.style.transform=`scale(${k}) translate(-50%,-50%)`;C.style.left='50%';C.style.top='50%';C.style.transformOrigin='0 0';C.style.transform=`translate(-50%,-50%) scale(${k})`;C.style.transformOrigin='center';}
+fit();onresize=fit;
+const off=parseFloat(new URLSearchParams(location.search).get('t'))||0,T0=performance.now();
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),ease=t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+const H=720,N=5,SEG=DUR/N;
+// scroll position: hold then glide
+function scrollAt(t){const i=Math.floor(t/SEG),f=(t%SEG)/SEG;return i+ease(cl((f-.8)/.2));}
+function txt(s,x,y,sz,c,al='left',w='700'){X.font=`${w} ${sz}px Helvetica,Arial,sans-serif`;X.fillStyle=c;X.textAlign=al;X.fillText(s,x,y);}
+// local progress inside a section (0..1 while held)
+const R=(i,t)=>cl((t-i*SEG)/(SEG*.8));
+// Section 1: Hero parallax mountains
+function s1(p,t){let g=X.createLinearGradient(0,0,0,H);g.addColorStop(0,'#0b1030');g.addColorStop(1,'#e8735a');X.fillStyle=g;X.fillRect(0,0,1280,H);
+X.fillStyle='#ffd9a0';X.beginPath();X.arc(640,420-p*120,80,0,7);X.fill();
+for(let l=0;l<4;l++){X.fillStyle=['#5a2d55','#3d1f45','#271533','#140b20'][l];X.beginPath();X.moveTo(0,H);
+for(let x=0;x<=1280;x+=20){const y=380+l*70+Math.sin(x*.006*(l+1)+l)*50*(1-l*.15)+Math.sin(x*.02+l*3)*12-p*(l+1)*25;X.lineTo(x,y);}X.lineTo(1280,H);X.fill();}
+const a=cl(p*3);X.globalAlpha=a;txt('SUMMIT',640,200+20*(1-a),110,'#fff','center','900');
+txt('A journey in five scrolls',640,250,26,'#ffd9a0','center','300');X.globalAlpha=1;
+txt('↓ scroll',640,680+Math.sin(t*4)*6,18,'#fff8','center','400');}
+// Section 2: Stats counters + bars
+function s2(p){X.fillStyle='#f4f1ea';X.fillRect(0,0,1280,H);txt('By the numbers',100,130,54,'#1a1a2e');
+const d=[['Peaks climbed',8848,'#e8735a'],['Kilometres',1240,'#3a86ff'],['Days on trail',96,'#2a9d8f'],['Camps built',37,'#8338ec']];
+d.forEach((e,i)=>{const q=ease(cl(p*1.6-i*.15)),y=230+i*110;txt(e[0],100,y,22,'#555','left','400');
+X.fillStyle='#ddd';X.fillRect(100,y+15,800,22);X.fillStyle=e[2];X.fillRect(100,y+15,800*q*(.4+i*.15),22);
+txt(Math.round(e[1]*q).toLocaleString(),1180,y+38,56,e[2],'right','900');});}
+// Section 3: horizontal card carousel driven by vertical scroll
+function s3(p,t){X.fillStyle='#111';X.fillRect(0,0,1280,H);txt('Field notes',100,110,48,'#fff');txt('Horizontal gallery — vertical scroll',100,145,18,'#888','left','400');
+const names=['Dawn','Ridge','Glacier','Storm','Pass','Descent'];const sh=-ease(p)*1500+100;
+names.forEach((n,i)=>{const x=sh+i*380,c=x+150,k=1-Math.min(1,Math.abs(c-640)/900)*.25;X.save();X.translate(c,420);X.scale(k,k);
+const h=(i*55+200)%360;let g=X.createLinearGradient(0,-200,0,200);g.addColorStop(0,`hsl(${h},70%,55%)`);g.addColorStop(1,`hsl(${h+40},60%,20%)`);X.fillStyle=g;
+X.beginPath();X.roundRect(-150,-200,300,400,20);X.fill();X.fillStyle='#0004';X.beginPath();X.moveTo(-150,120);X.lineTo(-40,-30+Math.sin(t+i)*10);X.lineTo(40,60);X.lineTo(100,-10);X.lineTo(150,90);X.lineTo(150,200);X.lineTo(-150,200);X.fill();
+txt('0'+(i+1),-125,-150,24,'#fff9','left','400');txt(n,-125,170,40,'#fff');X.restore();});
+X.fillStyle='#333';X.fillRect(100,670,1080,4);X.fillStyle='#e8735a';X.fillRect(100,670,1080*p,4);}
+// Section 4: sticky text reveal word by word with orbiting particles
+function s4(p,t){X.fillStyle='#06141b';X.fillRect(0,0,1280,H);
+for(let i=0;i<120;i++){const a=i*2.4+t*.1*(1+i%3),r=200+(i*37%300)*p+50;X.fillStyle=`hsla(${180+i%60},80%,70%,${.2+.5*p})`;X.fillRect(640+Math.cos(a)*r*1.6,360+Math.sin(a)*r*.7,2,2);}
+const w='The mountain does not care who you are. It only asks that you keep climbing.'.split(' ');
+X.font='800 52px Helvetica,Arial';let x=160,y=290;w.forEach((s,i)=>{const ww=X.measureText(s+' ').width;if(x+ww>1130){x=160;y+=72;}
+const a=cl(p*w.length*1.2-i);X.fillStyle=`rgba(255,255,255,${.12+.88*a})`;X.textAlign='left';X.fillText(s,x,y);x+=ww;});
+txt('— Trail journal, day 61',160,y+70,22,'#6cc',  'left','400');}
+// Section 5: zoom/scale CTA with drawing ring
+function s5(p,t){const r=ease(p);let g=X.createRadialGradient(640,360,0,640,360,800);g.addColorStop(0,'#2b1055');g.addColorStop(1,'#000');X.fillStyle=g;X.fillRect(0,0,1280,H);
+X.lineWidth=6;X.strokeStyle='#e8735a';X.beginPath();X.arc(640,330,180,-1.57,-1.57+6.283*r);X.stroke();
+X.strokeStyle='#ffffff22';X.lineWidth=1;for(let i=1;i<6;i++){X.beginPath();X.arc(640,330,180+i*40*r,0,7);X.stroke();}
+X.save();X.translate(640,330);X.scale(.5+.5*r,.5+.5*r);txt('JOIN',0,10,90,'#fff','center','900');txt('the next expedition',0,55,24,'#ffd9a0','center','300');X.restore();
+const b=cl(p*2-1);X.globalAlpha=b;X.fillStyle='#e8735a';X.beginPath();X.roundRect(540,580,200,56,28);X.fill();txt('Start climbing',640,616,20,'#fff','center','700');X.globalAlpha=1;}
+const S=[s1,s2,s3,s4,s5];
+function frame(){const t=((performance.now()-T0)/1000+off)%DUR,sc=scrollAt(t);X.clearRect(0,0,1280,H);
+for(let i=0;i<N;i++){const y=(i-sc)*H;if(y>-H&&y<H){X.save();X.translate(0,y);X.beginPath();X.rect(0,0,1280,H);X.clip();S[i](R(i,t),t);X.restore();}}
+// scrollbar + nav dots
+X.fillStyle='#fff2';X.fillRect(1266,0,6,H);X.fillStyle='#fffa';X.fillRect(1266,sc/(N-1)*(H-144),6,144);
+for(let i=0;i<N;i++){X.fillStyle=Math.abs(sc-i)<.5?'#e8735a':'#8888';X.beginPath();X.arc(1240,280+i*40,6,0,7);X.fill();}
+requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

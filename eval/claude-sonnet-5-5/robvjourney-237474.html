@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000;height:100%;overflow:hidden}#w{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}canvas{width:1280px;height:720px;display:block}</style></head><body><div id="w"><canvas id="c" width="1280" height="720"></canvas></div><script>
+window.DUR=15;
+const c=document.getElementById('c'),x=c.getContext('2d'),w=document.getElementById('w');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);w.style.transform=`scale(${s})`;w.style.marginLeft=-640*s+'px';w.style.marginTop=-360*s+'px'}
+fit();onresize=fit;
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t'))||0,st=performance.now();
+function R(s){let v=s*9301+49297;return()=>(v=(v*9301+49297)%233280)/233280}
+const rn=R(7),P=[];for(let i=0;i<160;i++)P.push({x:rn()*1280,y:rn()*720,z:rn()*.8+.2,p:rn()*6});
+const ez=t=>t<0?0:t>1?1:1-Math.pow(1-t,3);
+const cl=(v,a,b)=>Math.max(a,Math.min(b,v));
+function glow(col,b){x.shadowColor=col;x.shadowBlur=b}
+function txt(s,px,py,sz,col,sp,al){x.font=`900 ${sz}px Impact,Arial Black,sans-serif`;x.textAlign=al||'center';x.textBaseline='middle';x.fillStyle=col;if(x.letterSpacing!==undefined)x.letterSpacing=sp+'px';x.fillText(s,px,py)}
+function hand(cx,cy,s,a,t){ // stylized crossed-out hand
+x.save();x.translate(cx,cy);x.scale(s,s);x.rotate(a);x.lineCap='round';x.lineJoin='round';
+x.strokeStyle='#fff';x.lineWidth=7;glow('#0ff',20);
+x.beginPath();x.roundRect(-40,-10,80,70,18);x.stroke();
+for(let i=0;i<4;i++){const h=[50,66,70,56][i];x.beginPath();x.moveTo(-30+i*20,-10);x.lineTo(-30+i*20,-10-h);x.stroke()}
+x.beginPath();x.moveTo(-40,30);x.lineTo(-70,0);x.stroke();
+x.strokeStyle='#f05';glow('#f05',25);x.lineWidth=11;x.beginPath();x.moveTo(-85,-85);x.lineTo(85,95);x.stroke();
+x.restore()}
+function frame(T){
+x.setTransform(1,0,0,1,0,0);x.shadowBlur=0;x.globalAlpha=1;
+const sh=T>3.2&&T<3.5||T>7.2&&T<7.4||T>10.9&&T<11.1?(Math.random()-.5)*14:0;
+x.translate(sh,-sh*.6);
+x.fillStyle='#03030a';x.fillRect(-20,-20,1320,760);
+// grid perspective
+x.save();x.strokeStyle='rgba(0,255,255,.25)';x.lineWidth=1;const hz=380,sp=T*60;
+for(let i=-20;i<=20;i++){x.beginPath();x.moveTo(640+i*30,hz);x.lineTo(640+i*220,720);x.stroke()}
+for(let i=0;i<14;i++){const k=((i+(sp/60)%1)/14),y=hz+Math.pow(k,2.2)*340;x.strokeStyle=`rgba(255,0,150,${.1+k*.4})`;x.beginPath();x.moveTo(0,y);x.lineTo(1280,y);x.stroke()}
+x.restore();
+// particles
+for(const p of P){const yy=(p.y-T*60*p.z+720*10)%720;x.fillStyle=`rgba(${p.p>3?'255,0,150':'0,255,255'},${.2+.5*Math.abs(Math.sin(T*2+p.p))})`;x.fillRect(p.x,yy,p.z*3,p.z*3)}
+// sun
+const sa=ez((T-.0)/1.5);
+const g=x.createRadialGradient(640,360,0,640,360,300+Math.sin(T*3)*20);g.addColorStop(0,'rgba(255,0,120,'+.35*sa+')');g.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=g;x.fillRect(0,0,1280,720);
+// rings
+for(let i=0;i<6;i++){const k=((T*.5+i/6)%1);x.strokeStyle=`rgba(0,255,255,${(1-k)*.5})`;x.lineWidth=2;x.beginPath();x.arc(640,360,k*700,0,7);x.stroke()}
+// scenes
+if(T<3.5){ // intro hands
+const a=ez(T/1.2);
+for(let i=0;i<5;i++){const k=ez((T-i*.35)/.6);if(k>0&&T<3.4)hand(160+i*240,360+Math.sin(T*3+i)*25,(.5+k*.6)*(1+(i==2)*.5),Math.sin(T*2+i)*.2,T)}
+x.globalAlpha=cl((T-2)*2,0,1);glow('#0ff',30);txt('NO HANDS NEEDED.',640,360,0,'#fff',0);
+x.globalAlpha=1;
+x.globalAlpha=cl((T-2.2)*2,0,1)*(T>3.2?1-(T-3.2)*3:1);txt('NO HANDS NEEDED.',640,610,50,'#fff',6);x.globalAlpha=1;
+}else if(T<7.3){ // logo slam
+const t=T-3.5,k=ez(t/.5),sc=1+(1-k)*4;
+x.save();x.translate(640,300);x.scale(sc,sc);x.globalAlpha=k;
+for(let i=3;i>=0;i--){const o=i*5*Math.sin(T*8);glow('transparent',0);x.shadowBlur=0;txt('NO HANDS',o-3,-5+o*.3,150,['#f05','#0ff','#a0f','#fff'][i],8)}
+glow('#0ff',40);txt('NO HANDS',0,-5,150,'#fff',8);
+x.restore();x.globalAlpha=1;
+const k2=ez((t-.5)/.6);x.save();x.translate(640,430);x.globalAlpha=k2;glow('#f05',35);
+txt('L  A  B  S',(1-k2)*-200,0,100,'#f05',24);x.restore();x.globalAlpha=1;
+// scan bars
+x.fillStyle='#0ff';glow('#0ff',20);x.fillRect(640-ez(t/.8)*380,500,ez(t/.8)*760,3);
+x.globalAlpha=cl((t-1.5)*2,0,1);txt('AUTOMATE EVERYTHING',640,580,38,'#fff',10);
+x.globalAlpha=1;
+}else if(T<11){ // feature cards
+const t=T-7.3,items=['AI AGENTS','AUTOMATION','WORKFLOWS','SHIP FASTER'],cols=['#0ff','#f05','#a0f','#fd0'];
+x.shadowBlur=0;txt('BUILT TO RUN ITSELF',640,70,46,'#fff',8);
+for(let i=0;i<4;i++){const k=ez((t-i*.5)/.6),cx=170+i*313,cy=360+(1-k)*500;
+x.save();x.translate(cx,cy);x.rotate((1-k)*.5+Math.sin(T*2+i)*.02);
+x.fillStyle='rgba(10,10,30,.85)';x.strokeStyle=cols[i];x.lineWidth=4;glow(cols[i],25);
+x.beginPath();x.roundRect(-135,-170,270,340,20);x.fill();x.stroke();
+// icon: spinning gear-ish
+x.save();x.translate(0,-60);x.rotate(T*(i%2?-1:1));x.beginPath();for(let j=0;j<=16;j++){const r=j%2?38:52,a=j/16*6.283;x.lineTo(Math.cos(a)*r,Math.sin(a)*r)}x.closePath();x.stroke();x.beginPath();x.arc(0,0,16,0,7);x.stroke();x.restore();
+glow(cols[i],15);txt(items[i],0,50,34,'#fff',2);
+x.fillStyle=cols[i];x.fillRect(-90,100,180*((Math.sin(T*3+i)+1)/2*.5+.5),8);
+x.restore()}
+}else{ // finale
+const t=T-11,k=ez(t/.6);
+for(let i=0;i<24;i++){const a=i/24*6.283+T*.3;x.strokeStyle=`rgba(${i%2?'255,0,150':'0,255,255'},.5)`;x.lineWidth=3;x.beginPath();x.moveTo(640+Math.cos(a)*120,300+Math.sin(a)*120);x.lineTo(640+Math.cos(a)*(120+k*900),300+Math.sin(a)*(120+k*900));x.stroke()}
+x.save();x.translate(640,290);x.scale(.8+k*.2+Math.sin(T*6)*.01,.8+k*.2);x.globalAlpha=k;
+glow('#f05',50);txt('NO HANDS LABS',0,0,120,'#fff',4);x.restore();
+x.globalAlpha=ez((t-.8)/.6);glow('#0ff',30);
+x.fillStyle='rgba(0,0,0,.6)';x.strokeStyle='#0ff';x.lineWidth=3;x.beginPath();x.roundRect(340,430,600,90,45);x.fill();x.stroke();
+txt('nohandslabs.com',640,476,52,'#0ff',4);x.globalAlpha=1}
+// flash transitions
+for(const f of [3.5,7.3,11]){const d=T-f;if(d>=0&&d<.3){x.fillStyle=`rgba(255,255,255,${1-d/.3})`;x.fillRect(-20,-20,1320,760)}}
+// scanlines/vignette
+x.setTransform(1,0,0,1,0,0);x.shadowBlur=0;x.fillStyle='rgba(0,0,0,.12)';for(let y=0;y<720;y+=4)x.fillRect(0,y,1280,1);
+const v=x.createRadialGradient(640,360,300,640,360,800);v.addColorStop(0,'rgba(0,0,0,0)');v.addColorStop(1,'rgba(0,0,0,.8)');x.fillStyle=v;x.fillRect(0,0,1280,720);
+const f=cl(T,0,1)*cl(15-T,0,1);x.fillStyle=`rgba(0,0,0,${1-Math.min(1,f*(T<1?1:1))*(T<1||T>14?1:1)})`;if(T<.6||T>14.5){x.fillStyle=`rgba(0,0,0,${T<.6?1-T/.6:(T-14.5)/.5})`;x.fillRect(0,0,1280,720)}
+}
+function loop(){const T=((performance.now()-st)/1000+off)%DUR;frame(T);requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+</script></body></html>

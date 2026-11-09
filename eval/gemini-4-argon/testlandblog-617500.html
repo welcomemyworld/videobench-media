@@ -1,0 +1,1104 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Wie funktioniert eine Dampfmaschine? — 3Blue1Brown Stil</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #000;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'CMU Serif', 'Georgia', 'Times New Roman', serif;
+  }
+  #stage {
+    width: 1280px;
+    height: 720px;
+    background: #0b0e14;
+    box-shadow: 0 0 40px rgba(0,0,0,0.9);
+    transform-origin: center center;
+  }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+(() => {
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const W = 1280, H = 720;
+
+  window.DUR = 42; // 42 seconds total explanation
+
+  function resize() {
+    const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+    canvas.style.transform = `scale(${scale})`;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const startOffset = parseFloat(urlParams.get('t') || '0');
+
+  // 3Blue1Brown Palette
+  const C = {
+    bg: '#0b0e14',
+    grid: '#162235',
+    gridMajor: '#1f334f',
+    white: '#f0f4f8',
+    gray: '#8a99ad',
+    steel: '#a3b8cc',
+    darkSteel: '#2c3847',
+    blue: '#58C4DD',    // Water / Cold
+    teal: '#29ABCA',
+    yellow: '#FFFF00',  // Highlight / Work / Math
+    gold: '#F0AC5F',    // Piston / Brass
+    orange: '#FF862F',  // Fire / Heat
+    red: '#FC6255',     // High Pressure Steam
+    green: '#83C167',   // Mechanical Velocity / Output
+    purple: '#9A72AC'
+  };
+
+  // Math helpers
+  const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const smoothstep = (a, b, x) => {
+    const t = clamp((x - a) / (b - a), 0, 1);
+    return t * t * (3 - 2 * t);
+  };
+  const easeOutBack = (t) => {
+    const c1 = 1.70158, c3 = c1 + 1;
+    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+  };
+
+  // Deterministic pseudo-random for particles
+  function hash(n) {
+    return ((Math.sin(n * 12.9898) * 43758.5453) % 1 + 1) % 1;
+  }
+
+  // Drawing Helpers (3B1B style)
+  function drawGrid(alpha = 1) {
+    if (alpha <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    const step = 40;
+    ctx.lineWidth = 1;
+    for (let x = 0; x <= W; x += step) {
+      ctx.strokeStyle = (x % 160 === 0) ? C.gridMajor : C.grid;
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, H);
+      ctx.stroke();
+    }
+    for (let y = 0; y <= H; y += step) {
+      ctx.strokeStyle = (y % 160 === 0) ? C.gridMajor : C.grid;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawArrow(x1, y1, x2, y2, color, width = 3, progress = 1, headSize = 10) {
+    if (progress <= 0) return;
+    const ex = lerp(x1, x2, progress);
+    const ey = lerp(y1, y2, progress);
+    const angle = Math.atan2(y2 - y1, x2 - x1);
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = width;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+
+    if (progress > 0.8) {
+      const hAlpha = (progress - 0.8) / 0.2;
+      ctx.globalAlpha *= hAlpha;
+      ctx.beginPath();
+      ctx.moveTo(ex, ey);
+      ctx.lineTo(ex - headSize * Math.cos(angle - Math.PI / 6), ey - headSize * Math.sin(angle - Math.PI / 6));
+      ctx.lineTo(ex - headSize * Math.cos(angle + Math.PI / 6), ey - headSize * Math.sin(angle + Math.PI / 6));
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawText(text, x, y, size = 28, color = C.white, align = 'left', italic = false, alpha = 1) {
+    if (alpha <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    ctx.font = `${italic ? 'italic ' : ''}${size}px 'CMU Serif', 'Georgia', serif`;
+    ctx.textAlign = align;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x, y);
+    ctx.restore();
+  }
+
+  function drawBadge(num, text, x, y, progress) {
+    if (progress <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = progress;
+    const sc = easeOutBack(clamp(progress * 1.2, 0, 1));
+    ctx.translate(x, y);
+    ctx.scale(sc, sc);
+    // Circle
+    ctx.fillStyle = C.blue;
+    ctx.beginPath();
+    ctx.arc(0, 0, 18, 0, Math.PI * 2);
+    ctx.fill();
+    drawText(String(num), 0, 1, 20, C.bg, 'center', false, 1);
+    drawText(text, 30, 0, 26, C.yellow, 'left', false, 1);
+    ctx.restore();
+  }
+
+  // Kinematics of Slider-Crank + Eccentric Slide Valve
+  function getKinematics(theta) {
+    const R = 62;      // Crank radius
+    const L = 195;     // Connecting rod length
+    const r_v = 24;    // Valve crank radius
+    const l_v = 195;   // Valve rod length
+
+    // Piston position relative to cylinder center (theta=0 is right/BDC, theta=PI is left/TDC)
+    const cosT = Math.cos(theta);
+    const sinT = Math.sin(theta);
+    const x_p = R * cosT - (L - Math.sqrt(L * L - R * R * sinT * sinT));
+
+    // Valve leads crank by +90 deg (PI/2) so it opens ports at dead centers
+    const phi = theta + Math.PI / 2;
+    const x_v = r_v * Math.cos(phi);
+    return { x_p, x_v, R, L, r_v, l_v, cosT, sinT, phi };
+  }
+
+  // Draw the complete Steam Engine schematic at given coordinates and phase
+  function renderEngine(t, theta, reveal) {
+    // reveal: { boiler, pipe, cylinder, valve, piston, linkage, wheel, labels }
+    const kin = getKinematics(theta);
+
+    // Reference coordinates
+    const cylCX = 430;
+    const cylCY = 360;
+    const cylW = 190; // half-width = 95
+    const cylH = 104; // half-height = 52
+    const wheelCX = cylCX + 195 + 150; // 775
+    const wheelCY = cylCY;
+
+    // 1. BOILER & FIREBOX (Left side)
+    if (reveal.boiler > 0) {
+      const a = reveal.boiler;
+      ctx.save();
+      ctx.globalAlpha = a;
+
+      const bx = 70, by = 320, bw = 170, bh = 220;
+
+      // Firebox glow beneath
+      const fireGrad = ctx.createRadialGradient(bx + bw / 2, by + bh + 45, 5, bx + bw / 2, by + bh + 35, 95);
+      fireGrad.addColorStop(0, 'rgba(255, 134, 47, 0.55)');
+      fireGrad.addColorStop(0.5, 'rgba(252, 98, 85, 0.25)');
+      fireGrad.addColorStop(1, 'rgba(252, 98, 85, 0)');
+      ctx.fillStyle = fireGrad;
+      ctx.fillRect(bx - 20, by + bh - 10, bw + 40, 90);
+
+      // Animated Procedural Flames
+      for (let i = 0; i < 14; i++) {
+        const fx = bx + 18 + (i / 13) * (bw - 36);
+        const fh = 24 + 18 * Math.sin(t * 9 + i * 1.7) * Math.cos(t * 5 - i);
+        const sway = 6 * Math.sin(t * 7 + i * 2.1);
+        ctx.fillStyle = i % 2 === 0 ? C.orange : C.red;
+        ctx.beginPath();
+        ctx.moveTo(fx - 10, by + bh + 52);
+        ctx.quadraticCurveTo(fx - 4, by + bh + 25, fx + sway, by + bh + 52 - fh);
+        ctx.quadraticCurveTo(fx + 4, by + bh + 25, fx + 10, by + bh + 52);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // Glowing coals
+      ctx.fillStyle = '#591c17';
+      ctx.fillRect(bx + 8, by + bh + 48, bw - 16, 10);
+
+      // Water fill inside boiler
+      const waterY = by + 95;
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(bx, by, bw, bh, 22);
+      ctx.clip();
+
+      // Steam space top gradient
+      const steamGrad = ctx.createLinearGradient(0, by, 0, waterY);
+      steamGrad.addColorStop(0, 'rgba(252, 98, 85, 0.45)');
+      steamGrad.addColorStop(1, 'rgba(252, 98, 85, 0.12)');
+      ctx.fillStyle = steamGrad;
+      ctx.fillRect(bx, by, bw, waterY - by + 10);
+
+      // Water body with wave
+      const waterGrad = ctx.createLinearGradient(0, waterY, 0, by + bh);
+      waterGrad.addColorStop(0, 'rgba(41, 171, 202, 0.75)');
+      waterGrad.addColorStop(1, 'rgba(22, 90, 130, 0.9)');
+      ctx.fillStyle = waterGrad;
+      ctx.beginPath();
+      ctx.moveTo(bx, by + bh);
+      for (let x = 0; x <= bw; x += 10) {
+        const wy = waterY + 3.5 * Math.sin(x * 0.06 + t * 4.5);
+        ctx.lineTo(bx + x, wy);
+      }
+      ctx.lineTo(bx + bw, by + bh);
+      ctx.closePath();
+      ctx.fill();
+
+      // Water surface highlight line
+      ctx.strokeStyle = C.blue;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      for (let x = 0; x <= bw; x += 8) {
+        const wy = waterY + 3.5 * Math.sin(x * 0.06 + t * 4.5);
+        if (x === 0) ctx.moveTo(bx + x, wy);
+        else ctx.lineTo(bx + x, wy);
+      }
+      ctx.stroke();
+
+      // Rising boiling bubbles -> transform into fast steam particles above waterY
+      for (let i = 0; i < 36; i++) {
+        const seed = i * 1.37;
+        const speed = 0.45 + 0.3 * hash(seed);
+        const cyc = (t * speed + hash(seed + 10)) % 1;
+        const py = (by + bh - 12) - cyc * (bh - 24);
+        const px = bx + 18 + hash(seed + 2) * (bw - 36) + Math.sin(t * 5 + i) * (py < waterY ? 12 : 4);
+
+        if (py > waterY) {
+          // Liquid bubble
+          const r = 2.5 + cyc * 4;
+          ctx.strokeStyle = C.blue;
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(px, py, r, 0, Math.PI * 2);
+          ctx.stroke();
+        } else {
+          // High-energy gas particle
+          const r = 3.5;
+          ctx.fillStyle = C.red;
+          ctx.beginPath();
+          ctx.arc(px, py, r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+
+      // Boiler Tank Outline
+      ctx.strokeStyle = C.steel;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.roundRect(bx, by, bw, bh, 22);
+      ctx.stroke();
+
+      if (reveal.labels > 0) {
+        drawText('Wasserkessel', bx + bw / 2, by + bh - 35, 20, C.white, 'center', false, reveal.labels);
+        drawText('Dampf (Hoher Druck)', bx + bw / 2, by + 35, 17, C.red, 'center', false, reveal.labels);
+        drawText('Feuerung (Wärme Q)', bx + bw / 2, by + bh + 78, 19, C.orange, 'center', false, reveal.labels);
+      }
+      ctx.restore();
+    }
+
+    // 2. STEAM PIPE & VALVE CHEST + CYLINDER WALLS
+    if (reveal.cylinder > 0) {
+      const a = reveal.cylinder;
+      ctx.save();
+      ctx.globalAlpha = a;
+
+      // Determine chamber pressures based on valve position x_v
+      // When x_v > 4: Left port connected to high pressure steam, Right port to exhaust
+      // When x_v < -4: Right port connected to high pressure steam, Left port to exhaust
+      const leftPressure = clamp((kin.x_v + 5) / 18, 0, 1);
+      const rightPressure = clamp((-kin.x_v + 5) / 18, 0, 1);
+
+      const cLeft = cylCX - cylW / 2;
+      const cRight = cylCX + cylW / 2;
+      const cTop = cylCY - cylH / 2;
+      const cBot = cylCY + cylH / 2;
+      const pistX = cylCX + kin.x_p;
+      const pistW = 24;
+
+      // Steam Chest Box (above cylinder)
+      const scLeft = cylCX - 75;
+      const scRight = cylCX + 75;
+      const scTop = cTop - 72;
+      const scBot = cTop - 22;
+
+      // Fill Steam Chest with high pressure glow
+      ctx.fillStyle = 'rgba(252, 98, 85, 0.35)';
+      ctx.fillRect(scLeft, scTop, scRight - scLeft, scBot - scTop);
+
+      // Left Cylinder Chamber Fill
+      const leftCol = `rgba(${Math.round(lerp(88, 252, leftPressure))}, ${Math.round(lerp(196, 98, leftPressure))}, ${Math.round(lerp(221, 85, leftPressure))}, ${lerp(0.18, 0.48, leftPressure)})`;
+      ctx.fillStyle = leftCol;
+      ctx.fillRect(cLeft, cTop, (pistX - pistW / 2) - cLeft, cylH);
+
+      // Right Cylinder Chamber Fill
+      const rightCol = `rgba(${Math.round(lerp(88, 252, rightPressure))}, ${Math.round(lerp(196, 98, rightPressure))}, ${Math.round(lerp(221, 85, rightPressure))}, ${lerp(0.18, 0.48, rightPressure)})`;
+      ctx.fillStyle = rightCol;
+      ctx.fillRect(pistX + pistW / 2, cTop, cRight - (pistX + pistW / 2), cylH);
+
+      // Pipe from Boiler top (x=155, y=320) to Steam Chest top (x=cylCX, y=scTop)
+      ctx.fillStyle = 'rgba(252, 98, 85, 0.3)';
+      ctx.beginPath();
+      ctx.moveTo(146, 320);
+      ctx.lineTo(146, 212);
+      ctx.lineTo(cylCX - 40, 212);
+      ctx.lineTo(cylCX - 40, scTop);
+      ctx.lineTo(cylCX - 22, scTop);
+      ctx.lineTo(cylCX - 22, 230);
+      ctx.lineTo(164, 230);
+      ctx.lineTo(164, 320);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.strokeStyle = C.steel;
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.moveTo(146, 320);
+      ctx.lineTo(146, 212);
+      ctx.lineTo(cylCX - 22, 212);
+      ctx.lineTo(cylCX - 22, scTop);
+      ctx.moveTo(164, 320);
+      ctx.lineTo(164, 230);
+      ctx.lineTo(cylCX - 40, 230);
+      ctx.lineTo(cylCX - 40, scTop);
+      ctx.stroke();
+
+      // Moving Steam Particles in Pipe
+      ctx.fillStyle = C.red;
+      for (let i = 0; i < 12; i++) {
+        const u = (t * 0.8 + i / 12) % 1;
+        let px, py;
+        if (u < 0.35) {
+          const v = u / 0.35;
+          px = 155;
+          py = lerp(320, 221, v);
+        } else {
+          const v = (u - 0.35) / 0.65;
+          px = lerp(155, cylCX - 31, v);
+          py = 221;
+        }
+        ctx.beginPath();
+        ctx.arc(px, py, 3.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Intake & Exhaust Ports between Steam Chest and Cylinder
+      // Left canal: from (cylCX - 36, scBot) to (cLeft + 18, cTop)
+      // Right canal: from (cylCX + 36, scBot) to (cRight - 18, cTop)
+      // Center Exhaust hole at (cylCX, scBot - 6)
+      ctx.fillStyle = leftCol;
+      ctx.beginPath();
+      ctx.moveTo(cylCX - 44, scBot);
+      ctx.lineTo(cylCX - 28, scBot);
+      ctx.lineTo(cLeft + 26, cTop);
+      ctx.lineTo(cLeft + 10, cTop);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = rightCol;
+      ctx.beginPath();
+      ctx.moveTo(cylCX + 28, scBot);
+      ctx.lineTo(cylCX + 44, scBot);
+      ctx.lineTo(cRight - 10, cTop);
+      ctx.lineTo(cRight - 26, cTop);
+      ctx.closePath();
+      ctx.fill();
+
+      // Exhaust Port Center
+      ctx.fillStyle = 'rgba(88, 196, 221, 0.35)';
+      ctx.fillRect(cylCX - 10, scBot - 2, 20, 24);
+
+      // Animated steam particles inside active cylinder chambers
+      for (let i = 0; i < 18; i++) {
+        const rx = hash(i * 3.1);
+        const ry = hash(i * 7.3);
+        // Left chamber particles
+        const lx = cLeft + 8 + rx * Math.max(10, (pistX - pistW / 2 - cLeft - 16));
+        const ly = cTop + 8 + ry * (cylH - 16);
+        ctx.fillStyle = leftPressure > 0.5 ? C.red : C.blue;
+        ctx.beginPath();
+        ctx.arc(lx + Math.sin(t * 8 + i) * 3, ly + Math.cos(t * 7 + i) * 3, 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Right chamber particles
+        const rpx = (pistX + pistW / 2 + 8) + rx * Math.max(10, (cRight - (pistX + pistW / 2) - 16));
+        const rpy = cTop + 8 + hash(i * 5.9) * (cylH - 16);
+        ctx.fillStyle = rightPressure > 0.5 ? C.red : C.blue;
+        ctx.beginPath();
+        ctx.arc(rpx + Math.cos(t * 8 + i) * 3, rpy + Math.sin(t * 7 + i) * 3, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Draw Solid Dark-Steel Divider Block between Steam Chest and Cylinder
+      ctx.fillStyle = C.darkSteel;
+      ctx.strokeStyle = C.steel;
+      ctx.lineWidth = 2.5;
+
+      // Left outer block
+      ctx.beginPath();
+      ctx.moveTo(cLeft, cTop);
+      ctx.lineTo(cLeft + 10, cTop);
+      ctx.lineTo(cylCX - 44, scBot);
+      ctx.lineTo(scLeft, scBot);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Left-Center bridge
+      ctx.beginPath();
+      ctx.moveTo(cLeft + 26, cTop);
+      ctx.lineTo(cylCX - 10, cTop);
+      ctx.lineTo(cylCX - 10, scBot);
+      ctx.lineTo(cylCX - 28, scBot);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Right-Center bridge
+      ctx.beginPath();
+      ctx.moveTo(cylCX + 10, cTop);
+      ctx.lineTo(cRight - 26, cTop);
+      ctx.lineTo(cylCX + 28, scBot);
+      ctx.lineTo(cylCX + 10, scBot);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Right outer block
+      ctx.beginPath();
+      ctx.moveTo(cRight - 10, cTop);
+      ctx.lineTo(cRight, cTop);
+      ctx.lineTo(scRight, scBot);
+      ctx.lineTo(cylCX + 44, scBot);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Cylinder Outer Walls (with gap on right for piston rod)
+      ctx.strokeStyle = C.steel;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(cRight, cTop + 36);
+      ctx.lineTo(cRight, cTop);
+      ctx.lineTo(cLeft, cTop);
+      ctx.lineTo(cLeft, cBot);
+      ctx.lineTo(cRight, cBot);
+      ctx.lineTo(cRight, cBot - 36);
+      ctx.stroke();
+
+      // Steam Chest Outer Walls (with gap on right for valve rod)
+      ctx.beginPath();
+      ctx.moveTo(scRight, scTop + 16);
+      ctx.lineTo(scRight, scTop);
+      ctx.lineTo(cylCX - 22, scTop);
+      ctx.moveTo(cylCX - 40, scTop);
+      ctx.lineTo(scLeft, scTop);
+      ctx.lineTo(scLeft, scBot);
+      ctx.moveTo(scRight, scBot);
+      ctx.lineTo(scRight, scBot - 14);
+      ctx.stroke();
+
+      // Exhaust steam puffing out from center port (upwards/sideways)
+      const exhaustActive = Math.abs(kin.x_v) > 6;
+      if (exhaustActive) {
+        for (let i = 0; i < 6; i++) {
+          const age = (t * 2.2 + i / 6) % 1;
+          const ex = cylCX - 18 - age * 35;
+          const ey = (scBot + 12) - age * 14 + Math.sin(age * 6 + i) * 4;
+          ctx.fillStyle = `rgba(88, 196, 221, ${(1 - age) * 0.65})`;
+          ctx.beginPath();
+          ctx.arc(ex, ey, 3 + age * 6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // Slide Valve (Steuerschieber - D-shaped cup)
+      if (reveal.valve > 0) {
+        ctx.save();
+        ctx.globalAlpha *= reveal.valve;
+        const vx = cylCX + kin.x_v;
+        const vy = scBot;
+        // D-slide valve body covering inner cavity of width 52, outer width 84
+        ctx.fillStyle = C.purple;
+        ctx.strokeStyle = C.white;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(vx - 42, vy);
+        ctx.lineTo(vx - 42, vy - 26);
+        ctx.lineTo(vx + 42, vy - 26);
+        ctx.lineTo(vx + 42, vy);
+        ctx.lineTo(vx + 24, vy);
+        ctx.lineTo(vx + 24, vy - 15);
+        ctx.lineTo(vx - 24, vy - 15);
+        ctx.lineTo(vx - 24, vy);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        if (reveal.labels > 0) {
+          drawText('Schieberkasten & Steuerschieber', cylCX + 15, scTop - 16, 17, C.purple, 'center', false, reveal.labels);
+        }
+        ctx.restore();
+      }
+
+      // Piston (Kolben) & Force Arrow
+      if (reveal.piston > 0) {
+        ctx.save();
+        ctx.globalAlpha *= reveal.piston;
+
+        // Piston Block
+        const gradP = ctx.createLinearGradient(pistX - pistW / 2, cTop, pistX + pistW / 2, cBot);
+        gradP.addColorStop(0, '#ffd180');
+        gradP.addColorStop(0.5, C.gold);
+        gradP.addColorStop(1, '#b87729');
+        ctx.fillStyle = gradP;
+        ctx.strokeStyle = C.white;
+        ctx.lineWidth = 2;
+        ctx.fillRect(pistX - pistW / 2, cTop + 3, pistW, cylH - 6);
+        ctx.strokeRect(pistX - pistW / 2, cTop + 3, pistW, cylH - 6);
+
+        // Force Vector Arrow on Piston
+        const netForce = leftPressure - rightPressure;
+        if (Math.abs(netForce) > 0.15) {
+          const dir = Math.sign(netForce);
+          const arrowLen = Math.abs(netForce) * 58;
+          drawArrow(
+            pistX - dir * 35,
+            cylCY - 24,
+            pistX - dir * 35 + dir * arrowLen,
+            cylCY - 24,
+            C.yellow,
+            4,
+            1,
+            11
+          );
+          drawText('F = p · A', pistX - dir * 10, cylCY + 26, 18, C.yellow, 'center', true);
+        }
+
+        if (reveal.labels > 0) {
+          drawText('Zylinder & Kolben', cylCX, cBot + 25, 19, C.gold, 'center', false, reveal.labels);
+        }
+        ctx.restore();
+      }
+
+      ctx.restore();
+    }
+
+    // 3. FLYWHEEL, CRANK, RODS & ECCENTRIC
+    if (reveal.linkage > 0) {
+      const a = reveal.linkage;
+      ctx.save();
+      ctx.globalAlpha = a;
+
+      const pistX = cylCX + kin.x_p;
+      const crossX = pistX + 150;
+      const crossY = cylCY;
+
+      const crankPinX = wheelCX + kin.R * kin.cosT;
+      const crankPinY = wheelCY + kin.R * kin.sinT;
+
+      const valveX = cylCX + kin.x_v;
+      const valveY = cylCY - 52 - 36; // center of slide valve
+      const valveCrossX = valveX + 135;
+      const eccPinX = wheelCX + kin.r_v * Math.cos(kin.phi);
+      const eccPinY = wheelCY + kin.r_v * Math.sin(kin.phi);
+
+      // Flywheel (Schwungrad)
+      if (reveal.wheel > 0) {
+        ctx.save();
+        ctx.globalAlpha *= reveal.wheel;
+        const wheelR = 112;
+
+        // Outer Rim
+        ctx.strokeStyle = C.green;
+        ctx.lineWidth = 14;
+        ctx.beginPath();
+        ctx.arc(wheelCX, wheelCY, wheelR, 0, Math.PI * 2);
+        ctx.stroke();
+
+        ctx.strokeStyle = C.white;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(wheelCX, wheelCY, wheelR + 7, 0, Math.PI * 2);
+        ctx.arc(wheelCX, wheelCY, wheelR - 7, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Spokes
+        ctx.strokeStyle = C.green;
+        ctx.lineWidth = 5;
+        for (let s = 0; s < 6; s++) {
+          const ang = theta + (s * Math.PI) / 3;
+          ctx.beginPath();
+          ctx.moveTo(wheelCX + 18 * Math.cos(ang), wheelCY + 18 * Math.sin(ang));
+          ctx.lineTo(wheelCX + (wheelR - 7) * Math.cos(ang), wheelCY + (wheelR - 7) * Math.sin(ang));
+          ctx.stroke();
+        }
+
+        // Rotation Velocity Arrow around Flywheel
+        const arcStart = -Math.PI * 0.65;
+        const arcEnd = -Math.PI * 0.35;
+        ctx.strokeStyle = C.yellow;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(wheelCX, wheelCY, wheelR + 24, arcStart, arcEnd);
+        ctx.stroke();
+        const tipX = wheelCX + (wheelR + 24) * Math.cos(arcEnd);
+        const tipY = wheelCY + (wheelR + 24) * Math.sin(arcEnd);
+        drawArrow(
+          tipX - 8 * Math.cos(arcEnd + Math.PI / 2),
+          tipY - 8 * Math.sin(arcEnd + Math.PI / 2),
+          tipX,
+          tipY,
+          C.yellow,
+          3,
+          1,
+          9
+        );
+        drawText('ω', wheelCX, wheelCY - wheelR - 36, 22, C.yellow, 'center', true);
+
+        if (reveal.labels > 0) {
+          drawText('Schwungrad', wheelCX, wheelCY + wheelR + 30, 20, C.green, 'center', false, reveal.labels);
+        }
+        ctx.restore();
+      }
+
+      // Crosshead Guides (Kreuzkopf-Führung)
+      ctx.strokeStyle = C.steel;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(cylCX + 115, cylCY - 18);
+      ctx.lineTo(cylCX + 245, cylCY - 18);
+      ctx.moveTo(cylCX + 115, cylCY + 18);
+      ctx.lineTo(cylCX + 245, cylCY + 18);
+      ctx.stroke();
+
+      // Valve Rod & Eccentric Rod (Steuergestänge)
+      if (reveal.valve > 0) {
+        ctx.save();
+        ctx.globalAlpha *= reveal.valve;
+        ctx.strokeStyle = C.purple;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(valveX + 42, valveY);
+        ctx.lineTo(valveCrossX, valveY);
+        ctx.lineTo(eccPinX, eccPinY);
+        ctx.stroke();
+
+        // Eccentric disc on crank shaft
+        ctx.fillStyle = 'rgba(154, 114, 172, 0.45)';
+        ctx.strokeStyle = C.purple;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(eccPinX, eccPinY, 12, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Joint dot
+        ctx.fillStyle = C.white;
+        ctx.beginPath();
+        ctx.arc(valveCrossX, valveY, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Main Piston Rod (Kolbenstange)
+      ctx.strokeStyle = C.gold;
+      ctx.lineWidth = 8;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(pistX + 12, cylCY);
+      ctx.lineTo(crossX, crossY);
+      ctx.stroke();
+
+      // Crosshead Block (Kreuzkopf)
+      ctx.fillStyle = C.steel;
+      ctx.strokeStyle = C.white;
+      ctx.lineWidth = 2;
+      ctx.fillRect(crossX - 14, crossY - 14, 28, 28);
+      ctx.strokeRect(crossX - 14, crossY - 14, 28, 28);
+
+      // Crank Arm (Kurbel)
+      ctx.strokeStyle = C.green;
+      ctx.lineWidth = 12;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(wheelCX, wheelCY);
+      ctx.lineTo(crankPinX, crankPinY);
+      ctx.stroke();
+
+      // Connecting Rod (Pleuelstange)
+      ctx.strokeStyle = C.steel;
+      ctx.lineWidth = 8;
+      ctx.beginPath();
+      ctx.moveTo(crossX, crossY);
+      ctx.lineTo(crankPinX, crankPinY);
+      ctx.stroke();
+
+      // Pivot Pins
+      [
+        [crossX, crossY, 6],
+        [wheelCX, wheelCY, 9],
+        [crankPinX, crankPinY, 7]
+      ].forEach(([px, py, r]) => {
+        ctx.fillStyle = C.bg;
+        ctx.strokeStyle = C.white;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(px, py, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      });
+
+      if (reveal.labels > 0) {
+        drawText('Kreuzkopf & Pleuel', cylCX + 185, cylCY + 40, 17, C.steel, 'center', false, reveal.labels);
+      }
+      ctx.restore();
+    }
+  }
+
+  // Right-Side 3Blue1Brown Mathematical Panels
+  // Panel A: Real-time p-V Indicator Diagram (Indikatordiagramm)
+  function renderPVDiagram(theta, alpha) {
+    if (alpha <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    const px = 955, py = 145, pw = 275, ph = 200;
+
+    // Background Card
+    ctx.fillStyle = 'rgba(16, 24, 38, 0.85)';
+    ctx.strokeStyle = C.gridMajor;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(px, py, pw, ph, 10);
+    ctx.fill();
+    ctx.stroke();
+
+    drawText('p-V-Indikatordiagramm', px + pw / 2, py + 24, 19, C.yellow, 'center');
+
+    // Axes
+    const axX = px + 44, axY = py + ph - 32;
+    const axW = pw - 68, axH = ph - 74;
+    drawArrow(axX, axY, axX + axW, axY, C.gray, 2, 1, 7);
+    drawArrow(axX, axY, axX, axY - axH, C.gray, 2, 1, 7);
+    drawText('V (Volumen)', axX + axW / 2, axY + 18, 15, C.gray, 'center', true);
+    drawText('p', axX - 18, axY - axH + 8, 17, C.gray, 'center', true);
+
+    // Helper function for idealized steam indicator loop (theta in [0, 2*PI])
+    function pvPoint(ang) {
+      // Normalize angle where PI is min volume (left dead center), 0 / 2PI is max volume
+      const vNorm = (1 + Math.cos(ang - Math.PI)) / 2; // 0 at left, 1 at right
+      const s = Math.sin(ang - Math.PI); // >0 during expansion stroke (left->right), <0 during exhaust
+      let pNorm;
+      if (s >= 0) {
+        // Intake then adiabatic expansion drop
+        pNorm = vNorm < 0.35 ? 0.92 - 0.05 * vNorm : 0.9 * Math.pow(0.35 / vNorm, 0.65);
+        // Smooth corners
+        pNorm = lerp(0.5, pNorm, Math.pow(s, 0.25));
+      } else {
+        // Low pressure exhaust stroke
+        pNorm = 0.2;
+        pNorm = lerp(0.5, pNorm, Math.pow(-s, 0.25));
+      }
+      return {
+        x: axX + 14 + vNorm * (axW - 28),
+        y: axY - 10 - clamp(pNorm, 0.15, 0.95) * (axH - 18)
+      };
+    }
+
+    // Fill area inside loop = Mechanical Work W = \oint p dV
+    ctx.fillStyle = 'rgba(255, 255, 0, 0.16)';
+    ctx.beginPath();
+    for (let i = 0; i <= 80; i++) {
+      const pt = pvPoint((i / 80) * Math.PI * 2);
+      if (i === 0) ctx.moveTo(pt.x, pt.y);
+      else ctx.lineTo(pt.x, pt.y);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    // Stroke curve
+    ctx.strokeStyle = C.blue;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    // Formula inside loop
+    drawText('W = ∮ p dV', axX + axW * 0.48, axY - axH * 0.45, 17, C.yellow, 'center', true);
+
+    // Live State Dot on Loop
+    const cur = pvPoint(theta);
+    ctx.fillStyle = C.red;
+    ctx.strokeStyle = C.white;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cur.x, cur.y, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  // Panel B: Phase-shifted Sine Waves of Piston x(t) and Slide Valve v(t) (90° Phasenverschiebung)
+  function renderPhaseGraph(theta, alpha) {
+    if (alpha <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    const px = 955, py = 370, pw = 275, ph = 205;
+
+    ctx.fillStyle = 'rgba(16, 24, 38, 0.85)';
+    ctx.strokeStyle = C.gridMajor;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(px, py, pw, ph, 10);
+    ctx.fill();
+    ctx.stroke();
+
+    drawText('Phasenverschiebung (+90°)', px + pw / 2, py + 24, 18, C.white, 'center');
+
+    const axX = px + 34, midY = py + 108, axW = pw - 52, amp = 44;
+
+    // Center time axis
+    drawArrow(axX, midY, axX + axW, midY, C.gray, 1.5, 1, 6);
+    drawArrow(axX, midY + amp + 14, axX, midY - amp - 18, C.gray, 1.5, 1, 6);
+
+    // Draw Piston Cosine Wave (Gold)
+    ctx.strokeStyle = C.gold;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    for (let i = 0; i <= 90; i++) {
+      const u = i / 90;
+      const ang = theta - (1 - u) * Math.PI * 2;
+      const x = axX + u * (axW - 14);
+      const y = midY - Math.cos(ang) * amp;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Draw Slide Valve Wave (Purple, +90° ahead)
+    ctx.strokeStyle = C.purple;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    for (let i = 0; i <= 90; i++) {
+      const u = i / 90;
+      const ang = theta - (1 - u) * Math.PI * 2 + Math.PI / 2;
+      const x = axX + u * (axW - 14);
+      const y = midY - Math.cos(ang) * (amp * 0.62);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Current time dots at right end of wave
+    const curX = axX + (axW - 14);
+    const pyPist = midY - Math.cos(theta) * amp;
+    const pyValv = midY - Math.cos(theta + Math.PI / 2) * (amp * 0.62);
+
+    ctx.fillStyle = C.gold;
+    ctx.beginPath();
+    ctx.arc(curX, pyPist, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = C.purple;
+    ctx.beginPath();
+    ctx.arc(curX, pyValv, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Legend
+    drawText('— Kolben x(t)', px + 75, py + ph - 20, 15, C.gold, 'center');
+    drawText('— Schieber s(t)', px + 200, py + ph - 20, 15, C.purple, 'center');
+
+    ctx.restore();
+  }
+
+  // Bottom Energy Chain Banner (Summary Phase)
+  function renderEnergyChain(progress) {
+    if (progress <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = smoothstep(0, 0.3, progress);
+
+    const y = 652;
+    const boxes = [
+      { title: '1. Wärmeenergie', sub: 'Feuer & Kohle (Q)', col: C.orange, x: 185 },
+      { title: '2. Druckenergie', sub: 'Wasserdampf (p · V)', col: C.red, x: 475 },
+      { title: '3. Translation', sub: 'Kolbenkraft (F = p · A)', col: C.gold, x: 765 },
+      { title: '4. Rotation', sub: 'Schwungrad (W_mech)', col: C.green, x: 1055 }
+    ];
+
+    boxes.forEach((b, idx) => {
+      const localP = clamp((progress - idx * 0.18) / 0.3, 0, 1);
+      if (localP <= 0) return;
+      ctx.save();
+      ctx.globalAlpha *= localP;
+      const bw = 215, bh = 68;
+      ctx.fillStyle = 'rgba(18, 27, 42, 0.92)';
+      ctx.strokeStyle = b.col;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.roundRect(b.x - bw / 2, y - bh / 2, bw, bh, 10);
+      ctx.fill();
+      ctx.stroke();
+
+      drawText(b.title, b.x, y - 11, 18, b.col, 'center');
+      drawText(b.sub, b.x, y + 14, 15, C.white, 'center', true);
+      ctx.restore();
+
+      if (idx < boxes.length - 1) {
+        const arrP = clamp((progress - (idx + 0.5) * 0.18) / 0.2, 0, 1);
+        drawArrow(b.x + 114, y, boxes[idx + 1].x - 114, y, C.yellow, 3, arrP, 8);
+      }
+    });
+
+    ctx.restore();
+  }
+
+  // Main Animation Loop
+  let startTime = null;
+
+  function frame(now) {
+    if (startTime === null) startTime = now;
+    const rawElapsed = (now - startTime) / 1000 + startOffset;
+    const t = rawElapsed % window.DUR;
+
+    // Clear stage
+    ctx.fillStyle = C.bg;
+    ctx.fillRect(0, 0, W, H);
+
+    // Subtle 3B1B background coordinate grid
+    drawGrid(0.75);
+
+    // Persistent Top Header Bar
+    const titleAlpha = smoothstep(0.2, 1.5, t);
+    drawText('Wie funktioniert eine Dampfmaschine?', 55, 48, 36, C.white, 'left', false, titleAlpha);
+
+    ctx.save();
+    ctx.strokeStyle = C.blue;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(55, 74);
+    ctx.lineTo(55 + 620 * smoothstep(0.4, 2.0, t), 74);
+    ctx.stroke();
+    ctx.restore();
+
+    // Compute crank angle theta(t): starts gentle, speeds up once linkage is built
+    const rotSpeed = lerp(1.8, 3.8, smoothstep(14, 24, t));
+    const theta = t * rotSpeed;
+
+    // Component Reveal Schedule across 42 seconds
+    const reveal = {
+      boiler: smoothstep(3.5, 5.5, t),
+      cylinder: smoothstep(10.5, 13.0, t),
+      piston: smoothstep(11.5, 14.0, t),
+      valve: smoothstep(18.5, 21.0, t),
+      linkage: smoothstep(26.0, 28.5, t),
+      wheel: smoothstep(27.0, 29.5, t),
+      labels: smoothstep(5.5, 7.5, t)
+    };
+
+    // Scene 0 (0s - 4s): Core Question Hero Banner before schematic builds
+    if (t < 4.5) {
+      const introA = smoothstep(0.3, 1.2, t) * (1 - smoothstep(3.3, 4.3, t));
+      drawText(
+        'Wie verwandelt man die ungerichtete Bewegung von heißem Gas...',
+        W / 2,
+        280,
+        30,
+        C.gray,
+        'center',
+        true,
+        introA
+      );
+      drawText(
+        '...in eine präzise, kraftvolle Kreisbewegung?',
+        W / 2,
+        335,
+        34,
+        C.yellow,
+        'center',
+        false,
+        introA
+      );
+
+      // Mini visual: Fire -> ? -> Gear/Wheel
+      ctx.save();
+      ctx.globalAlpha = introA;
+      drawText('Wärme Q (Feuer)', W / 2 - 240, 440, 26, C.orange, 'center');
+      drawArrow(W / 2 - 110, 440, W / 2 + 110, 440, C.blue, 4, smoothstep(1.0, 2.5, t), 12);
+      drawText('?', W / 2, 412, 32, C.yellow, 'center');
+      drawText('Arbeit W (Rotation)', W / 2 + 240, 440, 26, C.green, 'center');
+      ctx.restore();
+    }
+
+    // Render Main Steam Engine Schematic
+    renderEngine(t, theta, reveal);
+
+    // Chapter Step Badges & Equations (Top Center / Left Subtitle)
+    // Phase 1: Boiler & Phase Transition (4s - 11s)
+    if (t >= 3.8 && t < 11.2) {
+      const pA = smoothstep(4.0, 4.8, t) * (1 - smoothstep(10.2, 11.0, t));
+      drawBadge(1, 'Dampferzeugung: Wasser dehnt sich beim Sieden ~1700-fach aus!', 55, 112, pA);
+      drawText('Thermische Energie erhöht den Druck:   p · V = N · k_B · T', 98, 152, 23, C.white, 'left', true, pA);
+    }
+
+    // Phase 2: Cylinder & Piston Force (11s - 18.5s)
+    if (t >= 10.8 && t < 18.8) {
+      const pA = smoothstep(11.0, 11.8, t) * (1 - smoothstep(17.8, 18.6, t));
+      drawBadge(2, 'Der Zylinder: Dampfdruck verrichtet Arbeit am Kolben', 55, 112, pA);
+      drawText('Kraft = Druck × Kolbenfläche:   F = p · A     (Lineare Bewegung)', 98, 152, 23, C.gold, 'left', true, pA);
+    }
+
+    // Phase 3: Slide Valve / Steuerschieber (18.5s - 26.5s)
+    if (t >= 18.3 && t < 26.8) {
+      const pA = smoothstep(18.5, 19.3, t) * (1 - smoothstep(25.8, 26.6, t));
+      drawBadge(3, 'Der Trick von Doppelwirkung: Der Steuerschieber', 55, 112, pA);
+      drawText('Wechselt automatisch die Einlassseite — Dampf drückt von links UND rechts!', 98, 152, 22, C.purple, 'left', true, pA);
+    }
+
+    // Phase 4: Crank, Flywheel & Graphs (26.5s - 34.5s)
+    if (t >= 26.3 && t < 35.0) {
+      const pA = smoothstep(26.5, 27.3, t) * (1 - smoothstep(34.0, 34.8, t));
+      drawBadge(4, 'Kurbeltrieb & Schwungrad: Von Hin-und-Her zur Rotation', 55, 112, pA);
+      drawText('Die Trägheit des Schwungrads überwindet die oberen und unteren Totpunkte.', 98, 152, 22, C.green, 'left', true, pA);
+    }
+
+    // Phase 5: Full Thermodynamic Cycle & Energy Chain Summary (34.5s - 42s)
+    if (t >= 34.3) {
+      const pA = smoothstep(34.5, 35.5, t);
+      drawBadge(5, 'Das Gesamtsystem: Ein geschlossener thermodynamischer Kreisprozess', 55, 112, pA);
+      renderEnergyChain(smoothstep(35.0, 37.5, t));
+    }
+
+    // Render Right-Hand 3B1B Mathematical Diagrams
+    const pvAlpha = smoothstep(13.5, 15.5, t);
+    const phaseAlpha = smoothstep(20.5, 22.5, t);
+    renderPVDiagram(theta, pvAlpha);
+    renderPhaseGraph(theta, phaseAlpha);
+
+    // Subtle Fade-Out at very end of loop for seamless transition
+    if (t > window.DUR - 1.0) {
+      const fade = smoothstep(window.DUR - 1.0, window.DUR, t);
+      ctx.fillStyle = `rgba(11, 14, 20, ${fade})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

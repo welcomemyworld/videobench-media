@@ -1,0 +1,84 @@
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000;height:100%;overflow:hidden}canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+window.DUR=48;const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px'}fit();onresize=fit;
+const q=new URLSearchParams(location.search),T0=performance.now()-(parseFloat(q.get('t'))||0)*1000;
+const R=i=>{let s=Math.sin(i*127.1)*43758.5;return s-Math.floor(s)};
+const cl=v=>Math.max(0,Math.min(1,v)),E=v=>v*v*(3-2*v);
+function txt(s,X,Y,sz,a,col,al){x.globalAlpha=a;x.fillStyle=col||'#fff';x.font=(sz>30?'300 ':'')+sz+'px Helvetica,Arial,sans-serif';x.textAlign=al||'center';x.fillText(s,X,Y);x.globalAlpha=1}
+function glow(X,Y,r,col,a){const g=x.createRadialGradient(X,Y,0,X,Y,r);g.addColorStop(0,col);g.addColorStop(1,'rgba(0,0,0,0)');x.globalAlpha=a;x.fillStyle=g;x.fillRect(X-r,Y-r,2*r,2*r);x.globalAlpha=1}
+const BLUE='rgba(80,160,255,1)';
+// Scene 1: Chlamydomonas 0-10
+function s1(t){x.fillStyle='#03120c';x.fillRect(0,0,1280,720);
+for(let i=0;i<60;i++){glow((R(i)*1280+t*8*R(i+3))%1280,R(i+1)*720,4+R(i+2)*10,'rgba(120,220,150,.5)',.4)}
+const cx=640+Math.sin(t*.6)*30,cy=370;x.save();x.translate(cx,cy);x.rotate(Math.sin(t*.4)*.1);
+// flagella
+x.strokeStyle='rgba(200,255,210,.7)';x.lineWidth=3;for(const s of[-1,1]){x.beginPath();x.moveTo(s*12,-110);for(let k=0;k<40;k++){const u=k/40;x.lineTo(s*(12+u*120)+Math.sin(t*12+u*8)*12*u,-110-u*130+Math.cos(t*12+u*6)*10*u)}x.stroke()}
+const g=x.createRadialGradient(-20,-20,10,0,0,120);g.addColorStop(0,'#7fe08a');g.addColorStop(1,'#1f6b2c');x.fillStyle=g;x.beginPath();x.ellipse(0,0,95,115,0,0,7);x.fill();
+x.strokeStyle='#bff5c0';x.lineWidth=2;x.stroke();
+x.fillStyle='rgba(30,110,40,.8)';x.beginPath();x.ellipse(0,30,70,70,0,0,Math.PI);x.fill();txt('chloroplast',0,75,15,.8,'#d8ffd8');
+x.fillStyle='#b9ffbf';x.beginPath();x.arc(0,-35,22,0,7);x.fill();txt('nucleus',0,-30,13,.8,'#174');
+// eyespot
+const es=E(cl((t-3)/1));x.fillStyle='#ff7a1a';x.beginPath();x.ellipse(-82,-10,12,22,0.2,0,7);x.fill();glow(-82,-10,60*es,'rgba(255,140,40,.8)',es);
+x.restore();
+if(t>4){const a=cl((t-4)/1);x.strokeStyle='rgba(255,170,90,'+a+')';x.lineWidth=1.5;x.beginPath();x.moveTo(cx-90,cy-10);x.lineTo(330,250);x.stroke();
+txt('Eyespot (stigma)',230,235,20,a,'#ffb070');txt('Channelrhodopsin-2 sits in the',230,262,15,a,'#ddd');txt('membrane over the eyespot',230,282,15,a,'#ddd')}
+// light rays
+if(t>6){const a=cl((t-6)/1);for(let i=0;i<6;i++){x.strokeStyle='rgba(90,170,255,'+.3*a+')';x.lineWidth=8;const o=((t*200+i*80)%480);x.beginPath();x.moveTo(1180-o,120+i*20);x.lineTo(1150-o,130+i*20);x.stroke()}
+txt('Blue light (~470 nm) → the alga swims toward it: phototaxis',640,670,20,a,'#9cf')}
+txt('Chlamydomonas reinhardtii',640,70,40,cl(t),'#dfffe4');txt('a single-celled green alga, ~10 µm',640,105,17,cl(t-.5)*.8,'#aca')}
+// Scene 2: protein 10-22
+function s2(t){x.fillStyle='#050812';x.fillRect(0,0,1280,720);
+const my=380;// membrane
+x.fillStyle='#14203a';x.fillRect(0,my-70,1280,140);
+for(let i=0;i<70;i++){const X=i*19;for(const s of[-1,1]){x.fillStyle='#e8c070';x.beginPath();x.arc(X,my+s*62,7,0,7);x.fill();x.strokeStyle='#c99a50';x.lineWidth=2;x.beginPath();x.moveTo(X-3,my+s*55);x.lineTo(X-3,my+s*8);x.moveTo(X+3,my+s*55);x.lineTo(X+3,my+s*8);x.stroke()}}
+txt('Outside (extracellular)',140,150,16,.8,'#aab',"left");txt('Inside (cytoplasm)',140,620,16,.8,'#aab','left');
+const on=t>4&&t<10,op=on?E(cl((t-4)/.6)):t>=10?1-cl((t-10)/1):0;
+// 7 helices
+for(let i=0;i<7;i++){const X=640+(i-3)*28+(i==3?0:Math.sign(i-3)*op*10);x.fillStyle=`hsl(${190+i*15},60%,${45+op*10}%)`;x.beginPath();x.roundRect(X-12,my-95,24,190,10);x.fill()}
+// retinal
+const ret=640,rc=on?'#ffe060':'#ff9a40';x.strokeStyle=rc;x.lineWidth=4;x.beginPath();x.moveTo(ret-50,my-5);for(let k=1;k<=6;k++)x.lineTo(ret-50+k*16,my-5+(k%2?-8:8)*(k==3&&op>.5?-1:1));x.stroke();glow(ret,my,60,on?'rgba(255,230,100,.7)':'rgba(255,150,60,.3)',1);
+// photon
+if(t>2.5&&t<4.2){const u=(t-2.5)/1.7;const px=1100-u*460,py=120+u*(my-120);x.strokeStyle=BLUE;x.lineWidth=3;x.beginPath();for(let k=0;k<40;k++)x.lineTo(px+k*6,py-k*2.2+Math.sin(k*.8+t*30)*8);x.stroke();glow(px,py,30,BLUE,1)}
+if(on)glow(640,my,160,'rgba(80,160,255,.5)',op);
+// ions
+for(let i=0;i<14;i++){const k=(t*.6+R(i))%1;if(op>.1){const Y=150+k*470;const X=640+Math.sin(k*20+i)*(Y>my-90&&Y<my+90?6:60*R(i+5));const na=i%3;x.fillStyle=na?'#ffd84a':'#7fff9a';x.beginPath();x.arc(X,Y,na?9:6,0,7);x.fill();txt(na?'Na⁺':'H⁺',X,Y-12,11,op,'#fff')}}
+txt('Channelrhodopsin-2 (ChR2)',640,60,38,cl(t),'#cfe0ff');
+txt('7 transmembrane helices + all-trans retinal chromophore',640,95,17,cl(t-.6),'#99a');
+const lab=t<4?'Dark: closed channel':t<10?'Blue photon isomerizes retinal all-trans → 13-cis; pore opens, cations (Na⁺, H⁺, Ca²⁺) flow in':'Retinal relaxes; channel closes within ~10 ms';
+txt(lab,640,680,19,1,'#fff')}
+// Scene 3: viral delivery 22-30
+function s3(t){x.fillStyle='#08060f';x.fillRect(0,0,1280,720);txt('2005: from alga to neuron',640,70,38,cl(t),'#e8dcff');
+txt('The ChR2 gene, fused to a fluorescent tag, is packaged into a virus and delivered to neurons',640,105,17,cl(t-.5),'#aab');
+// gene
+const gx=200,gy=360;x.fillStyle='#4a9eff';x.fillRect(gx-100,gy-12,120,24);x.fillStyle='#ffd040';x.fillRect(gx+20,gy-12,70,24);txt('ChR2',gx-40,gy+6,14,1,'#000');txt('YFP',gx+55,gy+6,14,1,'#000');txt('promoter→',gx-100,gy-22,13,.8,'#ccc','left');
+// virus
+const u=E(cl((t-1.5)/3.5)),vx=gx+u*700,vy=gy+Math.sin(u*6)*30;x.save();x.translate(vx,vy);x.rotate(t);x.strokeStyle='#d0b0ff';x.lineWidth=3;x.beginPath();for(let k=0;k<6;k++)x.lineTo(40*Math.cos(k*1.047),40*Math.sin(k*1.047));x.closePath();x.stroke();x.restore();txt('AAV',vx,vy+65,14,1,'#d0b0ff');
+// neuron
+const fl=cl((t-5.5)/1.5);drawNeuron(1000,370,1,`rgba(${120+fl*120},${120+fl*130},${140-fl*60},1)`);glow(1000,370,170,'rgba(220,255,90,.5)',fl);
+txt('Neuron now expresses ChR2 in its membrane',1000,620,17,fl,'#efa')}
+function drawNeuron(X,Y,s,col){x.strokeStyle=col;x.fillStyle=col;x.lineCap='round';for(let i=0;i<7;i++){const a=i*0.9+.3;x.lineWidth=7*s;x.beginPath();x.moveTo(X,Y);let px=X,py=Y;for(let k=1;k<6;k++){px+=Math.cos(a+Math.sin(k+i)*.4)*22*s;py+=Math.sin(a+Math.sin(k+i)*.4)*22*s;x.lineTo(px,py);x.lineWidth=(7-k)*s}x.stroke()}x.beginPath();x.arc(X,Y,32*s,0,7);x.fill()}
+// Scene 4: firing 30-41
+function s4(t){x.fillStyle='#02040a';x.fillRect(0,0,1280,720);txt('A light switch for brain cells',640,60,38,cl(t),'#dff');
+// fiber
+const pulses=[2,3,4,5,6.5,7,7.5,8];let lit=0;for(const p of pulses)if(t>p&&t<p+.08)lit=1;
+x.fillStyle='#889';x.fillRect(370,0,14,250);glow(377,260,lit?130:20,BLUE,lit?1:.3);txt('optical fiber, 1–5 ms blue pulses',395,120,15,.8,'#9cf','left');
+drawNeuron(377,320,1.4,'#9ab07a');
+// axon
+x.strokeStyle='#7a8a60';x.lineWidth=8;x.beginPath();x.moveTo(420,330);x.bezierCurveTo(600,400,750,300,980,340);x.stroke();
+for(const p of pulses){const u=(t-p-.05)/.6;if(u>0&&u<1){const B=(a)=>{const m=1-a;return[m*m*m*420+3*m*m*a*600+3*m*a*a*750+a*a*a*980,m*m*m*330+3*m*m*a*400+3*m*a*a*300+a*a*a*340]};const[ax,ay]=B(u);glow(ax,ay,40,'rgba(255,240,140,1)',1)}}
+// trace
+const ox=140,oy=600,w=1000;x.strokeStyle='#334';x.lineWidth=1;x.strokeRect(ox,oy-90,w,130);
+x.strokeStyle='#7fffb0';x.lineWidth=2;x.beginPath();for(let i=0;i<=w;i++){const tt=i/w*10;if(tt>t)break;let v=0;for(const p of pulses){const d=tt-p-.04;if(d>0)v+=d<.02?d/.02*100:d<.06?100-(d-.02)/.04*125:-25*Math.exp(-(d-.06)/.15)}x.lineTo(ox+i,oy+20-v*.6)}x.stroke();
+for(const p of pulses){x.fillStyle=BLUE;x.fillRect(ox+p/10*w,oy+45,4,8)}
+txt('membrane potential: one light pulse → one action potential (−70 mV → +30 mV)',640,oy-100,15,.9,'#bcd');
+txt('Millisecond precision, cell-type specific',1000,250,18,cl(t-3),'#fff')}
+// Scene 5: 41-48
+function s5(t){x.fillStyle='#000';x.fillRect(0,0,1280,720);
+for(let i=0;i<220;i++){const a=R(i)*6.28,r=R(i+9)*230;const X=640+Math.cos(a)*r*1.3,Y=360+Math.sin(a)*r*.8;const on=Math.sin(t*4+i)>.85;glow(X,Y,on?14:5,on?'rgba(140,200,255,1)':'rgba(120,255,160,.6)',cl(t)*.8)}
+txt('Optogenetics',640,330,64,cl(t-.5),'#fff');txt('An algal photoreceptor now lets neuroscientists switch specific circuits on with light',640,385,19,cl(t-1.2),'#acd');
+txt('Nagel & Hegemann (2003) · Boyden, Zhang, Deisseroth et al. (2005)',640,425,16,cl(t-2)*.8,'#889')}
+function frame(){let t=((performance.now()-T0)/1000)%DUR;
+if(t<10)s1(t);else if(t<22)s2(t-10);else if(t<30)s3(t-22);else if(t<41)s4(t-30);else s5(t-41);
+const b=[0,10,22,30,41,48];for(const k of b){const d=Math.abs(t-k);if(d<.5){x.fillStyle='rgba(0,0,0,'+(1-d/.5)+')';x.fillRect(0,0,1280,720)}}
+requestAnimationFrame(frame)}frame();
+</script></body></html>

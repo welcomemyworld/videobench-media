@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head><meta charset="utf-8"><title>Batalha Naval de Stickmen</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}</style>
+</head><body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=30;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px'}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t')||0)||0,t0=performance.now();
+function R(n){const s=Math.sin(n*127.1+311.7)*43758.5453;return s-Math.floor(s)}
+const W=y=>0;
+function wave(px,t){return Math.sin(px*0.012+t*1.6)*6+Math.sin(px*0.031-t*2.2)*3}
+// shots
+const shots=[];for(let i=0;i<12;i++){const fromL=i%2==0;shots.push({t:3+i*1.6,fromL,hit:fromL?(i!=0&&i!=4):(i==3||i==7)})}
+const SINK=22.6;
+function shipPos(L,t){let bx=L?300:980;let by=470+wave(bx,t);let rot=Math.atan((wave(bx+40,t)-wave(bx-40,t))/80);let sink=0;
+ if(!L&&t>SINK){const k=Math.min(1,(t-SINK)/5);sink=k*k*260;rot+=k*0.5}
+ return{bx,by:by+sink,rot}}
+function stick(px,py,s,col,pose,t,face){x.save();x.translate(px,py);x.scale(face*s,s);x.strokeStyle=col;x.lineWidth=3;x.lineCap='round';
+ x.beginPath();x.arc(0,-46,7,0,7);x.stroke();
+ x.beginPath();x.moveTo(0,-39);x.lineTo(0,-16);
+ let la=0.5,ra=-0.5;
+ if(pose==1){ra=-1.3+Math.sin(t*10)*0.2;la=1.3}
+ if(pose==2){ra=-2.6+Math.sin(t*12)*0.4;la=2.6-Math.sin(t*12)*0.4}
+ if(pose==3){ra=-2.5;la=2.5}
+ x.moveTo(0,-34);x.lineTo(Math.sin(-ra)*-14,-34+Math.cos(ra)*14);
+ x.moveTo(0,-34);x.lineTo(Math.sin(-la)*-14,-34+Math.cos(la)*14);
+ const j=pose==2?Math.abs(Math.sin(t*12))*6:0;
+ x.moveTo(0,-16);x.lineTo(-7,-j);x.moveTo(0,-16);x.lineTo(7,-j);x.stroke();x.restore()}
+function ship(L,t,dmg){const p=shipPos(L,t);x.save();x.translate(p.bx,p.by);x.rotate(p.rot);const f=L?1:-1;
+ // mast & sail
+ x.fillStyle='#3b2412';x.fillRect(-4,-190,8,190);
+ x.fillStyle=L?'#e8e2d0':'#d8c9b0';x.beginPath();x.moveTo(6,-180);x.quadraticCurveTo(70*f+(f>0?0:0),-120,6,-60);x.closePath();x.beginPath();
+ x.moveTo(-60,-175);x.quadraticCurveTo(0,-140+Math.sin(t*2)*6,60,-175);x.lineTo(55,-80);x.quadraticCurveTo(0,-60,-55,-80);x.closePath();x.fill();
+ if(dmg>0){x.fillStyle='rgba(0,0,0,.6)';for(let i=0;i<dmg;i++){x.beginPath();x.arc(-40+R(i+(L?9:3))*80,-160+R(i*3+1)*80,6+R(i)*6,0,7);x.fill()}}
+ x.fillStyle=L?'#2a6fdb':'#d62828';x.beginPath();x.moveTo(4,-190);x.lineTo(4+34*f,-182+Math.sin(t*6)*3);x.lineTo(4,-172);x.fill();
+ // crew
+ const pose=L?(t>24?2:1):(t>SINK?3:1);
+ for(let i=0;i<3;i++)stick(-70+i*45+(L?0:20),-2,1,'#111',(t>24&&L)?2:(i==0?1:pose==3?3:0),t+i,f);
+ // hull
+ const g=x.createLinearGradient(0,0,0,60);g.addColorStop(0,'#7a4a22');g.addColorStop(1,'#3a1f0c');x.fillStyle=g;
+ x.beginPath();x.moveTo(-130,0);x.lineTo(130,0);x.lineTo(100,55);x.lineTo(-100,55);x.closePath();x.fill();
+ x.fillStyle='#222';x.beginPath();x.arc(110*f,18,9,0,7);x.fill();
+ x.fillStyle='#5a3416';x.fillRect(-130,-6,260,8);
+ x.restore();return p}
+function cannon(L,t){const p=shipPos(L,t);const f=L?1:-1;return{x:p.bx+110*f,y:p.by+10}}
+function frame(){let t=((performance.now()-t0)/1000+off)%DUR;if(t<0)t+=DUR;
+ // sky
+ let g=x.createLinearGradient(0,0,0,720);g.addColorStop(0,'#1b2a4a');g.addColorStop(.45,'#e07a3f');g.addColorStop(.62,'#f2b56b');x.fillStyle=g;x.fillRect(0,0,1280,720);
+ x.fillStyle='rgba(255,230,160,.9)';x.beginPath();x.arc(640,420,60,0,7);x.fill();
+ for(let i=0;i<6;i++){x.fillStyle='rgba(255,220,200,.25)';const cx=(R(i)*1600+t*10*(1+i%3))%1500-100;x.beginPath();x.ellipse(cx,80+R(i+5)*160,90,18,0,0,7);x.fill()}
+ // damage counts
+ let dR=0,dL=0;for(const s of shots)if(t>s.t+1.2&&s.hit){s.fromL?dR++:dL++}
+ // far water
+ x.fillStyle='#1d3f5e';x.fillRect(0,440,1280,280);
+ ship(true,t,dL);ship(false,t,dR);
+ // fire on red ship
+ if(dR>2){const p=shipPos(false,t);for(let i=0;i<20;i++){const a=(t*1.5+R(i))%1;x.fillStyle=`rgba(${255},${120+100*(1-a)|0},0,${1-a})`;x.beginPath();x.arc(p.bx-60+R(i*7)*120,p.by-20-a*90,10*(1-a)+3,0,7);x.fill();x.fillStyle=`rgba(40,40,40,${.4*(1-a)})`;x.beginPath();x.arc(p.bx-40+R(i*3)*80+a*40,p.by-110-a*160,20+a*30,0,7);x.fill()}}
+ // shots
+ for(const s of shots){const dt=t-s.t;if(dt<0||dt>3)continue;const a=cannon(s.fromL,s.t),tgt=shipPos(!s.fromL,s.t+1.2);
+  const tx=tgt.bx+(s.hit?0:(s.fromL?-200:200)),ty=s.hit?tgt.by-20:500;
+  if(dt<0.35){const k=dt/0.35;x.fillStyle=`rgba(255,200,80,${1-k})`;x.beginPath();x.arc(a.x,a.y,20+k*30,0,7);x.fill();x.fillStyle=`rgba(200,200,200,${.6*(1-k)})`;x.beginPath();x.arc(a.x+(s.fromL?30:-30)*k,a.y-20*k,25+k*25,0,7);x.fill()}
+  if(dt<1.2){const k=dt/1.2,bx=a.x+(tx-a.x)*k,by=a.y+(ty-a.y)*k-Math.sin(k*Math.PI)*220;x.fillStyle='#111';x.beginPath();x.arc(bx,by,7,0,7);x.fill()}
+  else{const e=dt-1.2;if(s.hit){for(let i=0;i<24;i++){const an=R(i+s.t)*6.28,sp=60+R(i*2+s.t)*160;x.fillStyle=`rgba(255,${150+R(i)*100|0},40,${Math.max(0,1-e*1.2)})`;x.beginPath();x.arc(tx+Math.cos(an)*sp*e,ty+Math.sin(an)*sp*e+120*e*e,6*(1-e/2)+1,0,7);x.fill()}
+    txt(s.fromL?'BUM!':'CABRUM!',tx,ty-80-e*30,1-e/1.5)}
+   else{for(let i=0;i<16;i++){const an=-Math.PI/2+(R(i+s.t)-.5)*1.2,sp=100+R(i*5)*150;x.fillStyle=`rgba(220,240,255,${Math.max(0,1-e)})`;x.beginPath();x.arc(tx+Math.cos(an)*sp*e,ty+Math.sin(an)*sp*e+300*e*e,5,0,7);x.fill()}txt('SPLASH!',tx,ty-60-e*30,1-e/1.5)}}}
+ // near waves
+ for(let L=0;L<3;L++){x.fillStyle=['rgba(30,70,105,.85)','rgba(22,55,88,.9)','rgba(14,40,66,.95)'][L];x.beginPath();x.moveTo(0,720);for(let px=0;px<=1280;px+=16)x.lineTo(px,505+L*40+wave(px+L*90,t+L));x.lineTo(1280,720);x.fill()}
+ // texts
+ x.textAlign='center';
+ if(t<3.2){const a=Math.min(1,t,3.2-t);x.globalAlpha=a;x.fillStyle='#fff';x.font='bold 72px sans-serif';x.fillText('BATALHA NAVAL',640,150);x.font='28px sans-serif';x.fillText('Stickmen ao mar!',640,195);x.globalAlpha=1}
+ if(t>24){const a=Math.min(1,t-24,DUR-t);x.globalAlpha=a;x.fillStyle='#ffd34d';x.strokeStyle='#000';x.lineWidth=6;x.font='bold 90px sans-serif';x.strokeText('VITÓRIA AZUL!',640,170);x.fillText('VITÓRIA AZUL!',640,170);x.globalAlpha=1}
+ // hp bars
+ bar(40,30,1-dL/8,'#2a6fdb','Azul');bar(1000,30,1-dR/8,'#d62828','Vermelho');
+ requestAnimationFrame(frame)}
+function bar(px,py,v,col,n){x.fillStyle='rgba(0,0,0,.5)';x.fillRect(px,py,240,22);x.fillStyle=col;x.fillRect(px+2,py+2,236*Math.max(0,v),18);x.fillStyle='#fff';x.font='bold 16px sans-serif';x.textAlign='left';x.fillText(n,px+6,py+17);x.textAlign='center'}
+function txt(s,px,py,a){if(a<=0)return;x.globalAlpha=a;x.font='bold 40px sans-serif';x.textAlign='center';x.lineWidth=5;x.strokeStyle='#000';x.strokeText(s,px,py);x.fillStyle='#ffe14d';x.fillText(s,px,py);x.globalAlpha=1}
+requestAnimationFrame(frame);
+</script></body></html>

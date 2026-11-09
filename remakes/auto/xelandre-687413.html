@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Code-Driven Animation</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=30;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const off=parseFloat(new URLSearchParams(location.search).get('t'))||0;
+const t0=performance.now();
+const ease=v=>v<0?0:v>1?1:v*v*(3-2*v);
+function seg(t,a,b){return ease((t-a)/(b-a));}
+const scenes=[
+ ["1 · Time","Every frame is a function f(t)"],
+ ["2 · Capture","Headless Chrome steps time frame by frame"],
+ ["3 · Motion blur","Sub-frames are averaged into one"],
+ ["4 · Sound","Audio is generated from the same code"],
+ ["5 · Assemble","ffmpeg muxes frames + audio into MP4"]];
+function title(t,i){
+ const a=Math.min(seg(t,i*6,i*6+.8),1-seg(t,i*6+5.2,i*6+6));
+ x.globalAlpha=a;x.fillStyle='#fff';x.font='600 44px sans-serif';x.textAlign='left';
+ x.fillText(scenes[i][0],70,90);x.fillStyle='#8fb8ff';x.font='24px sans-serif';x.fillText(scenes[i][1],70,130);x.globalAlpha=1;
+}
+function bg(t){
+ const g=x.createLinearGradient(0,0,1280,720);g.addColorStop(0,'#06081a');g.addColorStop(1,'#140a24');x.fillStyle=g;x.fillRect(0,0,1280,720);
+ x.strokeStyle='rgba(120,150,255,0.07)';
+ for(let i=0;i<32;i++){const X=(i*40+t*20)%1280;x.beginPath();x.moveTo(X,0);x.lineTo(X,720);x.stroke();}
+}
+function s0(t,l){ // f(t) curve
+ x.strokeStyle='#4af';x.lineWidth=3;x.beginPath();
+ for(let i=0;i<=900;i++){const X=190+i,y=420+Math.sin(i*.015+t*2)*110*Math.sin(i*.003);i?x.lineTo(X,y):x.moveTo(X,y);}x.stroke();
+ const px=190+((l*150)%900),py=420+Math.sin((px-190)*.015+t*2)*110*Math.sin((px-190)*.003);
+ x.fillStyle='#ffd34a';x.beginPath();x.arc(px,py,12,0,7);x.fill();
+ x.font='28px monospace';x.fillStyle='#fff';x.textAlign='center';x.fillText('t = '+l.toFixed(3)+' s',640,640);
+}
+function s1(t,l){ // film strip frames
+ const fr=Math.floor(l*30);x.textAlign='center';
+ for(let i=-4;i<=4;i++){const X=640+i*150-(l*30%1)*150;
+  x.fillStyle=i==0?'#1d2a55':'#111830';x.fillRect(X-65,250,130,180);x.strokeStyle=i==0?'#ffd34a':'#3a4a80';x.lineWidth=2;x.strokeRect(X-65,250,130,180);
+  const f=fr+i;x.fillStyle='#4af';x.beginPath();x.arc(X+Math.sin(f*.3)*35,340+Math.cos(f*.3)*35,14,0,7);x.fill();
+  x.fillStyle='#aab';x.font='16px monospace';x.fillText('#'+String(f).padStart(4,'0'),X,460);}
+ x.fillStyle='#fff';x.font='26px monospace';x.fillText('page.evaluate(t) → screenshot()',640,560);
+}
+function s2(t,l){ // motion blur
+ const n=12;
+ for(let k=0;k<n;k++){const tt=l-k*0.012;x.globalAlpha=(1-k/n)*0.35;
+  x.fillStyle='#ff5a8a';x.beginPath();x.arc(640+Math.cos(tt*4)*330,380+Math.sin(tt*8)*120,40,0,7);x.fill();}
+ x.globalAlpha=1;x.fillStyle='#fff';x.beginPath();x.arc(640+Math.cos(l*4)*330,380+Math.sin(l*8)*120,40,0,7);x.fill();
+ x.font='26px monospace';x.textAlign='center';x.fillText('frame = Σ subframe(t + i·Δ) / N',640,620);
+}
+function s3(t,l){ // waveform
+ x.lineWidth=2;
+ for(let ch=0;ch<2;ch++){x.strokeStyle=ch?'#ff5a8a':'#4af';x.beginPath();
+  for(let i=0;i<1000;i++){const tt=l+i/400;const env=Math.exp(-((tt*2)%1)*4);
+   const y=(ch?470:330)+Math.sin(tt*(ch?440:220)*.2)*env*55;i?x.lineTo(140+i,y):x.moveTo(140+i,y);}x.stroke();}
+ for(let b=0;b<24;b++){const h=20+Math.abs(Math.sin(l*5+b*.7))*90;x.fillStyle='hsl('+(200+b*6)+',80%,60%)';x.fillRect(340+b*25,640-h*0.6,18,h*0.6);}
+ x.fillStyle='#fff';x.font='22px monospace';x.textAlign='center';x.fillText('sample[n] = sin(2π·f·n/48000)·env',640,250);
+}
+function s4(t,l){ // assemble
+ const p=seg(l,0,4);x.textAlign='center';x.font='22px sans-serif';
+ const box=(X,Y,s,col)=>{x.fillStyle=col;x.fillRect(X-90,Y-40,180,80);x.fillStyle='#fff';x.fillText(s,X,Y+8);};
+ box(260+p*240,300,'frames/*.png','#1d3a7a');box(260+p*240,460,'audio.wav','#7a1d4a');
+ x.globalAlpha=p;box(900,380,'ffmpeg → MP4','#2a7a4a');x.globalAlpha=1;
+ x.strokeStyle='#ffd34a';x.lineWidth=3;x.beginPath();x.moveTo(590,300);x.lineTo(810,380);x.moveTo(590,460);x.lineTo(810,380);x.globalAlpha=p;x.stroke();x.globalAlpha=1;
+ x.fillStyle='#ccd';x.font='18px monospace';x.globalAlpha=seg(l,3,4.5);
+ x.fillText('ffmpeg -framerate 60 -i f%05d.png -i audio.wav -c:v libx264 out.mp4',640,620);x.globalAlpha=1;
+}
+const draw=[s0,s1,s2,s3,s4];
+function frame(){
+ const t=((performance.now()-t0)/1000+off)%window.DUR;
+ bg(t);const i=Math.min(4,Math.floor(t/6)),l=t-i*6;
+ const a=Math.min(seg(l,0,.8),1-seg(l,5.2,6));x.globalAlpha=a;x.save();draw[i](t,l);x.restore();x.globalAlpha=1;
+ title(t,i);
+ x.fillStyle='#4af';x.fillRect(0,712,1280*t/window.DUR,8);
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></body></html>

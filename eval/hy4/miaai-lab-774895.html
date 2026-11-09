@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Room That Dreams You</title>
+<style>
+html,body{margin:0;width:100%;height:100%;background:#000;overflow:hidden}
+body{display:flex;align-items:center;justify-content:center}
+#stage{position:relative;width:1280px;height:720px;background:#000;transform-origin:center center}
+canvas{position:absolute;left:0;top:0;width:1280px;height:720px;display:block}
+#ui{pointer-events:none}
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="bg" width="1280" height="720"></canvas>
+  <canvas id="ui" width="1280" height="720"></canvas>
+</div>
+<script>
+window.DUR = 36;
+const W = 1280, H = 720, DUR = window.DUR, TAU = Math.PI * 2;
+const stage = document.getElementById('stage');
+const bg = document.getElementById('bg');
+const ctx = document.getElementById('ui').getContext('2d');
+
+let gl = bg.getContext('webgl', {
+  preserveDrawingBuffer: true, alpha: false, antialias: false,
+  depth: false, stencil: false, premultipliedAlpha: false
+});
+
+const vsSrc = `
+attribute vec2 a;
+void main(){ gl_Position = vec4(a, 0.0, 1.0); }
+`;
+
+const fsSrc = `
+precision highp float;
+uniform vec2 u_res;
+uniform float u_time;
+uniform float u_dur;
+#define PI 3.14159265359
+#define TAU 6.28318530718
+
+float hash21(vec2 p){
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+float noise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = hash21(i);
+  float b = hash21(i + vec2(1.0, 0.0));
+  float c = hash21(i + vec2(0.0, 1.0));
+  float d = hash21(i + vec2(1.0, 1.0));
+  return mix(mix(a,b,f.x), mix(c,d,f.x), f.y);
+}
+float fbm(vec2 p){
+  float v = 0.0, a = 0.5;
+  mat2 m = mat2(1.60, 1.20, -1.20, 1.60);
+  for(int i = 0; i < 4; i++){
+    v += a * noise(p);
+    p = m * p + vec2(17.1, 9.2);
+    a *= 0.5;
+  }
+  return v;
+}
+mat2 rot(float a){
+  float s = sin(a), c = cos(a);
+  return mat2(c, -s, s, c);
+}
+vec3 pal(float t){
+  vec3 a = vec3(0.45, 0.26, 0.48);
+  vec3 b = vec3(0.55, 0.44, 0.44);
+  vec3 c = vec3(1.00, 0.90, 0.82);
+  vec3 d = vec3(0.05, 0.34, 0.67);
+  return max(vec3(0.0), a + b * cos(TAU * (c * t + d)));
+}
+float starLayer(vec2 p, float sc, float thr, float tt){
+  vec2 q = p * sc;
+  vec2 id = floor(q), f = fract(q) - 0.5;
+  float h = hash21(id);
+  float m = smoothstep(thr, 1.0, h);
+  float s = exp(-dot(f, f) * 90.0) * m;
+  s *= 0.55 + 0.45 * sin(tt * 3.0 + h * TAU);
+  return max(s, 0.0);
+}
+
+void main(){
+  vec2 uv = (gl_FragCoord.xy * 2.0 - u_res) / u_res.y;
+  float ph = clamp(u_time / u_dur, 0.0, 1.0);
+  float tt = TAU * ph;
+  float env = smoothstep(0.0, 0.045, ph) * (1.0 - smoothstep(0.94, 1.0, ph));
+  float intro = smoothstep(0.02, 0.18, ph);
+  float bloom = smoothstep(0.45, 0.62, ph) * (1.0 - smoothstep(0.80, 0.94, ph));
+  float eye = smoothstep(0.24, 0.38, ph) * (1.0 - smoothstep(0.74, 0.88, ph));
+
+  vec2 p = uv;
+  p *= (1.0 + 0.035 * sin(tt * 2.0)) * (1.0 + 0.035 * dot(uv, uv));
+  p = rot(0.09 * sin(tt) + 0.05 * sin(tt * 3.0)) * p;
+  float r = length(p);
+  float a = atan(p.y, p.x);
+
+  vec3 col = vec3(0.002, 0.004, 0.011) * (1.0 + 0.35 * sin(tt * 2.0));
+  float st = starLayer(p + vec2(0.07 * sin(tt), 0.04 * cos(tt * 2.0)), 18.0, 0.985, tt)
+           + 0.65 * starLayer(p * 1.4 + vec2(0.02 * cos(tt * 3.0), 0.05 * sin(tt)), 43.0, 0.993, tt);
+  col += st * vec3(0.35, 0.58, 1.0);
+
+  float neb = fbm(p * 1.55 + vec2(0.55 * sin(tt), 0.35 * cos(tt * 2.0)));
+  col += 0.045 * neb * neb * pal(0.12 + 0.10 * sin(tt * 2.0) + r * 0.05);
+
+  float ray = pow(max(0.0, sin(18.0 * a + 2.0 * sin(tt * 2.0) + r * 3.0)), 22.0) * exp(-r * 1.6);
+  col += ray * pal(0.58 + 0.1 * sin(tt)) * 0.18 * (0.4 + 0.6 * bloom);
+
+  float travel = fract(ph * 9.0);
+  for(int i = 0; i < 30; i++){
+    float fi = float(i);
+    float z = fract(fi / 30.0 + travel);
+    float zz = pow(z, 1.7);
+    float ringR = mix(0.09, 2.15, zz);
+    float ang = tt + 0.35 * sin(tt * 2.0 + fi) + fi * 0.618;
+    float qr = r / ringR;
+    float qa = a + ang;
+    float k = 8.0;
+
+    float arch = 0.62
+      + 0.13 * cos(k * qa + tt * 2.0 + fi * 0.73)
+      + 0.035 * cos(2.0 * k * qa - tt * 3.0 + fi * 1.37);
+    float edge = abs(qr - arch);
+    float line = exp(-edge * 55.0);
+    float thin = line * line; thin *= thin; thin *= thin;
+    float inside = 1.0 - smoothstep(arch - 0.16, arch + 0.02, qr);
+    float spokes = exp(-abs(sin(k * qa * 0.5 + 0.25 * sin(tt + fi))) * 38.0) * inside;
+    float circle = exp(-abs(qr - (arch + 0.13)) * 65.0);
+    float tex = 0.55 + 0.45 * sin(11.0 * qr + 5.0 * qa + fi + tt)
+                         * sin(7.0 * qr - 3.0 * qa + fi * 0.31);
+    float fade = smoothstep(0.0, 0.10, z) * (1.0 - 0.75 * smoothstep(0.96, 1.0, z));
+    float b = (line * 0.090 + thin * 0.19 + spokes * 0.034 + circle * 0.070 + inside * tex * 0.014)
+            * fade * mix(0.35, 1.0, z);
+    col += pal(fi * 0.023 + 0.18 * sin(tt) + z * 0.18) * b * intro;
+  }
+
+  float sectors = 16.0;
+  float fa = fract((a + PI) / TAU * sectors + 0.12 * sin(tt * 2.0));
+  float tri = 1.0 - abs(fa * 2.0 - 1.0);
+  float wr = 0.24 + 1.02 * tri + 0.10 * sin(tt * 3.0 + tri * 7.0);
+  float wing = exp(-abs(r - wr) * 20.0);
+  float vein = exp(-abs(sin(a * sectors * 0.5 + r * 10.0 - tt * 4.0)) * 28.0)
+             * exp(-abs(r - wr) * 7.0);
+  float shard = pow(max(0.0, sin(12.0 * a + 7.0 * r + tt * 3.0)), 20.0)
+              * smoothstep(0.2, 1.15, r);
+  col += bloom * pal(0.15 + 0.22 * tri + 0.08 * sin(tt * 2.0))
+       * (wing * 0.11 + vein * 0.045 + shard * 0.038);
+
+  float x = p.x;
+  float span = smoothstep(-0.82, -0.66, x) * (1.0 - smoothstep(0.66, 0.82, x));
+  float lx = clamp((x + 0.78) / 1.56, 0.0, 1.0);
+  float lidY = 0.34 * pow(max(0.0, sin(PI * lx)), 0.72);
+  float lid = exp(-abs(abs(p.y) - lidY) * 62.0) * span;
+  float mask = span * (1.0 - smoothstep(lidY - 0.025, lidY + 0.025, abs(p.y)));
+  float irisR = length(vec2(p.x * 1.15, p.y * 2.05));
+  float irisMask = mask * (1.0 - smoothstep(0.30, 0.42, irisR));
+  float fibers = 0.5 + 0.5 * sin(82.0 * a + 34.0 * irisR + tt * 3.0);
+  col += eye * pal(0.55 + 0.2 * sin(tt * 2.0 + p.x)) * irisMask * (0.20 + 0.68 * fibers) * 0.42;
+  float irisRing = exp(-abs(irisR - 0.31) * 85.0) * mask;
+  col += eye * vec3(0.75, 0.88, 1.0) * irisRing * 0.45;
+  col += eye * pal(0.90 + 0.08 * sin(tt)) * lid * 0.85;
+
+  float diskR = 0.52 + 0.08 * sin(tt * 2.0);
+  float swirl = 0.03 * sin(8.0 * a + 18.0 * r - tt * 4.0);
+  float disk = exp(-abs(r - diskR + swirl) * 24.0) * (0.55 + 0.45 * sin(12.0 * a + tt * 3.0));
+  col += eye * pal(0.18 + 0.12 * a + 0.1 * sin(tt)) * disk * 0.22;
+
+  float flare = (0.010 / (r * r + 0.006)) * (0.55 + 0.45 * sin(tt * 5.0)) * (0.35 + 0.65 * bloom);
+  float cross = (exp(-abs(p.x) * 260.0) * exp(-abs(p.y) * 2.2)
+              + exp(-abs(p.y) * 260.0) * exp(-abs(p.x) * 2.2)) * bloom;
+  col += vec3(0.36, 0.58, 1.0) * flare + pal(0.78) * cross * 0.18;
+
+  float coreR = mix(0.105, 0.155, eye) * (0.86 + 0.14 * sin(tt * 2.0));
+  float core = 1.0 - smoothstep(coreR, coreR + 0.028, r);
+  col *= 1.0 - 0.96 * core;
+  float photon = exp(-abs(r - (coreR + 0.030)) * 155.0)
+               * (0.75 + 0.25 * sin(24.0 * a + tt * 4.0));
+  col += photon * pal(0.72 + 0.1 * sin(tt)) * 0.65;
+
+  col *= env;
+  float vig = 1.0 - smoothstep(0.72, 1.85, length(uv * vec2(0.72, 1.0)));
+  col *= 0.28 + 0.72 * vig;
+  col = max(col, vec3(0.0));
+  col = vec3(1.0) - exp(-col * 1.18);
+  col = pow(col, vec3(0.82));
+  float grain = hash21(gl_FragCoord.xy + floor(u_time * 24.0) * vec2(13.1, 7.7)) - 0.5;
+  col += vec3(grain * 0.016 * env);
+  gl_FragColor = vec4(clamp(col, vec3(0.0), vec3(1.0)), 1.0);
+}
+`;
+
+let shaderOK = false, program = null, uRes = null, uDur = null, uTime = null;
+
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+    console.warn(gl.getShaderInfoLog(s));
+    return null;
+  }
+  return s;
+}
+
+if(gl){
+  gl.clearColor(0, 0, 0, 1);
+  gl.disable(gl.DEPTH_TEST);
+  const vs = compile(gl.VERTEX_SHADER, vsSrc);
+  const fs = compile(gl.FRAGMENT_SHADER, fsSrc);
+  if(vs && fs){
+    program = gl.createProgram();
+    gl.attachShader(program, vs);
+    gl.attachShader(program, fs);
+    gl.linkProgram(program);
+    if(gl.getProgramParameter(program, gl.LINK_STATUS)){
+      shaderOK = true;
+      gl.useProgram(program);
+      const buf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+      const loc = gl.getAttribLocation(program, 'a');
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+      uRes = gl.getUniformLocation(program, 'u_res');
+      uDur = gl.getUniformLocation(program, 'u_dur');
+      uTime = gl.getUniformLocation(program, 'u_time');
+      gl.viewport(0, 0, W, H);
+    } else {
+      console.warn(gl.getProgramInfoLog(program));
+    }
+  }
+}
+
+const query = new URLSearchParams(location.search);
+let start = parseFloat(query.get('t'));
+if(!Number.isFinite(start)) start = 0;
+start = Math.max(0, start) % DUR;
+let base = null;
+
+function ss(a, b, x){
+  x = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return x * x * (3 - 2 * x);
+}
+function fade(t, a, b, c, d){
+  return ss(a, b, t) * (1 - ss(c, d, t));
+}
+function jsEnv(t){
+  return ss(0, 1.3, t) * (1 - ss(34.4, 36, t));
+}
+function fit(){
+  const s = Math.min(innerWidth / W, innerHeight / H);
+  stage.style.transform = 'scale(' + s + ')';
+}
+
+function spaced(text, x, y, spacing, font, fill, align, glow, alpha){
+  if(alpha <= 0.002) return;
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.font = font;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = fill;
+  ctx.shadowBlur = glow || 0;
+  ctx.shadowColor = fill;
+  const chars = Array.from(text);
+  const widths = chars.map(ch => ctx.measureText(ch).width);
+  let total = spacing * (chars.length - 1);
+  for(const w of widths) total += w;
+  let sx = x;
+  if(align === 'center') sx = x - total / 2;
+  if(align === 'right') sx = x - total;
+  for(let i = 0; i < chars.length; i++){
+    ctx.fillText(chars[i], sx, y);
+    sx += widths[i] + spacing;
+  }
+  ctx.restore();
+}
+
+function drawFallback(t){
+  const ph = t / DUR, env = jsEnv(t);
+  ctx.save();
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = env;
+  const g = ctx.createRadialGradient(640, 360, 0, 640, 360, 620);
+  g.addColorStop(0, `hsla(${(t * 30) % 360},95%,70%,0.75)`);
+  g.addColorStop(0.25, `hsla(${(t * 30 + 90) % 360},95%,45%,0.20)`);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  for(let i = 0; i < 42; i++){
+    const z = (i / 42 + ph * 5) % 1;
+    const R = 22 + Math.pow(z, 1.65) * 660;
+    ctx.strokeStyle = `hsla(${(t * 28 + i * 9) % 360},90%,65%,${0.04 + 0.17 * z})`;
+    ctx.lineWidth = 0.6 + 2.2 * z;
+    ctx.beginPath();
+    for(let j = 0; j <= 90; j++){
+      const an = j / 90 * TAU;
+      const rr = R * (0.55 + 0.10 * Math.sin(8 * an + t * 1.2 + i) + 0.035 * Math.sin(16 * an - t));
+      const aa = an + 0.18 * Math.sin(t * 0.4 + i);
+      const x = 640 + Math.cos(aa) * rr;
+      const y = 360 + Math.sin(aa) * rr;
+      if(j) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function caption(text, t, a, b, c, d){
+  const A = fade(t, a, b, c, d);
+  spaced(text, 640, 628, 6, '500 19px sans-serif', 'rgba(224,242,255,0.96)', 'center', 18, A);
+}
+
+function drawOverlay(t){
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.clearRect(0, 0, W, H);
+  if(!shaderOK) drawFallback(t);
+
+  ctx.fillStyle = 'rgba(0,0,0,0.79)';
+  ctx.fillRect(0, 0, W, 46);
+  ctx.fillRect(0, H - 46, W, 46);
+  ctx.fillStyle = 'rgba(150,210,255,0.13)';
+  ctx.fillRect(0, 46, W, 1);
+  ctx.fillRect(0, H - 47, W, 1);
+
+  const env = jsEnv(t);
+  const topA = 0.58 * fade(t, 0.3, 1.2, 34.4, 35.6);
+  spaced('ONE BREATH / 36 SECONDS', 52, 25, 2, '600 11px sans-serif', 'rgba(190,225,255,0.78)', 'left', 0, topA);
+  spaced('NO IMAGE / NO MODEL / ONLY MATH', 1228, 25, 2, '600 11px sans-serif', 'rgba(190,225,255,0.78)', 'right', 0, topA);
+
+  const title = fade(t, 1.0, 2.0, 5.7, 6.7);
+  spaced('THE ROOM THAT DREAMS YOU', 640, 350, 7, '300 46px serif', 'rgba(238,247,255,0.98)', 'center', 30, title);
+  spaced('A SELF-FOLDING CATHEDRAL BUILT FROM ONE RAY OF LIGHT', 640, 414, 3, '600 13px sans-serif', 'rgba(155,205,255,0.86)', 'center', 12, title);
+
+  caption('EVERY ARCH IS A DOOR.', t, 7.2, 8.2, 12.4, 13.4);
+  caption('LOOK CLOSER.', t, 14.8, 15.8, 20.6, 21.6);
+  caption('EVERY DOOR IS AN EYE.', t, 22.8, 23.8, 29.1, 30.2);
+
+  const end = fade(t, 31.0, 31.8, 34.1, 35.0);
+  spaced('AGAIN.', 640, 360, 12, '300 80px serif', 'rgba(238,247,255,0.98)', 'center', 36, end);
+
+  ctx.save();
+  ctx.globalAlpha = env;
+  ctx.strokeStyle = 'rgba(150,210,255,0.20)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(52, 700); ctx.lineTo(1228, 700); ctx.stroke();
+  const grad = ctx.createLinearGradient(52, 0, 1228, 0);
+  grad.addColorStop(0, 'rgba(80,170,255,0.05)');
+  grad.addColorStop(0.45, 'rgba(180,80,255,0.72)');
+  grad.addColorStop(1, 'rgba(255,205,100,0.92)');
+  ctx.strokeStyle = grad;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(52, 700);
+  ctx.lineTo(52 + (W - 104) * (t / DUR), 700);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function frame(){
+  const now = performance.now();
+  if(base === null) base = now - start * 1000;
+  let t = ((now - base) / 1000) % DUR;
+  if(t < 0) t += DUR;
+
+  fit();
+
+  if(shaderOK){
+    gl.viewport(0, 0, W, H);
+    gl.useProgram(program);
+    gl.uniform2f(uRes, W, H);
+    gl.uniform1f(uDur, DUR);
+    gl.uniform1f(uTime, t);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  drawOverlay(t);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

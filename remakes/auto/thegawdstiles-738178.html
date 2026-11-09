@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Ajoflow</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#s{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}</style></head>
+<body><canvas id="s" width="1280" height="720"></canvas>
+<script>
+window.DUR=37;
+const c=document.getElementById('s'),x=c.getContext('2d'),W=1280,H=720;
+function fit(){const k=Math.min(innerWidth/W,innerHeight/H);c.style.transform=`scale(${k}) translate(-50%,-50%)`;c.style.transform=`translate(-50%,-50%) scale(${k})`;c.style.transformOrigin='50% 50%';c.style.left='50%';c.style.top='50%';}
+fit();addEventListener('resize',fit);
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t')||0)||0,t0=performance.now();
+const cl=v=>Math.max(0,Math.min(1,v)),eo=v=>1-Math.pow(1-cl(v),3),eio=v=>{v=cl(v);return v<.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2};
+const A='#ff5a3c',B='#7a5cff',C='#22d3c5',F='Helvetica Neue,Helvetica,Arial,sans-serif';
+function grad(){const g=x.createLinearGradient(0,0,W,H);g.addColorStop(0,A);g.addColorStop(.5,B);g.addColorStop(1,C);return g}
+function txt(s,X,Y,sz,a,w='700',col='#fff',al='center',sp=0){x.save();x.globalAlpha=cl(a);x.fillStyle=col;x.font=`${w} ${sz}px ${F}`;x.textAlign=al;x.textBaseline='middle';if(sp)x.letterSpacing=sp+'px';x.fillText(s,X,Y);x.restore()}
+function words(s,X,Y,sz,t,col){// staggered rise per letter
+x.save();x.font=`800 ${sz}px ${F}`;const wd=x.measureText(s).width;let px=X-wd/2;
+for(let i=0;i<s.length;i++){const k=eo((t-i*.05)/.6),cw=x.measureText(s[i]).width;x.globalAlpha=k;x.fillStyle=col||'#fff';x.textBaseline='middle';x.fillText(s[i],px,Y+(1-k)*sz*.6);px+=cw}x.restore()}
+// flowing lines field
+function flow(t,a,amp,n){x.save();x.globalAlpha=a;x.lineWidth=2;x.strokeStyle=grad();
+for(let i=0;i<n;i++){x.beginPath();for(let X=-20;X<=W+20;X+=16){const y=H/2+(i-n/2)*14+Math.sin(X*.006+t*1.3+i*.25)*amp+Math.sin(X*.013-t*.9+i*.1)*amp*.4;X<0?x.moveTo(X,y):x.lineTo(X,y)}x.stroke()}x.restore()}
+// particles
+const P=[...Array(160)].map((_,i)=>({a:Math.random()*6.28,r:Math.random(),s:.3+Math.random()}));
+function particles(t,a){x.save();for(const p of P){const X=(p.r*W+t*40*p.s)%W,Y=(Math.sin(p.a+t*.5*p.s)*.5+.5)*H;x.globalAlpha=a*(.2+.5*p.s/1.3);x.fillStyle=p.s>.9?C:'#fff';x.fillRect(X,Y,2,2)}x.restore()}
+// logo mark: a flowing "loop" ribbon
+function mark(cx,cy,R,t,k){x.save();x.translate(cx,cy);x.lineCap='round';
+for(let j=0;j<3;j++){x.beginPath();const len=k*Math.PI*2;for(let u=0;u<=len;u+=.04){const r=R*(1+.18*Math.sin(3*u+t*2+j*2.1));const X=Math.cos(u-1.57+j*.3)*r,Y=Math.sin(u-1.57+j*.3)*r*.62+Math.sin(2*u+t)*R*.12;u?x.lineTo(X,Y):x.moveTo(X,Y)}
+x.strokeStyle=[A,B,C][j];x.lineWidth=R*.09;x.globalAlpha=.9;x.stroke()}x.restore()}
+function bg(t){const g=x.createRadialGradient(W/2,H/2,50,W/2,H/2,800);g.addColorStop(0,'#14112a');g.addColorStop(1,'#04040a');x.fillStyle=g;x.fillRect(0,0,W,H)}
+function wipe(p,col){if(p<=0||p>=2)return;x.save();x.fillStyle=col;x.beginPath();const a=eio(Math.min(p,1)),b=eio(Math.max(p-1,0));x.moveTo(W*b*1.4-200,0);x.lineTo(W*a*1.4,0);x.lineTo(W*a*1.4-200,H);x.lineTo(W*b*1.4-400,H);x.fill();x.restore()}
+function frame(T){
+x.clearRect(0,0,W,H);bg(T);particles(T,.8);
+// S1 0-6: intro, line draw + "Code is the canvas"
+if(T<6.5){const t=T;flow(t,.25*eo(t/2),40*eo(t/2),18);
+x.save();x.strokeStyle='#fff';x.lineWidth=2;const k=eo(t/1.2);x.beginPath();x.moveTo(W/2-300*k,H/2);x.lineTo(W/2+300*k,H/2);x.globalAlpha=1-eo((t-1.5)/.6);x.stroke();x.restore();
+txt('NO AFTER EFFECTS · NO PREMIERE',W/2,H/2-60,18,eo((t-1)/1)*(1-eo((t-5.3)/.6)),'500','#aab',undefined,6);
+words('Just code.',W/2,H/2+20,110,t-1.8);
+x.save();x.globalAlpha=1-eo((t-5.4)/.6);x.restore();}
+// S2 6-13: geometry burst "Shape"
+if(T>=6&&T<13.5){const t=T-6,o=1-eo((t-6.8)/.6);x.save();x.globalAlpha=o;x.translate(W/2,H/2);
+for(let i=0;i<24;i++){const a=i/24*6.28+t*.4,k=eo((t-i*.03)/1),r=(140+80*Math.sin(t*2+i))*k;x.save();x.rotate(a);x.translate(r,0);x.rotate(t*2+i);x.strokeStyle=[A,B,C][i%3];x.lineWidth=3;const s=18+10*Math.sin(t*3+i);i%2?x.strokeRect(-s/2,-s/2,s,s):(x.beginPath(),x.arc(0,0,s/2,0,6.28),x.stroke());x.restore()}
+x.restore();txt('01',150,120,16,o*eo(t),'600',C,'left',4);
+words('Shape',W/2,H/2,120,t-.4);txt('Geometry, generated.',W/2,H/2+95,26,eo((t-1.4)/.8)*o,'400','#ccd');}
+// S3 13-20: kinetic type grid "Motion"
+if(T>=13&&T<20.5){const t=T-13,o=1-eo((t-6.8)/.6);x.save();x.globalAlpha=o;
+for(let r=0;r<9;r++)for(let q=0;q<16;q++){const X=q*80+40,Y=r*80+40,d=Math.hypot(X-W/2,Y-H/2),v=Math.sin(d*.02-t*4),s=cl(eo(t*1.5-d/600))*(10+v*22);x.fillStyle=v>.6?A:v<-.6?B:'#2a2840';x.beginPath();x.arc(X,Y,Math.max(s,0)/2,0,6.28);x.fill()}x.restore();
+x.fillStyle=`rgba(4,4,10,${.6*o})`;x.fillRect(0,H/2-90,W,180);
+txt('02',150,120,16,o*eo(t),'600',C,'left',4);words('Motion',W/2,H/2-10,120,t-.4);txt('Every frame is a function of time.',W/2,H/2+65,24,eo((t-1.4)/.8)*o,'400','#ccd');}
+// S4 20-27: flow "Flow" with code snippet
+if(T>=20&&T<27.5){const t=T-20,o=1-eo((t-6.8)/.6);flow(T,.8*o*eo(t),90,26);
+txt('03',150,120,16,o*eo(t),'600',C,'left',4);
+x.save();x.globalAlpha=o;x.fillStyle='rgba(10,10,24,.85)';x.fillRect(110,430,520,170);x.strokeStyle='#334';x.strokeRect(110,430,520,170);x.restore();
+const code=['for (const line of field) {','  y = sin(x * 0.006 + t);','  draw(line, y);','}'];
+code.forEach((s,i)=>{const n=Math.floor(cl((t-.8-i*.7)/.7)*s.length);txt(s.slice(0,n),135,470+i*34,22,o,'500',i==1?C:'#dde','left')});
+words('Flow',W/2+260,H/2-60,130,t-.4);}
+// S5 27-37: logo reveal
+if(T>=27){const t=T-27;wipe(t*1.2,A);wipe(t*1.2-.2,B);
+const k=eo((t-.6)/1.6);mark(W/2,H/2-60,120,T,k);
+x.save();x.globalAlpha=eo((t-2)/.6);x.fillStyle=grad();x.beginPath();x.arc(W/2,H/2-60,10+4*Math.sin(T*3),0,6.28);x.fill();x.restore();
+words('Ajoflow',W/2,H/2+120,96,t-1.8);
+txt('MOTION, WRITTEN IN CODE',W/2,H/2+190,18,eo((t-3.2)/.8),'500','#aab',undefined,8);
+txt('ajoflow.studio',W/2,H-50,16,eo((t-4.5)/.8)*.8,'400','#889');
+const f=eo((t-9.2)/.8);x.fillStyle=`rgba(0,0,0,${f})`;x.fillRect(0,0,W,H);}
+// global intro fade + progress bar
+x.fillStyle=`rgba(0,0,0,${1-eo(T/.8)})`;x.fillRect(0,0,W,H);
+x.fillStyle=grad();x.globalAlpha=.7;x.fillRect(0,H-3,W*T/DUR,3);x.globalAlpha=1}
+function loop(){const T=((performance.now()-t0)/1000+off)%DUR;frame(T);requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+</script></body></html>

@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Winkz Enterprises - Brand Pitch</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+  }
+  #stage {
+    width: 1280px; height: 720px;
+    background: #070B19;
+    box-shadow: 0 0 50px rgba(0,0,0,0.8);
+    transform-origin: center center;
+  }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+window.DUR = 15.0;
+const canvas = document.getElementById('stage');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  const scale = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+  canvas.style.transform = `scale(${scale})`;
+}
+window.addEventListener('resize', resize);
+resize();
+
+const urlParams = new URLSearchParams(window.location.search);
+const startT = parseFloat(urlParams.get('t')) || 0;
+let t0 = null;
+
+// Math & Easing Helpers
+const PI = Math.PI, TAU = Math.PI * 2;
+const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+const norm = (v, a, b) => clamp((v - a) / (b - a), 0, 1);
+const lerp = (a, b, t) => a + (b - a) * t;
+const easeOutCubic = x => 1 - Math.pow(1 - x, 3);
+const easeInCubic = x => x * x * x;
+const easeInOutCubic = x => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const easeOutBack = x => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+const easeOutElastic = x => x === 0 ? 0 : x === 1 ? 1 : Math.pow(2, -10 * x) * Math.sin((x * 10 - 0.75) * (TAU / 3)) + 1;
+
+// Colors
+const C_NAVY = '#070B19';
+const C_ORANGE = '#FF9900';
+const C_CYAN = '#00E5FF';
+const C_RED = '#FF2A54';
+const C_GREEN = '#00E676';
+const C_WHITE = '#FFFFFF';
+const C_GRAY = '#8A99AD';
+
+// Pre-generated deterministic particles & stars
+const particles = Array.from({length: 60}, (_, i) => ({
+  x: (Math.sin(i * 78.233) * 0.5 + 0.5) * 1280,
+  y: (Math.cos(i * 45.164) * 0.5 + 0.5) * 720,
+  r: (i % 3) + 1.5,
+  vx: (i % 2 === 0 ? 1 : -1) * (15 + (i % 20)),
+  vy: -10 - (i % 15),
+  c: i % 3 === 0 ? C_ORANGE : (i % 2 === 0 ? C_CYAN : '#2A3B5C')
+}));
+
+// Drawing Helpers
+function fillTextTracked(text, x, y, tracking = 0) {
+  if (!tracking) { ctx.fillText(text, x, y); return; }
+  let chars = text.split('');
+  let totalW = chars.reduce((acc, c) => acc + ctx.measureText(c).width, 0) + (chars.length - 1) * tracking;
+  let curX = x - totalW / 2;
+  ctx.save();
+  ctx.textAlign = 'left';
+  chars.forEach(c => {
+    ctx.fillText(c, curX, y);
+    curX += ctx.measureText(c).width + tracking;
+  });
+  ctx.restore();
+}
+
+function drawIsoBox(x, y, s, topC, leftC, rightC, tapeC = C_ORANGE) {
+  const c30 = Math.cos(PI/6) * s, s30 = Math.sin(PI/6) * s;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.lineJoin = 'round';
+  // Top
+  ctx.beginPath(); ctx.moveTo(0, -s); ctx.lineTo(c30, -s30); ctx.lineTo(0, 0); ctx.lineTo(-c30, -s30); ctx.closePath();
+  ctx.fillStyle = topC; ctx.fill();
+  // Left
+  ctx.beginPath(); ctx.moveTo(-c30, -s30); ctx.lineTo(0, 0); ctx.lineTo(0, s); ctx.lineTo(-c30, s30); ctx.closePath();
+  ctx.fillStyle = leftC; ctx.fill();
+  // Right
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(c30, -s30); ctx.lineTo(c30, s30); ctx.lineTo(0, s); ctx.closePath();
+  ctx.fillStyle = rightC; ctx.fill();
+  // Tape on top
+  if (tapeC) {
+    ctx.beginPath();
+    ctx.moveTo(-c30*0.5, -s*0.75);
+    ctx.lineTo(c30*0.5, -s*0.25);
+    ctx.strokeStyle = tapeC; ctx.lineWidth = s * 0.12; ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawShield(x, y, r, color, fillAlpha = 0.15) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.beginPath();
+  ctx.moveTo(0, -r);
+  ctx.bezierCurveTo(r*0.8, -r, r*0.9, -r*0.3, r*0.9, 0);
+  ctx.bezierCurveTo(r*0.9, r*0.5, 0, r*0.95, 0, r*1.1);
+  ctx.bezierCurveTo(0, r*0.95, -r*0.9, r*0.5, -r*0.9, 0);
+  ctx.bezierCurveTo(-r*0.9, -r*0.3, -r*0.8, -r, 0, -r);
+  ctx.closePath();
+  ctx.fillStyle = color; ctx.globalAlpha = fillAlpha; ctx.fill();
+  ctx.globalAlpha = 1; ctx.strokeStyle = color; ctx.lineWidth = 4; ctx.stroke();
+  ctx.restore();
+}
+
+function drawWinkzLogo(x, y, scale, t) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+
+  // Dynamic glowing hexagon / W emblem
+  ctx.save();
+  ctx.translate(-220, 0);
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const a = i * PI / 3 - PI / 6;
+    ctx.lineTo(Math.cos(a) * 55, Math.sin(a) * 55);
+  }
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(-50, -50, 50, 50);
+  grad.addColorStop(0, C_ORANGE); grad.addColorStop(1, '#FF4500');
+  ctx.fillStyle = grad; ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = C_WHITE; ctx.stroke();
+
+  // 'W' + Smile inside emblem
+  ctx.beginPath();
+  ctx.moveTo(-26, -18); ctx.lineTo(-13, 14); ctx.lineTo(0, -8); ctx.lineTo(13, 14); ctx.lineTo(26, -18);
+  ctx.strokeStyle = C_NAVY; ctx.lineWidth = 9; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
+
+  // Wink arc
+  ctx.beginPath();
+  ctx.arc(0, 8, 28, 0.2 * PI, 0.8 * PI);
+  ctx.strokeStyle = C_WHITE; ctx.lineWidth = 5; ctx.stroke();
+  // Arrow tip on arc
+  ctx.beginPath();
+  ctx.moveTo(22, 22); ctx.lineTo(28, 12); ctx.lineTo(17, 15);
+  ctx.fillStyle = C_WHITE; ctx.fill();
+  ctx.restore();
+
+  // Text
+  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.font = '900 76px sans-serif';
+  ctx.fillStyle = C_WHITE;
+  ctx.fillText('WINKZ', -140, -12);
+
+  ctx.font = '700 26px sans-serif';
+  ctx.fillStyle = C_ORANGE;
+  fillTextTracked('E N T E R P R I S E S', 25, 36, 3);
+
+  ctx.restore();
+}
+
+function drawStar(cx, cy, spikes, outerR, innerR, color) {
+  let rot = PI / 2 * 3, x = cx, y = cy, step = PI / spikes;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - outerR);
+  for (let i = 0; i < spikes; i++) {
+    x = cx + Math.cos(rot) * outerR; y = cy + Math.sin(rot) * outerR; ctx.lineTo(x, y); rot += step;
+    x = cx + Math.cos(rot) * innerR; y = cy + Math.sin(rot) * innerR; ctx.lineTo(x, y); rot += step;
+  }
+  ctx.lineTo(cx, cy - outerR); ctx.closePath();
+  ctx.fillStyle = color; ctx.fill();
+}
+
+// Background Renderer
+function drawBackground(t) {
+  // Deep radial gradient
+  const grad = ctx.createRadialGradient(640, 360, 50, 640, 360, 850);
+  grad.addColorStop(0, '#111A36');
+  grad.addColorStop(1, C_NAVY);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 1280, 720);
+
+  // Animated perspective grid
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0, 229, 255, 0.06)';
+  ctx.lineWidth = 1;
+  const offset = (t * 40) % 60;
+  for (let x = 0; x <= 1280; x += 60) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 720); ctx.stroke();
+  }
+  for (let y = offset; y <= 720; y += 60) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(1280, y); ctx.stroke();
+  }
+  ctx.restore();
+
+  // Floating particles
+  ctx.save();
+  particles.forEach(p => {
+    let px = (p.x + p.vx * t) % 1280; if (px < 0) px += 1280;
+    let py = (p.y + p.vy * t) % 720; if (py < 0) py += 720;
+    ctx.fillStyle = p.c;
+    ctx.globalAlpha = 0.35 + 0.25 * Math.sin(t * 3 + p.x);
+    ctx.beginPath(); ctx.arc(px, py, p.r, 0, TAU); ctx.fill();
+  });
+  ctx.restore();
+}
+
+// SCENE 1: 0.0s - 3.0s (The Problem on Amazon)
+function renderScene1(t) {
+  const enter = easeOutCubic(norm(t, 0, 0.6));
+  const exit = easeInCubic(norm(t, 2.5, 3.0));
+  const shake = t > 0.8 && t < 2.5 ? Math.sin(t * 55) * 3 * norm(t, 0.8, 1.5) : 0;
+
+  ctx.save();
+  ctx.translate(0, -exit * 720);
+  ctx.globalAlpha = 1 - exit;
+
+  // Red warning ambient glow
+  const warnAlpha = 0.15 + 0.1 * Math.sin(t * 8);
+  const rGrad = ctx.createRadialGradient(640, 360, 10, 640, 360, 600);
+  rGrad.addColorStop(0, `rgba(255, 42, 84, ${warnAlpha})`);
+  rGrad.addColorStop(1, 'rgba(255, 42, 84, 0)');
+  ctx.fillStyle = rGrad; ctx.fillRect(0, 0, 1280, 720);
+
+  // Header Text
+  ctx.textAlign = 'center';
+  ctx.font = '900 62px sans-serif';
+  ctx.fillStyle = C_WHITE;
+  ctx.fillText('IS YOUR BRAND LOSING CONTROL', 640, 110 * enter);
+  ctx.fillStyle = C_RED;
+  ctx.fillText('ON AMAZON?', 640, 180 * enter);
+
+  // 3 Problem Cards
+  const cards = [
+    { title: 'MAP VIOLATIONS', sub: 'Price Eroding Daily', icon: 'map', delay: 0.3 },
+    { title: 'ROGUE SELLERS', sub: '27+ Unauthorized', icon: 'sellers', delay: 0.5 },
+    { title: 'TANKING REVIEWS', sub: 'Damaged & Counterfeit', icon: 'reviews', delay: 0.7 }
+  ];
+
+  cards.forEach((c, i) => {
+    const p = easeOutBack(norm(t, c.delay, c.delay + 0.6));
+    const cx = 240 + i * 400 + shake * (i - 1);
+    const cy = 440 + (1 - p) * 200;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(p, p);
+
+    // Card body
+    ctx.fillStyle = 'rgba(18, 26, 48, 0.9)';
+    ctx.strokeStyle = C_RED;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.roundRect(-170, -180, 340, 340, 20); ctx.fill(); ctx.stroke();
+
+    // Red top banner
+    ctx.fillStyle = 'rgba(255, 42, 84, 0.2)';
+    ctx.beginPath(); ctx.roundRect(-170, -180, 340, 70, [20, 20, 0, 0]); ctx.fill();
+
+    // Alert triangle
+    ctx.fillStyle = C_RED;
+    ctx.font = '800 22px sans-serif';
+    ctx.fillText('! CRITICAL WARNING !', 0, -138);
+
+    // Visuals inside cards
+    if (c.icon === 'map') {
+      // Crashing price graph
+      const gp = norm(t, 0.8, 2.2);
+      ctx.strokeStyle = C_RED; ctx.lineWidth = 6; ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(-110, -50);
+      ctx.lineTo(-40, -40);
+      ctx.lineTo(20, lerp(-40, 40, gp));
+      ctx.lineTo(100, lerp(-40, 75, gp));
+      ctx.stroke();
+
+      const price = lerp(49.99, 19.84, gp).toFixed(2);
+      ctx.font = '900 44px monospace';
+      ctx.fillStyle = C_WHITE;
+      ctx.fillText(`$${price}`, 0, -5);
+    } else if (c.icon === 'sellers') {
+      // Chaotic seller boxes multiplying
+      const count = Math.floor(lerp(3, 14, norm(t, 0.8, 2.2)));
+      for (let b = 0; b < count; b++) {
+        const bx = Math.sin(b * 99) * 90;
+        const by = Math.cos(b * 44) * 45 + 10;
+        drawIsoBox(bx, by, 26, '#64748B', '#475569', '#334155', C_RED);
+      }
+    } else if (c.icon === 'reviews') {
+      // Stars turning dark red
+      const activeStars = Math.ceil(lerp(5, 1.5, norm(t, 0.8, 2.0)));
+      for (let s = 0; s < 5; s++) {
+        const sc = s < activeStars ? C_ORANGE : '#2A344B';
+        drawStar(-100 + s * 50, -15, 5, 20, 9, sc);
+      }
+      ctx.font = '800 36px sans-serif';
+      ctx.fillStyle = C_RED;
+      ctx.fillText(`${lerp(4.9, 2.1, norm(t, 0.8, 2.2)).toFixed(1)} / 5.0`, 0, 50);
+    }
+
+    // Card Footer Text
+    ctx.font = '900 28px sans-serif';
+    ctx.fillStyle = C_WHITE;
+    ctx.fillText(c.title, 0, 110);
+    ctx.font = '600 18px sans-serif';
+    ctx.fillStyle = C_GRAY;
+    ctx.fillText(c.sub, 0, 138);
+
+    ctx.restore();
+  });
+
+  ctx.restore();
+}
+
+// SCENE 2: 2.5s - 6.0s (Winkz Enterprises Intro & Takeover)
+function renderScene2(t) {
+  const enter = easeOutCubic(norm(t, 2.5, 3.2));
+  const exit = easeInCubic(norm(t, 5.4, 6.0));
+  if (enter <= 0 || exit >= 1) return;
+
+  ctx.save();
+  ctx.globalAlpha = enter * (1 - exit);
+
+  // Expanding energy shockwave at 2.8s
+  const waveP = norm(t, 2.6, 3.8);
+  if (waveP > 0 && waveP < 1) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(640, 320, waveP * 900, 0, TAU);
+    ctx.strokeStyle = C_ORANGE;
+    ctx.lineWidth = (1 - waveP) * 35;
+    ctx.globalAlpha = 1 - waveP;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Winkz Logo Center Stage
+  const logoScale = easeOutBack(norm(t, 2.7, 3.5)) * (1 + exit * 0.5);
+  drawWinkzLogo(640, 260, logoScale * 1.35, t);
+
+  // Tagline Banner
+  const tagP = easeOutCubic(norm(t, 3.3, 4.0));
+  ctx.save();
+  ctx.translate(640, 410);
+  ctx.scale(tagP, 1);
+  ctx.fillStyle = 'rgba(0, 229, 255, 0.12)';
+  ctx.strokeStyle = C_CYAN;
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.roundRect(-420, -32, 840, 64, 32); ctx.fill(); ctx.stroke();
+
+  if (tagP > 0.5) {
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '800 27px sans-serif';
+    ctx.fillStyle = C_WHITE;
+    fillTextTracked('YOUR PREMIER AMAZON WHOLESALE PARTNER', 0, 2, 2);
+  }
+  ctx.restore();
+
+  // 3 Quick Value Pills at bottom
+  const pills = ['100% UPFRONT CAPITAL', 'STRICT BRAND CONTROL', 'ACTIVE GROWTH ENGINE'];
+  pills.forEach((text, i) => {
+    const pp = easeOutBack(norm(t, 3.7 + i * 0.2, 4.3 + i * 0.2));
+    const px = 250 + i * 390;
+    const py = 560 + (1 - pp) * 80;
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.scale(pp, pp);
+    ctx.fillStyle = '#141E38';
+    ctx.strokeStyle = C_ORANGE;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.roundRect(-175, -35, 350, 70, 14); ctx.fill(); ctx.stroke();
+
+    // Checkmark circle
+    ctx.fillStyle = C_ORANGE;
+    ctx.beginPath(); ctx.arc(-135, 0, 18, 0, TAU); ctx.fill();
+    ctx.strokeStyle = C_NAVY; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(-143, 0); ctx.lineTo(-137, 6); ctx.lineTo(-126, -6); ctx.stroke();
+
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.font = '800 20px sans-serif';
+    ctx.fillStyle = C_WHITE;
+    ctx.fillText(text, -105, 1);
+    ctx.restore();
+  });
+
+  ctx.restore();
+}
+
+// SCENE 3: 5.5s - 9.2s (The 3 Pillars of Why Brands Choose Us)
+function renderScene3(t) {
+  const enter = easeOutCubic(norm(t, 5.5, 6.1));
+  const exit = easeInCubic(norm(t, 8.7, 9.2));
+  if (enter <= 0 || exit >= 1) return;
+
+  ctx.save();
+  ctx.translate((1 - enter) * 1280 - exit * 1280, 0);
+
+  // Section Title
+  ctx.textAlign = 'center';
+  ctx.font = '900 48px sans-serif';
+  ctx.fillStyle = C_WHITE;
+  ctx.fillText('WHY TOP BRANDS PARTNER WITH ', 550, 85);
+  ctx.fillStyle = C_ORANGE;
+  ctx.fillText('WINKZ', 1005, 85);
+
+  const cols = [
+    {
+      title: 'IRONCLAD MAP',
+      sub: 'PRICE PROTECTION',
+      desc: '24/7 monitoring & rogue seller removal to protect your margins.',
+      color: C_CYAN,
+      delay: 5.8
+    },
+    {
+      title: 'LISTING & PPC',
+      sub: 'OPTIMIZATION',
+      desc: 'A+ Content, high-converting video & data-driven ad spend Funded by Us.',
+      color: C_ORANGE,
+      delay: 6.1
+    },
+    {
+      title: 'BULK FBA',
+      sub: 'LOGISTICS AT SCALE',
+      desc: 'Large upfront wholesale POs. Zero stockouts, zero headaches.',
+      color: C_GREEN,
+      delay: 6.4
+    }
+  ];
+
+  cols.forEach((col, i) => {
+    const p = easeOutBack(norm(t, col.delay, col.delay + 0.6));
+    const cx = 230 + i * 410;
+    const cy = 415;
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(p, p);
+
+    // Panel Background
+    ctx.fillStyle = 'rgba(16, 25, 48, 0.85)';
+    ctx.strokeStyle = col.color;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.roundRect(-185, -260, 370, 500, 24); ctx.fill(); ctx.stroke();
+
+    // Glowing top accent
+    ctx.fillStyle = col.color;
+    ctx.beginPath(); ctx.roundRect(-100, -260, 200, 8, 4); ctx.fill();
+
+    // Animated Icon Area (y: -90)
+    ctx.save();
+    ctx.translate(0, -100);
+    if (i === 0) {
+      // Shield + Lock + Radar Sweep
+      drawShield(0, 0, 85, C_CYAN, 0.15);
+      // Lock body
+      ctx.fillStyle = C_CYAN;
+      ctx.beginPath(); ctx.roundRect(-24, -5, 48, 38, 6); ctx.fill();
+      ctx.strokeStyle = C_CYAN; ctx.lineWidth = 7;
+      ctx.beginPath(); ctx.arc(0, -5, 16, PI, 0); ctx.stroke();
+      // Orbiting shield ring
+      ctx.rotate(t * 2);
+      ctx.strokeStyle = C_WHITE; ctx.lineWidth = 3;
+      ctx.setLineDash([15, 25]);
+      ctx.beginPath(); ctx.arc(0, 0, 105, 0, TAU); ctx.stroke();
+    } else if (i === 1) {
+      // Listing UI + Rising Graph + 5 Stars
+      ctx.fillStyle = '#1E293B';
+      ctx.strokeStyle = C_ORANGE; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.roundRect(-120, -75, 240, 150, 12); ctx.fill(); ctx.stroke();
+      // Stars
+      for (let s = 0; s < 5; s++) {
+        const sp = easeOutElastic(norm(t, 6.4 + s * 0.1, 7.0 + s * 0.1));
+        ctx.save();
+        ctx.translate(-80 + s * 40, -40);
+        ctx.scale(sp, sp);
+        drawStar(0, 0, 5, 14, 6, C_ORANGE);
+        ctx.restore();
+      }
+      // Rising conversion bars
+      const bars = [0.3, 0.5, 0.45, 0.75, 1.0];
+      const bp = easeOutCubic(norm(t, 6.5, 7.8));
+      bars.forEach((bh, bi) => {
+        const h = bh * 75 * bp;
+        ctx.fillStyle = bi === 4 ? C_GREEN : C_ORANGE;
+        ctx.beginPath(); ctx.roundRect(-95 + bi * 42, 55 - h, 28, h, 4); ctx.fill();
+      });
+    } else if (i === 2) {
+      // Isometric Boxes stacking smoothly
+      const boxCoords = [
+        {x: 0, y: 35, d: 6.5},
+        {x: -45, y: 10, d: 6.7},
+        {x: 45, y: 10, d: 6.9},
+        {x: 0, y: -15, d: 7.1},
+        {x: 0, y: -55, d: 7.3}
+      ];
+      boxCoords.forEach(b => {
+        const bp = easeOutBack(norm(t, b.d, b.d + 0.5));
+        if (bp > 0) {
+          ctx.save();
+          ctx.translate(b.x, b.y - (1 - bp) * 60);
+          ctx.scale(bp, bp);
+          drawIsoBox(0, 0, 36, '#FBBF24', '#D97706', '#B45309', C_GREEN);
+          ctx.restore();
+        }
+      });
+    }
+    ctx.restore();
+
+    // Text Content
+    ctx.textAlign = 'center';
+    ctx.font = '900 32px sans-serif';
+    ctx.fillStyle = C_WHITE;
+    ctx.fillText(col.title, 0, 65);
+
+    ctx.font = '800 22px sans-serif';
+    ctx.fillStyle = col.color;
+    ctx.fillText(col.sub, 0, 98);
+
+    // Wrapped description
+    ctx.font = '500 18px sans-serif';
+    ctx.fillStyle = '#CBD5E1';
+    const words = col.desc.split(' ');
+    let line = '', ly = 145;
+    words.forEach(w => {
+      const test = line + w + ' ';
+      if (ctx.measureText(test).width > 310) {
+        ctx.fillText(line.trim(), 0, ly);
+        line = w + ' '; ly += 26;
+      } else line = test;
+    });
+    ctx.fillText(line.trim(), 0, ly);
+
+    ctx.restore();
+  });
+
+  ctx.restore();
+}
+
+// SCENE 4: 8.8s - 12.2s (Explosive Revenue & Buy Box Dominance)
+function renderScene4(t) {
+  const enter = easeOutCubic(norm(t, 8.8, 9.4));
+  const exit = easeInCubic(norm(t, 11.7, 12.2));
+  if (enter <= 0 || exit >= 1) return;
+
+  ctx.save();
+  ctx.globalAlpha = enter * (1 - exit);
+  ctx.translate(0, (1 - enter) * 100);
+
+  // Title
+  ctx.textAlign = 'center';
+  ctx.font = '900 50px sans-serif';
+  ctx.fillStyle = C_WHITE;
+  ctx.fillText('TURN AMAZON INTO YOUR #1 GROWTH CHANNEL', 640, 85);
+
+  // Dashboard Frame
+  ctx.fillStyle = 'rgba(13, 20, 40, 0.92)';
+  ctx.strokeStyle = '#2A3B5C';
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.roundRect(90, 130, 1100, 520, 24); ctx.fill(); ctx.stroke();
+
+  // Graph Grid Lines
+  ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+  ctx.lineWidth = 1;
+  for (let y = 210; y <= 560; y += 70) {
+    ctx.beginPath(); ctx.moveTo(140, y); ctx.lineTo(840, y); ctx.stroke();
+  }
+
+  // Animated Growth Curve
+  const gp = easeInOutCubic(norm(t, 9.2, 11.2));
+  const startX = 150, endX = 820, baseY = 560;
+  const pts = [
+    {x: 150, y: 530},
+    {x: 280, y: 510},
+    {x: 410, y: 460},
+    {x: 540, y: 380},
+    {x: 680, y: 260},
+    {x: 820, y: 175}
+  ];
+
+  // Clip region for curve reveal
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(140, 140, (endX - startX + 40) * gp, 450);
+  ctx.clip();
+
+  // Area under curve
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x, baseY);
+  pts.forEach((pt, idx) => {
+    if (idx === 0) ctx.lineTo(pt.x, pt.y);
+    else {
+      const prev = pts[idx - 1];
+      const cx = (prev.x + pt.x) / 2;
+      ctx.bezierCurveTo(cx, prev.y, cx, pt.y, pt.x, pt.y);
+    }
+  });
+  ctx.lineTo(pts[pts.length - 1].x, baseY);
+  ctx.closePath();
+  const areaGrad = ctx.createLinearGradient(0, 170, 0, 560);
+  areaGrad.addColorStop(0, 'rgba(0, 230, 118, 0.45)');
+  areaGrad.addColorStop(1, 'rgba(0, 230, 118, 0.0)');
+  ctx.fillStyle = areaGrad;
+  ctx.fill();
+
+  // Stroke curve
+  ctx.beginPath();
+  pts.forEach((pt, idx) => {
+    if (idx === 0) ctx.moveTo(pt.x, pt.y);
+    else {
+      const prev = pts[idx - 1];
+      const cx = (prev.x + pt.x) / 2;
+      ctx.bezierCurveTo(cx, prev.y, cx, pt.y, pt.x, pt.y);
+    }
+  });
+  ctx.strokeStyle = C_GREEN;
+  ctx.lineWidth = 8;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+
+  // Data nodes
+  pts.forEach(pt => {
+    ctx.fillStyle = C_NAVY;
+    ctx.strokeStyle = C_GREEN;
+    ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.arc(pt.x, pt.y, 9, 0, TAU); ctx.fill(); ctx.stroke();
+  });
+  ctx.restore();
+
+  // "WINKZ ONBOARDED" Callout on graph
+  const tagP = easeOutBack(norm(t, 9.6, 10.2));
+  if (tagP > 0) {
+    ctx.save();
+    ctx.translate(410, 460);
+    ctx.scale(tagP, tagP);
+    ctx.fillStyle = C_ORANGE;
+    ctx.beginPath(); ctx.roundRect(-95, -65, 190, 42, 8); ctx.fill();
+    ctx.fillStyle = C_NAVY;
+    ctx.font = '900 16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('WINKZ ONBOARDED', 0, -39);
+    ctx.restore();
+  }
+
+  // Right Side KPI Cards
+  const kpi1 = Math.floor(lerp(0, 318, gp));
+  const kpi2 = lerp(0, 99.4, gp).toFixed(1);
+
+  // KPI 1: Revenue Growth
+  ctx.fillStyle = '#141E38';
+  ctx.strokeStyle = C_GREEN; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.roundRect(870, 180, 280, 155, 16); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = C_GREEN; ctx.font = '900 58px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(`+${kpi1}%`, 1010, 260);
+  ctx.fillStyle = C_WHITE; ctx.font = '700 18px sans-serif';
+  ctx.fillText('YOY BRAND REVENUE', 1010, 305);
+
+  // KPI 2: Buy Box Win Rate
+  ctx.fillStyle = '#141E38';
+  ctx.strokeStyle = C_ORANGE; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.roundRect(870, 360, 280, 145, 16); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = C_ORANGE; ctx.font = '900 54px sans-serif';
+  ctx.fillText(`${kpi2}%`, 1010, 435);
+  ctx.fillStyle = C_WHITE; ctx.font = '700 18px sans-serif';
+  ctx.fillText('AUTHORIZED BUY BOX', 1010, 478);
+
+  // KPI 3: Zero Fees Pill
+  ctx.fillStyle = 'rgba(0, 229, 255, 0.15)';
+  ctx.strokeStyle = C_CYAN; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.roundRect(870, 525, 280, 85, 16); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = C_CYAN; ctx.font = '900 24px sans-serif';
+  ctx.fillText('$0 AGENCY FEES', 1010, 562);
+  ctx.fillStyle = C_WHITE; ctx.font = '600 15px sans-serif';
+  ctx.fillText('WE BUY DIRECT WHOLESALE', 1010, 590);
+
+  ctx.restore();
+}
+
+// SCENE 5: 11.8s - 15.0s (Call to Action Finale)
+function renderScene5(t) {
+  const enter = easeOutCubic(norm(t, 11.8, 12.5));
+  if (enter <= 0) return;
+
+  // Seamless loop fade out in final 0.35s
+  const loopFade = easeInCubic(norm(t, 14.65, 15.0));
+
+  ctx.save();
+  ctx.globalAlpha = enter * (1 - loopFade);
+
+  // Spotlight behind logo
+  const pulse = 1 + 0.08 * Math.sin(t * 6);
+  const sGrad = ctx.createRadialGradient(640, 280, 20, 640, 280, 520 * pulse);
+  sGrad.addColorStop(0, 'rgba(255, 153, 0, 0.22)');
+  sGrad.addColorStop(0.5, 'rgba(0, 229, 255, 0.08)');
+  sGrad.addColorStop(1, 'rgba(7, 11, 25, 0)');
+  ctx.fillStyle = sGrad; ctx.fillRect(0, 0, 1280, 720);
+
+  // Hero Logo
+  const logoPop = easeOutBack(norm(t, 11.9, 12.6));
+  drawWinkzLogo(640, 195, logoPop * 1.25, t);
+
+  // Headline
+  const headP = easeOutCubic(norm(t, 12.2, 12.8));
+  ctx.save();
+  ctx.translate(640, 345 + (1 - headP) * 40);
+  ctx.globalAlpha *= headP;
+  ctx.textAlign = 'center';
+  ctx.font = '900 54px sans-serif';
+  ctx.fillStyle = C_WHITE;
+  ctx.fillText('READY TO SCALE YOUR BRAND RISK-FREE?', 0, 0);
+
+  ctx.font = '600 26px sans-serif';
+  ctx.fillStyle = C_CYAN;
+  ctx.fillText('We Purchase Upfront  •  We Protect Your MAP  •  We Grow Your Sales', 0, 50);
+  ctx.restore();
+
+  // Pulsing CTA Button
+  const btnP = easeOutElastic(norm(t, 12.5, 13.3));
+  const btnPulse = 1 + 0.03 * Math.sin(t * 8);
+  ctx.save();
+  ctx.translate(640, 515);
+  ctx.scale(btnP * btnPulse, btnP * btnPulse);
+
+  // Button Glow
+  ctx.shadowColor = C_ORANGE;
+  ctx.shadowBlur = 35;
+  const btnGrad = ctx.createLinearGradient(-280, -45, 280, 45);
+  btnGrad.addColorStop(0, '#FFB300');
+  btnGrad.addColorStop(1, '#FF6D00');
+  ctx.fillStyle = btnGrad;
+  ctx.beginPath(); ctx.roundRect(-310, -48, 620, 96, 48); ctx.fill();
+  ctx.shadowBlur = 0;
+
+  ctx.lineWidth = 3; ctx.strokeStyle = C_WHITE; ctx.stroke();
+
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = '900 34px sans-serif';
+  ctx.fillStyle = C_NAVY;
+  ctx.fillText('PARTNER WITH WINKZ TODAY', 0, 2);
+  ctx.restore();
+
+  // Bottom Contact Bar
+  const footP = easeOutCubic(norm(t, 12.8, 13.4));
+  ctx.save();
+  ctx.globalAlpha *= footP;
+  ctx.textAlign = 'center';
+  ctx.font = '700 22px monospace';
+  ctx.fillStyle = C_GRAY;
+  fillTextTracked('WINKZENTERPRISES.COM   |   WHOLESALE@WINKZENTERPRISES.COM', 640, 645, 1.5);
+  ctx.restore();
+
+  ctx.restore();
+}
+
+// Main Render Loop
+function frame(now) {
+  if (t0 === null) t0 = now;
+  const elapsed = (now - t0) / 1000 + startT;
+  const t = elapsed % window.DUR;
+
+  ctx.clearRect(0, 0, 1280, 720);
+
+  drawBackground(t);
+
+  if (t < 3.0) renderScene1(t);
+  if (t >= 2.5 && t < 6.0) renderScene2(t);
+  if (t >= 5.5 && t < 9.2) renderScene3(t);
+  if (t >= 8.8 && t < 12.2) renderScene4(t);
+  if (t >= 11.8) renderScene5(t);
+
+  // Subtle top/bottom cinematic letterbox vignette
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.fillRect(0, 0, 1280, 12);
+  ctx.fillRect(0, 708, 1280, 12);
+
+  requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

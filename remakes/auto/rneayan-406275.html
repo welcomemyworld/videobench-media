@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#000}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+window.DUR=30;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)||0;
+const t0=performance.now()-off*1000;
+const G='#3dff8a';
+function beam(pts,a,w){
+ if(pts.length<2)return;
+ x.lineJoin='round';x.lineCap='round';
+ [[12,0.08],[5,0.25],[w||2,1]].forEach(([lw,al])=>{
+  x.strokeStyle=`rgba(61,255,138,${al*a})`;x.lineWidth=lw;x.beginPath();
+  x.moveTo(pts[0][0],pts[0][1]);for(let i=1;i<pts.length;i++)x.lineTo(pts[i][0],pts[i][1]);x.stroke();});
+}
+// vector glyphs on 4x6 grid
+const F={A:"0,6 0,2 2,0 4,2 4,6|0,3 4,3",B:"0,0 0,6 3,6 4,5 4,4 3,3 0,3|0,0 3,0 4,1 4,2 3,3",C:"4,0 0,0 0,6 4,6",D:"0,0 0,6 3,6 4,5 4,1 3,0 0,0",E:"4,0 0,0 0,6 4,6|0,3 3,3",G:"4,1 4,0 0,0 0,6 4,6 4,3 2,3",I:"0,0 4,0|2,0 2,6|0,6 4,6",L:"0,0 0,6 4,6",M:"0,6 0,0 2,3 4,0 4,6",N:"0,6 0,0 4,6 4,0",O:"0,0 4,0 4,6 0,6 0,0",P:"0,6 0,0 4,0 4,3 0,3",R:"0,6 0,0 4,0 4,3 0,3 4,6",S:"4,0 0,0 0,3 4,3 4,6 0,6",T:"0,0 4,0|2,0 2,6",U:"0,0 0,6 4,6 4,0",V:"0,0 2,6 4,0",Y:"0,0 2,3 4,0|2,3 2,6",H:"0,0 0,6|4,0 4,6|0,3 4,3",K:"0,0 0,6|4,0 0,3 4,6",W:"0,0 1,6 2,3 3,6 4,0",X:"0,0 4,6|4,0 0,6",F:"4,0 0,0 0,6|0,3 3,3",".":"2,6 2,5.6","&":"4,6 0,2 1,0 2,1 0,4 1,6 3,6 4,4"};
+function text(s,cx,cy,sz,a,prog,t){
+ const cw=sz*5,tot=s.length*cw-sz;let ox=cx-tot/2;const n=s.length;
+ for(let i=0;i<n;i++){const ch=s[i];const g=F[ch];if(g){
+  const lp=Math.max(0,Math.min(1,prog*n-i*0.8));if(lp<=0)continue;
+  g.split('|').forEach(st=>{let p=st.split(' ').map(v=>v.split(',').map(Number));
+   const k=Math.max(2,Math.ceil(p.length*lp));p=p.slice(0,k);
+   beam(p.map(([a1,b])=>[ox+a1*sz+Math.sin(t*30+b+i)*0.6,cy+(b-3)*sz]),a);});}
+  ox+=cw;}
+}
+function grid(a){
+ x.strokeStyle=`rgba(61,255,138,${0.12*a})`;x.lineWidth=1;
+ for(let i=0;i<=10;i++){x.beginPath();x.moveTo(140+i*100,60);x.lineTo(140+i*100,660);x.stroke();}
+ for(let j=0;j<=8;j++){x.beginPath();x.moveTo(140,60+j*75);x.lineTo(1140,60+j*75);x.stroke();}
+ x.strokeStyle=`rgba(61,255,138,${0.25*a})`;
+ for(let i=0;i<=50;i++){x.beginPath();x.moveTo(140+i*20,356);x.lineTo(140+i*20,364);x.stroke();}
+ for(let j=0;j<=40;j++){x.beginPath();x.moveTo(636,60+j*15);x.lineTo(644,60+j*15);x.stroke();}
+}
+const ss=(a,b,v)=>{v=Math.max(0,Math.min(1,(v-a)/(b-a)));return v*v*(3-2*v)};
+function env(t,a,b){return ss(a,a+0.8,t)*(1-ss(b-0.8,b,t));}
+function hud(t){
+ x.font='16px monospace';x.fillStyle='rgba(61,255,138,0.7)';
+ x.fillText('CH1 2.00V  CH2 500mV',150,690);x.fillText('M 10ms  TRIG ▲ '+(t%1*9.9).toFixed(2)+'V',880,690);
+ x.fillText('STUDIO // SIGNAL',150,40);x.fillText('T+'+t.toFixed(2)+'s',1050,40);
+}
+function frame(){
+ const t=((performance.now()-t0)/1000)%DUR;
+ x.fillStyle='rgba(0,0,0,0.35)';x.fillRect(0,0,1280,720);
+ grid(1);hud(t);
+ // 0-5 boot: sweeping sine
+ let a=env(t,0,5.5);if(a>0){const p=[];const L=ss(0,3,t);
+  for(let i=0;i<=400*L;i++){const u=i/400;p.push([140+u*1000,360+Math.sin(u*20+t*6)*120*Math.sin(u*Math.PI)*ss(0.5,3,t)]);}beam(p,a);
+  if(t>2.5)text('POWER ON',640,560,6,a*ss(2.5,3.5,t),ss(2.5,4,t),t);}
+ // 5-11 lissajous + studio name
+ a=env(t,5,11.5);if(a>0){const p=[],r=ss(5,8,t);
+  for(let i=0;i<=600;i++){const u=i/600*Math.PI*2;p.push([640+Math.sin(3*u+t)*260*r,330+Math.sin(2*u)*200*r]);}beam(p,a*0.6,1.5);
+  text('YOUR STUDIO',640,330,13,a,ss(6.5,9,t),t);}
+ // 11-17 three pillars
+ a=env(t,11,17.5);if(a>0){const W=['DESIGN','MOTION','SOUND'];
+  W.forEach((w,k)=>{const yy=180+k*150,pr=ss(11.3+k*0.6,13+k*0.6,t);
+   const p=[];for(let i=0;i<=200;i++){const u=i/200;let f=k==0?Math.sign(Math.sin(u*30+t*4)):k==1?(2*((u*15+t)%1)-1):Math.sin(u*60+t*5)*Math.sin(u*7);p.push([150+u*360,yy+f*35*pr]);}
+   beam(p,a);text(w,820,yy,9,a,pr,t);});}
+ // 17-23 heartbeat ECG + tagline
+ a=env(t,17,23.5);if(a>0){const p=[];for(let i=0;i<=500;i++){const u=i/500,ph=((u*4-t*1.2)%1+1)%1;
+   let y=0;if(ph>0.4&&ph<0.45)y=-130;else if(ph>0.45&&ph<0.5)y=60;else if(ph>0.35&&ph<0.4)y=-15;
+   p.push([140+u*1000,260+y]);}beam(p,a);
+  text('WE MAKE',640,470,8,a,ss(18,19.5,t),t);text('SIGNALS FEEL',640,560,8,a,ss(19,21,t),t);}
+ // 23-30 logo circle + CTA
+ a=env(t,23,30);if(a>0){const p=[],r=ss(23,25,t);
+  for(let i=0;i<=300;i++){const u=i/300*Math.PI*2*r;const rr=150+Math.sin(u*8+t*3)*8*ss(25,26,t);p.push([640+Math.cos(u)*rr,300+Math.sin(u)*rr]);}beam(p,a);
+  text('S',640,300,22,a,ss(24,25.5,t),t);
+  text('LETS CREATE',640,520,8,a,ss(25.5,27,t),t);
+  x.globalAlpha=a*ss(27,28,t);x.font='22px monospace';x.textAlign='center';x.fillStyle=G;x.fillText('hello@yourstudio.com',640,600);x.textAlign='left';x.globalAlpha=1;}
+ // scanlines & vignette
+ x.fillStyle='rgba(0,0,0,0.12)';for(let y=0;y<720;y+=4)x.fillRect(0,y,1280,1);
+ requestAnimationFrame(frame);
+}
+x.fillStyle='#000';x.fillRect(0,0,1280,720);frame();
+</script></body></html>

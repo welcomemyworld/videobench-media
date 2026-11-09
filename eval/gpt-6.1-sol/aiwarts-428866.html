@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>从代码到成片 · 技术栈全览</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000}body{display:flex;align-items:center;justify-content:center}#stage{position:relative;width:1280px;height:720px;flex:none;transform-origin:center}canvas{display:block;width:1280px;height:720px}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+window.DUR=36;
+const canvas=document.getElementById('c'),ctx=canvas.getContext('2d'),stage=document.getElementById('stage');
+const W=1280,H=720,F='"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif',M='ui-monospace,"SFMono-Regular",Consolas,monospace';
+const C={bg:'#090d15',white:'#edf3ff',muted:'#91a0b8',line:'#263246',blue:'#65b8ff',mint:'#70e8be',orange:'#ffb071'};
+function fit(){stage.style.transform=`scale(${Math.min(innerWidth/W,innerHeight/H)})`}
+addEventListener('resize',fit);fit();
+const offset=Number(new URLSearchParams(location.search).get('t'))||0;
+const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const ease=x=>{x=clamp(x);return x*x*(3-2*x)};
+function rr(x,y,w,h,r=14){ctx.beginPath();ctx.roundRect(x,y,w,h,r)}
+function box(x,y,w,h,fill='#101824',stroke=C.line,r=14){rr(x,y,w,h,r);ctx.fillStyle=fill;ctx.fill();if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.stroke()}}
+function text(s,x,y,size=18,color=C.white,weight=400,font=F){ctx.font=`${weight} ${size}px ${font}`;ctx.fillStyle=color;ctx.textAlign='left';ctx.textBaseline='alphabetic';ctx.fillText(s,x,y)}
+function line(x,y,x2,y2,color=C.line,width=1){ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x2,y2);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.stroke()}
+function circle(x,y,r,color){ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fillStyle=color;ctx.fill()}
+function pill(s,x,y,color=C.blue){ctx.font=`500 12px ${M}`;let w=ctx.measureText(s).width+22;box(x,y,w,26,color+'12',color+'55',7);text(s,x+11,y+18,12,color,500,M);return w}
+function glow(x,y,r,color){let g=ctx.createRadialGradient(x,y,0,x,y,r);g.addColorStop(0,color);g.addColorStop(1,'transparent');ctx.fillStyle=g;ctx.fillRect(x-r,y-r,r*2,r*2)}
+function label(n,title,sub,color){text(n,64,153,14,color,500,M);text(title,64,211,42,C.white,650);text(sub,64,250,17,C.muted)}
+function arrow(x,y,color=C.muted){line(x-18,y,x+16,y,color,1.5);line(x+8,y-6,x+16,y,color,1.5);line(x+8,y+6,x+16,y,color,1.5)}
+function background(t){
+ctx.fillStyle=C.bg;ctx.fillRect(0,0,W,H);
+glow(1030,170,470,'#15365935');glow(230,620,430,'#19433820');
+ctx.strokeStyle='#7184a409';ctx.lineWidth=1;
+for(let x=0;x<W;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke()}
+for(let y=0;y<H;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}
+for(let i=0;i<30;i++){let x=(i*137.9+20)%W,y=(i*83.1+720-t*(3+i%4))%H;circle(x,y,1,'#b1c5ed20')}
+text('代码 → 画面 → 配乐 → 成片',64,52,14,C.muted,500);
+text('创作流程 / 技术栈全览',983,52,14,C.muted);
+line(64,76,1216,76);
+let labels=['技术栈','画面生成','配乐生成','合成输出','最终成片'],starts=[0,6,14,22,30],ends=[6,14,22,30,36];
+for(let i=0;i<5;i++){
+let x=64+i*236,p=clamp((t-starts[i])/(ends[i]-starts[i])),active=t>=starts[i]&&t<ends[i];
+box(x,644,208,3,'#263145',null,1);if(p>0)box(x,644,208*p,3,i===2?C.mint:i===3?C.orange:C.blue,null,1);
+text('0'+(i+1),x,674,11,active?C.white:'#66758c',400,M);
+text(labels[i],x+29,674,12,active?C.white:'#66758c');
+}
+text('工程版本  REMOTION 4.0.528',64,705,10,'#63728a',400,M);
+text('流程演示  ·  16:9',1081,705,10,'#63728a');
+}
+function movie(x,y,w,h,t){
+ctx.save();rr(x,y,w,h,10);ctx.clip();
+let g=ctx.createLinearGradient(x,y,x+w,y+h);g.addColorStop(0,'#10273e');g.addColorStop(.6,'#101626');g.addColorStop(1,'#292037');ctx.fillStyle=g;ctx.fillRect(x,y,w,h);
+let cx=x+w*.61,cy=y+h*.49,s=Math.min(w,h);
+glow(cx,cy,s*.72,'#357eff35');
+for(let i=0;i<6;i++){
+ctx.save();ctx.translate(cx,cy);ctx.rotate(t*.13+i*.48);ctx.scale(1,.41+i*.045);
+ctx.beginPath();ctx.arc(0,0,s*(.22+i*.024),0,Math.PI*2);ctx.strokeStyle=i%2?'#65b8ff60':'#a1e9eb6a';ctx.lineWidth=1.5;ctx.stroke();
+let a=t*.55+i*1.3;circle(Math.cos(a)*s*(.22+i*.024),Math.sin(a)*s*(.22+i*.024),3.5,i%2?C.blue:C.mint);ctx.restore();
+}
+let orb=ctx.createRadialGradient(cx-s*.05,cy-s*.07,0,cx,cy,s*.16);orb.addColorStop(0,'#eaffff');orb.addColorStop(.32,'#84dce8');orb.addColorStop(.7,'#2879bc');orb.addColorStop(1,'#112f54');circle(cx,cy,s*.145,orb);
+text('让想法',x+w*.07,y+h*.37,s*.09,C.white,600);
+text('开始运动。',x+w*.07,y+h*.50,s*.09,C.white,600);
+text('GENERATIVE MOTION',x+w*.075,y+h*.61,s*.027,'#9aabc3',500,M);
+for(let i=0;i<40;i++){let px=x+(i*71.7)%w,py=y+(i*43.3)%h;circle(px,py,.8,'#c0dfff55')}
+line(x+24,y+h-31,x+w-24,y+h-31,'#ffffff25');line(x+24,y+h-31,x+24+(w-48)*((t%8)/8),y+h-31,C.blue,2);
+ctx.restore();
+}
+function intro(t){
+label('01 / ARCHITECTURE','把创意，写成一条生产线。','技术栈全部展开：画面、声音与最终封装，各司其职。',C.blue);
+let cards=[
+{x:64,n:'01',title:'画面',hero:'Remotion',version:'4.0.528',color:C.blue,lines:['React · TypeScript','Composition · Sequence','逐帧动画 / 时间线编排']},
+{x:456,n:'02',title:'配乐',hero:'Python',version:'AUDIO',color:C.mint,lines:['NumPy · wave','旋律 / 和声 / 节奏合成','立体声 WAV / 48 kHz']},
+{x:848,n:'03',title:'成片',hero:'FFmpeg',version:'ENCODE',color:C.orange,lines:['由 Remotion 渲染流程调用','H.264 · AAC · MP4','画面 + 音轨 → 最终视频']}
+];
+cards.forEach((d,i)=>{let a=ease((t-.35-i*.3)/.8);ctx.save();ctx.globalAlpha*=a;ctx.translate(0,20*(1-a));box(d.x,295,368,277,'#101824',d.color+'40');box(d.x,295,368,3,d.color,null,1);
+text(d.n+' / '+d.title,d.x+26,333,13,d.color,500);text(d.hero,d.x+26,386,36,C.white,600);pill(d.version,d.x+26,402,d.color);
+d.lines.forEach((s,j)=>text(s,d.x+26,465+j*32,j===0?16:14,j===0?C.white:C.muted,j===0?500:400));
+ctx.restore()});
+text('核心关系',64,612,12,C.muted);text('Remotion 负责画面     +     Python 负责配乐     →     Remotion 调用 FFmpeg 合成',155,612,15,C.white);
+}
+function visuals(t){
+let q=t-6;
+label('02 / VISUAL ENGINE','Remotion 负责画面。','基于 React 的视频框架，把组件与时间变成逐帧动画。',C.blue);
+box(64,294,370,292);
+pill('REMOTION 4.0.528',86,315,C.blue);
+const code=[
+['<Composition','id="Film"'],['  width={1920}','height={1080}'],['  fps={30}','durationInFrames={1080}'],['>',''],['  <Sequence>',''],['    <Scene />',''],['  </Sequence>',''],['</Composition>','']
+];
+code.forEach((v,i)=>{text(String(i+1).padStart(2,'0'),86,368+i*25,11,'#52647c',400,M);text(v[0],119,368+i*25,13,i===2?C.mint:C.blue,400,M);if(v[1])text(v[1],119,368+i*25+13,10,C.muted,400,M)});
+box(462,294,754,292,'#0e1622');movie(475,307,728,226,q);
+text('React 组件 → 每一帧',484,568,13,C.muted);text('FRAME '+String(Math.floor(q*30)).padStart(4,'0'),1060,568,12,C.blue,500,M);
+text('React',64,619,14,C.blue,600,M);text('声明式组件',125,619,13,C.muted);
+text('TypeScript',263,619,14,C.blue,600,M);text('类型与工程结构',368,619,13,C.muted);
+text('useCurrentFrame()  +  interpolate()  +  spring()',637,619,13,C.muted,400,M);
+}
+function music(t){
+let q=t-14;
+label('03 / AUDIO ENGINE','Python 负责配乐。','用代码生成旋律、和声与节奏，再导出可合成的音轨。',C.mint);
+box(64,294,348,305);
+pill('PYTHON',86,315,C.mint);
+text('NumPy',86,378,24,C.white,600,M);text('采样计算 · 音色合成',86,405,14,C.muted);
+text('wave',86,451,24,C.white,600,M);text('写入 PCM 音频文件',86,478,14,C.muted);
+line(86,504,389,504);
+text('48,000 Hz',86,536,20,C.mint,500,M);text('STEREO / WAV',86,568,12,C.muted,400,M);
+box(438,294,778,305,'#0e1820',C.mint+'30');
+text('配乐时间线',462,327,14,C.white,500);text('96 BPM  ·  4/4',1057,327,12,C.mint,500,M);
+let gx=527,gy=356,gw=663;
+for(let i=0;i<=16;i++)line(gx+i*gw/16,gy,gx+i*gw/16,552,i%4===0?'#43575c':'#253438');
+let tracks=['旋律','和声','节奏'];
+for(let r=0;r<3;r++){
+let y=370+r*64;text(tracks[r],460,y+22,13,C.muted);line(gx,y+49,1190,y+49,'#253438');
+for(let i=0;i<16;i++){
+let step=gw/16,nh=r===0?8:r===1?25:12,py=r===0?y+((i*7)%5)*7:r===1?y+10:y+(i%2)*15;
+let ww=r===1?step*1.65:step*.64;
+if(r===1&&i%2)continue;
+box(gx+i*step+3,py,ww,nh,r===0?'#70e8beaa':r===1?'#65b8ff65':'#ffb07199',null,3);
+}}
+let px=gx+gw*(q/8);line(px,347,px,553,C.mint,2);circle(px,347,4,C.mint);
+text('music.wav',462,583,12,C.mint,500,M);
+for(let i=0;i<138;i++){let x=608+i*4.2,amp=3+9*Math.abs(Math.sin(i*.49)*Math.cos(i*.17+q*.6));line(x,577-amp,x,577+amp,i/138<q/8?C.mint:'#385157',1.6)}
+text('旋律 + 和弦 + 鼓点',64,623,14,C.muted);text('统一时长、采样率与节拍，让音画在同一条时间线上对齐。',438,623,14,C.muted);
+}
+function exportScene(t){
+let q=t-22,p=ease(q/7);
+label('04 / RENDER PIPELINE','最后，合成一支影片。','Remotion 渲染画面，并调用 FFmpeg 完成音画合成与编码。',C.orange);
+let bx=64,by=301;
+box(bx,by,294,105,'#111d2b',C.blue+'55');pill('VIDEO',84,318,C.blue);text('Remotion 帧序列',84,376,21,C.white,600);
+box(bx,by+131,294,105,'#101f22',C.mint+'55');pill('AUDIO',84,449,C.mint);text('Python · music.wav',84,507,19,C.white,600);
+line(358,353,397,353,C.blue,2);line(358,484,397,484,C.mint,2);line(397,353,397,484,'#516a7e',2);line(397,418,453,418,C.orange,2);arrow(449,418,C.orange);
+box(479,301,344,236,'#1b191b',C.orange+'55');
+pill('REMOTION RENDERER',501,318,C.orange);
+text('调用 FFmpeg',501,379,31,C.white,600);
+text('同步音轨 · 合并画面 · 编码',501,416,15,C.muted);
+pill('H.264',501,446,C.orange);pill('AAC',584,446,C.orange);pill('MP4',651,446,C.orange);
+text('视频编码       音频编码       容器',503,500,12,C.muted);
+arrow(855,418,C.orange);
+box(887,301,329,236,'#111b26',C.blue+'44');movie(900,314,303,162,q);
+text('final.mp4',907,511,16,C.white,500,M);
+let trail=(q%2)/2;
+circle(359+94*trail,418,3,C.orange);
+box(64,566,1152,56,'#101824');
+text('RENDER',83,598,12,C.orange,500,M);box(165,588,855,6,'#293344',null,3);box(165,588,855*p,6,C.orange,null,3);
+text(String(Math.floor(p*100)).padStart(3,'0')+'%',1045,599,19,C.white,500,M);
+text(p>.995?'完成':'合成中',1131,598,13,p>.995?C.mint:C.muted);
+}
+function ending(t){
+let q=t-30;
+text('05 / FINAL OUTPUT',64,143,14,C.blue,500,M);
+text('一套技术栈。',64,210,44,C.white,650);
+text('一支完整影片。',64,270,44,C.white,650);
+text('从 React 组件，到 Python 音轨，',64,320,17,C.muted);
+text('再到 FFmpeg 合成的最终 MP4。',64,350,17,C.muted);
+let rows=[['画面','Remotion 4.0.528',C.blue,'React · TypeScript'],['配乐','Python',C.mint,'NumPy · wave'],['合成','FFmpeg',C.orange,'H.264 · AAC · MP4']];
+rows.forEach((r,i)=>{let y=401+i*64;circle(72,y+7,4,r[2]);text(r[0],88,y+13,14,C.muted);text(r[1],147,y+13,18,C.white,500,M);text(r[3],147,y+34,12,r[2],400,M)});
+box(614,137,602,399,'#101824',C.blue+'45');
+movie(628,151,574,323,q+3);
+text('final.mp4',637,512,17,C.white,500,M);pill('已完成',1118,486,C.mint);
+box(614,553,602,65,'#101824');
+text('1920 × 1080',636,580,17,C.white,500,M);text('高清输出',636,602,11,C.muted);
+text('30 FPS',853,580,17,C.white,500,M);text('逐帧渲染',853,602,11,C.muted);
+text('36 SEC',1060,580,17,C.white,500,M);text('音画合成',1060,602,11,C.muted);
+}
+const scenes=[intro,visuals,music,exportScene,ending],cuts=[0,6,14,22,30,36];
+let origin;
+function render(now){
+if(origin===undefined)origin=now;
+let t=(((now-origin)/1000+offset)%window.DUR+window.DUR)%window.DUR;
+background(t);
+for(let i=0;i<5;i++){
+let start=cuts[i],end=cuts[i+1],fade=.42;
+let a=ease((t-start)/fade)*ease((end-t)/fade);
+if(a>0){ctx.save();ctx.globalAlpha=a;ctx.translate(0,(1-a)*9);scenes[i](t);ctx.restore()}
+}
+requestAnimationFrame(render);
+}
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

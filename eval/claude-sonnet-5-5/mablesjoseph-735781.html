@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#w{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+canvas{width:1280px;height:720px;display:block}
+</style></head><body><div id="w"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+const DUR=52;window.DUR=DUR;
+const W=document.getElementById('w'),cv=document.getElementById('c'),g=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);W.style.transform=`scale(${s})`;W.style.left=(innerWidth-1280*s)/2+'px';W.style.top=(innerHeight-720*s)/2+'px';}
+fit();onresize=fit;
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t'))||0,t0=performance.now();
+const cl=(x,a=0,b=1)=>Math.max(a,Math.min(b,x)),ez=x=>{x=cl(x);return 1-Math.pow(1-x,3)},sg=(t,a,b)=>cl((t-a)/(b-a));
+const MONO='"Courier New",monospace',SANS='Helvetica,Arial,sans-serif';
+const AM='#ffb347',RD='#ff5c5c',GR='#5CFFB0',BL='#5cb8ff',DIM='#6b7280',FG='#e8e8ea';
+function tx(s,x,y,sz,col,al=1,a='left',f=SANS,w='bold'){g.globalAlpha=cl(al);g.fillStyle=col;g.font=`${w} ${sz}px ${f}`;g.textAlign=a;g.textBaseline='alphabetic';g.fillText(s,x,y);g.globalAlpha=1}
+function rr(x,y,w,h,c,al=1,r=6){g.globalAlpha=cl(al);g.fillStyle=c;g.beginPath();g.roundRect(x,y,Math.max(w,0),Math.max(h,0),r);g.fill();g.globalAlpha=1}
+function bg(t){g.fillStyle='#0b0c10';g.fillRect(0,0,1280,720);
+g.strokeStyle='rgba(255,255,255,.04)';g.lineWidth=1;const o=(t*10)%40;
+for(let x=-o;x<1280;x+=40){g.beginPath();g.moveTo(x,0);g.lineTo(x,720);g.stroke()}
+for(let y=0;y<720;y+=40){g.beginPath();g.moveTo(0,y);g.lineTo(1280,y);g.stroke()}
+const v=g.createRadialGradient(640,360,200,640,360,800);v.addColorStop(0,'rgba(0,0,0,0)');v.addColorStop(1,'rgba(0,0,0,.7)');g.fillStyle=v;g.fillRect(0,0,1280,720)}
+function head(n,s,t,a){tx(n,60,70,16,AM,a,'left',MONO);tx(s,60,112,38,FG,a*ez(sg(t,0,.6)))}
+const SEG=[['system',AM,2],['tools',BL,3],['files',GR,3]];
+function s1(t){ // title
+const a=ez(sg(t,.3,1.3));
+tx('// ENGINEERING EXPLAINER',640,250,18,AM,a,'center',MONO);
+tx('THE CONTEXT TAX',640+(1-a)*-30,350,96,FG,a,'center');
+const sub='Every token you keep around is a bill you pay again.';
+tx(sub.slice(0,Math.floor(sg(t,1.8,4.5)*sub.length)),640,420,24,DIM,1,'center',MONO,'normal');
+for(let i=0;i<24;i++){const x=340+i*25,h=10+i*3*a;rr(x,540-h,16,h,i>16?RD:AM,.8*a,3)}
+}
+function s2(t){
+head('01 / THE COMPOUNDING BILL','Each turn re-sends the whole conversation',t,1);
+const N=10,prog=sg(t,.8,9)*N,base=8,per=5;
+const bx=70,by=640,bw=56,gap=18,sc=3.2;let paid=0;
+for(let i=0;i<N;i++){const k=cl(prog-i,0,1);if(!k)continue;
+ const n=i+1;let y=by;const parts=[['sys',AM,base],['tools',BL,base],['hist',GR,per*i],['new',RD,per]];
+ for(const p of parts){const h=p[2]*sc*ez(k)*(p[0]=='hist'?1:1);y-=h;rr(bx+i*(bw+gap),y,bw,h,p[1],.9,3)}
+ tx('T'+n,bx+i*(bw+gap)+bw/2,662,14,DIM,1,'center',MONO);
+ paid+=(2*base+per*(i+1))*ez(k)}
+const cur=Math.min(N,Math.ceil(prog));
+tx('legend',0,0,1,'#000',0);
+[['system',AM],['tools',BL],['history',GR],['new msg',RD]].forEach((l,i)=>{rr(70+i*130,140,14,14,l[1],1,3);tx(l[0],92+i*130,152,15,DIM,1,'left',MONO,'normal')});
+const tot=Math.round(paid*100);
+rr(850,170,370,250,'#14161d',1,14);
+tx('TOKENS BILLED',875,210,14,DIM,1,'left',MONO);
+tx(tot.toLocaleString(),875,275,56,AM,1);
+tx('vs. '+(Math.round(cur*per*100)).toLocaleString()+' tokens of new work',875,310,16,FG,.8,'left',MONO,'normal');
+tx('Cost grows ~O(n²)',875,360,22,RD,ez(sg(t,5,6)));
+tx('with turns, not O(n).',875,388,22,FG,ez(sg(t,5.4,6.4)));
+tx('Turn 10 pays for turns 1–9 again.',850,470,18,GR,ez(sg(t,8,9.5)),'left',MONO,'normal');
+}
+function s3(t){
+head('02 / THREE TAXES','One window. Three ways it charges you.',t,1);
+const cards=[['COST','$',RD],['LATENCY','⏱',AM],['ACCURACY','◎',BL]];
+cards.forEach((c,i)=>{const a=ez(sg(t,.8+i*1.2,1.8+i*1.2)),x=60+i*400,y=170+(1-a)*40;
+ g.globalAlpha=a;rr(x,y,360,470,'#14161d',1,16);g.globalAlpha=1;
+ tx(c[0],x+30,y+50,24,c[2],a,'left',MONO);
+ const k=sg(t,2+i*1.2,6+i*1.2);
+ if(i==0){tx('$'+(k*184).toFixed(0),x+30,y+130,64,FG,a);tx('per long agent run',x+30,y+160,16,DIM,a,'left',MONO,'normal');
+  for(let j=0;j<12;j++){const h=(8+j*j*1.6)*ez(k);rr(x+30+j*26,y+420-h,18,h,RD,.85*a,3)}
+  tx('input tokens × every call',x+30,y+445,14,DIM,a,'left',MONO,'normal')}
+ if(i==1){tx((0.4+k*7.6).toFixed(1)+'s',x+30,y+130,64,FG,a);tx('time to first token',x+30,y+160,16,DIM,a,'left',MONO,'normal');
+  for(let j=0;j<5;j++){const w=(40+j*50)*ez(k);rr(x+30,y+210+j*34,w+0,20,AM,.5+.1*j,4);tx((j*25+'k'),x+40+w+0,y+226+j*34,13,DIM,a,'left',MONO,'normal')}
+  tx('prefill grows with context',x+30,y+445,14,DIM,a,'left',MONO,'normal')}
+ if(i==2){tx('LOST IN THE MIDDLE',x+30,y+110,20,FG,a);
+  g.strokeStyle=BL;g.lineWidth=4;g.beginPath();
+  for(let j=0;j<=100;j++){const u=j/100,v=0.35+0.65*Math.pow(Math.abs(u-.5)*2,2),yy=y+400-v*190*ez(k);j?g.lineTo(x+30+u*300,yy):g.moveTo(x+30,yy)}g.stroke();
+  tx('start',x+30,y+430,14,DIM,a,'left',MONO,'normal');tx('end',x+330,y+430,14,DIM,a,'right',MONO,'normal');tx('middle',x+180,y+430,14,RD,a,'center',MONO,'normal');
+  tx('recall dips as noise piles up',x+30,y+455,14,DIM,a,'left',MONO,'normal')}
+});
+}
+function s4(t){
+head('03 / PAYING LESS','Spend context like money',t,1);
+const fx=[['Prune','Drop stale tool output & dead ends',62],['Cache','Keep stable prefixes identical → reuse',80],['Retrieve','Pull files on demand, not upfront',55],['Summarize','Compact history at checkpoints',48],['Delegate','Subagents return answers, not transcripts',70]];
+fx.forEach((f,i)=>{const a=ez(sg(t,.8+i*1.5,1.8+i*1.5)),y=170+i*92;
+ g.globalAlpha=a;rr(60,y,1160,76,'#14161d',1,12);g.globalAlpha=1;
+ tx(String(i+1),88,y+48,30,AM,a,'left',MONO);tx(f[0],140,y+34,26,FG,a);tx(f[1],140,y+60,16,DIM,a,'left',MONO,'normal');
+ rr(760,y+28,360,20,'#262a35',a,10);const k=ez(sg(t,1.4+i*1.5,3+i*1.5));rr(760,y+28,360*f[2]/100*k,20,GR,a,10);
+ tx('−'+Math.round(f[2]*k)+'%',1200,y+46,22,GR,a,'right',MONO)});
+}
+function s5(t){
+const a=ez(sg(t,.3,1.5));
+tx('Every token needs to earn its place.',640,300,50,FG,a,'center');
+tx('Audit your context. Trim it. Cache it. Delegate it.',640,360,24,AM,ez(sg(t,1.5,2.5)),'center',MONO,'normal');
+const k=ez(sg(t,2.5,4));
+rr(440,410,400,16,'#262a35',1,8);rr(440,410,400*(1-.6*k),16,GR,1,8);
+tx('context used: '+Math.round(100-60*k)+'%',640,456,16,DIM,1,'center',MONO,'normal');
+tx('Draft built from the title only — source text, ElevenLabs & Remotion were not available. Verify figures.',640,680,13,DIM,.8,'center',MONO,'normal');
+}
+const sc=[[0,6,s1],[6,18,s2],[18,32,s3],[32,45,s4],[45,52,s5]];
+function frame(){
+let t=((performance.now()-t0)/1000+off)%DUR;
+bg(t);
+for(const [a,b,f] of sc)if(t>=a&&t<b){const lt=t-a;g.save();
+ const fi=sg(lt,0,.4),fo=1-sg(lt,b-a-.4,b-a);g.globalAlpha=Math.min(fi,fo);f(lt);g.restore();}
+g.globalAlpha=1;
+rr(0,714,1280*t/DUR,6,AM,.9,0);
+requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

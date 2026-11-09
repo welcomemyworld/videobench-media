@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Quickdesign</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=15;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)||0;
+const t0=performance.now()-off*1000;
+const W=1280,H=720,CX=640,CY=360;
+const cl=v=>Math.max(0,Math.min(1,v));
+const eo=v=>1-Math.pow(1-cl(v),3);
+const eio=v=>{v=cl(v);return v<.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2};
+const back=v=>{v=cl(v);const s=1.7;return 1+(s+1)*Math.pow(v-1,3)+s*Math.pow(v-1,2)};
+const P=['#ff3d6e','#ffb627','#2de1c2','#4d7cff','#b14dff'];
+function bg(t,col){x.fillStyle=col||'#0b0b14';x.fillRect(0,0,W,H);
+ x.strokeStyle='rgba(255,255,255,0.05)';x.lineWidth=1;const o=(t*40)%80;
+ for(let i=-80;i<W+80;i+=80){x.beginPath();x.moveTo(i+o,0);x.lineTo(i+o,H);x.stroke();}
+ for(let j=-80;j<H+80;j+=80){x.beginPath();x.moveTo(0,j+o);x.lineTo(W,j+o);x.stroke();}}
+function txt(s,X,Y,size,col,al,w){x.font=(w||'900')+' '+size+'px Helvetica,Arial,sans-serif';x.fillStyle=col;x.textAlign=al||'center';x.textBaseline='middle';x.fillText(s,X,Y);}
+function word(s,X,Y,size,col,p,stag){ // per-letter pop
+ x.font='900 '+size+'px Helvetica,Arial,sans-serif';const tw=x.measureText(s).width;let px=X-tw/2;
+ for(let i=0;i<s.length;i++){const ch=s[i],cw=x.measureText(ch).width;const k=back(p*(1+s.length*stag)-i*stag);
+  x.save();x.translate(px+cw/2,Y+(1-k)*60);x.globalAlpha=cl(k*1.5);x.scale(1,cl(k));txt(ch,0,0,size,col);x.restore();px+=cw;}}
+// scene 1: 0-3 burst + intro
+function s1(t){bg(t);
+ for(let i=0;i<5;i++){const r=eo((t-i*0.12)/1.2)*900;x.strokeStyle=P[i];x.lineWidth=30*(1-cl(t/2));x.beginPath();x.arc(CX,CY,r,0,7);x.stroke();}
+ for(let i=0;i<40;i++){const a=i*2.4,d=eo(t/1.5)*(200+(i*37)%300);x.fillStyle=P[i%5];x.globalAlpha=1-cl((t-1)/1.5);
+  x.fillRect(CX+Math.cos(a)*d-5,CY+Math.sin(a)*d-5,10,10);}x.globalAlpha=1;
+ word('QUICK',CX,CY-50,150,'#fff',cl((t-0.5)/1),0.08);
+ word('DESIGN',CX,CY+80,150,P[0],cl((t-0.8)/1),0.08);
+ if(t>2.4){const k=eio((t-2.4)/0.6);x.fillStyle=P[1];x.fillRect(0,0,W*k,H);}}
+// scene 2: 3-6 shapes morph grid
+function s2(t){bg(t,P[1]);
+ const n=8,m=5;for(let i=0;i<n;i++)for(let j=0;j<m;j++){const d=Math.hypot(i-n/2,j-m/2);const k=back((t-d*0.07)/0.7);
+  const px=100+i*154,py=90+j*135,s=60*k;x.save();x.translate(px,py);x.rotate(k*Math.PI/2+t*(i%2?1:-1));
+  x.fillStyle=['#0b0b14','#fff',P[0]][(i+j)%3];const sh=(i*3+j+Math.floor(t*2))%3;
+  if(sh==0)x.fillRect(-s/2,-s/2,s,s);else if(sh==1){x.beginPath();x.arc(0,0,s/2,0,7);x.fill();}
+  else{x.beginPath();x.moveTo(0,-s/2);x.lineTo(s/2,s/2);x.lineTo(-s/2,s/2);x.fill();}x.restore();}
+ const k=eo((t-0.6)/0.6);x.fillStyle='#0b0b14';x.fillRect(CX-420*k,CY-70,840*k,140);
+ if(t>0.9)word('FAST.',CX-200,CY,90,'#fff',cl((t-0.9)/0.6),0.1);
+ if(t>1.3)word('BOLD.',CX+200,CY,90,P[1],cl((t-1.3)/0.6),0.1);
+ if(t>2.5){const k2=eio((t-2.5)/0.5);x.fillStyle=P[3];x.beginPath();x.arc(CX,CY,k2*800,0,7);x.fill();}}
+// scene 3: 6-9 UI assembling
+function s3(t){bg(t,P[3]);
+ const cards=[[180,160,400,400,'#fff'],[620,160,480,180,'#0b0b14'],[620,380,230,180,P[1]],[870,380,230,180,P[0]]];
+ cards.forEach((cd,i)=>{const k=back((t-i*0.15)/0.7);x.save();x.translate(cd[0]+cd[2]/2,cd[1]+cd[3]/2+(1-k)*300);x.rotate((1-k)*0.3);
+  x.fillStyle='rgba(0,0,0,.25)';x.fillRect(-cd[2]/2+12,-cd[3]/2+12,cd[2],cd[3]);x.fillStyle=cd[4];x.fillRect(-cd[2]/2,-cd[3]/2,cd[2],cd[3]);x.restore();});
+ // card 0 content: chart
+ for(let i=0;i<6;i++){const h=eo((t-0.8-i*0.08)/0.6)*(80+((i*53)%150));x.fillStyle=P[i%5];x.fillRect(215+i*58,520-h,40,h);}
+ if(t>0.7)txt('GROWTH',220,200,32,'#0b0b14','left');
+ if(t>1)word('CLEAN LAYOUT',860,250,52,'#fff',cl((t-1)/0.7),0.04);
+ const pct=Math.round(eo((t-1)/1.2)*100);if(t>0.9){txt(pct+'%',735,470,64,'#0b0b14');txt('×'+(pct/10).toFixed(1),985,470,64,'#fff');}
+ if(t>2.4){const k=eio((t-2.4)/0.6);x.fillStyle='#0b0b14';x.save();x.translate(CX,CY);x.rotate(k);x.fillRect(-W*k,-H*k*1.2,2*W*k,2.4*H*k);x.restore();}}
+// scene 4: 9-12 kinetic type + orbit
+function s4(t){bg(t);
+ for(let i=0;i<3;i++){x.save();x.translate(CX,CY);x.rotate(t*(i+1)*0.6);x.strokeStyle=P[i+2];x.lineWidth=3;x.setLineDash([20,15]);
+  x.beginPath();x.arc(0,0,180+i*70,0,7*eo(t/0.8));x.stroke();x.setLineDash([]);x.fillStyle=P[i];x.beginPath();x.arc(180+i*70,0,14,0,7);x.fill();x.restore();}
+ const ws=['MOTION','RHYTHM','IMPACT'];const idx=Math.min(2,Math.floor(t/0.9));const lt=t-idx*0.9;
+ x.save();x.beginPath();x.rect(0,CY-80,W,160);x.clip();
+ const y=CY+(1-eo(lt/0.35))*160-eo((lt-0.65)/0.25)*(idx<2?160:0);txt(ws[idx],CX,y,130,P[idx]);x.restore();
+ if(t>2.6){const k=eio((t-2.6)/0.4);for(let i=0;i<5;i++){x.fillStyle=P[i];x.fillRect(i*W/5,H*(1-k),W/5+1,H*k);}}}
+// scene 5: 12-15 finale
+function s5(t){const k0=eio(t/0.5);for(let i=0;i<5;i++){x.fillStyle=P[i];x.fillRect(i*W/5,-H*k0,W/5+1,H);}
+ x.fillStyle='#0b0b14';x.fillRect(0,H*(1-k0),W,H);bg(t+12,null);x.globalAlpha=1;
+ if(t<0.5){for(let i=0;i<5;i++){x.fillStyle=P[i];x.fillRect(i*W/5,-H*k0,W/5+1,H);}}
+ const sc=back((t-0.4)/0.8);x.save();x.translate(CX,CY-60);x.scale(sc,sc);x.rotate((1-sc)*2);
+ for(let i=0;i<5;i++){x.fillStyle=P[i];x.save();x.rotate(i*Math.PI*2/5+t*0.8);x.fillRect(20,-14,70,28);x.restore();}
+ x.fillStyle='#fff';x.beginPath();x.arc(0,0,22,0,7);x.fill();x.restore();
+ word('QUICKDESIGN',CX,CY+110,96,'#fff',cl((t-0.8)/0.8),0.04);
+ const lk=eo((t-1.4)/0.6);x.fillStyle=P[0];x.fillRect(CX-300*lk,CY+170,600*lk,6);
+ x.globalAlpha=cl((t-1.7)/0.5);txt('Design at the speed of ideas.',CX,CY+215,32,'#ccc','center','400');x.globalAlpha=1;
+ if(t>2.7){x.fillStyle='rgba(0,0,0,'+cl((t-2.7)/0.3)+')';x.fillRect(0,0,W,H);}}
+function frame(){let t=((performance.now()-t0)/1000)%DUR;
+ if(t<3)s1(t);else if(t<6)s2(t-3);else if(t<9)s3(t-6);else if(t<12)s4(t-9);else s5(t-12);
+ // progress bar
+ x.fillStyle='rgba(255,255,255,.35)';x.fillRect(0,H-4,W*t/DUR,4);
+ requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

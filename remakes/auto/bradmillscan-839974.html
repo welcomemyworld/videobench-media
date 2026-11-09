@@ -1,0 +1,58 @@
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000;height:100%;overflow:hidden}canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+window.DUR=48;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px'}fit();onresize=fit;
+const q=new URLSearchParams(location.search),T0=parseFloat(q.get('t')||0),st=performance.now();
+// deterministic pseudo-block data
+let sd=21e6;const R=()=>(sd=(sd*16807)%2147483647)/2147483647;
+function hex(n){let s='';for(let i=0;i<n;i++)s+='0123456789abcdef'[R()*16|0];return s}
+const blocks=[];for(let i=0;i<64;i++)blocks.push({h:i*13125,hash:'0000000000'+hex(22),tx:(R()*3000+1)|0});
+const halv=[[0,50],[210000,25],[420000,12.5],[630000,6.25],[840000,3.125]];
+function supply(h){let s=0,r=50,b=h;while(b>0&&r>1e-8){const k=Math.min(b,210000);s+=k*r;b-=k;r/=2}return s}
+const E=t=>t<0?0:t>1?1:t*t*(3-2*t);
+function txt(s,X,Y,sz,col,al,a='center',w='700'){x.globalAlpha=Math.max(0,Math.min(1,al));x.fillStyle=col;x.font=w+' '+sz+'px Helvetica,Arial,sans-serif';x.textAlign=a;x.fillText(s,X,Y);x.globalAlpha=1}
+function fade(t,a,b){return E((t-a)/0.8)*(1-E((t-b+0.8)/0.8))}
+const eras=[['3000 BC','Shells & grain','Money you could gather'],['600 BC','Lydian gold coin','Money you had to mine'],['1971','Nixon closes the gold window','Money you could print'],['2008','Bailouts. QE. Infinity.','Trust, debased']];
+function bg(t){const g=x.createRadialGradient(640,360,50,640,360,800);g.addColorStop(0,'#14100a');g.addColorStop(1,'#000');x.fillStyle=g;x.fillRect(0,0,1280,720)}
+function printer(t,lt){ // money printer scene
+for(let i=0;i<80;i++){const p=(lt*0.6+i*0.37)%1,X=(i*97)%1280,Y=-60+p*840;x.save();x.translate(X,Y);x.rotate(lt+i);x.globalAlpha=.5;x.fillStyle='#3a6b3a';x.fillRect(-30,-14,60,28);x.strokeStyle='#8c8';x.strokeRect(-26,-10,52,20);x.restore()}x.globalAlpha=1}
+function frame(){
+let t=((performance.now()-st)/1000+T0)%DUR;bg(t);
+// Scene 1: eras 0-14
+if(t<14){const i=Math.min(3,t/3.5|0),lt=t-i*3.5;
+if(i>=2)printer(t,lt);
+const a=fade(lt,0,3.5);
+txt(eras[i][0],640,300,90,'#f7931a',a);txt(eras[i][1],640,370,40,'#fff',a,'center','400');txt(eras[i][2],640,430,26,'#aaa',a,'center','300');
+if(i<2){x.globalAlpha=a;x.fillStyle=i?'#d4a017':'#e8dcc0';for(let k=0;k<7;k++){x.beginPath();x.arc(640+(k-3)*60,520+Math.sin(t*2+k)*6,18,0,7);x.fill()}x.globalAlpha=1}
+if(i>=2){const n=Math.floor(Math.exp(lt*3)*1e9);txt('$'+n.toLocaleString('en-US'),640,560,36,'#c44',a,'center','700')}}
+// Scene 2: genesis + chain 14-30
+else if(t<30){const lt=t-14;
+txt('January 3, 2009',640,90,28,'#aaa',fade(lt,0,5));
+txt('"Chancellor on brink of second bailout for banks"',640,135,22,'#f7931a',fade(lt,.5,5),'center','italic 400');
+const off=Math.max(0,lt-2)*120;
+for(let i=0;i<blocks.length;i++){const b=blocks[i],X=200+i*170-off;if(X<-160||X>1440)continue;const Y=360+Math.sin(i*.7+t)*8,glow=i==0?1:.5;
+if(i>0){x.strokeStyle='#f7931a';x.globalAlpha=.6;x.beginPath();x.moveTo(X-170+60,Y);x.lineTo(X-60,Y);x.stroke();x.globalAlpha=1}
+x.shadowColor='#f7931a';x.shadowBlur=20*glow;x.fillStyle='#16110a';x.strokeStyle='#f7931a';x.lineWidth=2;x.fillRect(X-60,Y-60,120,120);x.strokeRect(X-60,Y-60,120,120);x.shadowBlur=0;
+txt('#'+b.h.toLocaleString('en-US'),X,Y-30,16,'#f7931a',1);txt(b.hash.slice(0,12),X,Y-5,11,'#888',1,'center','400');txt(b.hash.slice(12,24),X,Y+10,11,'#888',1,'center','400');txt(b.tx+' tx',X,Y+38,13,'#ddd',1,'center','400')}
+const h=Math.min(840000,Math.floor(lt/16*880000));
+txt('Block height '+h.toLocaleString('en-US'),640,560,30,'#fff',E(lt-1));
+txt('Every block verified. No one can print the proof.',640,610,22,'#aaa',fade(lt,4,16),'center','400')}
+// Scene 3: supply curve 30-42
+else if(t<42){const lt=t-30,p=E(lt/9),L=140,Rr=1140,Tp=150,B=560,H=1.05e6*p+1;
+x.strokeStyle='#333';x.lineWidth=1;x.beginPath();x.moveTo(L,B);x.lineTo(Rr,B);x.moveTo(L,B);x.lineTo(L,Tp);x.stroke();
+const yy=v=>B-(v/21e6)*(B-Tp-20);
+x.setLineDash([6,6]);x.strokeStyle='#f7931a55';x.beginPath();x.moveTo(L,yy(21e6));x.lineTo(Rr,yy(21e6));x.stroke();x.setLineDash([]);
+x.strokeStyle='#f7931a';x.lineWidth=3;x.shadowColor='#f7931a';x.shadowBlur=12;x.beginPath();
+for(let k=0;k<=300;k++){const hh=k/300*H*6.6;const X=L+k/300*(Rr-L)*p;k?x.lineTo(X,yy(supply(hh))):x.moveTo(X,yy(0))}x.stroke();x.shadowBlur=0;
+halv.forEach(([h,r],j)=>{const X=L+(h/6.93e6)*(Rr-L);if(X<L+(Rr-L)*p){x.strokeStyle='#555';x.beginPath();x.moveTo(X,B);x.lineTo(X,B+8);x.stroke();txt(r+' ₿',X,B+30,14,'#aaa',1,'center','400')}});
+const s=supply(H*6.6);txt('Supply: '+Math.floor(Math.min(s,20999999.9769)).toLocaleString('en-US')+' BTC',640,100,34,'#fff',E(lt));
+txt('Halving every 210,000 blocks',640,640,22,'#aaa',E(lt-1),'center','400');txt('21,000,000',Rr,yy(21e6)-10,16,'#f7931a',p,'right')}
+// Scene 4: finale 42-48
+else{const lt=t-42;for(let i=0;i<120;i++){const a=i*2.4+lt*.3,r=(i*7+lt*40)%500;x.fillStyle='#f7931a';x.globalAlpha=.3;x.fillRect(640+Math.cos(a)*r,360+Math.sin(a)*r,2,2)}x.globalAlpha=1;
+const s=1+.03*Math.sin(lt*3);x.save();x.translate(640,300);x.scale(s,s);x.shadowColor='#f7931a';x.shadowBlur=40;txt('21,000,000',0,30,120,'#f7931a',E(lt/1.2),'center','900');x.restore();x.shadowBlur=0;
+txt("That's the truth.",640,420,40,'#fff',E((lt-1.2)/1),'center','300');txt("Can't print the proof.",640,480,24,'#888',fade(lt,2,6),'center','400')}
+// vignette+grain
+x.fillStyle='rgba(0,0,0,.25)';for(let i=0;i<720;i+=4)x.fillRect(0,i,1280,1);
+requestAnimationFrame(frame)}
+frame();
+</script></body></html>

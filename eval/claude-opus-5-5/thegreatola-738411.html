@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Product Demo</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#0b0d14}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=32;
+const C=document.getElementById('c'),X=C.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);C.style.width=1280*s+'px';C.style.height=720*s+'px'}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),T0=parseFloat(q.get('t')||0),S=performance.now();
+const NAME='[PRODUCT NAME]',TAG='[One line: what it is and who it\u2019s for]';
+const F='Helvetica Neue, Helvetica, Arial, sans-serif';
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),E=t=>{t=cl(t);return t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2};
+const ramp=(t,a,b)=>E((t-a)/(b-a));
+const ACC='#6c8cff',ACC2='#9b6cff';
+function rr(x,y,w,h,r){X.beginPath();X.roundRect(x,y,w,h,r)}
+function txt(s,x,y,sz,c,w='600',al='left'){X.font=w+' '+sz+'px '+F;X.fillStyle=c;X.textAlign=al;X.textBaseline='middle';X.fillText(s,x,y)}
+function bg(t){
+ const g=X.createRadialGradient(640+Math.sin(t*.3)*200,300,50,640,360,900);
+ g.addColorStop(0,'#1b2140');g.addColorStop(1,'#07080d');X.fillStyle=g;X.fillRect(0,0,1280,720);
+ X.strokeStyle='rgba(255,255,255,0.035)';X.lineWidth=1;
+ for(let i=0;i<1280;i+=40){X.beginPath();X.moveTo(i,0);X.lineTo(i,720);X.stroke()}
+ for(let j=0;j<720;j+=40){X.beginPath();X.moveTo(0,j);X.lineTo(1280,j);X.stroke()}
+}
+function logo(x,y,s,rot){X.save();X.translate(x,y);X.rotate(rot);
+ const g=X.createLinearGradient(-s,-s,s,s);g.addColorStop(0,ACC);g.addColorStop(1,ACC2);
+ X.fillStyle=g;rr(-s,-s,2*s,2*s,s*.45);X.fill();X.fillStyle='#fff';X.globalAlpha=.9;
+ X.beginPath();X.arc(0,0,s*.42,0,7);X.fill();X.restore();X.globalAlpha=1}
+// app window
+function win(t,a,scale,title){
+ X.save();X.globalAlpha=a;X.translate(640,380);X.scale(scale,scale);X.translate(-520,-290);
+ X.shadowColor='rgba(0,0,0,.6)';X.shadowBlur=60;X.shadowOffsetY=20;
+ X.fillStyle='#141826';rr(0,0,1040,580,18);X.fill();X.shadowColor='transparent';
+ X.fillStyle='#1b2032';rr(0,0,1040,44,18);X.fill();X.fillRect(0,26,1040,18);
+ ['#ff5f57','#febc2e','#28c840'].forEach((c,i)=>{X.fillStyle=c;X.beginPath();X.arc(22+i*20,22,6,0,7);X.fill()});
+ txt(title,520,22,14,'#8a93b0','500','center');
+ // sidebar
+ X.fillStyle='#10131e';X.fillRect(0,44,200,536);
+ logo(34,78,12,0);txt(NAME,56,78,13,'#e6e9f5','700');
+ return X}
+function endWin(){X.restore();X.globalAlpha=1}
+function side(sel){['Dashboard','Projects','Reports','Team','Settings'].forEach((s,i)=>{
+ const y=130+i*42;if(i===sel){X.fillStyle='rgba(108,140,255,.18)';rr(12,y-16,176,32,8);X.fill()}
+ X.fillStyle=i===sel?ACC:'#3a4260';rr(26,y-6,12,12,3);X.fill();txt(s,50,y,14,i===sel?'#fff':'#8a93b0','500')})}
+let cursor={x:640,y:400,click:0};
+function drawCursor(){const {x,y,click}=cursor;
+ if(click>0){X.strokeStyle='rgba(108,140,255,'+click+')';X.lineWidth=3;X.beginPath();X.arc(x,y,30*(1-click)+8,0,7);X.stroke()}
+ X.save();X.translate(x,y);X.fillStyle='#fff';X.strokeStyle='#000';X.lineWidth=1.5;
+ X.beginPath();X.moveTo(0,0);X.lineTo(0,22);X.lineTo(6,17);X.lineTo(11,27);X.lineTo(15,25);X.lineTo(10,15);X.lineTo(17,15);X.closePath();X.fill();X.stroke();X.restore()}
+function path(t,pts){// pts:[time,x,y]
+ for(let i=0;i<pts.length-1;i++){const a=pts[i],b=pts[i+1];if(t<b[0]){const k=E((t-a[0])/(b[0]-a[0]));return [a[1]+(b[1]-a[1])*k,a[2]+(b[2]-a[2])*k]}}
+ const l=pts[pts.length-1];return [l[1],l[2]]}
+function caption(t,a,b,h,s){const k=Math.min(ramp(t,a,a+.5),1-ramp(t,b-.5,b));if(k<=0)return;
+ X.globalAlpha=k;txt(h,640,48-10*(1-k),28,'#fff','700','center');txt(s,640,80,16,'#9aa3c2','400','center');X.globalAlpha=1}
+function step(t,n,label,a,b){const k=Math.min(ramp(t,a,a+.4),1-ramp(t,b-.4,b));if(k<=0)return;X.globalAlpha=k;
+ X.fillStyle='rgba(108,140,255,.15)';rr(40,670,170,32,16);X.fill();txt('STEP '+n+'  \u00b7  '+label,125,686,12,'#b9c6ff','700','center');X.globalAlpha=1}
+// scenes
+function intro(t){const k=ramp(t,0.2,1.4),o=1-ramp(t,4.2,5);X.globalAlpha=o;
+ logo(640,290,46*k,(1-k)*2);
+ X.globalAlpha=o*ramp(t,1,2);txt(NAME,640,390+10*(1-ramp(t,1,2)),54,'#fff','800','center');
+ X.globalAlpha=o*ramp(t,1.8,2.8);txt(TAG,640,445,20,'#9aa3c2','400','center');X.globalAlpha=1}
+function signup(t,a){// 5-11
+ win(t,a,.92+.08*ramp(t,5,6),'Sign up');
+ X.fillStyle='#141826';X.fillRect(0,44,200,536);
+ const full='you@company.com',n=Math.floor(cl((t-6.5)/1.6)*full.length);
+ txt('Create your account',520,150,30,'#fff','700','center');
+ txt('Get started in under a minute',520,190,15,'#8a93b0','400','center');
+ X.strokeStyle=t>6.3?ACC:'#2a3150';X.lineWidth=2;rr(360,240,320,48,10);X.stroke();
+ txt(n?full.slice(0,n)+((t*2|0)%2&&t<8.3?'|':''):'Email',378,264,16,n?'#fff':'#566',  '400');
+ X.strokeStyle='#2a3150';rr(360,304,320,48,10);X.stroke();
+ txt(t>8.6?'\u2022'.repeat(Math.min(10,(t-8.6)*12|0)):'Password',378,328,16,t>8.6?'#fff':'#566','400');
+ const pr=t>9.9&&t<10.2;X.fillStyle=pr?'#5574ee':ACC;rr(360,378,320,50,10);X.fill();
+ txt(t>10.1?'\u2713 Welcome!':'Continue',520,403,16,'#fff','700','center');
+ endWin()}
+function dash(t,a,sel){// dashboard
+ win(t,a,1,'Dashboard');side(sel);
+ txt('Good morning, Alex',230,84,22,'#fff','700');
+ const vals=['12,480','+38%','1,209','99.9%'],labs=['Active users','Growth','Tasks done','Uptime'];
+ for(let i=0;i<4;i++){const k=ramp(t,11.4+i*.15,12.2+i*.15),x=230+i*200;X.globalAlpha=a*k;
+  X.fillStyle='#1b2032';rr(x,120+20*(1-k),184,96,12);X.fill();
+  txt(labs[i],x+16,148+20*(1-k),13,'#8a93b0','500');txt(vals[i],x+16,184+20*(1-k),26,'#fff','800')}
+ X.globalAlpha=a;X.fillStyle='#1b2032';rr(230,236,520,300,12);X.fill();txt('Weekly activity',250,262,15,'#fff','600');
+ const g=ramp(t,12.4,14);
+ for(let i=0;i<12;i++){const h=(60+90*Math.abs(Math.sin(i*1.7+.5))+i*6)*g;
+  const gr=X.createLinearGradient(0,510-h,0,510);gr.addColorStop(0,ACC2);gr.addColorStop(1,ACC);X.fillStyle=gr;
+  rr(256+i*40,510-h,24,h,5);X.fill()}
+ X.fillStyle='#1b2032';rr(770,236,250,300,12);X.fill();txt('Recent',790,262,15,'#fff','600');
+ ['Launch plan','Q3 review','Onboarding','Pricing v2','Design sync'].forEach((s,i)=>{const k=ramp(t,13+i*.2,13.6+i*.2);X.globalAlpha=a*k;
+  X.fillStyle=['#6c8cff','#28c840','#febc2e','#ff5f57','#9b6cff'][i];X.beginPath();X.arc(796,300+i*46,6,0,7);X.fill();
+  txt(s,814,300+i*46,14,'#d4d8ea','500');txt((i+1)*7+'m',1000,300+i*46,12,'#667','400','right')});
+ X.globalAlpha=1;endWin()}
+function project(t,a){// 18-26 create project, AI
+ win(t,a,1,'Projects');side(1);
+ txt('Projects',230,84,22,'#fff','700');
+ X.fillStyle=t>19.4&&t<19.7?'#5574ee':ACC;rr(880,64,140,40,10);X.fill();txt('+ New project',950,84,14,'#fff','700','center');
+ const cards=t>20.6?5:4;
+ for(let i=0;i<cards;i++){const isNew=i===4,k=isNew?ramp(t,20.6,21.3):1,x=230+(i%3)*265,y=124+(i/3|0)*200;
+  X.globalAlpha=a*k;X.fillStyle=isNew?'#202852':'#1b2032';rr(x,y+15*(1-k),250,184,14);X.fill();
+  if(isNew){X.strokeStyle=ACC;X.lineWidth=2;X.stroke()}
+  txt(isNew?'Untitled project':['Website','Mobile app','Campaign','Research'][i],x+18,y+34,16,'#fff','700');
+  const p=isNew?cl((t-22)/3):[.8,.45,.92,.3][i];
+  X.fillStyle='#2a3150';rr(x+18,y+150,214,8,4);X.fill();X.fillStyle=ACC;rr(x+18,y+150,214*p,8,4);X.fill();
+  txt(Math.round(p*100)+'%',x+232,y+130,12,'#8a93b0','500','right');
+  if(isNew&&t>21.8){const s='Auto-generating tasks\u2026'.slice(0,(t-21.8)*20|0);txt(s,x+18,y+70,13,'#b9c6ff','500');
+   for(let j=0;j<3;j++){if(t>22.6+j*.6){X.fillStyle='#28c840';X.beginPath();X.arc(x+24,y+96+j*0,4,0,7);}}
+   txt(Math.min(12,Math.max(0,(t-22.4)*4|0))+' tasks created',x+18,y+100,13,'#8a93b0','400')}
+ }
+ X.globalAlpha=1;endWin()}
+function outro(t){const k=ramp(t,26.6,27.6);X.globalAlpha=k;
+ logo(640,260,40,0);txt(NAME,640,350,52,'#fff','800','center');txt(TAG,640,402,20,'#9aa3c2','400','center');
+ const b=ramp(t,27.8,28.6);X.globalAlpha=b;const g=X.createLinearGradient(540,0,740,0);g.addColorStop(0,ACC);g.addColorStop(1,ACC2);
+ X.fillStyle=g;rr(530,450,220,54,27);X.fill();txt('Get started free',640,477,18,'#fff','700','center');
+ X.globalAlpha=1}
+function frame(){
+ const t=((performance.now()-S)/1000+T0)%window.DUR;
+ bg(t);
+ if(t<5)intro(t);
+ const aS=Math.min(ramp(t,4.6,5.4),1-ramp(t,10.6,11));if(aS>0)signup(t,aS);
+ const aD=Math.min(ramp(t,10.8,11.4),1-ramp(t,17.6,18));if(aD>0)dash(t,aD,0);
+ const aP=Math.min(ramp(t,17.8,18.4),1-ramp(t,25.8,26.4));if(aP>0)project(t,aP);
+ if(t>26.4)outro(t);
+ caption(t,5.2,10.8,'Sign up in seconds','No credit card, no setup');
+ caption(t,11.2,17.7,'Everything at a glance','Your dashboard comes alive instantly');
+ caption(t,18.2,26,'Start a project in one click','Smart defaults do the busywork');
+ step(t,1,'ONBOARD',5.2,10.8);step(t,2,'OVERVIEW',11.2,17.7);step(t,3,'CREATE',18.2,26);
+ if(t>5.5&&t<26){const p=path(t,[[5.5,900,600],[6.3,640,355],[8.4,640,355],[8.6,640,420],[9.7,640,420],[10,640,505],[11.5,640,505],[13,500,520],[15,980,400],[17,980,400],[18.3,300,420],[19.4,1130,180],[20.5,1130,180],[21.4,640,560],[26,700,600]]);
+  cursor.x=p[0];cursor.y=p[1];const cs=[6.3,8.6,10,19.4];cursor.click=0;
+  for(const c of cs)if(t>c&&t<c+.5)cursor.click=1-(t-c)/.5;drawCursor()}
+ // fade at loop edges
+ const f=Math.max(1-cl(t/.5),ramp(t,window.DUR-.6,window.DUR));if(f>0){X.fillStyle='rgba(0,0,0,'+f+')';X.fillRect(0,0,1280,720)}
+ requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

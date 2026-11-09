@@ -1,0 +1,75 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000;height:100%;overflow:hidden}canvas{position:absolute;left:50%;top:50%;transform-origin:0 0}</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+const cv=document.getElementById('c'),g=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.transform`=`;cv.style.transform=`scale(${s}) translate(-50%,-50%)`}
+fit();onresize=fit;
+window.DUR=50;
+// population 2024 in millions (approx), 8144 total target
+const C=[["China",1409],["India",1451],["USA",345],["Indonesia",283],["Pakistan",251],["Nigeria",232],["Brazil",212],["Bangladesh",174],["Russia",144],["Ethiopia",132],["Mexico",130],["Japan",124],["Philippines",115],["Egypt",114],["DR Congo",109],["Vietnam",101],["Iran",91],["Turkey",87],["Germany",84],["Thailand",72],["UK",69],["Tanzania",68],["France",66],["South Africa",64],["Italy",59],["Kenya",56],["Myanmar",54],["Colombia",52],["S. Korea",52],["Uganda",50],["Spain",48],["Argentina",46],["Algeria",46],["Sudan",49],["Ukraine",38],["Iraq",46],["Afghanistan",43],["Poland",38],["Canada",40],["Morocco",38]];
+const cols=["#e63946","#f4a261","#e9c46a","#2a9d8f","#4cc9f0","#4361ee","#b5179e","#80ed99"];
+let list=[];C.forEach((c,i)=>{for(let k=0;k<c[1];k++)list.push(i)});
+let sum=list.length,rest=8144-sum;
+// fill with "Rest of world"
+for(let k=0;k<rest;k++)list.push(C.length);
+C.push(["Rest of world",rest]);
+const N=list.length;
+// seeded rng
+let sd=7;const R=()=>(sd=(sd*16807)%2147483647)/2147483647;
+const r=3.2,W=1280,H=720,fl=H-20,L=380,Rt=900;
+// container: x from L to Rt? use wide basin
+const xl=300,xr=980;
+const P=[];let spawned=0;
+const cnt=new Array(C.length).fill(0);
+// grid
+const cs=8,gw=Math.ceil(W/cs),gh=Math.ceil(H/cs);
+let audio=null,gain;
+function initA(){try{audio=new (window.AudioContext||window.webkitAudioContext)();gain=audio.createGain();gain.gain.value=.5;gain.connect(audio.destination)}catch(e){}}
+addEventListener('pointerdown',()=>{if(!audio)initA();audio&&audio.resume()});
+try{initA()}catch(e){}
+let clinks=0;
+function clink(v,pitch){if(!audio||audio.state!=='running'||clinks>14)return;clinks++;const o=audio.createOscillator(),e=audio.createGain();o.type='sine';o.frequency.value=1800+pitch*2200;e.gain.setValueAtTime(Math.min(.12,v*.02),audio.currentTime);e.gain.exponentialRampToValueAtTime(.0001,audio.currentTime+.09);o.connect(e);e.connect(gain);o.start();o.stop(audio.currentTime+.1)}
+const t0=performance.now(),off=parseFloat(new URLSearchParams(location.search).get('t'))||0;
+let sim=0,last=-1;
+function step(dt){
+// spawn
+const target=Math.min(N,Math.floor(Math.pow(Math.min(1,(sim)/42),1.3)*N));
+while(spawned<target){const i=spawned++;const c=list[i];P.push({x:xl+10+R()*(xr-xl-20),y:-10-R()*60,vx:(R()-.5)*30,vy:0,c});cnt[c]++}
+const gr=900;
+for(const p of P){p.vy+=gr*dt;p.x+=p.vx*dt;p.y+=p.vy*dt;
+if(p.x<xl+r){p.x=xl+r;p.vx=Math.abs(p.vx)*.4}
+if(p.x>xr-r){p.x=xr-r;p.vx=-Math.abs(p.vx)*.4}
+if(p.y>fl-r){if(p.vy>120)clink(p.vy/500,R());p.y=fl-r;p.vy=-p.vy*.35;p.vx*=.9}}
+const G=new Map();
+P.forEach((p,i)=>{const k=(p.x/cs|0)+(p.y/cs|0)*gw;let a=G.get(k);if(!a)G.set(k,a=[]);a.push(i)});
+for(let i=0;i<P.length;i++){const p=P[i];const gx=p.x/cs|0,gy=p.y/cs|0;
+for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){const a=G.get(gx+dx+(gy+dy)*gw);if(!a)continue;
+for(const j of a){if(j<=i)continue;const q=P[j];let ex=q.x-p.x,ey=q.y-p.y,d=ex*ex+ey*ey;if(d<4*r*r&&d>1e-6){d=Math.sqrt(d);ex/=d;ey/=d;const o=2*r-d;p.x-=ex*o/2;p.y-=ey*o/2;q.x+=ex*o/2;q.y+=ey*o/2;
+const rv=(q.vx-p.vx)*ex+(q.vy-p.vy)*ey;if(rv<0){const j2=-rv*.65;p.vx-=j2*ex;p.vy-=j2*ey;q.vx+=j2*ex;q.vy+=j2*ey;if(-rv>90)clink(-rv/400,(i*7%10)/10)}}}}}
+}
+function draw(t){
+g.fillStyle="#0b0d14";g.fillRect(0,0,W,H);
+g.strokeStyle="#556";g.lineWidth=3;g.beginPath();g.moveTo(xl,0);g.lineTo(xl,fl);g.lineTo(xr,fl);g.lineTo(xr,0);g.stroke();
+for(const p of P){g.fillStyle=cols[p.c%8];g.beginPath();g.arc(p.x,p.y,r,0,7);g.fill()}
+g.fillStyle="#fff";g.font="bold 26px sans-serif";g.textAlign="left";
+g.fillText("World Population 2024",20,40);
+g.font="16px sans-serif";g.fillStyle="#aab";g.fillText("1 marble = 1 million people",20,64);
+g.font="bold 40px sans-serif";g.fillStyle="#fff";g.fillText(spawned.toLocaleString(),20,120);
+g.font="14px sans-serif";g.fillStyle="#aab";g.fillText("of 8,144 marbles",20,142);
+// legend: top countries dropped so far
+g.font="13px sans-serif";
+for(let i=0;i<14;i++){const y=180+i*24;g.fillStyle=cols[i%8];g.beginPath();g.arc(28,y-4,5,0,7);g.fill();g.fillStyle=cnt[i]>=C[i][1]?"#fff":"#889";g.fillText(C[i][0]+"  "+cnt[i],42,y)}
+// current country
+let cur=list[Math.max(0,spawned-1)];
+g.textAlign="right";g.fillStyle=cols[cur%8];g.font="bold 30px sans-serif";g.fillText(C[cur][0],1260,60);
+g.fillStyle="#aab";g.font="16px sans-serif";g.fillText(C[cur][1]+" million",1260,86);
+g.fillStyle="#667";g.font="12px sans-serif";g.fillText("Each clink = a simulated collision",1260,700);
+}
+function loop(now){
+let t=((now-t0)/1000+off)%DUR;
+if(last<0||t<last){if(t<last||last<0){P.length=0;spawned=0;cnt.fill(0);sim=0;sd=7;
+// fast-forward
+let s=0;const T=t;while(s<T){step(1/120);s+=1/120;sim=s}
+}}
+else{let d=t-last;while(d>0){const h=Math.min(d,1/120);sim+=h;step(h);d-=h}}
+last=t;clinks=0;draw(t);requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+</script></body></html>

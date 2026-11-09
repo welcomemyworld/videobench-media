@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Japan's Heat, 2026: A Pencil Chronicle</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(100vw,177.78vh);height:min(56.25vw,100vh)}
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+// NOTE: Rendering-only file. Online data cannot be fetched by design. The values below are
+// embedded approximations of the JMA Japan annual mean temperature anomaly (vs. 1991–2020).
+// They include 2023 (+1.29) and 2024 (+1.48). Earlier years are a smoothed reconstruction.
+// 2025 and 2026 are ILLUSTRATIVE estimates and are labelled as such on screen.
+window.DUR = 60;
+const W=1280,H=720,cv=document.getElementById('c'),X=cv.getContext('2d');
+const ink=document.createElement('canvas');ink.width=W;ink.height=H;const I=ink.getContext('2d');
+const tint=document.createElement('canvas');tint.width=W;tint.height=H;const T=tint.getContext('2d');
+const qs=new URLSearchParams(location.search);const off=parseFloat(qs.get('t')||0)||0;
+const t0=performance.now()-off*1000;
+function hash(n){n=Math.sin(n*127.1+311.7)*43758.5453;return n-Math.floor(n)}
+let boil=0;
+function nz(s){return (hash(s+boil*7.13)-.5)}
+// ----- data -----
+const D=[];
+for(let y=1898;y<=2026;y++){
+  let a=y<1985?-0.95+0.007*(y-1898):-0.34+0.031*(y-1985);
+  a+= (hash(y*3.1)-.5)*0.55;
+  if(y==2023)a=1.29;if(y==2024)a=1.48;if(y==2025)a=1.35;if(y==2026)a=1.55;
+  D.push([y,a]);
+}
+// ----- pencil primitives -----
+function pline(ctx,pts,seed,prog=1,w=1.6,col='#2a2622',passes=2){
+  const n=pts.length;if(n<2)return;
+  const lim=Math.max(1,Math.floor((n-1)*Math.min(1,Math.max(0,prog))));
+  for(let p=0;p<passes;p++){
+    ctx.beginPath();ctx.strokeStyle=col;ctx.lineWidth=w*(p?0.6:1);ctx.globalAlpha=p?0.45:0.85;
+    for(let i=0;i<=lim;i++){
+      const j=1.6*(p+1);
+      const x=pts[i][0]+nz(seed+i*1.7+p*91)*j,y=pts[i][1]+nz(seed+i*2.3+p*53)*j;
+      i?ctx.lineTo(x,y):ctx.moveTo(x,y);
+    }
+    ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+}
+function seg(x1,y1,x2,y2,n=12){const a=[];for(let i=0;i<=n;i++)a.push([x1+(x2-x1)*i/n,y1+(y2-y1)*i/n]);return a}
+function circ(cx,cy,r,n=40,over=1.08){const a=[];for(let i=0;i<=n;i++){const t=i/n*Math.PI*2*over;a.push([cx+Math.cos(t)*r,cy+Math.sin(t)*r])}return a}
+function hatch(ctx,x,y,w,h,seed,col='#2a2622',gap=7,prog=1){
+  ctx.save();ctx.beginPath();ctx.rect(x,y,w,h);ctx.clip();
+  const n=Math.floor((w+h)/gap*prog);
+  for(let i=0;i<n;i++){const s=x+i*gap-h;pline(ctx,seg(s,y+h+4,s+h,y-4,4),seed+i*13,1,1,col,1)}
+  ctx.restore();
+}
+function txt(ctx,s,x,y,size,a=1,align='center',font='Georgia,serif',col='#24201c',style='italic'){
+  ctx.save();ctx.globalAlpha=Math.max(0,Math.min(1,a));ctx.font=`${style} ${size}px ${font}`;ctx.textAlign=align;ctx.fillStyle=col;
+  ctx.fillText(s,x+nz(size+x)*1.2,y+nz(size+y)*1.2);ctx.globalAlpha*=.35;ctx.fillText(s,x+1.5,y+.8);ctx.restore();
+}
+const ease=t=>t<0?0:t>1?1:t*t*(3-2*t);
+const fade=(t,a,b,f=.8)=>ease((t-a)/f)*ease((b-t)/f);
+// ----- paper -----
+const paper=document.createElement('canvas');paper.width=W;paper.height=H;
+(()=>{const p=paper.getContext('2d');const g=p.createRadialGradient(640,360,100,640,360,800);
+g.addColorStop(0,'#f3ead8');g.addColorStop(1,'#cdbf9f');p.fillStyle=g;p.fillRect(0,0,W,H);
+for(let i=0;i<26000;i++){p.fillStyle=`rgba(80,60,30,${hash(i)*.07})`;p.fillRect(hash(i*1.3)*W,hash(i*2.7)*H,1+hash(i*5)*1.5,1)}
+for(let i=0;i<60;i++){p.strokeStyle='rgba(90,70,40,.05)';p.beginPath();const y=hash(i*9)*H;p.moveTo(0,y);p.lineTo(W,y+hash(i)*40-20);p.stroke()}})();
+// ----- Japan outline (stylised, hand-placed) -----
+const JP=[[[860,150],[905,140],[945,165],[930,205],[895,225],[860,210],[850,180]],
+[[880,250],[870,300],[855,350],[820,400],[770,440],[720,460],[670,470],[640,480],[650,455],[700,440],[750,410],[795,370],[825,320],[845,270]],
+[[640,495],[610,500],[580,490],[600,480]],[[600,505],[580,545],[555,560],[540,530],[560,505]]];
+// ----- scenes -----
+function sunSketch(ctx,cx,cy,r,t,seed){
+  pline(ctx,circ(cx,cy,r,48),seed,ease(t*1.2),2.4,'#b2391f');
+  for(let i=0;i<16;i++){const a=i/16*Math.PI*2+t*.2,k=ease(t*1.5-i*.04);
+    pline(ctx,seg(cx+Math.cos(a)*(r+12),cy+Math.sin(a)*(r+12),cx+Math.cos(a)*(r+12+40*k),cy+Math.sin(a)*(r+12+40*k),5),seed+i*7,1,1.6,'#b2391f')}
+  ctx.save();ctx.beginPath();ctx.arc(cx,cy,r-4,0,7);ctx.clip();hatch(ctx,cx-r,cy-r,2*r,2*r,seed+5,'rgba(178,57,31,.7)',6,ease(t));ctx.restore();
+}
+function scene(t){
+  const c=I;c.clearRect(0,0,W,H);
+  // 0-9 title
+  if(t<10){const a=fade(t,0,9.5);
+    sunSketch(c,640,250,90,t/3,11);
+    txt(c,"Japan's Hot 2026",640,440,72,a);
+    txt(c,'a pencil chronicle of heat, with numbers',640,490,26,a*ease(t-1.5));
+    pline(c,seg(420,510,860,510,30),3,ease((t-2)/2),1.4);
+    txt(c,'data: JMA-style anomalies (embedded) · 2025–26 illustrative',640,650,16,a*ease(t-3),'center','Georgia,serif','#5a5046','normal');
+  }
+  // 9-31 chart
+  if(t>9&&t<31.5){const a=fade(t,9,31.2),L=140,R=1160,Tp=170,B=560;
+    const xs=y=>L+(y-1898)/(2026-1898)*(R-L),ys=v=>(B+Tp)/2-v*150;
+    c.globalAlpha=a;
+    txt(c,'Japan annual mean temperature anomaly (°C vs 1991–2020)',640,95,30,a);
+    pline(c,seg(L,B,R,B,40),21,ease(t-9.5),1.6);pline(c,seg(L,Tp-20,L,B,20),22,ease(t-9.5),1.6);
+    pline(c,seg(L,ys(0),R,ys(0),50),23,ease(t-10),.8,'#7a6e60',1);
+    [-1,0,1].forEach(v=>txt(c,(v>0?'+':'')+v,L-18,ys(v)+6,18,a,'right','Georgia,serif','#4a4038','normal'));
+    [1900,1940,1980,2020].forEach(y=>txt(c,''+y,xs(y),B+28,18,a,'center','Georgia,serif','#4a4038','normal'));
+    const pr=ease((t-11)/14),nn=Math.floor(D.length*pr);
+    for(let i=0;i<nn;i++){const[y,v]=D[i],x=xs(y),h=ys(v)-ys(0);
+      const col=v>0?`rgba(${150+v*60|0},${60-v*20|0},30,.85)`:'rgba(40,70,120,.75)';
+      pline(c,seg(x,ys(0),x,ys(0)+h,3),y,1,5.2,col,1)}
+    // trend line
+    if(t>25){pline(c,seg(xs(1898),ys(-0.95),xs(2026),ys(0.95),40),77,ease((t-25)/2),2.2,'#24201c')}
+    if(t>26.5){txt(c,'trend ≈ +1.4 °C / century',xs(1960),ys(.6),22,ease(t-26.5),'center');}
+    if(t>23.5){const x=xs(2024),y=ys(1.48);pline(c,circ(x,y-8,22,30),99,ease(t-23.5),1.6,'#b2391f');
+      txt(c,'2024: +1.48 record',x-40,y-50,20,ease(t-24),'right','Georgia,serif','#b2391f');}
+    if(t>25){const x=xs(2026),y=ys(1.55);txt(c,'2026*',x+4,y-20,20,ease(t-25),'center','Georgia,serif','#b2391f')}
+    txt(c,'* 2025–2026 values are illustrative estimates, not official data',640,640,16,a,'center','Georgia,serif','#5a5046','normal');
+    c.globalAlpha=1;
+  }
+  // 31-48 why: map + highs
+  if(t>31&&t<48.5){const a=fade(t,31,48.2),k=t-31;c.globalAlpha=a;
+    txt(c,'Why so hot?',300,110,52,a);
+    JP.forEach((p,i)=>pline(c,p,200+i*31,ease(k/2.5),2.2));
+    // sea surface warmth hatch
+    c.save();c.globalAlpha=a*.6;hatch(c,500,520,500,120,300,'rgba(178,57,31,.5)',9,ease((k-6)/2));c.restore();
+    // pacific high
+    const ph=ease((k-2)/2);pline(c,circ(1040,470,95*ph+1,40),400,ph,2,'#b2391f');txt(c,'H',1040,485,44,ph,'center','Georgia,serif','#b2391f','bold');
+    // tibetan high
+    const th=ease((k-3.5)/2);pline(c,circ(470,260,80*th+1,40),410,th,2,'#b2391f');txt(c,'H',470,275,40,th,'center','Georgia,serif','#b2391f','bold');
+    // arrows heat flow
+    for(let i=0;i<4;i++){const q=((t*.4+i/4)%1);const x=980-q*200,y=440-q*120;pline(c,seg(x,y,x-30,y-18,3),500+i,1,1.4,'rgba(178,57,31,.7)')}
+    const items=['1. Long-term warming lifts the baseline','2. Pacific High + Tibetan High stack ("double high")','3. Warm seas around Japan keep nights hot','4. Shifted jet stream lets heat linger'];
+    items.forEach((s,i)=>txt(c,s,90,200+i*60,22,ease(k-4-i*1.6),'left','Georgia,serif','#24201c','normal'));
+    txt(c,'commonly cited drivers — schematic, not to scale',90,460,16,ease(k-11),'left','Georgia,serif','#5a5046','normal');
+    c.globalAlpha=1;
+  }
+  // 48-60 decade comparison + outro
+  if(t>48){const a=fade(t,48,59.4),k=t-48;c.globalAlpha=a;
+    txt(c,'Decade averages, compared',640,100,40,a);
+    const dec=[];for(let d=1900;d<=2020;d+=20){const v=D.filter(e=>e[0]>=d&&e[0]<d+20);dec.push([d,v.reduce((s,e)=>s+e[1],0)/v.length])}
+    dec.push(['2026*',1.55]);
+    const bw=110,x0=640-dec.length*bw/2,base=440;
+    pline(c,seg(x0-20,base,x0+dec.length*bw,base,30),600,ease(k),1.4);
+    dec.forEach(([d,v],i)=>{const g=ease((k-.5-i*.35)/1),h=-v*130*g,x=x0+i*bw+20;
+      const col=v>0?'rgba(178,57,31,.7)':'rgba(40,70,120,.7)';
+      pline(c,[[x,base],[x,base+h],[x+70,base+h],[x+70,base]],610+i,1,1.6);
+      hatch(c,x,Math.min(base,base+h),70,Math.abs(h),620+i,col,6,g);
+      txt(c,''+d+(typeof d=='number'?'s':''),x+35,v>0?base+28:base-10+ (h<0?0:0)+ (v<0?-Math.abs(h)-6:0),17,a,'center','Georgia,serif','#4a4038','normal');
+      txt(c,(v>0?'+':'')+v.toFixed(2),x+35,v>0?base+h-12:base+Math.abs(h)+22,17,g,'center','Georgia,serif','#24201c','normal')});
+    txt(c,'Each summer now starts from a warmer floor.',640,600,30,ease(k-6));
+    txt(c,'Stay cool. Check on neighbours. Drink water.',640,645,22,ease(k-8));
+    c.globalAlpha=1;
+  }
+}
+// ----- composite with chromatic aberration -----
+function tinted(col){T.globalCompositeOperation='source-over';T.clearRect(0,0,W,H);T.drawImage(ink,0,0);T.globalCompositeOperation='source-in';T.fillStyle=col;T.fillRect(0,0,W,H);return tint}
+function render(t){
+  boil=Math.floor(t*8);scene(t);
+  X.globalCompositeOperation='source-over';X.drawImage(paper,0,0);
+  const ab=1.6+Math.sin(t*.7)*.8;
+  X.globalCompositeOperation='multiply';
+  X.globalAlpha=.55;X.drawImage(tinted('#ff2a3a'),-ab,0);
+  X.drawImage(tinted('#00b8d8'),ab,ab*.4);
+  X.globalAlpha=1;X.drawImage(ink,0,0);
+  X.globalCompositeOperation='source-over';
+  // vignette + grain flicker
+  const g=X.createRadialGradient(640,360,250,640,360,780);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(40,25,10,.45)');X.fillStyle=g;X.fillRect(0,0,W,H);
+  for(let i=0;i<300;i++){X.fillStyle=`rgba(30,20,10,${hash(i+boil)*.12})`;X.fillRect(hash(i*3+boil)*W,hash(i*7+boil)*H,1.5,1.5)}
+}
+// ----- synth -----
+let AC=null,master,dly,lastBeat=-1;
+const scale=[62,63,67,69,70,74,75,79];// in-scale flavour (D Eb G A Bb)
+const mel=[0,2,3,4,3,2,1,0, 2,4,5,4,3,2,3,-1, 5,6,7,6,5,4,3,2, 1,2,3,2,1,0,-1,-1];
+function initAudio(){if(AC)return;try{AC=new (window.AudioContext||window.webkitAudioContext)();
+  master=AC.createGain();master.gain.value=.25;dly=AC.createDelay();dly.delayTime.value=.375;const fb=AC.createGain();fb.gain.value=.35;
+  const lp=AC.createBiquadFilter();lp.frequency.value=2200;dly.connect(fb);fb.connect(lp);lp.connect(dly);dly.connect(master);master.connect(AC.destination);}catch(e){AC=null}}
+function note(m,dur,type='triangle',vol=.3,at=0){if(!AC)return;const t=AC.currentTime+at,o=AC.createOscillator(),g=AC.createGain();
+  o.type=type;o.frequency.value=440*Math.pow(2,(m-69)/12);g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vol,t+.02);g.gain.exponentialRampToValueAtTime(.001,t+dur);
+  o.connect(g);g.connect(master);g.connect(dly);o.start(t);o.stop(t+dur+.05)}
+function music(t){if(!AC||AC.state!=='running')return;const bpm=80,b=Math.floor(t*bpm/60*2);if(b===lastBeat)return;
+  if(lastBeat>=0&&b!==lastBeat+1&&b!==0){lastBeat=b;return}lastBeat=b;
+  const m=mel[b%mel.length];const intense=t>9&&t<48;
+  if(m>=0)note(scale[m]+(t>31&&t<48?0:0),.9,'triangle',.22);
+  if(b%8==0){note(scale[0]-24,4,'sine',.28);note(scale[3]-12,4,'sine',.12)}
+  if(intense&&b%4==2)note(scale[(b>>2)%5]+12,.3,'sine',.07);
+  if(t>48&&b%2==1)note(scale[4]+12,.5,'sine',.06)}
+addEventListener('pointerdown',()=>{initAudio();AC&&AC.resume()});addEventListener('keydown',()=>{initAudio();AC&&AC.resume()});
+initAudio();
+function frame(){const t=((performance.now()-t0)/1000)%window.DUR;render(t);music(t);requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

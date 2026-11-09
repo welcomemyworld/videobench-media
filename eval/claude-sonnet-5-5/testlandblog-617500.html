@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#w{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+canvas{width:1280px;height:720px;display:block;background:#0f1117}
+</style></head><body><div id="w"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+const W=1280,H=720,cv=document.getElementById('c'),g=cv.getContext('2d'),w=document.getElementById('w');
+function fit(){const s=Math.min(innerWidth/W,innerHeight/H);w.style.transform=`scale(${s})`;w.style.left=(innerWidth-W*s)/2+'px';w.style.top=(innerHeight-H*s)/2+'px'}
+fit();onresize=fit;
+window.DUR=48;
+const T0=parseFloat(new URLSearchParams(location.search).get('t'))||0,st=performance.now();
+const BL='#58c4dd',YL='#ffff00',RD='#fc6255',GR='#83c167',OR='#ff862f',GY='#888';
+const ez=x=>x<0?0:x>1?1:x*x*(3-2*x);
+const sc=[
+[0,'Die Dampfmaschine','Energie aus heißem Wasser'],
+[6,'1. Der Kessel','Feuer erhitzt Wasser → Dampf, hoher Druck'],
+[13,'2. Der Zylinder','Dampf drückt den Kolben: F = p · A'],
+[21,'3. Der Schieber','Ein Ventil lenkt den Dampf abwechselnd auf beide Seiten'],
+[30,'4. Kurbel & Schwungrad','Hin und Her wird zur Drehung'],
+[39,'Zusammengefasst','Wärme → Druck → Bewegung → Drehung']];
+function txt(s,x,y,sz,col,al,a){g.globalAlpha=a==null?1:a;g.fillStyle=col;g.font=sz+'px Georgia,serif';g.textAlign=al||'left';g.fillText(s,x,y);g.globalAlpha=1}
+function line(a,b,c,d,col,w2){g.strokeStyle=col;g.lineWidth=w2||3;g.beginPath();g.moveTo(a,b);g.lineTo(c,d);g.stroke()}
+function rect(x,y,w3,h,col,fill,a){g.globalAlpha=a==null?1:a;if(fill){g.fillStyle=fill;g.fillRect(x,y,w3,h)}g.strokeStyle=col;g.lineWidth=3;g.strokeRect(x,y,w3,h);g.globalAlpha=1}
+function parts(x,y,w3,h,t,col,n,dir){for(let i=0;i<n;i++){const s=i*7.13;let px=x+((Math.sin(s)*.5+.5)*w3+Math.cos(t*(1+i%3)+s)*8+(dir?t*40*(1+i%2):0)),py=y+((Math.cos(s*1.7)*.5+.5)*h+Math.sin(t*2+s)*8);if(dir){px=x+(((px-x)%w3)+w3)%w3}g.fillStyle=col;g.beginPath();g.arc(px,py,3,0,7);g.fill()}}
+function frame(t){
+g.clearRect(0,0,W,H);g.fillStyle='#0f1117';g.fillRect(0,0,W,H);
+g.strokeStyle='rgba(88,196,221,.07)';g.lineWidth=1;
+for(let x=0;x<W;x+=40)line(x,0,x,H,'rgba(88,196,221,.07)',1);
+for(let y=0;y<H;y+=40)line(0,y,W,y,'rgba(88,196,221,.07)',1);
+let k=0;for(let i=0;i<sc.length;i++)if(t>=sc[i][0])k=i;
+const [s0,ti,sub]=sc[k],lt=t-s0,a=ez(lt/1);
+txt(ti,60,80,k==0?56:42,k==0?YL:BL,'left',a);
+txt(sub,60,125,24,'#ddd','left',ez((lt-.5)/1));
+// machine layout
+const ph=t*2.2, cx=900,cy=470,R=60;
+const ang=ph;
+const crank={x:cx+Math.cos(ang)*R,y:cy+Math.sin(ang)*R};
+const px=520+ (crank.x-cx+R)*0.0; // piston x
+const rodL=190;
+const pistonX=crank.x-Math.sqrt(rodL*rodL-(crank.y-cy)**2)+0;
+const pistonMin=cx-R-rodL, pistonMax=cx+R-rodL;
+const pf=(pistonX-pistonMin)/(2*R);
+const show=(i)=>k>=i?1:0;
+if(k==0){
+ const e=ez(lt/3);
+ for(let i=0;i<5;i++){const p=(lt*.3+i/5)%1;g.globalAlpha=.6*(1-p)*e;g.fillStyle='#fff';g.beginPath();g.arc(640+Math.sin(p*9+i)*30,420-p*200,20+p*40,0,7);g.fill()}
+ g.globalAlpha=1;
+ rect(480,420,320,150,BL,'rgba(88,196,221,.15)',e);
+ txt('Wärme → Arbeit',640,640,30,'#fff','center',ez(lt-2));
+}
+if(k>=1){
+ const f=k==1?a:1, bx=k==1?400:60,by=k==1?260:430,bw=k==1?400:230,bh=k==1?260:170;
+ const x0=k==1?bx:100,y0=k==1?by:430,w0=k==1?bw:200,h0=k==1?bh:150;
+ rect(x0,y0,w0,h0,BL,'rgba(88,196,221,.12)',f);
+ g.fillStyle='rgba(88,196,221,.35)';g.fillRect(x0,y0+h0*.55,w0,h0*.45);
+ parts(x0+5,y0+8,w0-10,h0*.5,t,'#fff',k==1?30:12,0);
+ for(let i=0;i<5;i++){const fx=x0+w0*(.15+i*.18),fl=10+Math.sin(t*9+i*2)*6;g.fillStyle=i%2?OR:RD;g.beginPath();g.moveTo(fx-12,y0+h0+30);g.quadraticCurveTo(fx,y0+h0+5-fl*2,fx+12,y0+h0+30);g.fill()}
+ if(k==1){txt('Wasser',x0+w0/2,y0+h0*.8,26,'#fff','center');txt('Dampf',x0+w0/2,y0+h0*.3,26,'#fff','center');
+ txt('p ↑',x0+w0+60,y0+60,40,YL,'left',ez(lt-3));
+ txt('Gas dehnt sich aus, wenn T steigt',640,640,26,GR,'center',ez(lt-4))}
+}
+if(k>=2){
+ const f=k==2?a:1;
+ // cylinder
+ const L=520,Rr=cx-R-rodL-0; 
+ const cl=300,cr=cl+250,cyc=cy-0,ch=110;
+ g.globalAlpha=f;
+ rect(cl,cyc-ch/2,cr-cl+60,ch,'#fff');g.globalAlpha=1;
+ const pxp=cl+20+pf*(cr-cl-30)-0+ (0);
+ const pp=Math.max(cl+10,Math.min(cr+40,pxp-100));
+ g.fillStyle='#aaa';g.fillRect(pp,cyc-ch/2+3,18,ch-6);
+ // steam on left side if pushing
+ const push=Math.sin(ang)<0?0:1; // which side
+ const toR=Math.cos(ang)>-2; 
+ const dirRight=Math.sin(ang)>0; // crank moving ... piston moves toward cx when? derivative
+ const vel=-Math.sin(ang); // d crank.x/dt sign
+ const steamLeft=k>=3?vel<0?0:1:1;
+ const lx=cl+3,lw=pp-cl-3, rx=pp+18, rw=cl+310-3-rx;
+ g.fillStyle=k>=3&&steamLeft==0?'rgba(255,255,255,.04)':'rgba(255,134,47,.3)';
+ g.fillRect(lx,cyc-ch/2+3,lw,ch-6);
+ if(k>=3){g.fillStyle=steamLeft?'rgba(255,255,255,.04)':'rgba(255,134,47,.3)';g.fillRect(rx,cyc-ch/2+3,rw,ch-6)}
+ parts(lx,cyc-ch/2+5,Math.max(lw,4),ch-10,t,'#fff',10,0);
+ if(k>=3)parts(rx,cyc-ch/2+5,Math.max(rw,4),ch-10,t+3,'#fff',10,0);
+ // rod
+ line(pp+18,cyc,crank.x,crank.y,'#ccc',6);
+ if(k==2){
+  txt('Druck p',cl-10,cyc-110,26,YL,'right',ez(lt-2));
+  g.strokeStyle=RD;g.lineWidth=5;const ar=ez(lt-3);
+  if(ar>0){line(pp-90,cyc,pp-10,cyc,RD,5);txt('F = p·A',pp-50,cyc-30,24,RD,'center',ar)}
+  txt('Fläche A',pp+9,cyc+ch/2+30,22,BL,'center',ez(lt-4));
+  line(pp+9,cyc-ch/2,pp+9,cyc+ch/2,BL,2);
+ }
+ // steam pipe
+ line(300,cyc-ch/2,300,cyc-ch/2-40,GY,6);
+ line(300,cyc-ch/2-40,200,430,GY,0);
+ line(200,505,260,505,GY,0);
+}
+if(k>=2){ // pipe from boiler
+ g.strokeStyle=GY;g.lineWidth=8;g.beginPath();g.moveTo(300,505);g.lineTo(300,505);g.stroke();
+ line(200,500,300,500-0,GY,8);
+}
+if(k>=3){
+ const f=k==3?a:1;
+ const vx=420,vy=cy-110-30;
+ rect(vx,vy,100,45,GR,'rgba(131,193,103,.12)',f);
+ const sl=Math.sin(ang)*18;
+ g.fillStyle=GR;g.fillRect(vx+25+sl,vy+6,22,33);g.fillRect(vx+60+sl,vy+6,22,33);
+ line(vx+50,vy+45,vx+50,cy-55,GR,2);
+ if(k==3){txt('Schieberventil',vx+50,vy-12,22,GR,'center',ez(lt-2));
+ txt(Math.sin(ang)>0?'Dampf → rechts':'Dampf → links',900,300,28,YL,'center',ez(lt-4))}
+}
+if(k>=4){
+ const f=k==4?a:1;
+ g.globalAlpha=f;
+ g.strokeStyle=BL;g.lineWidth=10;g.beginPath();g.arc(cx,cy,R+60,0,7);g.stroke();
+ g.lineWidth=3;for(let i=0;i<6;i++){const q=ang+i*Math.PI/3;line(cx,cy,cx+Math.cos(q)*(R+60),cy+Math.sin(q)*(R+60),BL,4)}
+ g.globalAlpha=1;
+ g.fillStyle=YL;g.beginPath();g.arc(crank.x,crank.y,9,0,7);g.fill();
+ g.fillStyle='#fff';g.beginPath();g.arc(cx,cy,8,0,7);g.fill();
+ line(cx,cy,crank.x,crank.y,YL,4);
+ if(k==4){txt('Schwungrad: Trägheit glättet die Drehung',cx,cy+R+110,22,'#fff','center',ez(lt-3));
+ txt('linear ⇄ rotierend',cx,250,28,YL,'center',ez(lt-2))}
+} else if(k>=2){
+ g.fillStyle=YL;g.beginPath();g.arc(crank.x,crank.y,8,0,7);g.fill();
+}
+if(k==5){
+ const items=[['Feuer',OR],['Dampf',RD],['Druck',YL],['Kolben',GR],['Rad',BL]];
+ items.forEach((it,i)=>{const e=ez(lt-.5-i*.8);const x=130+i*250;
+ g.globalAlpha=e;g.strokeStyle=it[1];g.lineWidth=3;g.strokeRect(x-70,230,140,60);g.globalAlpha=1;
+ txt(it[0],x,270,28,it[1],'center',e);
+ if(i<4)txt('→',x+125,270,36,'#fff','center',e)});
+ txt('Ohne Druckunterschied keine Arbeit.',640,350,30,'#fff','center',ez(lt-5));
+}
+// progress bar
+g.fillStyle=BL;g.fillRect(0,H-6,W*t/DUR,6);
+}
+function loop(){const t=((performance.now()-st)/1000+T0)%DUR;frame(t);requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+</script></body></html>

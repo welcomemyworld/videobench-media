@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>ocrX Launch</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=30;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)*1000;const t0=performance.now()-off;
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const ease=v=>{v=cl(v);return v<.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2};
+const fade=(t,a,b,f=.6)=>cl((t-a)/f)*cl((b-t)/f);
+const F='Helvetica,Arial,sans-serif';
+function txt(s,X,Y,sz,col,al=1,w='700',align='center'){x.globalAlpha=al;x.fillStyle=col;x.font=w+' '+sz+'px '+F;x.textAlign=align;x.textBaseline='middle';x.fillText(s,X,Y);x.globalAlpha=1;}
+function rr(X,Y,W,H,r){x.beginPath();x.roundRect(X,Y,W,H,r);}
+const lines=["Meeting Notes — Q3","Launch ocrX on Android","Budget approved: $48,000","Owner: Product Team","Deadline: Sept 30"];
+function bg(t){
+ const g=x.createRadialGradient(640,360,50,640,360,800);
+ g.addColorStop(0,'#0d1a3a');g.addColorStop(1,'#03040a');x.fillStyle=g;x.fillRect(0,0,1280,720);
+ x.strokeStyle='rgba(80,160,255,0.07)';x.lineWidth=1;
+ for(let i=0;i<30;i++){const yy=(i*40+t*20)%760-20;x.beginPath();x.moveTo(0,yy);x.lineTo(1280,yy);x.stroke();}
+ for(let i=0;i<40;i++){const px=(i*137.5)%1280,py=(i*97+t*(10+i%5*6))%720;x.fillStyle='rgba(120,200,255,'+(0.2+0.3*Math.sin(t+i))+')';x.fillRect(px,720-py,2,2);}
+}
+function logo(X,Y,s,al){
+ x.save();x.globalAlpha=al;x.translate(X,Y);x.scale(s,s);
+ const g=x.createLinearGradient(-60,-60,60,60);g.addColorStop(0,'#3af0ff');g.addColorStop(1,'#7a5cff');
+ rr(-60,-60,120,120,30);x.fillStyle=g;x.fill();
+ x.strokeStyle='#fff';x.lineWidth=8;x.lineCap='round';
+ [[-35,-15,-35,-35,-15,-35],[35,-15,35,-35,15,-35],[-35,15,-35,35,-15,35],[35,15,35,35,15,35]].forEach(p=>{x.beginPath();x.moveTo(p[0],p[1]);x.lineTo(p[2],p[3]);x.lineTo(p[4],p[5]);x.stroke();});
+ x.font='900 34px '+F;x.fillStyle='#fff';x.textAlign='center';x.textBaseline='middle';x.fillText('X',0,2);
+ x.restore();
+}
+function phone(X,Y,s,t,mode){
+ x.save();x.translate(X,Y);x.scale(s,s);
+ x.shadowColor='rgba(60,180,255,.5)';x.shadowBlur=40;
+ rr(-150,-300,300,600,40);x.fillStyle='#111';x.fill();x.shadowBlur=0;
+ x.strokeStyle='#444';x.lineWidth=3;x.stroke();
+ rr(-138,-288,276,576,30);x.fillStyle='#0b0f1c';x.fill();
+ x.save();rr(-138,-288,276,576,30);x.clip();
+ x.fillStyle='#000';x.beginPath();x.arc(0,-272,6,0,7);x.fill();
+ if(mode==0){ // camera scanning
+  x.fillStyle='#2a2a30';x.fillRect(-138,-288,276,576);
+  x.save();x.rotate(-0.05);rr(-105,-180,210,290,6);x.fillStyle='#eee';x.fill();
+  for(let i=0;i<5;i++){x.fillStyle='#333';x.font=(i?'11':'bold 14')+'px '+F;x.textAlign='left';x.fillText(lines[i],-90,-150+i*30);}
+  x.restore();
+  const sy=-190+((t*120)%300);
+  const g=x.createLinearGradient(0,sy-30,0,sy);g.addColorStop(0,'rgba(58,240,255,0)');g.addColorStop(1,'rgba(58,240,255,.6)');
+  x.fillStyle=g;x.fillRect(-120,sy-30,240,30);x.fillStyle='#3af0ff';x.fillRect(-120,sy,240,2);
+  x.strokeStyle='#3af0ff';x.lineWidth=4;
+  [[-115,-195,1,1],[115,-195,-1,1],[-115,125,1,-1],[115,125,-1,-1]].forEach(p=>{x.beginPath();x.moveTo(p[0],p[1]+p[3]*25);x.lineTo(p[0],p[1]);x.lineTo(p[0]+p[2]*25,p[1]);x.stroke();});
+  x.beginPath();x.arc(0,220,32,0,7);x.fillStyle='#fff';x.fill();x.beginPath();x.arc(0,220,25,0,7);x.strokeStyle='#2a2a30';x.lineWidth=3;x.stroke();
+ }else{ // results
+  x.fillStyle='#121a2e';x.fillRect(-138,-288,276,60);
+  x.fillStyle='#3af0ff';x.font='bold 18px '+F;x.textAlign='left';x.fillText('Extracted text',-118,-252);
+  lines.forEach((l,i)=>{const n=Math.floor(cl(t*30-i*18,0,l.length));
+   rr(-120,-205+i*56,240,44,8);x.fillStyle='rgba(58,240,255,'+(n>0?.12:.04)+')';x.fill();
+   x.fillStyle='#e8f4ff';x.font=(i?'13':'bold 15')+'px '+F;x.textAlign='left';x.textBaseline='middle';x.fillText(l.slice(0,n),-108,-183+i*56);});
+  const b=cl(t-3);rr(-120,180,110,44,22);x.fillStyle='rgba(122,92,255,'+b+')';x.fill();
+  rr(10,180,110,44,22);x.fillStyle='rgba(58,240,255,'+b+')';x.fill();
+  x.globalAlpha=b;x.fillStyle='#fff';x.font='bold 14px '+F;x.textAlign='center';x.fillText('Copy',-65,202);x.fillStyle='#00121a';x.fillText('Share',65,202);x.globalAlpha=1;
+ }
+ x.restore();x.restore();
+}
+function frame(){
+ const T=((performance.now()-t0)/1000)%DUR;
+ bg(T);
+ // Scene 1: logo intro 0-6
+ if(T<6.5){const a=fade(T,0,6.2),s=ease(T/1.5);
+  for(let i=0;i<3;i++){const r=((T*150+i*120)%400);x.strokeStyle='rgba(58,240,255,'+(0.4*(1-r/400)*a)+')';x.lineWidth=2;x.beginPath();x.arc(640,300,r,0,7);x.stroke();}
+  logo(640,300,s,a);
+  txt('ocrX',640,440,72,'#fff',a*ease((T-1)/1));
+  txt('Read the world. Instantly.',640,505,26,'#9fd8ff',a*ease((T-2)/1),'400');
+ }
+ // Scene 2: scanning 6-13
+ if(T>6&&T<13.5){const a=fade(T,6,13.2),p=ease((T-6)/1.2);
+  x.globalAlpha=a;phone(860,370+(1-p)*400,1,T,0);x.globalAlpha=1;
+  txt('Point.',120,280,72,'#fff',a*ease((T-6.5)),'800','left');
+  txt('Scan.',120,370,72,'#3af0ff',a*ease((T-7.5)),'800','left');
+  txt('Any document, sign or page.',120,450,24,'#9fb8d8',a*ease(T-8.5),'400','left');
+ }
+ // Scene 3: results 13-20
+ if(T>13&&T<20.5){const a=fade(T,13,20.2);
+  x.globalAlpha=a;phone(420,370,1,T-13.5,1);x.globalAlpha=1;
+  txt('Text, extracted.',720,240,58,'#fff',a*ease(T-13.6),'800','left');
+  const f=['⚡ On-device, lightning fast','🌐 100+ languages','🔒 Private — works offline'];
+  f.forEach((s,i)=>txt(s,720,330+i*60,26,'#cfe6ff',a*ease(T-15-i*.7),'500','left'));
+ }
+ // Scene 4: stats 20-25
+ if(T>20&&T<25.5){const a=fade(T,20,25.2);
+  const st=[['99.2%','accuracy'],['0.3s','per scan'],['100+','languages']];
+  st.forEach((s,i)=>{const e=ease(T-20.3-i*.3);const X=320+i*320;
+   x.globalAlpha=a*e;rr(X-130,250+(1-e)*40,260,200,24);x.fillStyle='rgba(58,240,255,.08)';x.fill();x.strokeStyle='rgba(58,240,255,.4)';x.lineWidth=2;x.stroke();x.globalAlpha=1;
+   txt(s[0],X,325+(1-e)*40,62,'#3af0ff',a*e,'900');txt(s[1],X,395+(1-e)*40,24,'#cfe6ff',a*e,'400');});
+  txt('Built for Android.',640,160,44,'#fff',a*ease(T-20),'800');
+ }
+ // Scene 5: CTA 25-30
+ if(T>25){const a=fade(T,25,30.5);const e=ease((T-25)/1.2);
+  logo(640,210,0.8*e,a);
+  txt('ocrX',640,330,80,'#fff',a*e,'900');
+  txt('Now available on Android',640,400,30,'#9fd8ff',a*ease(T-26),'400');
+  const b=ease(T-27);x.globalAlpha=a*b;rr(500,450,280,70,35);
+  const g=x.createLinearGradient(500,0,780,0);g.addColorStop(0,'#3af0ff');g.addColorStop(1,'#7a5cff');x.fillStyle=g;x.fill();x.globalAlpha=1;
+  txt('▶  Get it on Google Play',640,486,22,'#fff',a*b,'700');
+  const sh=(T*0.6)%1;x.globalAlpha=a*b*.3;x.fillStyle='#fff';x.save();rr(500,450,280,70,35);x.clip();x.fillRect(450+sh*400,450,40,70);x.restore();x.globalAlpha=1;
+ }
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></body></html>

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>DistilBook</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=30;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)||0;
+const t0=performance.now()-off*1000;
+const cl=v=>Math.max(0,Math.min(1,v));
+const eo=v=>1-Math.pow(1-cl(v),3);
+const eio=v=>{v=cl(v);return v<.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2};
+const R=(a,b,t)=>cl((t-a)/(b-a));
+const P=[];for(let i=0;i<140;i++)P.push({x:Math.random()*1280,y:Math.random()*720,s:Math.random()*2+.5,v:Math.random()*20+5,p:Math.random()*6});
+const WORDS="the of knowledge chapter idea insight because however therefore history theory evidence argument example meaning method truth".split(' ');
+const toks=[];for(let i=0;i<90;i++)toks.push({w:WORDS[i%WORDS.length],a:Math.random()*6.28,r:200+Math.random()*400,s:Math.random()*.5+.5});
+function bg(t){
+ const g=x.createRadialGradient(640,360,50,640,360,800);
+ const h=(230+t*3)%360;
+ g.addColorStop(0,`hsl(${h},60%,12%)`);g.addColorStop(1,'#020208');
+ x.fillStyle=g;x.fillRect(0,0,1280,720);
+ for(const p of P){const y=(p.y-t*p.v+720*10)%720;x.globalAlpha=.3+.3*Math.sin(t*2+p.p);x.fillStyle='#9cf';x.fillRect(p.x,y,p.s,p.s);}
+ x.globalAlpha=1;
+}
+function text(s,X,Y,sz,col,al,w='700',align='center'){x.globalAlpha=al;x.fillStyle=col;x.font=`${w} ${sz}px Helvetica,Arial,sans-serif`;x.textAlign=align;x.textBaseline='middle';x.fillText(s,X,Y);x.globalAlpha=1;}
+function book(cx,cy,sc,open,col,pages){
+ x.save();x.translate(cx,cy);x.scale(sc,sc);
+ x.shadowColor=col;x.shadowBlur=40;
+ const w=120,h=160;
+ x.fillStyle='#111a2e';x.fillRect(-w-6,-h/2-6,w*2+12,h+12);x.shadowBlur=0;
+ for(let s=-1;s<=1;s+=2){x.fillStyle='#eef2ff';x.beginPath();x.moveTo(0,-h/2);x.quadraticCurveTo(s*w*.5,-h/2-10*open,s*w,-h/2);x.lineTo(s*w,h/2);x.quadraticCurveTo(s*w*.5,h/2-10*open,0,h/2);x.fill();
+  x.fillStyle='#8899bb';for(let l=0;l<(pages||9);l++)x.fillRect(s>0?14:-w+14,-h/2+22+l*14,(w-28)*(.6+.4*Math.sin(l*3+s)),3);}
+ x.strokeStyle=col;x.lineWidth=3;x.beginPath();x.moveTo(0,-h/2);x.lineTo(0,h/2);x.stroke();
+ x.restore();
+}
+function gem(cx,cy,r,rot,col,al){x.save();x.globalAlpha=al;x.translate(cx,cy);x.rotate(rot);x.shadowColor=col;x.shadowBlur=50;
+ x.fillStyle=col;x.beginPath();for(let i=0;i<6;i++){const a=i*Math.PI/3;x.lineTo(Math.cos(a)*r,Math.sin(a)*r);}x.fill();
+ x.shadowBlur=0;x.fillStyle='rgba(255,255,255,.5)';x.beginPath();x.moveTo(0,0);x.lineTo(r,0);x.lineTo(r/2,-r*.87);x.fill();x.restore();}
+function wipe(t,a){const k=R(a,a+.6,t);if(k>0&&k<1){x.fillStyle='#5ef';const w=1280*Math.sin(k*Math.PI);x.fillRect(640-w/2,0,w,720);}}
+function frame(){
+ const t=((performance.now()-t0)/1000)%DUR;
+ bg(t);
+ if(t<6){// scene1: overload
+  const k=eo(R(0,1,t));
+  for(const o of toks){const a=o.a+t*.2*o.s;const r=o.r*(1-R(3.5,5.5,t)*.9);text(o.w,640+Math.cos(a)*r,360+Math.sin(a)*r*.55,14+o.s*10,'#7aa',k*.6,'400');}
+  text('Too many books.',640,300,76,'#fff',eo(R(.3,1.2,t))*(1-R(4.8,5.6,t)));
+  text('Too little time.',640,390,76,'#5ef',eo(R(1.3,2.2,t))*(1-R(4.8,5.6,t)));
+  const z=eo(R(4.8,6,t));if(z>0)gem(640,360,10+z*40,t*2,'#5ef',z);
+ }else if(t<12){// scene2: reveal logo
+  const k=t-6;const s=eo(R(0,1,k));
+  book(640,300,s*1.2,1,'#5ef');
+  for(let i=0;i<24;i++){const a=i/24*6.28+k;x.strokeStyle=`rgba(94,238,255,${.3*s})`;x.lineWidth=2;x.beginPath();x.moveTo(640+Math.cos(a)*200*s,300+Math.sin(a)*200*s);x.lineTo(640+Math.cos(a)*(230+30*Math.sin(k*3+i))*s,300+Math.sin(a)*(230+30*Math.sin(k*3+i))*s);x.stroke();}
+  const L=eo(R(.8,1.8,k));x.save();x.beginPath();x.rect(0,470,1280*L,120);x.clip();
+  text('Distil',600,540,96,'#fff',1,'800','right');text('Book',600,540,96,'#5ef',1,'300','left');x.restore();
+  text('Every great book. Distilled to its essence.',640,620,28,'#bcd',eo(R(2,3,k)));
+ }else if(t<18){// scene3: distill process
+  const k=t-12;
+  text('How it works',640,80,40,'#5ef',eo(R(0,.6,k)));
+  const steps=['Pick a book','AI distils key ideas','Read in 15 minutes'];
+  for(let i=0;i<3;i++){const X=260+i*380,a=eo(R(.4+i*1.2,1.2+i*1.2,k));
+   x.save();x.globalAlpha=a;x.translate(X,360+(1-a)*60);
+   x.strokeStyle='#5ef';x.lineWidth=3;x.beginPath();x.arc(0,-30,90,0,6.28);x.stroke();
+   if(i==0)book(0,-30,.45,1,'#5ef');
+   if(i==1){for(let j=0;j<12;j++){const p=(k*.8+j/12)%1;x.fillStyle='#9ef';x.fillRect(-50+((j*37)%100),-110+p*80,4,4);}gem(0,-10,22,k*2,'#5ef',1);}
+   if(i==2){x.fillStyle='#fff';x.fillRect(-35,-80,70,100);x.fillStyle='#5ef';for(let l=0;l<4;l++)x.fillRect(-25,-65+l*20,50*eo(R(3+l*.2,3.4+l*.2,k)),5);}
+   x.restore();
+   text(steps[i],X,500+(1-a)*60,28,'#fff',a,'600');text('0'+(i+1),X,560,22,'#5ef',a,'300');
+   if(i<2){const ar=eo(R(1.2+i*1.2,1.8+i*1.2,k));x.strokeStyle='#5ef';x.globalAlpha=ar;x.beginPath();x.moveTo(X+110,330);x.lineTo(X+110+160*ar,330);x.stroke();x.globalAlpha=1;}
+  }
+ }else if(t<24){// scene4: stats
+  const k=t-18;
+  const st=[[1000,'+','books distilled'],[15,' min','per summary'],[95,'%','key insights kept']];
+  for(let i=0;i<3;i++){const a=eo(R(i*.4,i*.4+.8,k));const X=230+i*410;
+   const n=Math.round(st[i][0]*eo(R(i*.4,i*.4+2,k)));
+   x.save();x.translate(X,330);x.globalAlpha=a;x.strokeStyle='rgba(94,238,255,.25)';x.lineWidth=10;x.beginPath();x.arc(0,0,130,0,6.28);x.stroke();
+   x.strokeStyle='#5ef';x.lineCap='round';x.beginPath();x.arc(0,0,130,-1.57,-1.57+6.28*eo(R(i*.4,i*.4+2,k)));x.stroke();x.restore();
+   text(n+st[i][1],X,330,66,'#fff',a,'800');text(st[i][2],X,510,26,'#bcd',a,'400');}
+  text('Learn more. Read less.',640,620,44,'#5ef',eo(R(2.5,3.3,k)),'700');
+ }else{// scene5: CTA
+  const k=t-24;const s=eo(R(0,1.2,k));
+  for(let i=0;i<5;i++){const a=i/5*6.28+k*.6;book(640+Math.cos(a)*420*s,330+Math.sin(a)*180*s,.35,1,`hsl(${180+i*30},90%,60%)`,6);}
+  gem(640,250,50*s,k,'#5ef',s);
+  text('Distil',630,410,90,'#fff',s,'800','right');text('Book',630,410,90,'#5ef',s,'300','left');
+  const b=eo(R(1.2,2,k));
+  x.globalAlpha=b;x.fillStyle='#5ef';x.shadowColor='#5ef';x.shadowBlur=30+10*Math.sin(k*5);
+  x.beginPath();x.roundRect?x.roundRect(490,500,300,70,35):x.rect(490,500,300,70);x.fill();x.shadowBlur=0;x.globalAlpha=1;
+  text('Start reading free',640,535,28,'#021',b,'700');
+  text('Big ideas. Small time.',640,630,24,'#bcd',eo(R(2,3,k)),'400');
+  x.fillStyle='#000';x.globalAlpha=R(29,30,t);x.fillRect(0,0,1280,720);x.globalAlpha=1;
+ }
+ [6,12,18,24].forEach(a=>wipe(t,a-.3));
+ x.fillStyle='rgba(0,0,0,.35)';x.fillRect(0,0,1280,40);x.fillRect(0,680,1280,40);
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></body></html>

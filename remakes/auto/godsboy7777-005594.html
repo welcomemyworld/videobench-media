@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Pelican Loop</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#s{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}</style></head>
+<body><svg id="s" viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1b2a55"/><stop offset=".55" stop-color="#e9806a"/><stop offset="1" stop-color="#ffd18a"/></linearGradient>
+<linearGradient id="sea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3d5a8a"/><stop offset="1" stop-color="#0d1730"/></linearGradient>
+<radialGradient id="sun"><stop offset="0" stop-color="#fff6d0"/><stop offset=".4" stop-color="#ffd27a"/><stop offset="1" stop-color="#ffd27a" stop-opacity="0"/></radialGradient>
+</defs>
+<rect width="1280" height="720" fill="url(#sky)"/>
+<circle cx="900" cy="470" r="260" fill="url(#sun)"/>
+<circle cx="900" cy="470" r="70" fill="#fff0c0"/>
+<g id="clouds"></g>
+<rect y="470" width="1280" height="250" fill="url(#sea)"/>
+<g id="waves"></g>
+<g id="flock"></g>
+<g id="hero"></g>
+<text x="640" y="680" text-anchor="middle" fill="#ffe9c4" font-family="Georgia,serif" font-size="30" letter-spacing="10" opacity=".85">PELICAN</text>
+</svg>
+<script>
+window.DUR=20;
+const NS="http://www.w3.org/2000/svg",$=id=>document.getElementById(id);
+const el=(t,a,p)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);p&&p.appendChild(e);return e};
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720),v=$('s');v.style.transform=`scale(${s}) translate(-50%,-50%)`;v.style.left='50%';v.style.top='50%';v.style.transform=`translate(-50%,-50%) scale(${s})`;v.style.transformOrigin='center'}
+addEventListener('resize',fit);fit();
+const cl=[];for(let i=0;i<6;i++){const g=el('g',{opacity:.35},$('clouds'));for(let j=0;j<4;j++)el('ellipse',{cx:j*40,cy:(j%2)*-12,rx:60,ry:20,fill:'#ffe0d0'},g);cl.push({g,y:80+i*55,sp:10+i*4,o:i*230})}
+const wv=[];for(let i=0;i<14;i++)wv.push(el('path',{fill:'none',stroke:'#ffd9a0','stroke-width':2,opacity:.5},$('waves')));
+function pelican(p,sc){
+ const g=el('g',{},p);
+ const wingB=el('path',{fill:'#c9c2b8'},g);
+ el('path',{d:'M-70,0 Q-20,-28 40,-14 Q60,-8 52,6 Q0,24 -70,0Z',fill:'#f4efe6'},g);
+ el('path',{d:'M-70,0 L-100,-8 L-96,6Z',fill:'#e5ddd0'},g);
+ el('path',{d:'M45,-12 Q70,-30 80,-20 Q84,-10 70,-6Z',fill:'#f4efe6'},g);
+ el('circle',{cx:74,cy:-20,r:2.5,fill:'#222'},g);
+ el('path',{d:'M78,-22 L150,-12 L80,-14Z',fill:'#f0a63a'},g);
+ const pouch=el('path',{fill:'#e88a3a'},g);
+ const wing=el('path',{fill:'#ece6db',stroke:'#2a2a2a','stroke-width':1},g);
+ return{g,wing,wingB,pouch,sc};
+}
+function wingPath(a,s){const ty=-90*a,tx=-30;return `M-10,-12 Q${-5},${ty*0.6-12} ${tx},${ty-10} L${tx-70},${ty*0.9} Q-40,${ty*0.3} 30,-10Z`}
+const hero=pelican($('hero'),1);
+const flock=[];for(let i=0;i<5;i++)flock.push(pelican($('flock'),.35+i*.05));
+flock.forEach(f=>f.g.setAttribute('opacity',.75));
+const q=new URLSearchParams(location.search),t0=performance.now()-(parseFloat(q.get('t'))||0)*1000;
+function pose(P,x,y,rot,flap,sc,pouchA){
+ P.g.setAttribute('transform',`translate(${x},${y}) rotate(${rot}) scale(${sc})`);
+ P.wing.setAttribute('d',wingPath(flap));P.wingB.setAttribute('d',wingPath(flap*.8).replace(/M-10/,'M-4'));
+ P.wingB.setAttribute('transform','translate(8,-4)');
+ P.pouch.setAttribute('d',`M80,-14 Q115,${-10+pouchA*30} 148,-12 Q115,-6 80,-14Z`);
+}
+function frame(){
+ const T=((performance.now()-t0)/1000)%DUR,u=T/DUR,TA=Math.PI*2;
+ cl.forEach(c=>{const x=((c.o+T*c.sp)%1600)-200;c.g.setAttribute('transform',`translate(${1480-x-200},${c.y})`)});
+ wv.forEach((w,i)=>{const y=490+i*16,ph=T*1.5+i;let d=`M0,${y}`;for(let x=0;x<=1280;x+=40)d+=` L${x},${y+Math.sin(x*.02+ph)*(2+i*.3)}`;w.setAttribute('d',d);w.setAttribute('opacity',.15+.35*Math.sin(i+T)**2)});
+ // hero: fly across, dive to sea at mid, scoop, rise, loop seamlessly
+ const ang=u*TA,x=640+430*Math.sin(ang),y=300+150*Math.sin(2*ang)*-1+ (Math.exp(-((u-.5)*14)**2))*170;
+ const dx=Math.cos(ang),dy=-2*Math.cos(2*ang)*150/430+ -2*196*(u-.5)*Math.exp(-((u-.5)*14)**2)*14*14/(430*TA)*0.3;
+ const dir=dx>=0?1:-1,rot=Math.atan2(dy*dir,1)*57*.6;
+ const dive=Math.exp(-((u-.5)*14)**2),flap=dive>.5?-.3:Math.sin(T*7);
+ const gp=Math.exp(-((u-.54)*25)**2);
+ pose(hero,x,y,rot,flap,1,Math.max(gp,dive*.3));
+ hero.g.setAttribute('transform',hero.g.getAttribute('transform').replace(/scale\(([\d.]+)\)/,`scale(${dir},1)`));
+ flock.forEach((f,i)=>{const fx=((T*45+i*70)%1700)-200,fy=150+i*18+Math.sin(T*2+i)*6;pose(f,fx,fy,0,Math.sin(T*5+i*.7),f.sc,0)});
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></body></html>

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000;height:100%;overflow:hidden}canvas{position:absolute;left:50%;top:50%;transform-origin:0 0}</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+window.DUR=15;
+const c=document.getElementById('c'),g=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.transform`translate(0,0)`;c.style.transform='scale('+s+') translate(-50%,-50%)';c.style.transformOrigin='0 0';c.style.left='50%';c.style.top='50%';c.style.marginLeft='0'}
+// use explicit centering
+function fit2(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.transformOrigin='0 0';c.style.left=(innerWidth-1280*s)/2+'px';c.style.top=(innerHeight-720*s)/2+'px';c.style.transform='scale('+s+')'}
+fit2();addEventListener('resize',fit2);
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t'))||0,st=performance.now();
+const O='#ff9900',B='#0b1020',W='#fff';
+const cl=(x,a=0,b=1)=>Math.max(a,Math.min(b,x)),ease=x=>1-Math.pow(1-cl(x),3),bk=x=>{x=cl(x);const s=1.70158;return 1+(s+1)*Math.pow(x-1,3)+s*Math.pow(x-1,2)};
+function rnd(n){const x=Math.sin(n*127.1)*43758.5453;return x-Math.floor(x)}
+function txt(s,x,y,sz,col,a=1,al='center',w=800){g.globalAlpha=cl(a);g.fillStyle=col;g.font=w+' '+sz+'px Helvetica,Arial,sans-serif';g.textAlign=al;g.textBaseline='middle';g.fillText(s,x,y);g.globalAlpha=1}
+function bg(t){const gr=g.createLinearGradient(0,0,1280,720);gr.addColorStop(0,'#0b1020');gr.addColorStop(1,'#1b1040');g.fillStyle=gr;g.fillRect(0,0,1280,720);
+g.strokeStyle='rgba(255,153,0,0.07)';g.lineWidth=1;const o=(t*30)%60;for(let x=-60+o;x<1280;x+=60){g.beginPath();g.moveTo(x,0);g.lineTo(x,720);g.stroke()}for(let y=0;y<720;y+=60){g.beginPath();g.moveTo(0,y);g.lineTo(1280,y);g.stroke()}
+for(let i=0;i<40;i++){const x=(rnd(i)*1280+t*20*(0.3+rnd(i+9)))%1280,y=(rnd(i+3)*720-t*15*(0.3+rnd(i+5))+720*3)%720;g.fillStyle='rgba(255,180,60,'+(0.15+0.2*rnd(i+7))+')';g.beginPath();g.arc(x,y,1+rnd(i+1)*2.5,0,7);g.fill()}}
+function box(x,y,s,r,col){g.save();g.translate(x,y);g.rotate(r);g.scale(s,s);g.fillStyle=col;g.fillRect(-30,-30,60,60);g.fillStyle='rgba(0,0,0,.25)';g.fillRect(-30,-30,60,12);g.fillStyle='rgba(255,255,255,.7)';g.fillRect(-6,-30,12,60);g.restore()}
+function bar(x,y,w,h,p,col){g.fillStyle='rgba(255,255,255,.1)';g.fillRect(x,y,w,h);g.fillStyle=col;g.fillRect(x,y,w*p,h)}
+function wipe(t,a){ // orange wipe transition at time a
+const p=(t-a)/0.6;if(p<0||p>1)return;const e=p<.5?ease(p*2):1-ease((p-.5)*2);g.fillStyle=O;if(p<.5)g.fillRect(0,0,1280*e,720);else g.fillRect(1280*(1-e),0,1280*e,720)}
+function scene0(t){ // 0-3 hook
+txt('YOUR BRAND',640,250,30,O,ease(t/.5),'center',700);
+const w=['IS BIGGER','THAN YOUR','CURRENT','REACH.'];
+w.forEach((s,i)=>{const p=bk((t-.4-i*.4)/.5);g.save();g.translate(640,330+i*66);g.scale(1,p);txt(s,0,0,i==3?72:60,i==3?O:W,p);g.restore()});
+for(let i=0;i<5;i++){const p=ease((t-.2*i)/1.2);g.strokeStyle='rgba(255,153,0,'+(0.4*(1-p))+')';g.lineWidth=3;g.beginPath();g.arc(640,360,80+p*600+i*30,0,7);g.stroke()}}
+function scene1(t){ // 3-6 intro logo
+const p=bk(t/.8);g.save();g.translate(640,300);g.scale(p,p);
+g.fillStyle=O;g.beginPath();g.moveTo(-90,-70);g.lineTo(90,-70);g.lineTo(110,0);g.lineTo(-110,0);g.fill();
+box(0,-20,1.4,t*.5,'#fff0');
+g.restore();
+txt('WINKZ',640,300,110,W,p);
+txt('ENTERPRISES',640,385,38,O,ease((t-.4)/.5),'center',600);
+const a=ease((t-1)/.6);g.fillStyle=O;g.fillRect(640-300*a,430,600*a,4);
+txt('Premium Amazon Wholesale Partner',640,490,30,'#cfd6ff',ease((t-1.3)/.6),'center',400);
+for(let i=0;i<8;i++){const q=cl((t-.2)/1.5);box(640+Math.cos(i*.785+t)*(150+q*350),300+Math.sin(i*.785+t)*(60+q*200),.4+.3*rnd(i),t+i,i%2?O:'#6b7bff')}}
+function scene2(t){ // 6-9.5 stats
+txt('WHY BRANDS CHOOSE US',640,90,44,W,ease(t/.4));
+const S=[['300M+','Amazon customers',1],['24/7','Listing & price monitoring',2],['100%','MAP & brand compliance',3]];
+S.forEach((s,i)=>{const p=bk((t-.3-i*.4)/.6),x=240+i*400;g.save();g.translate(x,380);g.scale(p,p);g.fillStyle='rgba(255,255,255,.07)';g.fillRect(-170,-170,340,340);g.fillStyle=O;g.fillRect(-170,-170,340,6);
+let v=s[0],n=parseFloat(v);if(i==0){v=Math.round(300*cl((t-.5-i*.4)/1.2))+'M+'}
+txt(v,0,-30,84,O,1);txt(s[1],0,60,26,W,1,'center',500);
+bar(-120,110,240,6,ease((t-.8-i*.4)/1.2),O);g.restore()})}
+function scene3(t){ // 9.5-12.5 growth chart
+txt('WE GROW YOUR SALES',640,80,44,W,ease(t/.4));
+const x0=180,y0=600,w=920,h=380;g.strokeStyle='rgba(255,255,255,.3)';g.lineWidth=2;g.beginPath();g.moveTo(x0,y0-h);g.lineTo(x0,y0);g.lineTo(x0+w,y0);g.stroke();
+const p=ease(t/2.2);g.beginPath();for(let i=0;i<=100;i++){const u=i/100;if(u>p)break;const x=x0+u*w,y=y0-(Math.pow(u,2.2)*h*.95+Math.sin(u*14)*8*u);i?g.lineTo(x,y):g.moveTo(x,y)}
+g.strokeStyle=O;g.lineWidth=7;g.stroke();
+const u=p,ex=x0+u*w,ey=y0-(Math.pow(u,2.2)*h*.95+Math.sin(u*14)*8*u);g.fillStyle=W;g.beginPath();g.arc(ex,ey,10,0,7);g.fill();
+for(let i=0;i<6;i++){const bx=x0+60+i*140,bh=cl((t-.2-i*.2)/.6)*(60+i*45);g.fillStyle='rgba(107,123,255,.45)';g.fillRect(bx,y0-bh,60,bh)}
+txt('+',1130,200,60,O,ease((t-1)/.5));txt('Sales  •  Visibility  •  Brand Equity',640,650,28,'#cfd6ff',ease((t-1.5)/.5),'center',500)}
+function scene4(t){ // 12.5-15 CTA
+const p=bk(t/.7);txt("LET'S WIN",640,230,90,W,p);txt('TOGETHER.',640,320,90,O,bk((t-.2)/.7));
+const pl=1+.04*Math.sin(t*6);g.save();g.translate(640,470);g.scale(pl,pl);g.fillStyle=O;g.fillRect(-250,-35,500,70);txt('Partner with Winkz Enterprises',0,0,28,B,1);g.restore();
+txt('Authorized • Reliable • Results-Driven',640,580,24,'#cfd6ff',ease((t-.8)/.5),'center',400);
+for(let i=0;i<30;i++){const a=rnd(i)*6.28,r=ease((t-.1)/1.5)*(200+rnd(i+4)*400);g.fillStyle=i%2?O:W;g.globalAlpha=1-cl((t-.1)/2)*.6;g.fillRect(640+Math.cos(a)*r,360+Math.sin(a)*r*.6,6,6);g.globalAlpha=1}}
+const sc=[[0,3,scene0],[3,6,scene1],[6,9.5,scene2],[9.5,12.5,scene3],[12.5,15,scene4]];
+function frame(){const t=((performance.now()-st)/1000+off)%DUR;bg(t);
+for(const [a,b,f] of sc)if(t>=a&&t<b){g.save();const sh=t-a<.15?(rnd(t*100)-.5)*6:0;g.translate(sh,0);f(t-a);g.restore()}
+for(const k of [3,6,9.5,12.5])wipe(t,k-.3);
+g.fillStyle=O;g.fillRect(0,714,1280*t/DUR,6);
+requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Tented Image Gen</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#s{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}</style></head>
+<body><canvas id="s" width="1280" height="720"></canvas>
+<script>
+window.DUR=30;
+const c=document.getElementById('s'),x=c.getContext('2d');
+function fit(){const k=Math.min(innerWidth/1280,innerHeight/720);c.style.transform=`scale(${k}) translate(-50%,-50%)`;c.style.transformOrigin='0 0';c.style.left='50%';c.style.top='50%';c.style.transform=`translate(-50%,-50%) scale(${k})`;}
+fit();addEventListener('resize',fit);
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t')||0)||0,t0=performance.now();
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),E=v=>{v=cl(v);return v<.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2};
+const BR='#6c4cff',BR2='#ff6b8a';
+function rr(X,Y,w,h,r){x.beginPath();x.roundRect(X,Y,w,h,r);}
+function txt(s,X,Y,sz,col,al='left',w='600'){x.font=`${w} ${sz}px Helvetica,Arial,sans-serif`;x.fillStyle=col;x.textAlign=al;x.fillText(s,X,Y);}
+function logo(X,Y,s,a=1){x.save();x.globalAlpha*=a;x.translate(X,Y);x.scale(s,s);const g=x.createLinearGradient(-30,-30,30,30);g.addColorStop(0,BR);g.addColorStop(1,BR2);x.fillStyle=g;x.beginPath();x.moveTo(0,-28);x.lineTo(30,22);x.lineTo(-30,22);x.closePath();x.fill();x.fillStyle='#fff';x.beginPath();x.moveTo(0,-4);x.lineTo(10,22);x.lineTo(-10,22);x.fill();x.restore();}
+const prompts=[
+{p:"Hero banner: Tented logo over sunset mountains, brand purple",kind:0,title:"Summer Launch Newsletter"},
+{p:"Product shot of our mug with Tented logo, coral background",kind:1,title:"Blog: Behind the Brand"},
+{p:"Social post: abstract waves in brand colors, 'Join us'",kind:2,title:"LinkedIn Campaign Post"}];
+function art(k,X,Y,w,h,p,t){x.save();rr(X,Y,w,h,12);x.clip();
+if(k==0){let g=x.createLinearGradient(0,Y,0,Y+h);g.addColorStop(0,'#2a1a6e');g.addColorStop(.6,BR2);g.addColorStop(1,'#ffc28a');x.fillStyle=g;x.fillRect(X,Y,w,h);
+x.fillStyle='#ffe2a8';x.beginPath();x.arc(X+w*.7,Y+h*.62,h*.15,0,7);x.fill();
+for(let L=0;L<3;L++){x.fillStyle=['#4b2fb0','#3a2290','#24155e'][L];x.beginPath();x.moveTo(X,Y+h);for(let i=0;i<=12;i++){x.lineTo(X+w*i/12,Y+h*(.62+L*.1)-Math.abs(Math.sin(i*1.7+L*2))*h*.22);}x.lineTo(X+w,Y+h);x.fill();}
+logo(X+w*.22,Y+h*.35,h/140);txt('TENTED',X+w*.22,Y+h*.35+h*.28,h*.1,'#fff','center','800');}
+else if(k==1){x.fillStyle='#ff8a7a';x.fillRect(X,Y,w,h);x.fillStyle='rgba(255,255,255,.15)';for(let i=0;i<6;i++){x.beginPath();x.arc(X+w*(i/5),Y+h*.2+Math.sin(i+t)*10,h*.12,0,7);x.fill();}
+const mx=X+w*.5,my=Y+h*.55,mw=w*.28,mh=h*.45;x.fillStyle='rgba(0,0,0,.2)';x.beginPath();x.ellipse(mx,my+mh*.55,mw*.7,10,0,0,7);x.fill();
+x.strokeStyle='#eee';x.lineWidth=h*.05;x.beginPath();x.arc(mx+mw*.5,my,mh*.22,-1.3,1.3);x.stroke();
+x.fillStyle='#fafafa';rr(mx-mw/2,my-mh/2,mw,mh,10);x.fill();x.fillStyle='#e6e6e6';x.fillRect(mx+mw*.3,my-mh/2,mw*.2,mh);logo(mx,my-4,mh/110);}
+else{let g=x.createLinearGradient(X,Y,X+w,Y+h);g.addColorStop(0,BR);g.addColorStop(1,BR2);x.fillStyle=g;x.fillRect(X,Y,w,h);
+for(let L=0;L<5;L++){x.strokeStyle=`rgba(255,255,255,${.12+L*.06})`;x.lineWidth=3;x.beginPath();for(let i=0;i<=40;i++){const xx=X+w*i/40;x.lineTo(xx,Y+h*(.3+L*.12)+Math.sin(i*.35+t*2+L)*h*.06);}x.stroke();}
+txt('Join us',X+w/2,Y+h*.55,h*.16,'#fff','center','800');logo(X+w/2,Y+h*.25,h/200);}
+x.restore();
+if(p<1){x.save();rr(X,Y,w,h,12);x.clip();x.fillStyle='#14121f';x.globalAlpha=1-p;x.fillRect(X,Y,w,h);
+x.globalAlpha=(1-p)*.8;for(let i=0;i<120;i++){const r=Math.sin(i*91.7+Math.floor(t*12))*.5+.5,s=Math.sin(i*13.1)*.5+.5;x.fillStyle=i%2?BR:BR2;x.fillRect(X+r*w,Y+s*h,8,8);}x.restore();}}
+function bg(t){let g=x.createLinearGradient(0,0,1280,720);g.addColorStop(0,'#0d0b1a');g.addColorStop(1,'#1a1030');x.fillStyle=g;x.fillRect(0,0,1280,720);
+for(let i=0;i<30;i++){x.fillStyle=`rgba(140,110,255,${.05+.04*Math.sin(t+i)})`;x.beginPath();x.arc((i*173+t*10)%1400-60,(i*97)%720,30+i%5*15,0,7);x.fill();}}
+function scene(i,lt,t){const P=prompts[i];
+const a=E(lt/.6)*(1-E((lt-7.4)/.6));x.globalAlpha=a;
+// chat panel
+x.fillStyle='rgba(255,255,255,.06)';rr(50,90,500,560,20);x.fill();
+txt('Tented Assistant',80,130,20,'#fff');logo(530-10,122,.35);
+const n=Math.floor(cl((lt-.5)/2)*P.p.length),s=P.p.slice(0,n);
+x.font='500 18px Helvetica,Arial';const words=s.split(' ');let lines=[''],li=0;for(const w of words){if(x.measureText(lines[li]+w).width>360){lines[++li]='';}lines[li]+=w+' ';}
+const bh=lines.length*26+24;x.fillStyle=BR;rr(150,165,370,bh,16);x.fill();lines.forEach((l,j)=>txt(l,168,195+j*26,18,'#fff','left','500'));
+if(lt>2.7){const gp=cl((lt-2.8)/1.6);const yy=185+bh;x.fillStyle='rgba(255,255,255,.1)';rr(80,yy,340,210,16);x.fill();
+txt(gp<1?'Generating on-brand image… '+Math.floor(gp*100)+'%':'✓ Brand kit applied',96,yy+28,15,gp<1?'#bbb':'#7dffb0','left','500');
+const fly=E((lt-4.6)/1);if(fly<1||lt<4.6)art(P.kind,96,yy+42,308,156,gp,t);
+if(lt>4.6&&fly<1){const sx=96,sy=yy+42,tx=640,ty=230;x.globalAlpha=a*.9;art(P.kind,sx+(tx-sx)*fly,sy+(ty-sy)*fly,308+(560-308)*fly,156+(240-156)*fly,1,t);x.globalAlpha=a;}}
+// document
+x.fillStyle='#f6f5fb';rr(610,90,620,560,20);x.fill();
+txt(P.title,640,140,26,'#1b1530','left','800');
+x.fillStyle='#ddd8ee';const placed=lt>5.6;
+const ib=230;if(!placed){x.setLineDash([8,6]);x.strokeStyle='#b8b0d8';x.lineWidth=2;rr(640,ib,560,240,12);x.stroke();x.setLineDash([]);txt('Image placeholder',920,ib+125,16,'#a9a2c6','center','500');}
+else{const pop=1+.04*Math.sin(cl((lt-5.6)/.4)*Math.PI);x.save();x.translate(920,ib+120);x.scale(pop,pop);art(P.kind,-280,-120,560,240,1,t);x.restore();}
+for(let k=0;k<5;k++){x.fillStyle='#ddd8ee';rr(640,ib+265+k*26,k==4?320:560,12,6);x.fill();}
+for(let k=0;k<2;k++){x.fillStyle='#e7e3f4';rr(640,170+k*20,k?260:420,10,5);x.fill();}
+if(placed){x.globalAlpha=a*cl((lt-5.8)/.4);x.fillStyle='#1fbf73';rr(1040,110,160,34,17);x.fill();txt('✓ Added to content',1120,133,14,'#fff','center','700');}
+x.globalAlpha=1;}
+function frame(){const t=((performance.now()-t0)/1000+off)%DUR;bg(t);
+if(t<3){const a=E(t/.8)*(1-E((t-2.4)/.6));x.globalAlpha=a;logo(640,280,2.2*(.8+.2*E(t)));txt('Tented',640,420,72,'#fff','center','800');txt('Image Generation',640,470,30,'#c9bfff','center','400');x.globalAlpha=1;}
+else if(t<27){const i=Math.floor((t-3)/8);txt('Ask for branded images — drop them right into your content',640,60,22,'rgba(255,255,255,.75)','center','500');x.globalAlpha=1;scene(i,(t-3)%8,t);
+x.globalAlpha=1;for(let k=0;k<3;k++){x.fillStyle=k==i?BR2:'rgba(255,255,255,.25)';x.beginPath();x.arc(616+k*24,685,6,0,7);x.fill();}}
+else{const lt=t-27,a=E(lt/.6)*(1-E((lt-2.5)/.5));x.globalAlpha=a;
+[0,1,2].forEach(k=>art(k,190+k*310,170,280,150,1,t));
+logo(640,420,1);txt('Your brand. Every image. Instantly.',640,510,36,'#fff','center','800');txt('Tented',640,560,24,'#c9bfff','center','500');x.globalAlpha=1;}
+requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

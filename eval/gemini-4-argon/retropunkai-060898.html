@@ -1,0 +1,1203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>The Sphere Las Vegas — GSAP Motion Explainer</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, sans-serif;
+  }
+  #stage {
+    width: 1280px; height: 720px;
+    position: relative; overflow: hidden;
+    background: #070913;
+    box-shadow: 0 0 50px rgba(0,0,0,0.9);
+    transform-origin: center center;
+  }
+  canvas {
+    position: absolute; top: 0; left: 0;
+    width: 1280px; height: 720px;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="c" width="1280" height="720"></canvas>
+</div>
+<script>
+// ============================================================================
+// EMBEDDED LIGHTWEIGHT GSAP-COMPATIBLE TIMELINE ENGINE (Driven by performance.now)
+// ============================================================================
+const Easing = {
+  none: t => t,
+  "power1.out": t => 1 - (1 - t) * (1 - t),
+  "power2.out": t => 1 - Math.pow(1 - t, 3),
+  "power3.out": t => 1 - Math.pow(1 - t, 4),
+  "power2.inOut": t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
+  "power3.inOut": t => t < 0.5 ? 8 * t * t * t * t : 1 - Math.pow(-2 * t + 2, 4) / 2,
+  "back.out": t => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); },
+  "elastic.out": t => t === 0 ? 0 : t === 1 ? 1 : Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * ((2 * Math.PI) / 3)) + 1,
+  "sine.inOut": t => -(Math.cos(Math.PI * t) - 1) / 2
+};
+
+class GSAPTimeline {
+  constructor() { this.tweens = []; this.labels = {}; this.duration = 0; }
+  addLabel(name, time) { this.labels[name] = time; return this; }
+  to(target, vars, pos = this.duration) {
+    if (typeof pos === 'string') pos = this.labels[pos] ?? this.duration;
+    const dur = vars.duration ?? 1;
+    const ease = Easing[vars.ease || "power2.out"] || Easing["power2.out"];
+    const props = {};
+    for (let k in vars) {
+      if (k !== 'duration' && k !== 'ease') props[k] = { end: vars[k], start: null };
+    }
+    this.tweens.push({ target, dur, start: pos, end: pos + dur, ease, props });
+    if (pos + dur > this.duration) this.duration = pos + dur;
+    return this;
+  }
+  fromTo(target, fromVars, toVars, pos = this.duration) {
+    if (typeof pos === 'string') pos = this.labels[pos] ?? this.duration;
+    const dur = toVars.duration ?? 1;
+    const ease = Easing[toVars.ease || "power2.out"] || Easing["power2.out"];
+    const props = {};
+    for (let k in toVars) {
+      if (k !== 'duration' && k !== 'ease') {
+        props[k] = { start: fromVars[k] ?? target[k], end: toVars[k] };
+      }
+    }
+    this.tweens.push({ target, dur, start: pos, end: pos + dur, ease, props, isFromTo: true });
+    if (pos + dur > this.duration) this.duration = pos + dur;
+    return this;
+  }
+   compile(initialStateFactory) {
+    const state = initialStateFactory();
+    this.tweens.sort((a, b) => a.start - b.start);
+    for (let tw of this.tweens) {
+      for (let k in tw.props) {
+        if (tw.props[k].start === null) tw.props[k].start = state[tw.target][k];
+        state[tw.target][k] = tw.props[k].end;
+      }
+    }
+    this.initialStateFactory = initialStateFactory;
+  }
+  seek(t, stateObj) {
+    const fresh = this.initialStateFactory();
+    for (let group in fresh) Object.assign(stateObj[group], fresh[group]);
+    for (let tw of this.tweens) {
+      const target = stateObj[tw.target];
+      if (t >= tw.end) {
+        for (let k in tw.props) target[k] = tw.props[k].end;
+      } else if (t > tw.start) {
+        const p = tw.ease((t - tw.start) / tw.dur);
+        for (let k in tw.props) {
+          const s = tw.props[k].start, e = tw.props[k].end;
+          target[k] = s + (e - s) * p;
+        }
+      } else if (tw.isFromTo && t <= tw.start) {
+        // leave prior state if not started
+      }
+    }
+  }
+}
+const gsap = { timeline: () => new GSAPTimeline() };
+
+// ============================================================================
+// STAGE SCALING & TIME SETUP
+// ============================================================================
+window.DUR = 36;
+const stage = document.getElementById('stage');
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  const s = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+  stage.style.transform = `scale(${s})`;
+}
+window.addEventListener('resize', resize);
+resize();
+
+const urlParams = new URLSearchParams(window.location.search);
+const timeOffset = parseFloat(urlParams.get('t') || '0');
+let startTime = null;
+
+// ============================================================================
+// SCENE STATE & GSAP TIMELINE DEFINITION
+// ============================================================================
+function createInitialState() {
+  return {
+    bg: { blueprintAlpha: 1, nightAlpha: 0, gridTilt: 0, gridScroll: 0, starsAlpha: 0 },
+    cam: { x: 640, y: 390, scale: 1, rotY: 0, rotX: 0.15 },
+    sphere: {
+      baseDraw: 0,         // 0->1 draw circular foundation
+      heightRatio: 0,      // 0->1 366ft vertical axis
+      widthRatio: 0,       // 0->1 516ft horizontal axis
+      latCount: 0,         // 0->14 latitude rings
+      lonCount: 0,         // 0->24 longitude ribs
+      diagProgress: 0,     // 0->1 geodesic steel triangles
+      craneAlpha: 0,       // 0->1->0 construction cranes
+      domeDrop: 0,         // 0->1 240-ton oculus compression ring
+      exoProgress: 0,      // 0->1 exosphere LED pucks
+      skinAlpha: 0,        // 0->1 solid dark core behind LEDs
+      shaderMode: 0,       // 0: off, 1: wave, 2: eyeball, 3: earth, 4: Equalizer/concert
+      shaderMix: 0,
+      pulse: 0
+    },
+    vegas: { alpha: 0, beamPower: 0 },
+    browser: {
+      x: 780, y: 110, scale: 0, alpha: 0,
+      SphereX: 640, SphereY: 390, // morph sphere into browser preview
+      scroll: 0, cursorX: 1100, cursorY: 600, clickRip: 0,
+      cardStagger: 0, codeHighlight: 0, eqBoost: 0
+    },
+    hud: {
+      phase: 1,
+      bannerAlpha: 0, bannerY: -60,
+      titleAlpha: 0, titleY: 30,
+      stat1Alpha: 0, stat2Alpha: 0,
+      codeBoxAlpha: 0, codeBoxX: -420,
+      outroAlpha: 0, outroScale: 0.85
+    }
+  };
+}
+
+const S = createInitialState();
+const tl = gsap.timeline();
+
+// --- ACT 1: 2018 MINIMAL ARCHITECTURE & BLUEPRINT (0s - 7s) ---
+tl.addLabel("act1", 0)
+  .to("hud", { bannerAlpha: 1, bannerY: 0, titleAlpha: 1, titleY: 0, duration: 0.9, ease: "back.out" }, 0.2)
+  .to("sphere", { baseDraw: 1, duration: 1.5, ease: "power2.inOut" }, 0.5)
+  .to("sphere", { widthRatio: 1, duration: 1.2, ease: "elastic.out" }, 1.6)
+  .to("sphere", { heightRatio: 1, duration: 1.2, ease: "elastic.out" }, 2.2)
+  .to("hud", { stat1Alpha: 1, duration: 0.6 }, 1.8)
+  .to("hud", { stat2Alpha: 1, duration: 0.6 }, 2.4)
+  .to("sphere", { latCount: 6, lonCount: 8, duration: 2.2, ease: "power2.out" }, 3.2)
+  .to("cam", { rotY: 1.8, scale: 1.08, duration: 6.5, ease: "sine.inOut" }, 0.5);
+
+// --- ACT 2: 2019–2021 STRUCTURAL STEEL GEODESIC FRAME (7s - 14s) ---
+tl.addLabel("act2", 7.0)
+  .to("hud", { phase: 2, stat1Alpha: 0, stat2Alpha: 0, duration: 0.3 }, 7.0)
+  .to("hud", { stat1Alpha: 1, stat2Alpha: 1, duration: 0.6 }, 7.5)
+  .to("bg", { gridTilt: 0.55, duration: 1.8, ease: "power2.inOut" }, 7.0)
+  .to("sphere", { craneAlpha: 1, duration: 0.9, ease: "back.out" }, 7.2)
+  .to("sphere", { latCount: 14, lonCount: 24, diagProgress: 1, duration: 3.5, ease: "power2.inOut" }, 7.5)
+  .to("sphere", { domeDrop: 1, duration: 1.8, ease: "back.out" }, 10.5)
+  .to("cam", { rotY: 4.5, rotX: 0.25, scale: 1.15, duration: 7.0, ease: "sine.inOut" }, 7.0)
+  .to("sphere", { craneAlpha: 0, duration: 0.8 }, 13.0);
+
+// --- ACT 3: 2022–2023 EXOSPHERE & VEGAS NIGHT LAUNCH (14s - 21.5s) ---
+tl.addLabel("act3", 14.0)
+  .to("hud", { phase: 3, stat1Alpha: 0, stat2Alpha: 0, duration: 0.3 }, 14.0)
+  .to("hud", { stat1Alpha: 1, stat2Alpha: 1, duration: 0.6 }, 14.5)
+  .to("bg", { blueprintAlpha: 0, nightAlpha: 1, starsAlpha: 1, gridTilt: 0.72, duration: 1.8, ease: "power2.inOut" }, 14.0)
+  .to("vegas", { alpha: 1, duration: 1.8 }, 14.3)
+  .to("sphere", { skinAlpha: 0.92, exoProgress: 1, duration: 2.2, ease: "power2.out" }, 14.2)
+  .to("sphere", { shaderMode: 1, pulse: 1, duration: 0.2 }, 16.0)
+  .to("vegas", { beamPower: 1, duration: 1.0 }, 16.2)
+  .to("sphere", { shaderMode: 2, duration: 0.1 }, 17.6) // Giant blinking eye
+  .to("sphere", { shaderMode: 3, duration: 0.1 }, 19.6) // Textured globe
+  .to("cam", { rotY: 8.2, rotX: 0.12, scale: 1.22, duration: 7.5, ease: "sine.inOut" }, 14.0);
+
+// --- ACT 4: BANDS LIVE PAGES POWERED BY GSAP (21.5s - 31.5s) ---
+tl.addLabel("act4", 21.5)
+  .to("hud", { phase: 4, stat1Alpha: 0, stat2Alpha: 0, duration: 0.3 }, 21.5)
+  .to("cam", { x: 895, y: 275, scale: 0.68, rotY: 11.5, duration: 1.6, ease: "power3.inOut" }, 21.5)
+  .to("sphere", { shaderMode: 4, duration: 0.2 }, 22.0)
+  .to("vegas", { alpha: 0.25, beamPower: 0.3, duration: 1.2 }, 21.5)
+  .to("browser", { scale: 1, alpha: 1, duration: 1.1, ease: "back.out" }, 22.0)
+  .to("hud", { codeBoxAlpha: 1, codeBoxX: 48, duration: 1.0, ease: "back.out" }, 22.4)
+  .to("browser", { cardStagger: 1, duration: 1.5, ease: "power2.out" }, 23.2)
+  .to("browser", { scroll: 145, duration: 2.2, ease: "power2.inOut" }, 24.8)
+  .to("hud", { codeHighlight: 1, duration: 0.5 }, 25.0)
+  .to("browser", { cursorX: 830, cursorY: 505, duration: 1.4, ease: "power2.inOut" }, 26.5)
+  .to("browser", { clickRip: 1, eqBoost: 1, duration: 0.7, ease: "power2.out" }, 28.0)
+  .to("hud", { codeHighlight: 2, duration: 0.4 }, 28.0)
+  .to("cam", { rotY: 14.5, duration: 9.5, ease: "none" }, 22.0);
+
+// --- ACT 5: GRAND FINALE (31.5s - 36s) ---
+tl.addLabel("act5", 31.5)
+  .to("hud", { phase: 5, codeBoxAlpha: 0, codeBoxX: -450, duration: 0.8, ease: "power2.inOut" }, 31.5)
+  .to("browser", { scale: 0.7, alpha: 0, duration: 0.8, ease: "power2.inOut" }, 31.5)
+  .to("cam", { x: 640, y: 360, scale: 1.28, rotY: 17.5, duration: 4.5, ease: "power2.out" }, 31.5)
+  .to("vegas", { alpha: 1, beamPower: 1, duration: 1.0 }, 31.8)
+  .to("hud", { outroAlpha: 1, outroScale: 1, duration: 1.0, ease: "back.out" }, 32.3);
+
+tl.compile(createInitialState);
+
+// ============================================================================
+// PROCEDURAL GEOMETRY & ASSETS
+// ============================================================================
+const STARS = Array.from({ length: 90 }, (_, i) => ({
+  x: (Math.sin(i * 78.233) * 43758.5453 % 1 + 1) % 1 * 1280,
+  y: (Math.sin(i * 12.989) * 43758.5453 % 1 + 1) % 1 * 420,
+  r: 0.8 + ((i * 19) % 15) * 0.12,
+  phase: i * 0.7
+}));
+
+const BUILDINGS = [
+  { x: 60, w: 55, h: 130, col: "#ff2a85" },
+  { x: 125, w: 40, h: 95, col: "#00f0ff" },
+  { x: 180, w: 85, h: 175, col: "#ffaa00", luxor: false, bellagio: true },
+  { x: 280, w: 50, h: 120, col: "#7b2cbf" },
+  { x: 350, w: 65, h: 240, col: "#00f0ff", strat: true },
+  { x: 860, w: 95, h: 150, col: "#00ff88" },
+  { x: 970, w: 120, h: 110, col: "#ffffff", luxor: true },
+  { x: 1105, w: 60, h: 165, col: "#ff2a85" },
+  { x: 1175, w: 50, h: 115, col: "#ffbe0b" }
+];
+
+const PHASE_TEXT = {
+  1: { year: "2018", tag: "CONCEPT & MINIMAL ARCHITECTURE", sub: "Populous designs the world's largest spherical structure in Las Vegas" },
+  2: { year: "2019 – 2021", tag: "GEODESIC EXOSKELETON & 240-TON RING", sub: "3,000 tons of structural steel & the world's fourth-largest crawler crane" },
+  3: { year: "JULY 2023", tag: "580,000 SQ FT EXOSPHERE AWAKENS", sub: "1.2 million programmable LED pucks illuminate the Las Vegas skyline" },
+  4: { year: "TODAY", tag: "IMMERSIVE LIVE BAND PORTALS WITH GSAP", sub: "Residencies (U2, Phish, Dead & Co, Anyma) bring the Sphere to the web" },
+  5: { year: "THE SPHERE", tag: "ARCHITECTURE × LIVE MUSIC × MOTION CODE", sub: "From minimal blueprint to interactive global icon" }
+};
+
+// Helper: Rounded Rectangle
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+// Helper: 3D Point projection onto 2D stage
+function project3D(theta, phi, R, cx, cy, rotY, rotX) {
+  // theta: latitude (-PI/2 to PI/2), phi: longitude (0 to 2PI)
+  const cosT = Math.cos(theta), sinT = Math.sin(theta);
+  const x0 = R * cosT * Math.sin(phi + rotY);
+  const y0 = -R * sinT;
+  const z0 = R * cosT * Math.cos(phi + rotY);
+
+  // Tilt around X axis
+  const cosX = Math.cos(rotX), sinX = Math.sin(rotX);
+  const y1 = y0 * cosX - z0 * sinX;
+  const z1 = y0 * sinX + z0 * cosX;
+
+  const perspective = 950 / (950 - z1);
+  return {
+    x: cx + x0 * perspective,
+    y: cy + y1 * perspective,
+    z: z1,
+    nx: x0 / R,
+    ny: y1 / R,
+    nz: z1 / R
+  };
+}
+
+// ============================================================================
+// DRAWING FUNCTIONS
+// ============================================================================
+function drawBackground(t) {
+  // Deep base gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, 720);
+  if (S.bg.blueprintAlpha > 0.01) {
+    grad.addColorStop(0, `rgba(10, 28, 58, ${S.bg.blueprintAlpha})`);
+    grad.addColorStop(1, `rgba(6, 15, 34, ${S.bg.blueprintAlpha})`);
+  }
+  if (S.bg.nightAlpha > 0.01) {
+    grad.addColorStop(0, "#05030d");
+    grad.addColorStop(0.65, "#0d0822");
+    grad.addColorStop(1, "#180c2e");
+  }
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 1280, 720);
+
+  // Blueprint overlay
+  if (S.bg.blueprintAlpha > 0.01) {
+    ctx.save();
+    ctx.globalAlpha = S.bg.blueprintAlpha * 0.28;
+    ctx.strokeStyle = "#38bdf8";
+    ctx.lineWidth = 1;
+    const step = 40;
+    for (let x = 0; x <= 1280; x += step) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 720); ctx.stroke();
+    }
+    for (let y = 0; y <= 720; y += step) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(1280, y); ctx.stroke();
+    }
+    // Blueprint corner crosshairs
+    ctx.strokeStyle = "#7dd3fc";
+    ctx.lineWidth = 2;
+    [[40, 110], [1240, 110], [40, 660], [1240, 660]].forEach(([cx, cy]) => {
+      ctx.beginPath();
+      ctx.moveTo(cx - 10, cy); ctx.lineTo(cx + 10, cy);
+      ctx.moveTo(cx, cy - 10); ctx.lineTo(cx, cy + 10);
+      ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  // Stars in Vegas Night
+  if (S.bg.starsAlpha > 0.01) {
+    ctx.save();
+    for (let st of STARS) {
+      const tw = 0.4 + 0.6 * Math.sin(t * 3 + st.phase);
+      ctx.fillStyle = `rgba(255, 255, 255, ${S.bg.starsAlpha * tw})`;
+      ctx.beginPath();
+      ctx.arc(st.x, st.y, st.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // Perspective Ground Grid
+  const horizonY = 540 - S.bg.gridTilt * 60;
+  ctx.save();
+  const gridCol = S.bg.nightAlpha > 0.5 ? "rgba(217, 70, 239, 0.24)" : "rgba(56, 189, 248, 0.25)";
+  ctx.strokeStyle = gridCol;
+  ctx.lineWidth = 1.2;
+  for (let i = -14; i <= 14; i++) {
+    ctx.beginPath();
+    ctx.moveTo(640 + i * 35, horizonY);
+    ctx.lineTo(640 + i * 165, 720);
+    ctx.stroke();
+  }
+  const offset = (t * 0.6) % 1;
+  for (let j = 0; j < 8; j++) {
+    const p = Math.pow((j + offset) / 8, 1.8);
+    const y = horizonY + p * (720 - horizonY);
+    ctx.beginPath();
+    ctx.moveTo(0, y); ctx.lineTo(1280, y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawVegasSkyline(t) {
+  if (S.vegas.alpha <= 0.01) return;
+  const baseY = 500;
+  ctx.save();
+  ctx.globalAlpha = S.vegas.alpha;
+
+  // Ambient glow on horizon
+  const hGlow = ctx.createRadialGradient(640, baseY, 40, 640, baseY, 580);
+  hGlow.addColorStop(0, "rgba(168, 85, 247, 0.35)");
+  hGlow.addColorStop(0.5, "rgba(236, 72, 153, 0.15)");
+  hGlow.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = hGlow;
+  ctx.fillRect(0, 200, 1280, 350);
+
+  for (let b of BUILDINGS) {
+    ctx.fillStyle = "#090614";
+    ctx.strokeStyle = b.col;
+    ctx.lineWidth = 1.5;
+
+    if (b.luxor) {
+      // Luxor Pyramid + Skybeam
+      if (S.vegas.beamPower > 0.01) {
+        const beamGrad = ctx.createLinearGradient(b.x + b.w / 2, baseY - b.h, b.x + b.w / 2, 0);
+        beamGrad.addColorStop(0, `rgba(220, 245, 255, ${0.55 * S.vegas.beamPower})`);
+        beamGrad.addColorStop(1, "rgba(220, 245, 255, 0)");
+        ctx.fillStyle = beamGrad;
+        ctx.beginPath();
+        ctx.moveTo(b.x + b.w / 2 - 4, baseY - b.h);
+        ctx.lineTo(b.x + b.w / 2 - 75, 0);
+        ctx.lineTo(b.x + b.w / 2 + 75, 0);
+        ctx.lineTo(b.x + b.w / 2 + 4, baseY - b.h);
+        ctx.fill();
+      }
+      ctx.fillStyle = "#090614";
+      ctx.beginPath();
+      ctx.moveTo(b.x, baseY);
+      ctx.lineTo(b.x + b.w / 2, baseY - b.h);
+      ctx.lineTo(b.x + b.w, baseY);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    } else if (b.strat) {
+      // Stratosphere tower
+      const cx = b.x + b.w / 2;
+      ctx.beginPath();
+      ctx.moveTo(cx - 14, baseY);
+      ctx.lineTo(cx - 5, baseY - b.h + 45);
+      ctx.lineTo(cx + 5, baseY - b.h + 45);
+      ctx.lineTo(cx + 14, baseY);
+      ctx.fill(); ctx.stroke();
+      // Pod
+      ctx.beginPath();
+      ctx.ellipse(cx, baseY - b.h + 40, 22, 10, 0, 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+      // Needle
+      ctx.beginPath();
+      ctx.moveTo(cx, baseY - b.h + 30);
+      ctx.lineTo(cx, baseY - b.h - 15);
+      ctx.stroke();
+    } else {
+      ctx.fillRect(b.x, baseY - b.h, b.w, b.h);
+      ctx.strokeRect(b.x, baseY - b.h, b.w, b.h);
+      // Neon horizontal window strips
+      ctx.fillStyle = b.col;
+      ctx.globalAlpha = S.vegas.alpha * 0.45;
+      for (let wy = baseY - b.h + 12; wy < baseY - 10; wy += 14) {
+        ctx.fillRect(b.x + 6, wy, b.w - 12, 2);
+      }
+      ctx.globalAlpha = S.vegas.alpha;
+    }
+  }
+  ctx.restore();
+}
+
+function drawCranes(cx, cy, R, alpha) {
+  if (alpha <= 0.01) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = "#facc15";
+  ctx.lineWidth = 2.5;
+
+  // Left & Right giant crawler cranes
+  [-1, 1].forEach(dir => {
+    const baseX = cx + dir * (R + 95);
+    const baseY = cy + R * 0.72;
+    const topX = cx + dir * (R * 0.42);
+    const topY = cy - R * 1.28;
+
+    // Boom lattice
+    ctx.beginPath();
+    ctx.moveTo(baseX - 10 * dir, baseY);
+    ctx.lineTo(topX, topY);
+    ctx.lineTo(baseX + 8 * dir, baseY);
+    ctx.stroke();
+
+    // Cross braces
+    for (let i = 1; i < 10; i++) {
+      const p = i / 10;
+      const x1 = (baseX - 10 * dir) + (topX - (baseX - 10 * dir)) * p;
+      const y1 = baseY + (topY - baseY) * p;
+      const x2 = (baseX + 8 * dir) + (topX - (baseX + 8 * dir)) * (p - 0.06);
+      const y2 = baseY + (topY - baseY) * (p - 0.06);
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    }
+
+    // Hoist cable to oculus ring
+    ctx.strokeStyle = "#94a3b8";
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(topX, topY);
+    ctx.lineTo(cx + dir * 38, cy - R * 0.92);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.strokeStyle = "#facc15";
+
+    // Crawler base
+    ctx.fillStyle = "#eab308";
+    ctx.fillRect(baseX - 24, baseY - 14, 48, 16);
+  });
+  ctx.restore();
+}
+
+function getPuckColor(theta, phi, p, t, mode, eqBoost) {
+  // Normalized coords: u in [0,1], v in [-1,1] (bottom to top)
+  const v = Math.sin(theta);
+  const nx = p.nx, ny = p.ny, nz = p.nz;
+
+  if (mode < 1.5) {
+    // Mode 1: Neon Awakening Plasma Wave
+    const wave = Math.sin(theta * 6 - t * 5) + Math.cos(phi * 5 + t * 3);
+    const hue = (190 + wave * 45 + t * 40) % 360;
+    return `hsl(${hue}, 95%, 60%)`;
+  } else if (mode < 2.5) {
+    // Mode 2: The Iconic Giant Blinking Eyeball
+    const lookX = Math.sin(t * 1.8) * 0.25;
+    const lookY = Math.cos(t * 1.3) * 0.12;
+    const dx = nx - lookX, dy = ny - lookY;
+    const dist = Math.hypot(dx, dy);
+    const blink = Math.sin(t * 2.6) > 0.92 ? 0.08 : 1.0;
+
+    if (Math.abs(ny) > 0.65 * blink) return "#1e1b2e"; // Eyelid
+    if (dist < 0.20) return "#050508"; // Pupil
+    if (dist < 0.48) {
+      // Iris striations
+      const angle = Math.atan2(dy, dx);
+      const stripe = Math.sin(angle * 28 + dist * 15) * 15;
+      const l = 42 + (0.48 - dist) * 60;
+      return `hsl(${195 + stripe}, 95%, ${l}%)`;
+    }
+    // Sclera with subtle red veins at edges
+    const vein = dist > 0.72 && Math.sin( Math.atan2(dy, dx) * 18 + dist * 20 ) > 0.65;
+    return vein ? "#f43f5e" : "#f1f5f9";
+  } else if (mode < 3.5) {
+    // Mode 3: Rotating Living Earth / Globe
+    const n = Math.sin((phi + t * 0.7) * 3) * Math.cos(theta * 3.5) + 0.4 * Math.sin((phi - t * 0.4) * 7);
+    if (Math.abs(v) > 0.82) return "#f8fafc"; // Polar ice caps
+    if (n > 0.18) return `hsl(${130 + n * 25}, 75%, 45%)`; // Continents
+    return `hsl(${205 + n * 15}, 90%, 50%)`; // Oceans
+  } else {
+    // Mode 4: Live Band Concert Audio-Reactive Visualizer + GSAP Sync
+    const band = Math.floor(((phi % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2)) / (Math.PI * 2) * 16);
+    const boost = 1 + eqBoost * 0.55;
+    const eqHeight = (-0.6 + 0.85 * Math.abs(Math.sin(band * 1.7 + t * 6.5)) * boost);
+    if ( -ny < eqHeight ) {
+      const hue = (310 + (ny + 1) * 85 + eqBoost * 60 + t * 50) % 360;
+      return `hsl(${hue}, 100%, 62%)`;
+    }
+    const ring = Math.abs(Math.sin(theta * 12 - t * 8)) > 0.85;
+    return ring ? "rgba(56, 189, 248, 0.85)" : "rgba(30, 27, 75, 0.55)";
+  }
+}
+
+function drawSphere(t) {
+  const cx = S.cam.x;
+  const cy = S.cam.y;
+  const R = 165 * S.cam.scale;
+  const rotY = S.cam.rotY;
+  const rotX = S.cam.rotX;
+
+  ctx.save();
+
+  // 1. Minimal Architecture Blueprint Guides (Act 1)
+  if (S.sphere.baseDraw > 0.01 && S.bg.blueprintAlpha > 0.05) {
+    ctx.save();
+    ctx.globalAlpha = S.bg.blueprintAlpha;
+    // Base footprint ellipse
+    ctx.strokeStyle = "#38bdf8";
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    const baseY = cy + R * 0.72;
+    ctx.ellipse(cx, baseY, R * 1.05, R * 0.28, 0, 0, Math.PI * 2 * S.sphere.baseDraw);
+    ctx.stroke();
+
+    // Width Dimension Line (516 FT)
+    if (S.sphere.widthRatio > 0.01) {
+      const wSpan = R * 1.25 * S.sphere.widthRatio;
+      const wy = cy + R + 36;
+      ctx.strokeStyle = "#facc15";
+      ctx.lineWidth = 1.8;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.moveTo(cx - wSpan, wy); ctx.lineTo(cx + wSpan, wy);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Ticks
+      ctx.beginPath();
+      ctx.moveTo(cx - wSpan, wy - 8); ctx.lineTo(cx - wSpan, wy + 8);
+      ctx.moveTo(cx + wSpan, wy - 8); ctx.lineTo(cx + wSpan, wy + 8);
+      ctx.stroke();
+      if (S.hud.stat1Alpha > 0.05) {
+        ctx.fillStyle = "#facc15";
+        ctx.font = "bold 14px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText("◄── WIDTH: 516 FT (157m) ──►", cx, wy + 22);
+      }
+    }
+
+    // Height Dimension Line (366 FT)
+    if (S.sphere.heightRatio > 0.01) {
+      const hTop = cy - R * S.sphere.heightRatio;
+      const hBot = cy + R * 0.72;
+      const hx = cx - R * 1.35;
+      ctx.strokeStyle = "#4ade80";
+      ctx.lineWidth = 1.8;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.moveTo(hx, hBot); ctx.lineTo(hx, hTop);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(hx - 8, hTop); ctx.lineTo(hx + 8, hTop);
+      ctx.moveTo(hx - 8, hBot); ctx.lineTo(hx + 8, hBot);
+      ctx.stroke();
+      if (S.hud.stat2Alpha > 0.05) {
+        ctx.fillStyle = "#4ade80";
+        ctx.font = "bold 14px monospace";
+        ctx.textAlign = "right";
+        ctx.fillText("HEIGHT: 366 FT", hx - 14, (hTop + hBot) / 2 - 4);
+        ctx.fillText("(112m) HIGH", hx - 14, (hTop + hBot) / 2 + 14);
+      }
+    }
+    ctx.restore();
+  }
+
+  // Ambient Sphere Outer Halo when Exosphere is active
+  if (S.sphere.exoProgress > 0.1) {
+    const halo = ctx.createRadialGradient(cx, cy, R * 0.75, cx, cy, R * 1.45);
+    const haloCol = S.sphere.shaderMode >= 3.5 ? "rgba(236, 72, 153, 0.38)" : "rgba(56, 189, 248, 0.35)";
+    halo.addColorStop(0, haloCol);
+    halo.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R * 1.45, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Dark Interior Shell Core
+  if (S.sphere.skinAlpha > 0.01) {
+    ctx.save();
+    ctx.fillStyle = `rgba(8, 10, 22, ${S.sphere.skinAlpha})`;
+    ctx.beginPath();
+    ctx.arc(cx, cy, R * 0.99, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // 2. Geodesic Wireframe / Structural Steel (Acts 1 & 2)
+  const lats = Math.floor(S.sphere.latCount);
+  const lons = Math.floor(S.sphere.lonCount);
+  if (lats > 0 && S.sphere.exoProgress < 0.98) {
+    const wireAlpha = 1 - S.sphere.exoProgress * 0.75;
+    ctx.save();
+    // Latitude rings
+    for (let i = 1; i <= lats; i++) {
+      const theta = -0.42 * Math.PI + (i / (lats + 1)) * (0.92 * Math.PI);
+      ctx.beginPath();
+      for (let s = 0; s <= 48; s++) {
+        const phi = (s / 48) * Math.PI * 2;
+        const p = project3D(theta, phi, R, cx, cy, rotY, rotX);
+        if (s === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      }
+      ctx.strokeStyle = `rgba(56, 189, 248, ${0.45 * wireAlpha})`;
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+    }
+
+    // Longitude ribs + Diagonal Geodesic Bracing
+    for (let j = 0; j < lons; j++) {
+      const phi = (j / lons) * Math.PI * 2;
+      const nextPhi = ((j + 1) / lons) * Math.PI * 2;
+      for (let i = 0; i <= lats; i++) {
+        const theta1 = -0.42 * Math.PI + (i / (lats + 1)) * (0.92 * Math.PI);
+        const theta2 = -0.42 * Math.PI + ((i + 1) / (lats + 1)) * (0.92 * Math.PI);
+        const p1 = project3D(theta1, phi, R, cx, cy, rotY, rotX);
+        const p2 = project3D(theta2, phi, R, cx, cy, rotY, rotX);
+        const front = p1.z > 0;
+
+        ctx.strokeStyle = front
+          ? `rgba(125, 211, 252, ${0.75 * wireAlpha})`
+          : `rgba(56, 189, 248, ${0.2 * wireAlpha})`;
+        ctx.lineWidth = front ? 1.8 : 1;
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+        ctx.stroke();
+
+        // Geodesic diagonals
+        if (S.sphere.diagProgress > 0.05 && front) {
+          const pDiag = project3D(theta2, nextPhi, R, cx, cy, rotY, rotX);
+          ctx.strokeStyle = `rgba(250, 204, 21, ${0.65 * S.sphere.diagProgress * wireAlpha})`;
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(
+            p1.x + (pDiag.x - p1.x) * S.sphere.diagProgress,
+            p1.y + (pDiag.y - p1.y) * S.sphere.diagProgress
+          );
+          ctx.stroke();
+        }
+      }
+    }
+    ctx.restore();
+  }
+
+  // 240-Ton Compression Ring Drop (Act 2)
+  if (S.sphere.domeDrop > 0.01 && S.sphere.exoProgress < 0.8) {
+    ctx.save();
+    const dropOffset = (1 - S.sphere.domeDrop) * 110;
+    const pTop = project3D(0.45 * Math.PI, 0, R, cx, cy - dropOffset, rotY, rotX);
+    ctx.strokeStyle = "#facc15";
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    ctx.ellipse(pTop.x, pTop.y, R * 0.25, R * 0.08, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 3. Exosphere 1.2M LED Pucks & Shaders (Acts 3, 4, 5)
+  if (S.sphere.exoProgress > 0.01) {
+    ctx.save();
+    const rows = 24;
+    for (let r = 0; r <= rows; r++) {
+      // Sweep from bottom to top as exoProgress goes 0 -> 1
+      if (r / rows > S.sphere.exoProgress) break;
+      const theta = -0.38 * Math.PI + (r / rows) * (0.86 * Math.PI);
+      const cols = Math.max(10, Math.floor(46 * Math.cos(theta)));
+      for (let c = 0; c < cols; c++) {
+        const phi = (c / cols) * Math.PI * 2;
+        const p = project3D(theta, phi, R, cx, cy, rotY, rotX);
+        if (p.z < -15) continue; // backface culling
+
+        const edgeFade = Math.min(1, (p.z + 15) / (R * 0.6));
+        const puckRadius = (2.2 + (p.z / R) * 1.9) * S.cam.scale;
+
+        ctx.fillStyle = getPuckColor(theta, phi, p, t, S.sphere.shaderMode, S.browser.eqBoost);
+        ctx.globalAlpha = edgeFade;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, puckRadius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  // Construction Cranes (Act 2)
+  drawCranes(cx, cy, R, S.sphere.craneAlpha);
+
+  ctx.restore();
+}
+
+function drawBandLiveBrowser(t) {
+  if (S.browser.alpha <= 0.01) return;
+
+  ctx.save();
+  ctx.globalAlpha = S.browser.alpha;
+
+  const bx = 520, by = 115, bw = 710, bh = 555;
+  const cx = bx + bw / 2, cy = by + bh / 2;
+  ctx.translate(cx, cy);
+  ctx.scale(S.browser.scale, S.browser.scale);
+  ctx.translate(-cx, -cy);
+
+  // Drop Shadow & Glassmorphic Window Frame
+  ctx.shadowColor = "rgba(0, 0, 0, 0.75)";
+  ctx.shadowBlur = 35;
+  ctx.fillStyle = "rgba(13, 16, 33, 0.88)";
+  roundRect(ctx, bx, by, bw, bh, 14);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  ctx.strokeStyle = "rgba(56, 189, 248, 0.45)";
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, bx, by, bw, bh, 14);
+  ctx.stroke();
+
+  // Browser Top Chrome Bar
+  ctx.fillStyle = "#161b33";
+  roundRect(ctx, bx, by, bw, 42, 14);
+  ctx.fill();
+  // Traffic light dots
+  [["#f43f5e", 22], ["#facc15", 42], ["#4ade80", 62]].forEach(([col, dx]) => {
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.arc(bx + dx, by + 21, 6, 0, Math.PI * 2); ctx.fill();
+  });
+  // URL Bar
+  ctx.fillStyle = "#0b0e1c";
+  roundRect(ctx, bx + 95, by + 9, 440, 24, 6);
+  ctx.fill();
+  ctx.fillStyle = "#38bdf8";
+  ctx.font = "12px monospace";
+  ctx.textAlign = "left";
+  ctx.fillText("https://live.thespherevegas.com/residencies#gsap-scroll", bx + 108, by + 25);
+
+  // GSAP Powered Badge
+  ctx.fillStyle = "#0ae448";
+  roundRect(ctx, bx + bw - 135, by + 9, 120, 24, 6);
+  ctx.fill();
+  ctx.fillStyle = "#050811";
+  ctx.font = "bold 11px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("GSAP 3 + ScrollTrigger", bx + bw - 75, by + 25);
+
+  // Clip Browser Viewport Content
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(bx + 2, by + 42, bw - 4, bh - 44);
+  ctx.clip();
+
+  const scrollY = S.browser.scroll;
+
+  // Hero Header Text inside Live Band Page (Left of the 3D Sphere!)
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#f43f5e";
+  ctx.font = "bold 12px sans-serif";
+  ctx.fillText("● LIVE IMMERSIVE WEB EXPERIENCE", bx + 28, by + 78 - scrollY * 0.35);
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "900 30px sans-serif";
+  ctx.fillText("SPHERE RESIDENCIES", bx + 28, by + 114 - scrollY * 0.35);
+  ctx.fillStyle = "#38bdf8";
+  ctx.fillText("INTERACTIVE TOUR", bx + 28, by + 146 - scrollY * 0.35);
+
+  ctx.fillStyle = "#94a3b8";
+  ctx.font = "13px sans-serif";
+  ctx.fillText("Bands sync 3D WebGL stage visuals & ticket", bx + 28, by + 174 - scrollY * 0.35);
+  ctx.fillText("drops using GSAP ScrollTrigger & SplitText.", bx + 28, by + 192 - scrollY * 0.35);
+
+  // Scroll Progress Scrubbing Bar on Right of Viewport
+  ctx.fillStyle = "rgba(255,255,255,0.1)";
+  ctx.fillRect(bx + bw - 10, by + 50, 4, bh - 60);
+  ctx.fillStyle = "#0ae448";
+  ctx.fillRect(bx + bw - 10, by + 50, 4, Math.max(30, (scrollY / 145) * (bh - 60)));
+
+  // Staggered Residency Band Cards (Animated in via GSAP stagger)
+  const cards = [
+    { band: "U2 : UV ACHTUNG BABY", date: "40 SOLD-OUT NIGHTS", tech: "gsap.timeline({ scrollTrigger })", col: "#38bdf8" },
+    { band: "PHISH & DEAD & CO.", date: "PSYCHEDELIC 16K REACTIVE", tech: "SplitText + Audio DrawSVG", col: "#a855f7" },
+    { band: "ANYMA : AFTERLIFE", date: "CYBERNETic AVATAR FINALE", tech: "WebGL Shader + GSAP Flip", col: "#f43f5e" }
+  ];
+
+  cards.forEach((c, idx) => {
+    const itemProg = Math.max(0, Math.min(1, (S.browser.cardStagger * 1.6) - idx * 0.3));
+    const cardW = 205;
+    const cardH = 128;
+    const cardX = bx + 26 + idx * (cardW + 18);
+    const cardY = by + 355 - scrollY * 0.72 + (1 - itemProg) * 80;
+
+    ctx.save();
+    ctx.globalAlpha = S.browser.alpha * itemProg;
+    ctx.fillStyle = "rgba(24, 30, 58, 0.92)";
+    roundRect(ctx, cardX, cardY, cardW, cardH, 10);
+    ctx.fill();
+    ctx.strokeStyle = c.col;
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, cardX, cardY, cardW, cardH, 10);
+    ctx.stroke();
+
+    // Top accent bar
+    ctx.fillStyle = c.col;
+    ctx.fillRect(cardX + 12, cardY + 14, 36, 4);
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 14px sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText(c.band, cardX + 12, cardY + 38);
+
+    ctx.fillStyle = "#cbd5e1";
+    ctx.font = "11px sans-serif";
+    ctx.fillText(c.date, cardX + 12, cardY + 58);
+
+    // Code pill inside card
+    ctx.fillStyle = "#090d1a";
+    roundRect(ctx, cardX + 10, cardY + 74, cardW - 20, 24, 5);
+    ctx.fill();
+    ctx.fillStyle = "#0ae448";
+    ctx.font = "10px monospace";
+    ctx.fillText(c.tech, cardX + 16, cardY + 90);
+
+    // Mini animated equalizer inside card
+    for (let b = 0; b < 12; b++) {
+      const bhBar = 4 + Math.abs(Math.sin(t * 7 + b + idx)) * (10 + S.browser.eqBoost * 10);
+      ctx.fillStyle = c.col;
+      ctx.fillRect(cardX + 14 + b * 14, cardY + 118 - bhBar, 8, bhBar);
+    }
+    ctx.restore();
+  });
+
+  // Interactive "TRIGGER LIVE EXOSPHERE PULSE" CTA Button
+  const btnX = bx + 26, btnY = by + 510 - scrollY * 0.72, btnW = 428, btnH = 46;
+  const btnScale = 1 + (S.browser.clickRip > 0 && S.browser.clickRip < 0.5 ? -0.05 : 0);
+  ctx.save();
+  ctx.translate(btnX + btnW / 2, btnY + btnH / 2);
+  ctx.scale(btnScale, btnScale);
+  ctx.translate(-(btnX + btnW / 2), -(btnY + btnH / 2));
+
+  const btnGrad = ctx.createLinearGradient(btnX, btnY, btnX + btnW, btnY);
+  btnGrad.addColorStop(0, "#0ae448");
+  btnGrad.addColorStop(1, "#00f0ff");
+  ctx.fillStyle = btnGrad;
+  roundRect(ctx, btnX, btnY, btnW, btnH, 8);
+  ctx.fill();
+
+  ctx.fillStyle = "#040711";
+  ctx.font = "900 14px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("⚡ CLICK: gsap.to(sphere, { pulse: 1.5, ease: 'elastic.out' })", btnX + btnW / 2, btnY + 28);
+  ctx.restore();
+
+  // Click Ripple Effect
+  if (S.browser.clickRip > 0.01) {
+    ctx.strokeStyle = `rgba(10, 228, 72, ${1 - S.browser.clickRip})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(S.browser.cursorX, S.browser.cursorY, S.browser.clickRip * 85, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  ctx.restore(); // End viewport clip
+
+  // Custom Mouse Cursor
+  const mx = S.browser.cursorX, my = S.browser.cursorY;
+  ctx.fillStyle = "#ffffff";
+  ctx.strokeStyle = "#000000";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(mx, my);
+  ctx.lineTo(mx + 6, my + 22);
+  ctx.lineTo(mx + 11, my + 15);
+  ctx.lineTo(mx + 19, my + 14);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawGSAPCodePanel(t) {
+  if (S.hud.codeBoxAlpha <= 0.01) return;
+
+  ctx.save();
+  ctx.globalAlpha = S.hud.codeBoxAlpha;
+  const x = S.hud.codeBoxX, y = 115, w = 445, h = 555;
+
+  ctx.fillStyle = "rgba(10, 14, 26, 0.92)";
+  roundRect(ctx, x, y, w, h, 14);
+  ctx.fill();
+  ctx.strokeStyle = "#0ae448";
+  ctx.lineWidth = 2;
+  roundRect(ctx, x, y, w, h, 14);
+  ctx.stroke();
+
+  // Top Header
+  ctx.fillStyle = "#0ae448";
+  roundRect(ctx, x, y, w, 40, 14);
+  ctx.fill();
+  ctx.fillStyle = "#061008";
+  ctx.font = "900 14px sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText("HOW BANDS BUILD LIVE SPHERE PAGES WITH GSAP", x + 18, y + 25);
+
+  // Explainer bullet points
+  const bullets = [
+    ["1. ScrollTrigger Scrubbing", "Pins the 3D Sphere canvas while fans scroll tour dates"],
+    ["2. Staggered Seat & VIP Drops", "Reveals 18,600 haptic seats & stage views at 60fps"],
+    ["3. Audio-Reactive Timelines", "Syncs live stem previews directly to Exosphere shaders"]
+  ];
+
+  bullets.forEach(([title, desc], i) => {
+    const by = y + 68 + i * 62;
+    ctx.fillStyle = "rgba(10, 228, 72, 0.12)";
+    roundRect(ctx, x + 16, by - 16, w - 32, 52, 8);
+    ctx.fill();
+    ctx.fillStyle = "#4ade80";
+    ctx.font = "bold 14px sans-serif";
+    ctx.fillText(title, x + 28, by + 4);
+    ctx.fillStyle = "#cbd5e1";
+    ctx.font = "12px sans-serif";
+    ctx.fillText(desc, x + 28, by + 24);
+  });
+
+  // Code Editor Sub-window
+  const cy = y + 260, ch = 275;
+  ctx.fillStyle = "#05070f";
+  roundRect(ctx, x + 16, cy, w - 32, ch, 10);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,0.12)";
+  ctx.lineWidth = 1;
+  roundRect(ctx, x + 16, cy, w - 32, ch, 10);
+  ctx.stroke();
+
+  // Active execution highlight bar
+  const hlLine = S.hud.codeHighlight > 1.5 ? 8 : (S.hud.codeHighlight > 0.5 ? 3 : 0);
+  if (hlLine > 0) {
+    ctx.fillStyle = "rgba(10, 228, 72, 0.18)";
+    ctx.fillRect(x + 18, cy + 16 + hlLine * 22, w - 36, 44);
+  }
+
+  const codeLines = [
+    ["#64748b", "// Live Band Tour Portal — GSAP Animation"],
+    ["#c084fc", "const ", "#f8fafc", "tl = ", "#0ae448", "gsap.timeline", "#f8fafc", "({"],
+    ["#38bdf8", "  scrollTrigger: ", "#f8fafc", "{ trigger: ", "#facc15", "'.residency'", "#f8fafc", ", scrub: ", "#f43f5e", "1.2", "#f8fafc", " }"],
+    ["#f8fafc", "});"],
+    ["#64748b", "// 1. Morph 3D Exosphere & Reveal Band Cards"],
+    ["#f8fafc", "tl.", "#0ae448", "to", "#f8fafc", "(sphere.rotation, { y: ", "#f43f5e", "Math.PI * 2", "#f8fafc", " })"],
+    ["#f8fafc", "  .", "#0ae448", "from", "#f8fafc", "(", "#facc15", "'.band-card'", "#f8fafc", ", {"],
+    ["#38bdf8", "    y: ", "#f43f5e", "80", "#f8fafc", ", opacity: ", "#f43f5e", "0", "#f8fafc", ", stagger: ", "#f43f5e", "0.15", "#f8fafc", ", ease: ", "#facc15", "'back.out'"],
+    ["#f8fafc", "  });"],
+    ["#64748b", "// 2. Interactive Audio Pulse on Ticket Click"],
+    ["#0ae448", "gsap.to", "#f8fafc", "(", "#facc15", "'#exosphere'", "#f8fafc", ", { eqBoost: ", "#f43f5e", "1.5", "#f8fafc", ", yoyo: ", "#f43f5e", "true", "#f8fafc", " });"]
+  ];
+
+  ctx.font = "12.5px monospace";
+  codeLines.forEach((tokens, lineIdx) => {
+    let curX = x + 30;
+    const curY = cy + 34 + lineIdx * 22;
+    for (let k = 0; k < tokens.length; k += 2) {
+      ctx.fillStyle = tokens[k];
+      const txt = tokens[k + 1];
+      ctx.fillText(txt, curX, curY);
+      curX += ctx.measureText(txt).width;
+    }
+  });
+
+  ctx.restore();
+}
+
+function drawHUD(t) {
+  const phaseIdx = Math.round(S.hud.phase);
+  const info = PHASE_TEXT[phaseIdx] || PHASE_TEXT[1];
+
+  // Top Explainer Header Bar
+  ctx.save();
+  ctx.translate(0, S.hud.bannerY);
+  ctx.globalAlpha = S.hud.bannerAlpha;
+
+  ctx.fillStyle = "rgba(8, 12, 26, 0.85)";
+  roundRect(ctx, 40, 22, 1200, 68, 12);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(56, 189, 248, 0.35)";
+  ctx.lineWidth = 1.5;
+  roundRect(ctx, 40, 22, 1200, 68, 12);
+  ctx.stroke();
+
+  // Year Pill
+  ctx.fillStyle = phaseIdx === 4 ? "#0ae448" : "#38bdf8";
+  roundRect(ctx, 58, 36, 145, 40, 8);
+  ctx.fill();
+  ctx.fillStyle = "#040814";
+  ctx.font = "900 18px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText(info.year, 58 + 72.5, 62);
+
+  // Main Headline & Subtitle
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "900 22px sans-serif";
+  ctx.fillText(info.tag, 222, 52);
+
+  ctx.fillStyle = "#94a3b8";
+  ctx.font = "14px sans-serif";
+  ctx.fillText(info.sub, 222, 74);
+
+  // GSAP Status Pill on Right of Header
+  ctx.fillStyle = "#111827";
+  roundRect(ctx, 1020, 34, 202, 44, 8);
+  ctx.fill();
+  ctx.strokeStyle = "#0ae448";
+  ctx.strokeRect(1020, 34, 202, 44);
+  ctx.fillStyle = "#0ae448";
+  ctx.font = "bold 12px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText(`tl.time(): ${t.toFixed(1)}s / ${window.DUR}s`, 1121, 61);
+  ctx.restore();
+
+  // Phase-specific Explainer Callout Cards (Acts 2 & 3)
+  if ((phaseIdx === 2 || phaseIdx === 3) && S.hud.stat1Alpha > 0.01) {
+    ctx.save();
+    ctx.globalAlpha = S.hud.stat1Alpha;
+    const cards = phaseIdx === 2
+      ? [
+          { x: 55, y: 150, num: "3,000 TONS", label: "GEODESIC STEEL EXOSKELETON", desc: "32钢 trusses supporting an18,600-seat auditorium", col: "#facc15" },
+          { x: 925, y: 150, num: "240-TON RING", label: "COMPRESSION OCULUS", desc: "Lifted by the world's 4th largest crawler crane", col: "#38bdf8" }
+        ]
+      : [
+          { x: 55, y: 150, num: "580,000 SQ FT", label: "PROGRAMMABLE LED EXOSPHERE", desc: "1.2 million LED pucks, 48 diodes per puck", col: "#38bdf8" },
+          { x: 925, y: 150, num: "16K × 16K", label: "INTERIOR IMMERSIVE WRAP", desc: "167,000 beamforming speakers (Sphere Immersive Sound)", col: "#f43f5e" }
+        ];
+
+    for (let c of cards) {
+      ctx.fillStyle = "rgba(10, 15, 32, 0.88)";
+      roundRect(ctx, c.x, c.y, 300, 118, 12);
+      ctx.fill();
+      ctx.strokeStyle = c.col;
+      ctx.lineWidth = 2;
+      roundRect(ctx, c.x, c.y, 300, 118, 12);
+      ctx.stroke();
+
+      ctx.fillStyle = c.col;
+      ctx.font = "900 28px sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText(c.num, c.x + 20, c.y + 42);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 13px sans-serif";
+      ctx.fillText(c.label, c.x + 20, c.y + 68);
+
+      ctx.fillStyle = "#94a3b8";
+      ctx.font = "12px sans-serif";
+      ctx.fillText(c.desc, c.x + 20, c.y + 92);
+    }
+    ctx.restore();
+  }
+
+  // Act 5 Finale Summary Banner
+  if (S.hud.outroAlpha > 0.01) {
+    ctx.save();
+    ctx.globalAlpha = S.hud.outroAlpha;
+    ctx.translate(640, 615);
+    ctx.scale(S.hud.outroScale, S.hud.outroScale);
+    ctx.translate(-640, -615);
+
+    ctx.fillStyle = "rgba(8, 12, 26, 0.92)";
+    roundRect(ctx, 210, 565, 860, 88, 14);
+    ctx.fill();
+    ctx.strokeStyle = "#0ae448";
+    ctx.lineWidth = 2;
+    roundRect(ctx, 210, 565, 860, 88, 14);
+    ctx.stroke();
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "900 24px sans-serif";
+    ctx.fillText("THE SPHERE LAS VEGAS  •  2018 BLUEPRINT TO LIVE GSAP WEB PORTALS", 640, 603);
+    ctx.fillStyle = "#0ae448";
+    ctx.font = "bold 15px monospace";
+    ctx.fillText("516 ft Wide  |  366 ft High  |  1.2M LED Pucks  |  Animated with GSAP Timelines", 640, 633);
+    ctx.restore();
+  }
+
+  // Bottom Timeline Scrubber Bar
+  const barX = 80, barY = 692, barW = 1120;
+  ctx.save();
+  ctx.fillStyle = "rgba(255,255,255,0.15)";
+  roundRect(ctx, barX, barY, barW, 6, 3);
+  ctx.fill();
+
+  const progW = (t / window.DUR) * barW;
+  const barGrad = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+  barGrad.addColorStop(0, "#38bdf8");
+  barGrad.addColorStop(0.5, "#a855f7");
+  barGrad.addColorStop(1, "#0ae448");
+  ctx.fillStyle = barGrad;
+  roundRect(ctx, barX, barY, progW, 6, 3);
+  ctx.fill();
+
+  // Milestone Nodes on Scrubber
+  const milestones = [
+    { t: 0, label: "2018 Minimal Blueprint" },
+    { t: 7, label: "2019–21 Geodesic Steel" },
+    { t: 14, label: "2023 Exosphere LED Launch" },
+    { t: 21.5, label: "Bands Live GSAP Pages" },
+    { t: 31.5, label: "Today's Global Icon" }
+  ];
+  milestones.forEach(m => {
+    const mx = barX + (m.t / window.DUR) * barW;
+    const active = t >= m.t;
+    ctx.fillStyle = active ? "#0ae448" : "#475569";
+    ctx.beginPath();
+    ctx.arc(mx, barY + 3, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = active ? "#e2e8f0" : "#64748b";
+    ctx.font = active ? "bold 11px sans-serif" : "11px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(m.label, mx, barY - 8);
+  });
+  ctx.restore();
+}
+
+// ============================================================================
+// MAIN ANIMATION LOOP (100% driven by performance.now)
+// ============================================================================
+function render(now) {
+  if (startTime === null) startTime = now;
+  const elapsed = (now - startTime) / 1000 + timeOffset;
+  const t = elapsed % window.DUR;
+
+  // Update all properties via our GSAP timeline
+  tl.seek(t, S);
+
+  ctx.clearRect(0, 0, 1280, 720);
+
+  drawBackground(t);
+  drawVegasSkyline(t);
+
+  // In Act 4, the browser window sits behind the 3D Sphere preview so the Sphere acts as the live WebGL hero!
+  if (S.browser.alpha > 0.01) {
+    drawBandLiveBrowser(t);
+  }
+
+  drawSphere(t);
+  drawGSAPCodePanel(t);
+  drawHUD(t);
+
+  requestAnimationFrame(render);
+}
+
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>ZERO — AI demoscene</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#st{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+canvas{width:1280px;height:720px;display:block}
+</style></head><body>
+<div id="st"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+window.DUR=37;
+// ---- Beat map (generated: analysis stand-in, 120 BPM grid). Offline pipeline would replace this JSON. ----
+const BEATMAP=(()=>{const b=0.5,m={bpm:120,hits:[1,2.5,4,5.5,7,8.5,10,11.5],breaks:[{start:28,end:31}],kick:[],snare:[],hat:[]};
+for(let t=0;t<DUR;t+=b){const brk=t>=28&&t<31;if(!brk){if(t<12){if((t/b)%2==0)m.kick.push(t)}else m.kick.push(t);
+if(t>=12&&(t/b)%2==1)m.snare.push(t)}if(t>=4&&!brk){m.hat.push(t);m.hat.push(t+b/2)}}return m})();
+window.BEATMAP=BEATMAP;
+function env(arr,t,k){let e=0;for(const x of arr){if(x<=t)e=Math.max(e,Math.exp(-(t-x)*k))}return e}
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720),st=document.getElementById('st');
+st.style.transform=`scale(${s}) translate(-50%,-50%)`;st.style.transform=`translate(${-640*s}px,${-360*s}px) scale(${s})`}
+addEventListener('resize',fit);fit();
+const Q=new URLSearchParams(location.search),T0=parseFloat(Q.get('t')||0),SPP=parseInt(Q.get('spp')||1);
+const cv=document.getElementById('c');
+const gl=cv.getContext('webgl2',{preserveDrawingBuffer:true,antialias:false});
+const VS=`#version 300 es
+in vec2 p;void main(){gl_Position=vec4(p,0,1);}`;
+const FS=`#version 300 es
+precision highp float;out vec4 O;
+uniform vec2 R;uniform float T,S,LV,M,K,H,SUN,FL,SPP;uniform vec3 RO,TA,RV;
+float hs(float n){return fract(sin(n)*43758.5453);}
+float mb(vec3 p,int N){vec4 z=vec4(p,1.);vec4 c=z;for(int i=0;i<10;i++){if(i>=N)break;
+z.xyz=clamp(z.xyz,-1.,1.)*2.-z.xyz;float r=dot(z.xyz,z.xyz);
+if(r<.25)z*=4.;else if(r<1.)z/=r;z=z*-2.2+c;}return (length(z.xyz)-1.5)/abs(z.w);}
+float bx(vec3 p,vec3 b){vec3 q=abs(p)-b;return length(max(q,0.))+min(max(q.x,max(q.y,q.z)),0.);}
+float obj(vec3 p){float sph=length(p)-1.;int N=int(LV);if(N<1)return sph;
+float f=mb(p*4.,N)/4.;float b=bx(p,vec3(1.));float g=max(f,b);
+float s=max(b,length(p)-1.6+.6*clamp(LV-1.,0.,1.));return mix(sph,max(g,s),clamp(LV,0.,1.));}
+float sg(vec2 p,vec2 a,vec2 b){vec2 pa=p-a,ba=b-a;return length(pa-ba*clamp(dot(pa,ba)/dot(ba,ba),0.,1.));}
+#define SG(ax,ay,bx_,by,cx) d=min(d,sg(q,vec2(ax+cx,ay),vec2(bx_+cx,by)));
+float letters(vec3 p){vec2 q=p.xy;float d=1e3;
+SG(-.35,.5,.35,.5,-1.5)SG(.35,.5,-.35,-.5,-1.5)SG(-.35,-.5,.35,-.5,-1.5)
+SG(-.3,-.5,-.3,.5,-.5)SG(-.3,.5,.3,.5,-.5)SG(-.3,0.,.2,0.,-.5)SG(-.3,-.5,.3,-.5,-.5)
+SG(-.3,-.5,-.3,.5,.5)SG(-.3,.5,.2,.5,.5)SG(.2,.5,.32,.25,.5)SG(.32,.25,.2,0.,.5)SG(.2,0.,-.3,0.,.5)SG(-.02,0.,.32,-.5,.5)
+SG(-.3,-.5,-.3,.5,1.5)SG(-.3,.5,.3,.5,1.5)SG(.3,.5,.3,-.5,1.5)SG(.3,-.5,-.3,-.5,1.5)
+float l=max(d-.11,abs(p.z)-.18)-.02;
+float f=mb(p*1.3,6)/1.3-.035;return max(l,f);}
+float map(vec3 p){float o=obj(p/S)*S;if(M<=0.)return o;return mix(o,letters(p),M);}
+vec3 nor(vec3 p,float e){vec2 k=vec2(1,-1);vec3 n=normalize(k.xyy*map(p+k.xyy*e)+k.yyx*map(p+k.yyx*e)+k.yxy*map(p+k.yxy*e)+k.xxx*map(p+k.xxx*e));
+n+=H*.25*vec3(sin(p.y*90.+T),sin(p.z*90.),sin(p.x*90.))*.4;return normalize(n);}
+float march(vec3 ro,vec3 rd,float mx,int st){float t=.002*S;for(int i=0;i<200;i++){if(i>=st)break;float d=map(ro+rd*t);if(abs(d)<.0007*t)return t;t+=d*.9;if(t>mx)break;}return -1.;}
+float shd(vec3 p,vec3 l){float r=1.,t=.01;for(int i=0;i<28;i++){float d=map(p+l*t);r=min(r,10.*d/t);t+=clamp(d,.01,.4*max(1.,S*.05));if(r<.01)break;}return clamp(r,0.,1.);}
+float ao(vec3 p,vec3 n){float o=0.,s=1.;for(int i=1;i<6;i++){float h=.02*float(i)*max(1.,S*.02);o+=(h-map(p+n*h))*s;s*=.6;}return clamp(1.-3.*o/max(1.,S*.02),0.,1.);}
+vec3 sunD(){return normalize(mix(vec3(.5,.8,.3),vec3(.9,.18,-.2),SUN));}
+vec3 sky(vec3 rd){vec3 l=sunD();float s=max(dot(rd,l),0.);
+vec3 a=mix(vec3(.01,.015,.025),mix(vec3(.9,.35,.12),vec3(.12,.1,.25),clamp(rd.y*2.5+.2,0.,1.)),SUN);
+return a+mix(vec3(.6,.7,1.)*.05,vec3(1.,.55,.2),SUN)*(pow(s,8.)*.6+pow(s,300.)*8.)*(1.+K);}
+vec3 shade(vec3 ro,vec3 rd,float t,bool refl){
+vec3 p=ro+rd*t;float e=.0005*t+.0002;vec3 n=nor(p,e);vec3 l=sunD();
+float dif=max(dot(n,l),0.);float sh=refl?1.:shd(p+n*e*4.,l);float oc=ao(p,n);
+float h=clamp((p.y/S),-1.,1.);
+vec3 chrome=vec3(.75,.78,.82);vec3 rock=mix(vec3(.35,.28,.25),vec3(.85,.7,.55),.5+.5*h);
+vec3 gold=vec3(1.,.72,.3);
+vec3 alb=mix(mix(chrome,rock,SUN*.7),gold,M);
+vec3 lc=mix(vec3(.7,.8,1.)*2.2,vec3(2.6,1.4,.7),SUN)*(1.+1.4*K)+FL*3.;
+vec3 c=alb*(lc*dif*sh+sky(n)*.6*oc+vec3(.02)*oc);
+vec3 hv=normalize(l-rd);c+=lc*pow(max(dot(n,hv),0.),60.)*sh*.8;
+return c;}
+vec3 render(vec3 ro,vec3 rd){float mx=40.*S+20.;float t=march(ro,rd,mx,170);vec3 c;vec3 l=sunD();
+if(t<0.){c=sky(rd);t=mx;}else{vec3 p=ro+rd*t;vec3 n=nor(p,.0005*t+.0002);c=shade(ro,rd,t,false);
+vec3 r=reflect(rd,n);float fr=.04+.96*pow(1.-max(dot(n,-rd),0.),5.);float km=mix(.85,.45,SUN*(1.-M));km=mix(km,.9,M);
+float t2=march(p+n*.004*t,r,mx,70);vec3 rc=t2<0.?sky(r):shade(p+n*.004*t,r,t2,true);
+vec3 tint=mix(vec3(1.),vec3(1.,.75,.35),M);c=mix(c,rc*tint,mix(fr,1.,km)*.85);}
+float fd=1.-exp(-t*mix(.09,.025,SUN)/max(1.,S*.12));vec3 fc=mix(vec3(.02,.03,.05),vec3(.7,.35,.18),SUN);
+float sc=pow(max(dot(rd,l),0.),6.);
+float shaft=.6+.4*sin(atan(rd.y-l.y,rd.x-l.x)*24.+T*.3)*sin(atan(rd.z,rd.x)*13.);
+c=mix(c,fc+mix(vec3(.3,.4,.6),vec3(1.,.6,.3),SUN)*sc*shaft*(1.+K),fd);
+return c;}
+void main(){vec3 acc=vec3(0);int n=int(SPP);
+for(int s=0;s<16;s++){if(s>=n)break;float fs=float(s);
+vec2 j=vec2(hs(fs*7.1+T),hs(fs*3.3+T*1.7))-.5;if(n==1)j=vec2(0);
+vec2 uv=(gl_FragCoord.xy+j-R*.5)/R.y;
+vec3 ro=RO+RV*(hs(fs*11.)-.5)*(1./60.);vec3 fw=normalize(TA-RO),rt=normalize(cross(fw,vec3(0,1,0))),up=cross(rt,fw);
+vec3 rd=normalize(fw*1.6+rt*uv.x+up*uv.y);
+float fdst=length(TA-RO);vec3 fp=ro+rd*fdst;float ap=.03*fdst/6.*float(n>1);float a=fs*2.4;ro+=(rt*cos(a)+up*sin(a))*ap*sqrt(fs/16.);
+rd=normalize(fp-ro);acc+=render(ro,rd);}
+vec3 c=acc/float(n);
+vec2 uv=gl_FragCoord.xy/R;
+c+=max(c-.8,0.)*.6;
+c=c*(2.51*c+.03)/(c*(2.43*c+.59)+.14);
+c*=.5+.5*pow(16.*uv.x*uv.y*(1.-uv.x)*(1.-uv.y),.25);
+c=pow(clamp(c,0.,1.),vec3(.4545));
+c+=(hs(dot(gl_FragCoord.xy,vec2(1.3,7.1))+T)-.5)*.015;
+O=vec4(c,1);}`;
+function sh(t,s){const o=gl.createShader(t);gl.shaderSource(o,s);gl.compileShader(o);if(!gl.getShaderParameter(o,gl.COMPILE_STATUS))console.error(gl.getShaderInfoLog(o));return o}
+const pr=gl.createProgram();gl.attachShader(pr,sh(gl.VERTEX_SHADER,VS));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,FS));gl.linkProgram(pr);gl.useProgram(pr);
+gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0);
+const U={};for(const k of['R','T','S','LV','M','K','H','SUN','FL','SPP','RO','TA','RV'])U[k]=gl.getUniformLocation(pr,k);
+const ss=(a,b,x)=>{x=Math.min(Math.max((x-a)/(b-a),0),1);return x*x*(3-2*x)},L=(a,b,k)=>a.map((v,i)=>v+(b[i]-v)*k);
+function scale(t){if(t<12)return 1;if(t<16)return Math.exp(Math.log(30)*ss(12,16,t));if(t<29.5)return 30;return Math.exp(Math.log(30)*(1-ss(29.5,33,t)))}
+function cam(t){const S=scale(t);const a=t*.25+.6;
+let A=[[3.4*Math.sin(a),.7+.3*Math.sin(t*.4),3.4*Math.cos(a)],[0,0,0]];
+const u=ss(16,28,t)*.0+Math.min(Math.max((t-14)/14,0),1);
+const fx=S*(-.95+1.85*u),fy=S+.35*(S/30)+.12*Math.sin(t*1.3),fz=S*.15*Math.sin(t*.35);
+let B=[[fx,fy,fz],[fx+3*(S/30)+.5,fy-.5*(S/30)-.05,fz+.4*Math.sin(t*.5)]];
+let r=L(A[0],B[0],ss(12,16,t)),ta=L(A[1],B[1],ss(12,16,t));
+if(t>27.5){const k=ss(27.5,31,t);const D=[[S*1.12+2,S*(1-.9*k),fz],[S*1.2+4,S*(1-1.6*k)-2,fz+1]];
+r=L(r,D[0],k);ta=L(ta,D[1],k);}
+if(t>30){const k=ss(30,34,t);const E=[[.6*Math.sin(t*.3),.25,4.6-.3*ss(34,37,t)],[0,0,0]];r=L(r,E[0],k);ta=L(ta,E[1],k);}
+return[r,ta,S]}
+let start=performance.now()-T0*1000;
+function frame(now){let t=((now-start)/1000)%DUR;
+const [ro,ta,S]=cam(t),[r2]=cam(Math.min(t+1/60,DUR));
+let lv=0;for(const h of BEATMAP.hits)if(t>=h)lv++;lv=Math.min(lv,7);if(t>=12)lv=8;
+const M=ss(30.5,33.5,t),sun=ss(12,16,t)*(1-ss(31,34,t)*.6);
+gl.viewport(0,0,cv.width,cv.height);
+gl.uniform2f(U.R,cv.width,cv.height);gl.uniform1f(U.T,t);gl.uniform1f(U.S,S);gl.uniform1f(U.LV,lv);gl.uniform1f(U.M,M);
+gl.uniform1f(U.K,env(BEATMAP.kick,t,7)*.7+env(BEATMAP.snare,t,9)*.3);gl.uniform1f(U.H,env(BEATMAP.hat,t,25));
+gl.uniform1f(U.SUN,sun);gl.uniform1f(U.FL,env(BEATMAP.hits,t,6)*(t<12?1:0));gl.uniform1f(U.SPP,SPP);
+gl.uniform3fv(U.RO,ro);gl.uniform3fv(U.TA,ta);gl.uniform3fv(U.RV,[(r2[0]-ro[0])*60,(r2[1]-ro[1])*60,(r2[2]-ro[2])*60]);
+gl.drawArrays(gl.TRIANGLES,0,3);requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

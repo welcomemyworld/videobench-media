@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>纯代码视频</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
+#tip{position:absolute;left:10px;bottom:10px;color:#666;font:12px sans-serif}
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<div id="tip">点击开启声音</div>
+<script>
+window.DUR=30;
+const cv=document.getElementById('c'),x=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px';}
+fit();addEventListener('resize',fit);
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t'))||0;
+const t0=performance.now()-off*1000;
+// ---------- audio ----------
+let A=null,master,lastStep=-1,an,abuf;
+function initAudio(){
+ if(A){A.resume();return;}
+ try{A=new (window.AudioContext||window.webkitAudioContext)();}catch(e){return;}
+ master=A.createGain();master.gain.value=0.5;
+ an=A.createAnalyser();an.fftSize=256;abuf=new Uint8Array(an.frequencyBinCount);
+ master.connect(an);an.connect(A.destination);
+ document.getElementById('tip').style.display='none';
+}
+initAudio();addEventListener('pointerdown',initAudio);addEventListener('keydown',initAudio);
+function tone(f,at,d,type,v){const o=A.createOscillator(),g=A.createGain();o.type=type;o.frequency.value=f;
+ g.gain.setValueAtTime(0,at);g.gain.linearRampToValueAtTime(v,at+0.01);g.gain.exponentialRampToValueAtTime(0.001,at+d);
+ o.connect(g);g.connect(master);o.start(at);o.stop(at+d+0.05);}
+function kick(at){const o=A.createOscillator(),g=A.createGain();o.frequency.setValueAtTime(150,at);o.frequency.exponentialRampToValueAtTime(40,at+0.15);
+ g.gain.setValueAtTime(0.9,at);g.gain.exponentialRampToValueAtTime(0.001,at+0.3);o.connect(g);g.connect(master);o.start(at);o.stop(at+0.35);}
+function noise(at,d,v,hp){const n=A.sampleRate*d,b=A.createBuffer(1,n,A.sampleRate),c=b.getChannelData(0);for(let i=0;i<n;i++)c[i]=Math.random()*2-1;
+ const s=A.createBufferSource();s.buffer=b;const f=A.createBiquadFilter();f.type='highpass';f.frequency.value=hp;const g=A.createGain();
+ g.gain.setValueAtTime(v,at);g.gain.exponentialRampToValueAtTime(0.001,at+d);s.connect(f);f.connect(g);g.connect(master);s.start(at);}
+function whoosh(at){const o=A.createOscillator(),g=A.createGain();o.type='sawtooth';o.frequency.setValueAtTime(100,at);o.frequency.exponentialRampToValueAtTime(1600,at+0.5);
+ g.gain.setValueAtTime(0.001,at);g.gain.linearRampToValueAtTime(0.12,at+0.3);g.gain.exponentialRampToValueAtTime(0.001,at+0.6);o.connect(g);g.connect(master);o.start(at);o.stop(at+0.7);noise(at+0.45,0.6,0.3,2000);}
+const STEP=0.25,chords=[[57,60,64],[53,57,60],[48,52,55],[55,59,62]];
+const mf=m=>440*Math.pow(2,(m-69)/12);
+const cuts=[6,13,20,26];
+function schedule(t){
+ if(!A||A.state!=='running')return;
+ const now=A.currentTime,end=Math.floor((t+0.2)/STEP);
+ if(lastStep>end||lastStep<Math.floor(t/STEP)-2)lastStep=Math.floor(t/STEP)-1;
+ for(let s=lastStep+1;s<=end;s++){
+  const st=s*STEP;if(st>=DUR)break;const at=now+Math.max(0,st-t);
+  const bar=Math.floor(s/16),ch=chords[bar%4],i=s%16;
+  const intro=st<6,outro=st>=28;
+  if(!outro){
+   tone(mf(ch[i%3]+12+(i%8>5?12:0)),at,0.22,'triangle',0.12);
+   if(i%8==0)tone(mf(ch[0]-24),at,1.8,'sawtooth',0.07);
+   if(!intro){if(i%4==0)kick(at);if(i%4==2)noise(at,0.05,0.12,7000);if(i%8==4)noise(at,0.18,0.3,1200);}
+  }else if(i%16==0){ch.forEach(n=>tone(mf(n),at,2.2,'sine',0.12));}
+  cuts.forEach(c=>{if(Math.abs(st-(c-0.5))<0.01)whoosh(at);});
+  if(st>=20&&st<26&&i%8==0)tone(mf(84),at,0.4,'square',0.05);
+ }
+ lastStep=end;
+}
+// ---------- visuals ----------
+const P=[];for(let i=0;i<220;i++)P.push({x:Math.random()*1280,y:Math.random()*720,v:0.2+Math.random(),r:Math.random()*2+0.5});
+const ease=k=>k<0?0:k>1?1:k*k*(3-2*k);
+function txt(s,X,Y,sz,col,a){x.globalAlpha=a;x.fillStyle=col;x.font=`bold ${sz}px "PingFang SC","Microsoft YaHei",sans-serif`;x.textAlign='center';x.textBaseline='middle';x.fillText(s,X,Y);x.globalAlpha=1;}
+function fade(t,a,b){return Math.min(ease((t-a)/0.6),ease((b-t)/0.6));}
+function spectrum(t){
+ const arr=[];if(an&&A.state==='running'){an.getByteFrequencyData(abuf);for(let i=0;i<64;i++)arr.push(abuf[i]/255);}
+ else for(let i=0;i<64;i++)arr.push(Math.abs(Math.sin(t*6+i*0.4)*Math.sin(t*2.3+i*0.13))*(1-i/90));
+ return arr;}
+function frame(){
+ let t=((performance.now()-t0)/1000)%DUR;if(t<0)t+=DUR;
+ schedule(t);
+ const beat=(t/0.5)%1,pulse=t>6&&t<28?Math.exp(-beat*6):0;
+ const g=x.createLinearGradient(0,0,1280,720);g.addColorStop(0,`hsl(${230+t*3},50%,${8+pulse*4}%)`);g.addColorStop(1,`hsl(${290+t*3},50%,5%)`);
+ x.fillStyle=g;x.fillRect(0,0,1280,720);
+ P.forEach(p=>{p.y-=p.v*(1+pulse*3);if(p.y<0){p.y=720;p.x=Math.random()*1280;}x.fillStyle=`rgba(180,200,255,${0.3+p.r/5})`;x.fillRect(p.x,p.y,p.r,p.r);});
+ let a;
+ // scene1
+ if((a=fade(t,0,6))>0){
+  const k=ease(t/3);
+  for(let i=0;i<12;i++){x.strokeStyle=`hsla(${i*30+t*40},80%,60%,${a*0.5})`;x.lineWidth=2;x.beginPath();x.arc(640,330,60+i*18*k,t+i,t+i+Math.PI*1.2*k);x.stroke();}
+  txt('一张图片都没有',640,300,72,'#fff',a*ease(t-0.5));
+  txt('一段音频也没有',640,390,44,'#9cf',a*ease(t-1.8));
+  txt('这支视频，全部由 JavaScript 实时生成',640,470,28,'#ccd',a*ease(t-3));
+ }
+ // scene2 canvas drawing
+ if((a=fade(t,6,13))>0){
+  const lt=t-6;txt('画面',640,90,40,'#fc6',a);txt('全部用 JS 在 Canvas 上逐帧绘制',640,145,30,'#fff',a);
+  x.globalAlpha=a;x.lineWidth=3;
+  for(let i=0;i<5;i++){const cx=240+i*200,pr=ease((lt-i*0.4)/1.2);x.strokeStyle=`hsl(${i*60+40},85%,62%)`;x.beginPath();
+   if(i==0)x.arc(cx,400,70,0,Math.PI*2*pr);
+   else if(i==1){x.rect(cx-65,335,130*pr,130*pr);}
+   else if(i==2){for(let j=0;j<=60*pr;j++){const u=j/60*Math.PI*2;x.lineTo(cx+70*Math.sin(3*u+lt),400+70*Math.sin(2*u));}}
+   else if(i==3){for(let j=0;j<=5*pr;j++){const u=j/5*Math.PI*4-Math.PI/2+lt*0.5;x.lineTo(cx+70*Math.cos(u),400+70*Math.sin(u));}}
+   else{for(let j=0;j<=80*pr;j++){x.lineTo(cx-70+j*1.75,400+Math.sin(j*0.25+lt*5)*40*Math.exp(-j/80));}}
+   x.stroke();}
+  x.globalAlpha=1;
+  txt('ctx.arc()   ctx.rect()   ctx.lineTo()   ctx.fill()',640,560,24,'#8ab',a*ease(lt-2));
+ }
+ // scene3 music
+ if((a=fade(t,13,20))>0){
+  txt('配乐',640,90,40,'#6cf',a);txt('Web Audio 振荡器实时合成，不加载任何文件',640,145,30,'#fff',a);
+  const sp=spectrum(t);x.globalAlpha=a;
+  for(let i=0;i<64;i++){const h=20+sp[i]*300;x.fillStyle=`hsl(${190+i*2},80%,${50+sp[i]*20}%)`;x.fillRect(160+i*15,560-h,11,h);}
+  x.globalAlpha=1;txt('Oscillator · Gain · BiquadFilter · Analyser',640,610,24,'#8ab',a);
+ }
+ // scene4 sfx
+ if((a=fade(t,20,26))>0){
+  const lt=t-20;txt('音效',640,90,40,'#f8a',a);txt('鼓点、扫频、白噪声 —— 全部现场生成',640,145,30,'#fff',a);
+  const r=(lt%0.5)/0.5;x.globalAlpha=a;
+  for(let k=0;k<3;k++){const rr=(r+k/3)%1;x.strokeStyle=`rgba(255,140,180,${1-rr})`;x.lineWidth=4;x.beginPath();x.arc(640,400,30+rr*220,0,Math.PI*2);x.stroke();}
+  x.fillStyle='#fff';x.beginPath();x.arc(640,400,30+pulse*25,0,7);x.fill();
+  x.strokeStyle='#fcd';x.lineWidth=2;x.beginPath();for(let i=0;i<1280;i+=4)x.lineTo(i,400+Math.sin(i*0.05+lt*20)*Math.random()*30*pulse*Math.exp(-Math.abs(i-640)/300));x.stroke();
+  x.globalAlpha=1;
+ }
+ // outro
+ if((a=fade(t,26,30.6))>0){
+  const lt=t-26;
+  ['0 张图片','0 个音频文件','100% 代码'].forEach((s,i)=>txt(s,320+i*320,300,52,['#fc6','#6cf','#8f8'][i],a*ease(lt-i*0.4)));
+  txt('画面 Canvas · 声音 Web Audio · 一个 HTML 文件',640,450,30,'#fff',a*ease(lt-1.5));
+ }
+ // progress bar
+ x.fillStyle='rgba(255,255,255,0.15)';x.fillRect(0,714,1280,6);x.fillStyle='#9cf';x.fillRect(0,714,1280*t/DUR,6);
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

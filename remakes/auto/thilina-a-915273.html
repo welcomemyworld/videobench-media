@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+window.DUR=25;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const off=parseFloat(new URLSearchParams(location.search).get('t'))||0;
+const t0=performance.now()-off*1000;
+const E=t=>t<0?0:t>1?1:1-Math.pow(1-t,3);
+const EIO=t=>t<0?0:t>1?1:t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;
+const cl=(v,a,b)=>Math.max(a,Math.min(b,v));
+const W=1280,H=720,FONT='"Helvetica Neue",Helvetica,Arial,sans-serif';
+const C1='#ff3d6e',C2='#3df0ff',C3='#ffd23d',C4='#8a5bff';
+function txt(s,X,Y,size,col,al='center',w=800){x.font=w+' '+size+'px '+FONT;x.textAlign=al;x.textBaseline='middle';x.fillStyle=col;x.fillText(s,X,Y);}
+function bg(t,hue){
+ const g=x.createRadialGradient(W/2,H/2,50,W/2,H/2,800);
+ g.addColorStop(0,`hsl(${hue},40%,10%)`);g.addColorStop(1,'#030308');
+ x.fillStyle=g;x.fillRect(0,0,W,H);
+ x.strokeStyle='rgba(255,255,255,0.05)';x.lineWidth=1;
+ const o=(t*40)%60;
+ for(let i=-60;i<W+60;i+=60){x.beginPath();x.moveTo(i+o,0);x.lineTo(i+o,H);x.stroke();}
+ for(let j=-60;j<H+60;j+=60){x.beginPath();x.moveTo(0,j+o*.5);x.lineTo(W,j+o*.5);x.stroke();}
+}
+// letter-by-letter reveal
+function reveal(s,X,Y,size,col,lt,stag=.04){
+ x.font='900 '+size+'px '+FONT;const tw=x.measureText(s).width;let px=X-tw/2;
+ for(let i=0;i<s.length;i++){const ch=s[i],cw=x.measureText(ch).width;const p=E((lt-i*stag)/.5);
+  x.save();x.globalAlpha=p;x.translate(px+cw/2,Y+(1-p)*size*.8);x.rotate((1-p)*.4);
+  txt(ch,0,0,size,col,'center',900);x.restore();px+=cw;}
+}
+function wipe(t,s,col){ // transition bars
+ const p=EIO((t-s)/.6);if(p<=0||p>=1)return;
+ for(let i=0;i<6;i++){const q=cl(p*1.6-i*.1,0,1);const w=Math.sin(q*Math.PI)*W*1.2;
+  x.fillStyle=[C1,C2,C3,C4,col,'#fff'][i];x.fillRect(W/2-w/2,i*H/6,w,H/6+1);}
+}
+function scene1(t){ // 0-5 intro
+ bg(t,250);
+ for(let i=0;i<40;i++){const a=i/40*Math.PI*2+t*.3;const r=E(t/1.2)*(180+60*Math.sin(t*2+i));
+  x.fillStyle=[C1,C2,C3,C4][i%4];x.globalAlpha=.8;
+  x.save();x.translate(W/2+Math.cos(a)*r,H/2+Math.sin(a)*r);x.rotate(a+t);x.fillRect(-6,-6,12,12);x.restore();}
+ x.globalAlpha=1;
+ const p=E((t-.4)/.8);
+ x.strokeStyle=C2;x.lineWidth=4;x.beginPath();x.arc(W/2,H/2,140*p,-Math.PI/2,-Math.PI/2+Math.PI*2*p);x.stroke();
+ reveal('MOTION',W/2,H/2-30,96,'#fff',t-.8);
+ reveal('IN MOTION',W/2,H/2+50,40,C3,t-1.6,.05);
+ const q=E((t-2.6)/.6);x.globalAlpha=q;txt('Release Notes  ·  Versions 1.3 → 1.4',W/2,H-100,24,'rgba(255,255,255,.75)','center',500);x.globalAlpha=1;
+}
+function card(t,ver,col,title,items,hue){
+ bg(t,hue);
+ // big version number slide
+ const p=E(t/.8);
+ x.save();x.globalAlpha=.12;txt(ver,W*.3+(1-p)*-300,H/2,420,col,'center',900);x.restore();
+ x.fillStyle=col;x.fillRect(110,150,E((t-.3)/.5)*120,8);
+ reveal('v'+ver,230,220,90,'#fff',t-.2);
+ x.globalAlpha=E((t-.8)/.5);txt(title,110,300,30,col,'left',700);x.globalAlpha=1;
+ items.forEach((it,i)=>{const q=E((t-1.2-i*.45)/.6);const y=380+i*80;
+  x.save();x.globalAlpha=q;x.translate((1-q)*120,0);
+  x.fillStyle='rgba(255,255,255,.06)';x.fillRect(110,y-30,560,60);
+  x.fillStyle=col;x.fillRect(110,y-30,6,60);
+  txt(it[0],140,y-8,24,'#fff','left',700);txt(it[1],140,y+16,16,'rgba(255,255,255,.6)','left',400);x.restore();});
+ // right visual: rotating rings
+ const cx=960,cy=380;
+ for(let k=0;k<5;k++){const r=60+k*45;const a=t*(k%2?1:-1)*(.5+k*.2);const s=E((t-.4-k*.1)/.7);
+  x.strokeStyle=k%2?col:'rgba(255,255,255,.4)';x.lineWidth=k===2?8:3;
+  x.beginPath();x.arc(cx,cy,r*s,a,a+Math.PI*(1+k*.2));x.stroke();}
+ x.fillStyle=col;x.beginPath();x.arc(cx,cy,30*E((t-.6)/.5)*(1+.1*Math.sin(t*6)),0,7);x.fill();
+}
+function scene4(t){ // 15-20 compare / bars
+ bg(t,200);
+ reveal('1.3  →  1.4',W/2,130,72,'#fff',t);
+ const lab=['Speed','Smoothness','Stability','Delight'],a=[.55,.6,.7,.5],b=[.9,.95,.92,.98];
+ lab.forEach((l,i)=>{const y=260+i*95,q=E((t-.8-i*.2)/.8),q2=E((t-1.4-i*.2)/.9);
+  x.globalAlpha=q;txt(l,300,y,24,'#fff','right',700);x.globalAlpha=1;
+  x.fillStyle='rgba(255,255,255,.08)';x.fillRect(330,y-18,650,36);
+  x.fillStyle='rgba(255,255,255,.35)';x.fillRect(330,y-18,650*a[i]*q,16);
+  const g=x.createLinearGradient(330,0,980,0);g.addColorStop(0,C1);g.addColorStop(1,C2);
+  x.fillStyle=g;x.fillRect(330,y+2,650*b[i]*q2,16);
+  x.globalAlpha=q2;txt('+'+Math.round((b[i]/a[i]-1)*100*q2)+'%',1010,y,26,C3,'left',900);x.globalAlpha=1;});
+ x.globalAlpha=E((t-2)/.5);txt('▬ 1.3',420,H-50,18,'rgba(255,255,255,.6)');txt('▬ 1.4',540,H-50,18,C2);x.globalAlpha=1;
+}
+function scene5(t){ // 20-25 outro
+ bg(t,320);
+ for(let i=0;i<60;i++){const s=(i*97)%100/100;const a=i*2.4+t*.5;const r=(t*200+s*600)%700;
+  x.fillStyle=[C1,C2,C3,C4][i%4];x.globalAlpha=1-r/700;x.beginPath();x.arc(W/2+Math.cos(a)*r,H/2+Math.sin(a)*r,3+s*4,0,7);x.fill();}
+ x.globalAlpha=1;
+ const sc=1+.03*Math.sin(t*3);x.save();x.translate(W/2,H/2-30);x.scale(sc,sc);reveal('v1.4',0,0,170,'#fff',t-.2,.08);x.restore();
+ x.globalAlpha=E((t-1.2)/.6);txt('Faster. Smoother. Yours.',W/2,H/2+90,36,C2,'center',700);
+ x.globalAlpha=E((t-2)/.6);txt('Update now',W/2,H/2+150,22,'rgba(255,255,255,.7)','center',500);
+ x.globalAlpha=Math.max(0,(t-4.4)/.6);x.fillStyle='#000';x.fillRect(0,0,W,H);x.globalAlpha=1;
+}
+function frame(){
+ const t=((performance.now()-t0)/1000)%window.DUR;
+ x.globalAlpha=1;
+ if(t<5)scene1(t);
+ else if(t<10)card(t-5,'1.3',C1,'Foundation release',[['Smarter timeline','Keyframes snap with easing presets'],['New render engine','Up to 2× faster exports'],['Refined UI','Cleaner panels, darker theme']],340);
+ else if(t<15)card(t-10,'1.4',C2,'The latest update',[['Live collaboration','Edit together in real time'],['Motion presets','50+ cinematic transitions'],['Bug fixes','Stability & performance gains']],190);
+ else if(t<20)scene4(t-15);
+ else scene5(t-20);
+ [5,10,15,20].forEach(s=>wipe(t,s-.3,C1));
+ // progress line
+ x.fillStyle='rgba(255,255,255,.15)';x.fillRect(0,H-4,W,4);x.fillStyle=C2;x.fillRect(0,H-4,W*t/window.DUR,4);
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></body></html>

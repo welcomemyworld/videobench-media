@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Inference</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#s{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+canvas{display:block}
+</style></head><body>
+<div id="s"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+window.DUR=30;
+const c=document.getElementById('c'),x=c.getContext('2d'),S=document.getElementById('s');
+function fit(){const k=Math.min(innerWidth/1280,innerHeight/720);S.style.transform=`scale(${k}) translate(-50%,-50%)`;S.style.left='50%';S.style.top='50%';S.style.transform=`translate(-50%,-50%) scale(${k})`;}
+addEventListener('resize',fit);fit();
+const off=parseFloat(new URLSearchParams(location.search).get('t')||0);
+const t0=performance.now()-off*1000;
+const W=1280,H=720,F='Helvetica Neue,Arial,sans-serif';
+const cl=v=>Math.max(0,Math.min(1,v));
+const eo=v=>1-Math.pow(1-cl(v),4);
+const eio=v=>{v=cl(v);return v<.5?8*v*v*v*v:1-Math.pow(-2*v+2,4)/2};
+function R(i){let s=Math.sin(i*127.1+311.7)*43758.5453;return s-Math.floor(s)}
+const AC='#7CFFB2',AC2='#5B8CFF';
+function txt(s,X,Y,sz,col,a,al,w){x.globalAlpha=a;x.fillStyle=col;x.font=`${w||800} ${sz}px ${F}`;x.textAlign=al||'center';x.textBaseline='middle';x.fillText(s,X,Y);x.globalAlpha=1}
+// slide-in text with mask
+function punch(s,X,Y,sz,col,t,dur,w){if(t<0||t>dur)return;let a=eo(t/.35),b=eo((dur-t)/.3);let k=Math.min(a,b);x.save();x.beginPath();x.rect(0,Y-sz,W,sz*2);x.clip();txt(s,X,Y+(1-k)*sz*1.2,sz,col,k,'center',w);x.restore()}
+function bg(t,hue){let g=x.createRadialGradient(W/2,H/2,50,W/2,H/2,800);g.addColorStop(0,'#0b1020');g.addColorStop(1,'#000');x.fillStyle=g;x.fillRect(0,0,W,H);
+x.strokeStyle='rgba(120,160,255,0.06)';x.lineWidth=1;let o=(t*40)%64;for(let i=-1;i<22;i++){x.beginPath();x.moveTo(i*64-o,0);x.lineTo(i*64-o,H);x.stroke()}for(let j=0;j<13;j++){x.beginPath();x.moveTo(0,j*64);x.lineTo(W,j*64);x.stroke()}}
+function flash(t,at){let d=t-at;if(d>=0&&d<.25){x.fillStyle=`rgba(255,255,255,${(1-d/.25)*.6})`;x.fillRect(0,0,W,H)}}
+// scene 1: tokens stream, 0-6
+function s1(t){
+ for(let i=0;i<120;i++){let sp=200+R(i)*900,y=R(i+9)*H,len=40+R(i+3)*160;let xx=((R(i+5)*W+t*sp)%(W+400))-200;
+ x.strokeStyle=i%3?AC2:AC;x.globalAlpha=.15+R(i+1)*.5*cl(t*2);x.lineWidth=1+R(i+7)*2;x.beginPath();x.moveTo(xx,y);x.lineTo(xx-len,y);x.stroke()}
+ x.globalAlpha=1;
+ punch('Every AI product',W/2,300,72,'#fff',t-.3,2.6);
+ punch('runs on one thing.',W/2,390,72,'#8892b0',t-.7,2.2);
+ let k=t-3.2;if(k>0){let s=1+ (1-eo(k/.4))*2;x.save();x.translate(W/2,H/2);x.scale(s,s);txt('INFERENCE',0,0,150,AC,cl(k/.2)*cl((6-t)/.3),'center',900);x.restore()}
+ flash(t,3.2);
+}
+// scene 2: latency problem 6-12
+function s2(t){
+ punch('It\'s slow.',W/2-260,200,90,'#fff',t,2.8);
+ punch('It\'s expensive.',W/2+200,320,90,'#ff6b6b',t-.5,2.3);
+ let k=t-3;if(k>0&&k<3){
+  txt('LATENCY',W/2,250,28,'#8892b0',cl(k*3)*cl((3-k)*3),'center',700);
+  let v=Math.floor(eo(k/1.2)*1840);txt(v+' ms',W/2,360,140,'#ff6b6b',cl(k*3)*cl((3-k)*3),'center',900);
+  x.globalAlpha=cl((3-k)*3);x.fillStyle='#222';x.fillRect(340,460,600,10);x.fillStyle='#ff6b6b';x.fillRect(340,460,600*eo(k/1.2),10);x.globalAlpha=1}
+ flash(t,3);
+}
+// scene 3: our engine 12-20
+function s3(t){
+ let cx=W/2,cy=H/2,a=cl(t*2);
+ // network graph
+ let L=[3,5,6,5,3],pos=[];
+ L.forEach((n,i)=>{pos[i]=[];for(let j=0;j<n;j++)pos[i].push([cx-320+i*160,cy+(j-(n-1)/2)*70])});
+ x.lineWidth=1;
+ for(let i=0;i<L.length-1;i++)for(const p of pos[i])for(const q of pos[i+1]){x.strokeStyle=`rgba(91,140,255,${.15*a})`;x.beginPath();x.moveTo(...p);x.lineTo(...q);x.stroke()}
+ for(let k=0;k<40;k++){let ph=(t*1.8+R(k)*5)%4,i=Math.floor(ph),f=ph-i;if(i>=4)continue;let p=pos[i][Math.floor(R(k+i)*L[i])],q=pos[i+1][Math.floor(R(k*3+i)*L[i+1])];
+  x.fillStyle=k%2?AC:'#fff';x.globalAlpha=a;x.beginPath();x.arc(p[0]+(q[0]-p[0])*f,p[1]+(q[1]-p[1])*f,3,0,7);x.fill()}
+ pos.flat().forEach((p,i)=>{let pu=.5+.5*Math.sin(t*6+i);x.globalAlpha=a;x.fillStyle='#0b1020';x.strokeStyle=AC;x.lineWidth=2;x.beginPath();x.arc(p[0],p[1],10+pu*3,0,7);x.fill();x.stroke()});
+ x.globalAlpha=1;
+ x.fillStyle=`rgba(0,0,0,${.6*cl((t-1)*2)})`;x.fillRect(0,0,W,H);
+ punch('We rebuilt the stack.',W/2,140,64,'#fff',t-1,6.7);
+ let st=['Custom kernels','Speculative decoding','Smart batching'];
+ st.forEach((s,i)=>{let k=t-2.2-i*.5;if(k<0)return;let e=eo(k/.4),f=cl((7.6-t)*3);x.globalAlpha=e*f;let y=300+i*90;
+  x.fillStyle='rgba(124,255,178,.08)';x.fillRect(380+(1-e)*-80,y-32,520,64);x.fillStyle=AC;x.fillRect(380+(1-e)*-80,y-32,4,64);x.globalAlpha=1;
+  txt(s,420+(1-e)*-80,y,34,'#fff',e*f,'left',700)});
+}
+// scene 4: numbers 20-26
+function s4(t){
+ let items=[['10×','faster'],['80%','lower cost'],['42ms','time to first token']];
+ items.forEach((it,i)=>{let k=t-i*1.6;if(k<0||k>1.8&&i<2)return;
+  let a=eo(k/.3)*cl((1.8-k)*4);if(i==2)a=eo(k/.3)*cl((6-t)*4);
+  let s=1+(1-eo(k/.3))*.6;x.save();x.translate(W/2,320);x.scale(s,s);txt(it[0],0,0,220,i==1?AC2:AC,a,'center',900);x.restore();
+  txt(it[1].toUpperCase(),W/2,480,32,'#cbd5ff',a,'center',600)});
+ [0,1.6,3.2].forEach(a=>flash(t,a));
+ // bars
+ let k=t-3.2;if(k>0){x.globalAlpha=cl(k*3)*cl((6-t)*4);x.fillStyle='#ff6b6b';x.fillRect(440,560,400,6);x.fillStyle=AC;x.fillRect(440,580,400*.023+400*eo(k)*.0,6);txt('them',430,563,16,'#888',x.globalAlpha,'right',600);txt('us',430,583,16,'#888',x.globalAlpha,'right',600);x.globalAlpha=1}
+}
+// scene 5: logo 26-30
+function s5(t){
+ let e=eo(t/.6),r=60*e;
+ x.save();x.translate(W/2,290);x.rotate((1-e)*3+t*.3);
+ for(let i=0;i<3;i++){x.strokeStyle=i==1?AC2:AC;x.lineWidth=6;x.globalAlpha=e;x.beginPath();x.arc(0,0,r-i*16,i*2.1,i*2.1+4.2);x.stroke()}
+ x.restore();x.globalAlpha=1;
+ x.fillStyle=AC;x.beginPath();x.arc(W/2,290,8*e,0,7);x.fill();
+ let k=t-.5;x.save();x.beginPath();x.rect(0,360,W,100);x.clip();txt('fastpath',W/2,410+(1-eo(k/.5))*80,80,'#fff',cl(k*3),'center',900);x.restore();
+ txt('Inference at the speed of thought.',W/2,480,26,'#8892b0',cl((t-1.2)*2),'center',500);
+ txt('fastpath.ai',W/2,540,20,AC,cl((t-1.8)*2),'center',700);
+ x.fillStyle=`rgba(0,0,0,${cl((t-3.6)*2.5)})`;x.fillRect(0,0,W,H);
+}
+function frame(){
+ let T=((performance.now()-t0)/1000)%DUR;
+ bg(T);
+ if(T<6)s1(T);else if(T<12)s2(T-6);else if(T<20)s3(T-12);else if(T<26)s4(T-20);else s5(T-26);
+ // scene wipe
+ [6,12,20,26].forEach(a=>{let d=T-a+.2;if(d>0&&d<.4){let p=eio(d/.4);x.fillStyle=AC;x.fillRect(W*(p*2-1),0,W,H)}});
+ // vignette + progress
+ let v=x.createRadialGradient(W/2,H/2,300,W/2,H/2,800);v.addColorStop(0,'rgba(0,0,0,0)');v.addColorStop(1,'rgba(0,0,0,.6)');x.fillStyle=v;x.fillRect(0,0,W,H);
+ x.fillStyle=AC;x.fillRect(0,H-3,W*T/DUR,3);
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></body></html>

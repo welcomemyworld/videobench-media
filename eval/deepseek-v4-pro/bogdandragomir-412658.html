@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ultracode — AI-Powered Development Platform</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #000;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  canvas {
+    width: min(100vw, calc(100vh * 16 / 9));
+    height: min(100vh, calc(100vw * 9 / 16));
+    display: block;
+    background: #0a0a1a;
+  }
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+(function() {
+  // ==================== CONFIGURATION ====================
+  const W = 1280, H = 720;
+  const DUR = 30;
+  window.DUR = DUR;
+  const BPM = 96;
+  const BEAT_DUR = 60 / BPM;
+  const BAR_DUR = BEAT_DUR * 4;
+  const STEP_DUR = BAR_DUR / 16;
+  const TOTAL_BARS = 12;
+
+  // Scene timings
+  const SCENES = [
+    { start: 0, end: 4, type: 'logo' },
+    { start: 4, end: 10, type: 'codegen' },
+    { start: 10, end: 16, type: 'collab' },
+    { start: 16, end: 22, type: 'deploy' },
+    { start: 22, end: 27, type: 'integrate' },
+    { start: 27, end: 30, type: 'finale' },
+  ];
+
+  // Chord progression (Am - F - C - G) frequencies
+  const CHORDS = [
+    [220.00, 261.63, 329.63, 440.00],
+    [174.61, 220.00, 261.63, 349.23],
+    [261.63, 329.63, 392.00, 523.25],
+    [196.00, 246.94, 293.66, 392.00],
+  ];
+  const BASS_ROOTS = [55.00, 43.65, 65.41, 49.00];
+  const MELODY = [
+    [659.25, 523.25, 587.33, 659.25, 587.33, 523.25, 440.00, 523.25],
+    [698.46, 659.25, 523.25, 440.00, 349.23, 440.00, 523.25, 659.25],
+    [783.99, 659.25, 523.25, 587.33, 659.25, 783.99, 659.25, 587.33],
+    [587.33, 659.25, 783.99, 659.25, 587.33, 523.25, 440.00, 392.00],
+  ];
+
+  // ==================== CANVAS SETUP ====================
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const urlParams = new URLSearchParams(window.location.search);
+  const tOffset = parseFloat(urlParams.get('t') || '0') || 0;
+
+  // ==================== AUDIO SETUP ====================
+  let audioCtx = null;
+  let masterGain = null;
+  let noiseBuffer = null;
+
+  function initAudio() {
+    if (audioCtx) return;
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      masterGain = audioCtx.createGain();
+      masterGain.gain.value = 0.7;
+      masterGain.connect(audioCtx.destination);
+
+      // Create noise buffer
+      const len = audioCtx.sampleRate * 1.5;
+      noiseBuffer = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+      const data = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+    } catch(e) { console.warn('Audio init failed:', e); }
+  }
+
+  function playKick(time) {
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(160, time);
+    osc.frequency.exponentialRampToValueAtTime(45, time + 0.1);
+    gain.gain.setValueAtTime(0.9, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.3);
+    osc.connect(gain);
+    gain.connect(masterGain);
+    osc.start(time);
+    osc.stop(time + 0.35);
+  }
+
+  function playSnare(time) {
+    if (!audioCtx || !noiseBuffer) return;
+    const src = audioCtx.createBufferSource();
+    const filter = audioCtx.createBiquadFilter();
+    const gain = audioCtx.createGain();
+    src.buffer = noiseBuffer;
+    filter.type = 'bandpass';
+    filter.frequency.value = 2200;
+    filter.Q.value = 0.8;
+    gain.gain.setValueAtTime(0.55, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.22);
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(masterGain);
+    src.start(time);
+    src.stop(time + 0.25);
+  }
+
+  function playHiHat(time) {
+    if (!audioCtx || !noiseBuffer) return;
+    const src = audioCtx.createBufferSource();
+    const filter = audioCtx.createBiquadFilter();
+    const gain = audioCtx.createGain();
+    src.buffer = noiseBuffer;
+    filter.type = 'highpass';
+    filter.frequency.value = 8000;
+    gain.gain.setValueAtTime(0.25, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.06);
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(masterGain);
+    src.start(time);
+    src.stop(time + 0.08);
+  }
+
+  function playBass(time, freq) {
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const filter = audioCtx.createBiquadFilter();
+    const gain = audioCtx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.value = freq;
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(450, time);
+    filter.frequency.exponentialRampToValueAtTime(180, time + 0.14);
+    filter.Q.value = 6;
+    gain.gain.setValueAtTime(0.45, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.2);
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(masterGain);
+    osc.start(time);
+    osc.stop(time + 0.22);
+  }
+
+  function playPad(time, freqs, duration) {
+    if (!audioCtx) return;
+    freqs.forEach((freq, i) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      const filter = audioCtx.createBiquadFilter();
+      osc.type = 'sawtooth';
+      osc.frequency.value = freq;
+      osc.detune.value = (i - 1) * 6;
+      filter.type = 'lowpass';
+      filter.frequency.value = 1200;
+      gain.gain.setValueAtTime(0.0001, time);
+      gain.gain.exponentialRampToValueAtTime(0.08, time + 0.4);
+      gain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(masterGain);
+      osc.start(time);
+      osc.stop(time + duration + 0.1);
+    });
+  }
+
+  function playLead(time, freq) {
+    if (!audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    const filter = audioCtx.createBiquadFilter();
+    osc.type = 'triangle';
+    osc.frequency.value = freq;
+    filter.type = 'lowpass';
+    filter.frequency.value = 2500;
+    gain.gain.setValueAtTime(0.18, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.4);
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(masterGain);
+    osc.start(time);
+    osc.stop(time + 0.45);
+  }
+
+  function playWhoosh(time) {
+    if (!audioCtx || !noiseBuffer) return;
+    const src = audioCtx.createBufferSource();
+    const filter = audioCtx.createBiquadFilter();
+    const gain = audioCtx.createGain();
+    src.buffer = noiseBuffer;
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(200, time);
+    filter.frequency.exponentialRampToValueAtTime(6000, time + 0.5);
+    filter.Q.value = 1.5;
+    gain.gain.setValueAtTime(0.15, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.6);
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(masterGain);
+    src.start(time);
+    src.stop(time + 0.65);
+  }
+
+  // ==================== MUSIC SCHEDULER ====================
+  let lastStepIndex = -1;
+  let lastBarIndex = -1;
+
+  function getMusicState(t) {
+    if (t < 4) return 'intro';
+    if (t < 10) return 'build';
+    if (t < 16) return 'groove';
+    if (t < 22) return 'full';
+    if (t < 27) return 'breakdown';
+    return 'outro';
+  }
+
+  function scheduleMusic(t) {
+    if (!audioCtx) return;
+    const loopT = t % DUR;
+    const barIndex = Math.floor(loopT / BAR_DUR);
+    const stepInBar = Math.floor((loopT % BAR_DUR) / STEP_DUR);
+    const stepIndex = barIndex * 16 + stepInBar;
+    const state = getMusicState(loopT);
+
+    if (stepIndex !== lastStepIndex) {
+      const chordIdx = barIndex % 4;
+      const now = audioCtx.currentTime;
+      const scheduleAhead = 0.1;
+
+      // Pads - play at bar start, duration depends on state
+      if (stepInBar === 0 && (state === 'intro' || state === 'build' || state === 'full' || state === 'outro' || state === 'breakdown')) {
+        const padDur = state === 'intro' || state === 'outro' ? BAR_DUR * 0.9 : BAR_DUR * 0.7;
+        playPad(now + scheduleAhead, CHORDS[chordIdx], padDur);
+      }
+
+      // Bass - steps 0,4,8,12 (16th notes) in most states
+      if ((stepInBar % 2 === 0) && (state === 'build' || state === 'groove' || state === 'full')) {
+        const octave = stepInBar % 4 === 0 ? 1 : (stepInBar % 8 === 4 ? 2 : 1);
+        playBass(now + scheduleAhead, BASS_ROOTS[chordIdx] * octave);
+      }
+
+      // Kick drum
+      if ((stepInBar === 0 || stepInBar === 4 || stepInBar === 8 || stepInBar === 12) && (state === 'groove' || state === 'full' || state === 'build')) {
+        playKick(now + scheduleAhead);
+      }
+
+      // Snare
+      if ((stepInBar === 4 || stepInBar === 12) && (state === 'groove' || state === 'full')) {
+        playSnare(now + scheduleAhead);
+      }
+
+      // Hi-hat
+      if ((stepInBar % 2 === 0) && (state === 'groove' || state === 'full' || state === 'breakdown')) {
+        playHiHat(now + scheduleAhead);
+      }
+
+      // Melody - plays in full and breakdown states
+      if ((state === 'full' || state === 'breakdown') && stepInBar % 4 === 0) {
+        const melIdx = Math.floor(stepInBar / 4);
+        if (melIdx < MELODY[chordIdx].length) {
+          playLead(now + scheduleAhead, MELODY[chordIdx][melIdx]);
+        }
+      }
+
+      lastStepIndex = stepIndex;
+    }
+
+    // Scene transition whoosh
+    if (barIndex !== lastBarIndex) {
+      lastBarIndex = barIndex;
+      // Check for scene boundaries
+      const sceneStarts = SCENES.map(s => s.start);
+      const prevSceneStart = sceneStarts.filter(s => s <= loopT && loopT - s < 0.15);
+      if (prevSceneStart.length > 0 && prevSceneStart[prevSceneStart.length - 1] > 0.01) {
+        playWhoosh(audioCtx.currentTime + 0.05);
+      }
+    }
+  }
+
+  // ==================== PARTICLE SYSTEM ====================
+  const MAX_PARTICLES = 380;
+  const particles = [];
+  const gridOffset = { x: 0, y: 0 };
+
+  function createParticle(x, y, vx, vy, life, color, size, type) {
+    if (particles.length >= MAX_PARTICLES) {
+      particles.shift();
+    }
+    particles.push({
+      x, y, vx, vy, life, maxLife: life, color, size, type: type || 'dot'
+    });
+  }
+
+  function updateParticles(dt) {
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.life -= dt;
+      if (p.life <= 0) {
+        particles.splice(i, 1);
+        continue;
+      }
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      // Circular orbit for 'orbit' type
+      if (p.type === 'orbit') {
+        const angle = Math.atan2(p.y - H * 0.5, p.x - W * 0.5);
+        const radius = Math.hypot(p.x - W * 0.5, p.y - H * 0.5);
+        const speed = p.size; // size acts as orbit speed
+        const newAngle = angle + speed * dt;
+        p.x = W * 0.5 + Math.cos(newAngle) * radius;
+        p.y = H * 0.5 + Math.sin(newAngle) * radius;
+      }
+    }
+  }
+
+  function drawParticles(alpha) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const p of particles) {
+      const lifeRatio = p.life / p.maxLife;
+      const a = lifeRatio * alpha;
+      const sz = p.size * (0.5 + lifeRatio * 0.5);
+      ctx.globalAlpha = a;
+      ctx.fillStyle = p.color;
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = sz * 2.5;
+      if (p.type === 'streak') {
+        ctx.fillRect(p.x - sz * 3, p.y - sz * 0.3, sz * 6, sz * 0.6);
+      } else {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, sz, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+  }
+
+  function spawnSceneParticles(t, scene) {
+    const sceneStart = scene.start;
+    const sceneEnd = scene.end;
+    const localT = t - sceneStart;
+    const sceneDur = sceneEnd - sceneStart;
+    const progress = localT / sceneDur;
+
+    switch (scene.type) {
+      case 'logo': {
+        // Particles swirl inward
+        const count = Math.floor(3 + progress * 8);
+        for (let i = 0; i < count; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const radius = 350 + Math.random() * 250;
+          const x = W * 0.5 + Math.cos(angle) * radius;
+          const y = H * 0.5 + Math.sin(angle) * radius * 0.7;
+          const inwardV = 80 + Math.random() * 60;
+          const vx = -Math.cos(angle) * inwardV;
+          const vy = -Math.sin(angle) * inwardV * 0.7;
+          const life = 1.2 + Math.random() * 0.8;
+          const color = Math.random() > 0.5 ? '#00e5ff' : '#ff00e5';
+          createParticle(x, y, vx, vy, life, color, 1.5 + Math.random() * 2, 'dot');
+        }
+        break;
+      }
+      case 'codegen': {
+        // Code line streaks moving right
+        const count = Math.floor(5 + Math.random() * 4);
+        for (let i = 0; i < count; i++) {
+          const y = 80 + Math.random() * 560;
+          const x = -20;
+          const vx = 180 + Math.random() * 220;
+          const life = 2.5 + Math.random() * 2;
+          const colors = ['#00e5ff', '#ff00e5', '#7c4dff', '#00e676'];
+          const color = colors[Math.floor(Math.random() * colors.length)];
+          createParticle(x, y, vx, 0, life, color, 1.8 + Math.random() * 2.5, 'streak');
+        }
+        break;
+      }
+      case 'collab': {
+        // Spawn particles at network node positions
+        const nodes = getNetworkNodes();
+        const node = nodes[Math.floor(Math.random() * nodes.length)];
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 40 + Math.random() * 80;
+        const vx = Math.cos(angle) * speed;
+        const vy = Math.sin(angle) * speed;
+        createParticle(node.x, node.y, vx, vy, 1.5 + Math.random() * 1.5, '#00e5ff', 1.2 + Math.random() * 1.8, 'dot');
+        break;
+      }
+      case 'deploy': {
+        // Upward streaks
+        const count = Math.floor(5 + Math.random() * 6);
+        for (let i = 0; i < count; i++) {
+          const x = 100 + Math.random() * 1080;
+          const y = H + 10;
+          const vx = (Math.random() - 0.5) * 30;
+          const vy = -200 - Math.random() * 300;
+          const life = 2 + Math.random() * 1.5;
+          const colors = ['#00e5ff', '#ff00e5', '#ffffff'];
+          const color = colors[Math.floor(Math.random() * colors.length)];
+          createParticle(x, y, vx, vy, life, color, 1.5 + Math.random() * 2, 'streak');
+        }
+        break;
+      }
+      case 'integrate': {
+        // Orbiting particles
+        const count = Math.floor(2 + Math.random() * 3);
+        for (let i = 0; i < count; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const radius = 180 + Math.random() * 200;
+          const speed = 0.8 + Math.random() * 1.5;
+          const colors = ['#00e5ff', '#ff00e5', '#7c4dff', '#00e676'];
+          const color = colors[Math.floor(Math.random() * colors.length)];
+          createParticle(W * 0.5 + Math.cos(angle) * radius, H * 0.5 + Math.sin(angle) * radius, 0, 0, 3, color, speed, 'orbit');
+        }
+        break;
+      }
+      case 'finale': {
+        // Converging particles
+        const count = Math.floor(4 + Math.random() * 6);
+        for (let i = 0; i < count; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const radius = 400 + Math.random() * 300;
+          const x = W * 0.5 + Math.cos(angle) * radius;
+          const y = H * 0.5 + Math.sin(angle) * radius * 0.7;
+          const inwardV = 120 + Math.random() * 100;
+          const vx = -Math.cos(angle) * inwardV;
+          const vy = -Math.sin(angle) * inwardV * 0.7;
+          const life = 1.5 + Math.random() * 1.5;
+          const color = Math.random() > 0.4 ? '#00e5ff' : (Math.random() > 0.5 ? '#ff00e5' : '#ffffff');
+          createParticle(x, y, vx, vy, life, color, 1.5 + Math.random() * 2.5, 'dot');
+        }
+        break;
+      }
+    }
+  }
+
+  function getNetworkNodes() {
+    const positions = [
+      { x: 280, y: 220 }, { x: 640, y: 150 }, { x: 1000, y: 220 },
+      { x: 200, y: 400 }, { x: 640, y: 400 }, { x: 1080, y: 400 },
+      { x: 320, y: 560 }, { x: 640, y: 560 }, { x: 960, y: 560 },
+    ];
+    return positions;
+  }
+
+  // ==================== DRAWING UTILITIES ====================
+  function drawGrid(t) {
+    const spacing = 60;
+    const fade = 0.12;
+    ctx.save();
+    ctx.strokeStyle = `rgba(100, 100, 200, ${fade})`;
+    ctx.lineWidth = 1;
+    const offsetX = (t * 8) % spacing;
+    const offsetY = (t * 4) % spacing;
+    for (let x = -spacing + offsetX; x < W + spacing; x += spacing) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, H);
+      ctx.stroke();
+    }
+    for (let y = -spacing + offsetY; y < H + spacing; y += spacing) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawVignette() {
+    const grad = ctx.createRadialGradient(W * 0.5, H * 0.5, H * 0.3, W * 0.5, H * 0.5, H * 0.85);
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.55)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  function drawGlowText(text, x, y, size, color, glowColor, alpha, font) {
+    if (alpha <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.font = font || `bold ${size}px "Segoe UI", "Helvetica Neue", Arial, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = glowColor;
+    ctx.shadowBlur = size * 0.6;
+    ctx.fillStyle = color;
+    ctx.fillText(text, x, y);
+    ctx.shadowBlur = size * 0.3;
+    ctx.fillText(text, x, y);
+    ctx.restore();
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+  }
+
+  function easeOutCubic(t) {
+    return 1 - Math.pow(1 - t, 3);
+  }
+  function easeInOutCubic(t) {
+    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  }
+
+  // ==================== SCENE RENDERERS ====================
+  function getActiveScene(t) {
+    const loopT = t % DUR;
+    for (const scene of SCENES) {
+      if (loopT >= scene.start && loopT < scene.end) return { scene, localT: loopT - scene.start, loopT };
+    }
+    return { scene: SCENES[0], localT: 0, loopT };
+  }
+
+  function renderScene(scene, localT, loopT, t) {
+    const fadeIn = 0.5;
+    const fadeOut = 0.5;
+    const sceneDur = scene.end - scene.start;
+    let alpha = 1;
+    if (localT < fadeIn) alpha = localT / fadeIn;
+    if (localT > sceneDur - fadeOut) alpha = Math.max(0, (sceneDur - localT) / fadeOut);
+    const a = Math.max(0, Math.min(1, alpha));
+
+    switch (scene.type) {
+      case 'logo': renderLogoScene(localT, a, t);
+        break;
+      case 'codegen': renderCodeGenScene(localT, a, t);
+        break;
+      case 'collab': renderCollabScene(localT, a, t);
+        break;
+      case 'deploy': renderDeployScene(localT, a, t);
+        break;
+      case 'integrate': renderIntegrateScene(localT, a, t);
+        break;
+      case 'finale': renderFinaleScene(localT, a, t);
+        break;
+    }
+  }
+
+  function renderLogoScene(localT, a, t) {
+    // Title scale-up
+    const scaleProgress = easeOutCubic(Math.min(localT / 1.8, 1));
+    const titleScale = 0.3 + scaleProgress * 0.7;
+    const titleAlpha = Math.min(localT / 1.2, 1) * a;
+    const subAlpha = Math.max(0, (localT - 0.8) / 0.8) * a;
+
+    // Glow behind text
+    const glowGrad = ctx.createRadialGradient(W * 0.5, H * 0.4, 0, W * 0.5, H * 0.4, 300 * titleScale);
+    glowGrad.addColorStop(0, `rgba(0, 229, 255, ${0.15 * titleScale * a})`);
+    glowGrad.addColorStop(0.5, `rgba(255, 0, 229, ${0.08 * titleScale * a})`);
+    glowGrad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glowGrad;
+    ctx.fillRect(W * 0.5 - 300, H * 0.4 - 300, 600, 600);
+
+    drawGlowText('ULTRACODE', W * 0.5, H * 0.38, Math.floor(96 * titleScale), '#ffffff', '#00e5ff', titleAlpha);
+    drawGlowText('AI-POWERED DEVELOPMENT PLATFORM', W * 0.5, H * 0.52, 28, '#ccccff', '#ff00e5', subAlpha);
+  }
+
+  function renderCodeGenScene(localT, a, t) {
+    // Code window background
+    const winAlpha = a * 0.3;
+    ctx.fillStyle = `rgba(15, 15, 30, ${winAlpha})`;
+    const winX = W * 0.15, winY = H * 0.1, winW = W * 0.7, winH = H * 0.6;
+    ctx.fillRect(winX, winY, winW, winH);
+    ctx.strokeStyle = `rgba(0, 229, 255, ${winAlpha * 2})`;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(winX, winY, winW, winH);
+
+    // Code lines (colored bars)
+    const numLines = 8;
+    const lineColors = ['#00e5ff', '#ff00e5', '#00e676', '#ffab00', '#7c4dff'];
+    for (let i = 0; i < numLines; i++) {
+      const y = winY + 25 + i * 45;
+      const lineWidth = 80 + Math.sin(localT * 3 + i * 1.7) * 40 + (i % 3) * 60;
+      const lineX = winX + 30 + ((localT * (50 + i * 12)) % (winW - 100 - lineWidth));
+      ctx.fillStyle = `rgba(255, 255, 255, ${a * 0.1})`;
+      ctx.fillRect(winX + 20, y, winW - 40, 12);
+      ctx.fillStyle = lineColors[i % lineColors.length] + '55';
+      ctx.fillRect(lineX, y - 3, lineWidth, 10);
+      ctx.fillStyle = lineColors[i % lineColors.length] + '33';
+      ctx.fillRect(lineX, y - 3, lineWidth * 0.3, 10);
+    }
+
+    // Typing effect for title
+    const fullTitle = 'AI-Powered Code Generation';
+    const typeProgress = Math.min(localT / 2.5, 1);
+    const typedChars = Math.floor(typeProgress * fullTitle.length);
+    const displayTitle = typedChars > 0 ? fullTitle.substring(0, typedChars) : '';
+    const cursorOn = (Math.floor(t * 6) % 2 === 0);
+    const cursorChar = (typeProgress < 1 && cursorOn) ? '|' : '';
+    drawGlowText(displayTitle + cursorChar, W * 0.5, H * 0.78, 52, '#ffffff', '#00e5ff', a);
+    const subAlpha = Math.max(0, (localT - 1.5) / 0.8) * a;
+    drawGlowText('Generate production-ready code from natural language', W * 0.5, H * 0.86, 22, '#aaaacc', '#ff00e5', subAlpha);
+  }
+
+  function renderCollabScene(localT, a, t) {
+    const nodes = getNetworkNodes();
+    // Draw connections
+    ctx.save();
+    ctx.strokeStyle = `rgba(0, 229, 255, ${a * 0.25})`;
+    ctx.lineWidth = 1.5;
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const dist = Math.hypot(nodes[i].x - nodes[j].x, nodes[i].y - nodes[j].y);
+        if (dist < 350) {
+          ctx.beginPath();
+          ctx.moveTo(nodes[i].x, nodes[i].y);
+          ctx.lineTo(nodes[j].x, nodes[j].y);
+          ctx.stroke();
+        }
+      }
+    }
+    ctx.restore();
+
+    // Draw nodes with glow
+    for (let i = 0; i < nodes.length; i++) {
+      const pulse = 0.6 + 0.4 * Math.sin(t * 4 + i * 1.3);
+      const nodeAlpha = a * Math.min(localT / 0.6, 1) * pulse;
+      const nodeColor = i % 3 === 0 ? '#00e5ff' : (i % 3 === 1 ? '#ff00e5' : '#7c4dff');
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = nodeAlpha;
+      ctx.fillStyle = nodeColor;
+      ctx.shadowColor = nodeColor;
+      ctx.shadowBlur = 18 * pulse;
+      ctx.beginPath();
+      ctx.arc(nodes[i].x, nodes[i].y, 7 + 3 * pulse, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
+    }
+
+    drawGlowText('Real-time Collaboration', W * 0.5, H * 0.78, 52, '#ffffff', '#00e5ff', a);
+    const subAlpha = Math.max(0, (localT - 1) / 0.8) * a;
+    drawGlowText('Multiple developers. One seamless codebase.', W * 0.5, H * 0.86, 22, '#aaaacc', '#ff00e5', subAlpha);
+  }
+
+  function renderDeployScene(localT, a, t) {
+    // Speed lines background
+    const speedLines = 12;
+    ctx.save();
+    for (let i = 0; i < speedLines; i++) {
+      const x = 80 + (i * 100 + ((localT * 180) % 100)) % 1180;
+      const lineLen = 60 + Math.random() * 80;
+      const gradient = ctx.createLinearGradient(x, H - lineLen, x, H);
+      gradient.addColorStop(0, `rgba(0, 229, 255, 0)`);
+      gradient.addColorStop(1, `rgba(0, 229, 255, ${a * 0.3})`);
+      ctx.strokeStyle = gradient;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x, H - lineLen);
+      ctx.lineTo(x, H);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Central rocket-like glow
+    const rocketY = H * 0.6 - localT * 30;
+    const rocketAlpha = a * Math.min(localT / 0.5, 1);
+    const rocketGlow = ctx.createRadialGradient(W * 0.5, rocketY, 0, W * 0.5, rocketY, 80);
+    rocketGlow.addColorStop(0, `rgba(255, 255, 255, ${rocketAlpha * 0.8})`);
+    rocketGlow.addColorStop(0.4, `rgba(0, 229, 255, ${rocketAlpha * 0.5})`);
+    rocketGlow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = rocketGlow;
+    ctx.fillRect(W * 0.5 - 80, rocketY - 80, 160, 160);
+
+    drawGlowText('One-Click Deployment', W * 0.5, H * 0.78, 52, '#ffffff', '#00e5ff', a);
+    const subAlpha = Math.max(0, (localT - 1) / 0.8) * a;
+    drawGlowText('From code to production in seconds', W * 0.5, H * 0.86, 22, '#aaaacc', '#ff00e5', subAlpha);
+  }
+
+  function renderIntegrateScene(localT, a, t) {
+    // Central core
+    const corePulse = 0.7 + 0.3 * Math.sin(t * 5);
+    const coreGlow = ctx.createRadialGradient(W * 0.5, H * 0.5, 0, W * 0.5, H * 0.5, 120);
+    coreGlow.addColorStop(0, `rgba(255, 255, 255, ${a * 0.6 * corePulse})`);
+    coreGlow.addColorStop(0.3, `rgba(0, 229, 255, ${a * 0.4 * corePulse})`);
+    coreGlow.addColorStop(0.7, `rgba(255, 0, 229, ${a * 0.2 * corePulse})`);
+    coreGlow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = coreGlow;
+    ctx.fillRect(W * 0.5 - 120, H * 0.5 - 120, 240, 240);
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = a * corePulse;
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = '#00e5ff';
+    ctx.shadowBlur = 30 * corePulse;
+    ctx.beginPath();
+    ctx.arc(W * 0.5, H * 0.5, 18 + 6 * Math.sin(t * 5), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+
+    drawGlowText('Seamless Integration', W * 0.5, H * 0.78, 52, '#ffffff', '#00e5ff', a);
+    const subAlpha = Math.max(0, (localT - 1) / 0.8) * a;
+    drawGlowText('Works with your entire existing stack', W * 0.5, H * 0.86, 22, '#aaaacc', '#ff00e5', subAlpha);
+  }
+
+  function renderFinaleScene(localT, a, t) {
+    // Large glow
+    const finaleProgress = Math.min(localT / 1.5, 1);
+    const titleAlpha = finaleProgress * a;
+    const titleScale = 0.6 + easeOutCubic(finaleProgress) * 0.4;
+
+    const glowGrad = ctx.createRadialGradient(W * 0.5, H * 0.4, 0, W * 0.5, H * 0.4, 500 * titleScale);
+    glowGrad.addColorStop(0, `rgba(0, 229, 255, ${0.25 * titleAlpha})`);
+    glowGrad.addColorStop(0.4, `rgba(255, 0, 229, ${0.12 * titleAlpha})`);
+    glowGrad.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glowGrad;
+    ctx.fillRect(W * 0.5 - 500 * titleScale, H * 0.4 - 500 * titleScale, 1000 * titleScale, 1000 * titleScale);
+
+    drawGlowText('ULTRACODE', W * 0.5, H * 0.38, Math.floor(110 * titleScale), '#ffffff', '#00e5ff', titleAlpha);
+    const subAlpha = Math.max(0, (localT - 0.8) / 0.6) * a;
+    drawGlowText('Build Faster. Ship Smarter.', W * 0.5, H * 0.52, 32, '#ccccff', '#ff00e5', subAlpha);
+
+    // Small trailing text at bottom
+    const bottomAlpha = Math.max(0, (localT - 1.5) / 0.5) * a * 0.5;
+    drawGlowText('AI-Powered Development Platform', W * 0.5, H * 0.62, 22, '#8888aa', '#00e5ff', bottomAlpha);
+  }
+
+  // ==================== MAIN LOOP ====================
+  let lastTime = performance.now();
+  let lastSpawnTime = 0;
+  let audioInitialized = false;
+
+  function mainLoop(now) {
+    const rawT = (now / 1000 + tOffset) % DUR;
+    const dt = Math.min((now - lastTime) / 1000, 0.1);
+    lastTime = now;
+
+    // Initialize audio on first frame
+    if (!audioInitialized) {
+      initAudio();
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume().catch(() => {});
+      }
+      audioInitialized = true;
+      lastBarIndex = Math.floor(rawT / BAR_DUR);
+      lastStepIndex = Math.floor(rawT / STEP_DUR);
+    }
+
+    // Schedule music
+    if (audioCtx) {
+      scheduleMusic(rawT);
+    }
+
+    // Clear with dark background
+    ctx.fillStyle = '#0a0a1a';
+    ctx.fillRect(0, 0, W, H);
+
+    // Draw grid
+    drawGrid(rawT);
+
+    // Get active scene
+    const { scene, localT } = getActiveScene(rawT);
+
+    // Spawn particles
+    if (rawT - lastSpawnTime > 0.016) {
+      spawnSceneParticles(rawT, scene);
+      lastSpawnTime = rawT;
+    }
+
+    // Update and draw particles
+    updateParticles(dt);
+    drawParticles(1);
+
+    // Render scene
+    renderScene(scene, localT, rawT, rawT);
+
+    // Vignette
+    drawVignette();
+
+    // Subtle scanline effect
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.015)';
+    for (let y = 0; y < H; y += 3) {
+      ctx.fillRect(0, y, W, 1);
+    }
+
+    requestAnimationFrame(mainLoop);
+  }
+
+  // ==================== START ====================
+  // Handle audio resume on user interaction
+  document.addEventListener('click', () => {
+    if (!audioCtx) initAudio();
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  });
+  document.addEventListener('touchstart', () => {
+    if (!audioCtx) initAudio();
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  });
+
+  // Start the animation loop
+  requestAnimationFrame(mainLoop);
+})();
+</script>
+</body>
+</html>

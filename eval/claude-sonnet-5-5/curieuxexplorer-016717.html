@@ -1,0 +1,65 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;background:#000;overflow:hidden}canvas{position:absolute;left:50%;top:50%;transform-origin:0 0}</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+window.DUR=60;
+const c=document.getElementById('c'),g=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.transform`x`;c.style.transform=`scale(${s}) translate(-50%,-50%)`;c.style.left='50%';c.style.top='50%';c.style.transformOrigin='0 0';c.style.marginLeft=0;
+c.style.transform=`translate(${-640*s}px,${-360*s}px) scale(${s})`;c.style.transformOrigin='0 0'}
+fit();onresize=fit;
+const q=new URLSearchParams(location.search).get('t')||0,t0=performance.now()-q*1000;
+const sc=[ // start,end,title,lines
+[0,6,"THE BROKEN MESSAGE",["Type 1 diabetes isn't caused by sugar,","weight or lifestyle. It's autoimmune."]],
+[6,14,"THE ISLET",["Beta cells sit in tiny clusters called islets,","about 1–2% of the pancreas.","After a meal they sense glucose and release insulin."]],
+[14,22,"THE SIGNAL",["Insulin tells muscle and fat to take glucose in,","and tells the liver to release less."]],
+[22,31,"THE SIGNAL DISAPPEARS",["Immune cells destroy the beta cells.","The fuel is still there. The message is missing.","Glucose builds up in the blood."]],
+[31,38,"KETONES & DKA",["With almost no insulin, fat breaks down fast","and the liver makes ketones — risk of DKA,","a medical emergency."]],
+[38,48,"HEALTHY vs TYPE 1 vs TYPE 1 + INSULIN",["Same meal, three outcomes.","Insulin replaces the signal — it is not a cure.","Too little: glucose rises. Too much: it falls."]],
+[48,55,"CGM + PUMP + AID",["A CGM reads glucose every few minutes;","automated insulin delivery adjusts doses."]],
+[55,60,"",["Type 1 diabetes changes the system.","It doesn't define the person."]]];
+function R(a,b){return a+(b-a)}
+function rnd(i){return (Math.sin(i*127.1)*43758.5453)%1}
+function ab(i){return Math.abs(rnd(i))}
+function body(x,y,s,a){g.save();g.translate(x,y);g.scale(s,s);g.strokeStyle=`rgba(120,190,255,${a})`;g.lineWidth=2;g.beginPath();g.arc(0,-120,26,0,7);g.moveTo(-50,-85);g.quadraticCurveTo(0,-100,50,-85);g.lineTo(60,40);g.lineTo(-60,40);g.closePath();g.moveTo(-25,40);g.lineTo(-30,170);g.moveTo(25,40);g.lineTo(30,170);g.stroke();g.restore()}
+function islet(x,y,r,intact,t){ // beta cells
+for(let i=0;i<26;i++){const a=i*2.4,d=r*Math.sqrt(i/26);const px=x+Math.cos(a)*d,py=y+Math.sin(a)*d;const dead=ab(i+1)>intact;
+g.fillStyle=dead?"rgba(90,70,80,.5)":"hsl(190,80%,60%)";g.beginPath();g.arc(px,py,dead?6:r/6+Math.sin(t*3+i)*1.5,0,7);g.fill()}}
+function parts(x,y,n,col,t,spread,speed,dir){g.fillStyle=col;for(let i=0;i<n;i++){const p=((t*speed+ab(i+9))%1);g.beginPath();g.arc(x+dir*p*spread+Math.sin(i*5+t*2)*14,y+Math.sin(i*3+t)*30+(ab(i)-.5)*40,3,0,7);g.fill()}}
+function graph(x,y,w,h,f,col,lab,t){g.strokeStyle="#345";g.strokeRect(x,y,w,h);g.fillStyle="#9ab";g.font="14px sans-serif";g.fillText(lab,x+6,y+18);
+g.strokeStyle=col;g.lineWidth=3;g.beginPath();const n=Math.max(0,Math.min(1,t));for(let i=0;i<=100*n;i++){const u=i/100,v=f(u);i?g.lineTo(x+u*w,y+h-v*h):g.moveTo(x+u*w,y+h-v*h)}g.stroke()}
+function frame(){const T=((performance.now()-t0)/1000)%DUR;
+g.fillStyle="#060912";g.fillRect(0,0,1280,720);
+const gr=g.createRadialGradient(400,300,50,400,300,700);gr.addColorStop(0,"#12203a");gr.addColorStop(1,"#050810");g.fillStyle=gr;g.fillRect(0,0,1280,720);
+let k=sc.findIndex(s=>T>=s[0]&&T<s[1]);const s=sc[k],lt=T-s[0],fa=Math.min(1,lt,s[1]-T);
+const A=Math.max(0,Math.min(1,fa));
+// scene
+if(k==0){body(400,330,2.2,A);g.fillStyle=`rgba(255,140,90,${A*.8})`;g.beginPath();g.ellipse(400,350,40+lt*3,14,0.3,0,7);g.fill();parts(400,350,30,"#ffd25a",T,200,.2,1)}
+else if(k<=3){const z=k==1?1:k==2?1:1;const intact=k<3?1:Math.max(0,1-lt/8);
+g.save();g.globalAlpha=A;g.fillStyle="rgba(255,150,170,.12)";g.beginPath();g.ellipse(400,360,300,230,0,0,7);g.fill();
+islet(400,360,120,intact,T);
+if(k>=2){// insulin signal
+const out=k==2?1:intact;for(let i=0;i<40;i++){const p=(T*.3+ab(i))%1,a=i*.7;g.fillStyle=`rgba(90,255,200,${(1-p)*out})`;g.beginPath();g.arc(400+Math.cos(a)*(120+p*220),360+Math.sin(a)*(120+p*180),4,0,7);g.fill()}}
+if(k==3){for(let i=0;i<9;i++){const a=i*.7+T,d=260-Math.min(lt,8)*18;g.fillStyle="#ff4a5a";g.beginPath();g.arc(400+Math.cos(a)*(d+40*Math.sin(T+i)),360+Math.sin(a)*(d*.8),11,0,7);g.fill()}}
+g.restore();
+// glucose in blood
+g.save();g.globalAlpha=A;g.fillStyle="rgba(120,20,40,.5)";g.fillRect(780,200,420,260);
+const n=k==3?20+lt*14:30;parts(780,330,n|0,"#ffd25a",T,400,.15,1);
+g.fillStyle="#fff";g.font="16px sans-serif";g.fillText("Blood glucose",790,225);
+if(k==3){g.fillStyle="#ffd25a";g.fillText("↑ rising",790,445)}
+g.restore()}
+else if(k==4){g.globalAlpha=A;body(300,340,2,1);for(let i=0;i<50;i++){const p=(T*.2+ab(i))%1;g.fillStyle="#ff8a3a";g.beginPath();g.arc(300+Math.sin(i)*40+p*60,400-p*180+ab(i+3)*20,4,0,7);g.fill()}
+g.fillStyle="#ff8a3a";g.font="20px sans-serif";g.fillText("fat → ketones → acidic blood (pH ↓)",620,300);const w=Math.min(1,lt/6);g.fillRect(620,330,400*w,18);g.globalAlpha=1}
+else if(k==5||k==6){g.globalAlpha=A;const m=Math.min(1,lt/(k==5?8:7));
+if(k==5){const L=[["HEALTHY","#5fe0a0",u=>.35+.25*Math.exp(-Math.pow((u-.3)/.12,2))],["TYPE 1","#ff5a6a",u=>.35+.5*(1-Math.exp(-u*3))],["TYPE 1 + INSULIN","#6ab6ff",u=>.35+.3*Math.exp(-Math.pow((u-.3)/.15,2))-.15*Math.max(0,u-.6)*(1-.5*u)]];
+L.forEach((l,i)=>graph(60+i*400,260,360,220,l[2],l[1],l[0],m));
+g.fillStyle="#9ab";g.fillText("meal at 0:30  →  time",60,520)}
+else{ // CGM+pump
+const f=u=>.5+.2*Math.sin(u*12)*(1-u*.5);graph(60,260,700,260,u=>.5+.25*Math.sin(u*9+T*.5)*Math.exp(-u*1.5),"#6ab6ff","CGM glucose (every 5 min)",m);
+g.fillStyle="#223";g.fillRect(860,280,300,160);g.strokeStyle="#6ab6ff";g.strokeRect(860,280,300,160);g.fillStyle="#6ab6ff";g.fillText("PUMP / AID",880,310);
+g.fillRect(880,340,260*((T*.2)%1),16);g.fillStyle="#9ab";g.fillText("dose adjusts to readings",880,400)}
+g.globalAlpha=1}
+else{body(640,330,2.4,A*.8)}
+// text
+g.globalAlpha=A;g.textAlign="center";g.fillStyle="#7fd0ff";g.font="bold 34px sans-serif";g.fillText(s[2],640,70);
+g.fillStyle="#fff";g.font="26px sans-serif";const y0=k==7?600:620;s[3].forEach((l,i)=>g.fillText(l,640,y0+i*34-(s[3].length>2?30:0)));
+g.globalAlpha=1;g.font="13px sans-serif";g.fillStyle="#678";g.fillText("Educational visualization, not medical advice.",640,708);g.textAlign="left";
+requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

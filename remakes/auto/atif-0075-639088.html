@@ -1,0 +1,82 @@
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000;height:100%;overflow:hidden}canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+window.DUR=30;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px'}fit();onresize=fit;
+const q=new URLSearchParams(location.search),T0=parseFloat(q.get('t')||0);
+const st=performance.now();
+// physics state
+let tail,legs,head,lastT=-1,dust;
+function reset(){
+tail=[];for(let i=0;i<12;i++)tail.push({x:0,y:0,px:0,py:0});
+legs=[0,1,2,3].map(i=>({ph:[0,.5,.5,0][i]+(i>1?.08:0)}));
+head={a:0,v:0};dust=[];
+}
+reset();
+const SEG=9;
+function bodyPos(t){return {x:(t*70)%1700-200,y:430+Math.sin(t*2*Math.PI*1.1)*4}}
+function ik(hx,hy,fx,fy,l1,l2,bend){let dx=fx-hx,dy=fy-hy,d=Math.min(Math.hypot(dx,dy),l1+l2-.01);let a=Math.atan2(dy,dx),b=Math.acos((l1*l1+d*d-l2*l2)/(2*l1*d));let k=a+b*bend;return [hx+Math.cos(k)*l1,hy+Math.sin(k)*l1]}
+function step(t,dt){
+const b=bodyPos(t);
+// tail: verlet chain with gravity + periodic flick impulse
+const flick=Math.sin(t*1.7)>.92?1:0;
+const ax=b.x-150,ay=b.y-48;
+tail[0].x=ax;tail[0].y=ay;
+for(let i=1;i<tail.length;i++){const p=tail[i];let vx=(p.x-p.px)*.97,vy=(p.y-p.py)*.97;p.px=p.x;p.py=p.y;p.x+=vx+flick*Math.sin(t*20)*1.5*(i/12);p.y+=vy+900*dt*dt;}
+for(let k=0;k<6;k++)for(let i=1;i<tail.length;i++){const a=tail[i-1],p=tail[i];let dx=p.x-a.x,dy=p.y-a.y,d=Math.hypot(dx,dy)||1,f=(d-SEG)/d;if(i>1){a.x+=dx*f*.5;a.y+=dy*f*.5;p.x-=dx*f*.5;p.y-=dy*f*.5}else{p.x-=dx*f;p.y-=dy*f}}
+// head: damped spring toward grazing/look target
+const tgt=(Math.sin(t*.4)>.3?.55:-.1)+Math.sin(t*3)*.03;
+head.v+=((tgt-head.a)*30-head.v*6)*dt;head.a+=head.v*dt;
+}
+function draw(t){
+x.fillStyle='#000';x.fillRect(0,0,1280,720);
+let g=x.createLinearGradient(0,0,0,720);g.addColorStop(0,'#0d1b2e');g.addColorStop(.6,'#2b3d55');g.addColorStop(.62,'#24331f');g.addColorStop(1,'#0e150c');x.fillStyle=g;x.fillRect(0,0,1280,720);
+// grid of math
+x.strokeStyle='rgba(120,200,255,.07)';for(let i=0;i<1280;i+=40){x.beginPath();x.moveTo(i,0);x.lineTo(i,720);x.stroke()}for(let i=0;i<720;i+=40){x.beginPath();x.moveTo(0,i);x.lineTo(1280,i);x.stroke()}
+const b=bodyPos(t),gy=560;
+x.fillStyle='rgba(0,0,0,.35)';x.beginPath();x.ellipse(b.x,gy+4,170,14,0,0,7);x.fill();
+const hips=[[b.x+95,b.y+20],[b.x+70,b.y+20],[b.x-100,b.y+15],[b.x-75,b.y+15]];
+const cyc=1.1,stride=70/cyc;
+const legPts=[];
+legs.forEach((L,i)=>{const p=((t*cyc+L.ph)%1);let fx,fy;const hx=hips[i][0];
+if(p<.6){fx=hx+stride*(.3-p/.6*.6)*1;fy=gy}else{const s=(p-.6)/.4;fx=hx+stride*(-.3+s*.6);fy=gy-Math.sin(s*Math.PI)*28;}
+const kn=ik(hx,hips[i][1],fx,fy,70,72,i<2?1:-1);legPts.push([hips[i],kn,[fx,fy],i%2]);
+if(p<.62&&p>.58)dust.push({x:fx,y:gy,vx:(Math.random()-.5)*40,vy:-Math.random()*40,l:1});});
+const drawLeg=(L,s)=>{x.strokeStyle=s;x.lineCap='round';x.lineWidth=22;x.beginPath();x.moveTo(...L[0]);x.lineTo(...L[1]);x.stroke();x.lineWidth=14;x.beginPath();x.moveTo(...L[1]);x.lineTo(...L[2]);x.stroke();x.fillStyle='#222';x.fillRect(L[2][0]-9,L[2][1]-10,18,12)};
+legPts.filter(l=>l[3]).forEach(l=>drawLeg(l,'#b9b2a8'));
+// tail
+x.strokeStyle='#d8d2c8';x.lineWidth=6;x.beginPath();x.moveTo(tail[0].x,tail[0].y);tail.forEach(p=>x.lineTo(p.x,p.y));x.stroke();
+const e=tail[tail.length-1];x.fillStyle='#3a2a20';x.beginPath();x.ellipse(e.x,e.y+6,7,13,0,0,7);x.fill();
+// body: breathing ellipse superposition
+const br=1+Math.sin(t*2.2)*.02;
+x.fillStyle='#efe9df';x.beginPath();x.ellipse(b.x,b.y,165,72*br,0,0,7);x.fill();
+x.save();x.clip();x.fillStyle='#1c1714';
+for(let i=0;i<6;i++){x.beginPath();const cx=b.x-120+i*55+Math.sin(i*7)*20,cy=b.y-30+Math.cos(i*5)*35;for(let a=0;a<6.3;a+=.3){const r=26+Math.sin(a*3+i)*8;x.lineTo(cx+Math.cos(a)*r,cy+Math.sin(a)*r)}x.fill()}
+// muscle shading from leg angles
+legPts.forEach(l=>{const a=Math.atan2(l[1][1]-l[0][1],l[1][0]-l[0][0]);x.fillStyle='rgba(0,0,0,'+(0.1+Math.abs(a-1.57)*.4)+')';x.beginPath();x.ellipse(l[0][0],l[0][1]-10,30,40,a-1.57,0,7);x.fill()});
+x.restore();
+x.fillStyle='#f2b8b0';x.beginPath();x.ellipse(b.x-70,b.y+62,26,14,0,0,7);x.fill();
+legPts.filter(l=>!l[3]).forEach(l=>drawLeg(l,'#f3eee6'));
+// neck/head
+x.save();x.translate(b.x+140,b.y-30);x.rotate(head.a);
+x.fillStyle='#efe9df';x.beginPath();x.moveTo(-20,-30);x.lineTo(70,-25);x.lineTo(70,25);x.lineTo(-20,60);x.fill();
+x.translate(80,0);x.fillStyle='#efe9df';x.beginPath();x.ellipse(15,10,40,30,.5,0,7);x.fill();
+x.fillStyle='#1c1714';x.beginPath();x.ellipse(5,0,18,22,.3,0,7);x.fill();
+x.fillStyle='#e8a99f';x.beginPath();x.ellipse(40,35,22,17,.5,0,7);x.fill();
+x.fillStyle='#000';x.beginPath();x.arc(15,-5,4,0,7);x.fill();
+const ear=Math.sin(t*5)*.2;x.fillStyle='#d8cfc2';x.beginPath();x.ellipse(-15,-22,18,7,-.6+ear,0,7);x.fill();
+x.strokeStyle='#e9dfc0';x.lineWidth=5;x.beginPath();x.moveTo(0,-25);x.quadraticCurveTo(-5,-45,10,-50);x.stroke();
+x.restore();
+// dust particles
+dust.forEach(d=>{d.x+=d.vx/60;d.y+=d.vy/60;d.vy+=2;d.l-=.02;x.fillStyle='rgba(180,160,120,'+Math.max(d.l,0)*.5+')';x.beginPath();x.arc(d.x,d.y,3,0,7);x.fill()});dust=dust.filter(d=>d.l>0);
+// debug overlay: skeleton
+x.strokeStyle='rgba(0,255,200,.6)';x.lineWidth=1.5;legPts.forEach(l=>{x.beginPath();x.moveTo(...l[0]);x.lineTo(...l[1]);x.lineTo(...l[2]);x.stroke();[l[0],l[1],l[2]].forEach(p=>{x.beginPath();x.arc(p[0],p[1],3,0,7);x.stroke()})});
+x.beginPath();tail.forEach((p,i)=>i?x.lineTo(p.x,p.y):x.moveTo(p.x,p.y));x.stroke();
+x.fillStyle='#bfe';x.font='22px monospace';x.fillText('VACA PROCEDURAL — física en vivo',30,44);
+x.font='15px monospace';x.fillStyle='rgba(190,240,255,.8)';
+['patas: cinemática inversa 2 huesos','cola: cadena Verlet, '+tail.length+' nodos, g=900','cabeza: resorte amortiguado θ='+head.a.toFixed(2),'t='+t.toFixed(2)+'s  sin modelos, sin keyframes'].forEach((s,i)=>x.fillText(s,30,74+i*22));
+}
+function frame(){let t=((performance.now()-st)/1000+T0)%DUR;
+if(t<lastT||lastT<0){reset();const b=bodyPos(t);tail.forEach((p,i)=>{p.x=p.px=b.x-150;p.y=p.py=b.y-48+i*SEG});for(let s=0;s<60;s++)step(t,1/60)}
+const dt=Math.min(1/30,Math.max(1e-3,t-lastT));step(t,dt);lastT=t;draw(t);requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

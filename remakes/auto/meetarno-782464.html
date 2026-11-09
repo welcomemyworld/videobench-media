@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>X Vision</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#s{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+</style></head><body>
+<canvas id="s" width="1280" height="720"></canvas>
+<script>
+window.DUR=24;
+const c=document.getElementById('s'),x=c.getContext('2d');
+function fit(){const k=Math.min(innerWidth/1280,innerHeight/720);c.style.transform=`scale(${k}) translate(-50%,-50%)`;c.style.left='50%';c.style.top='50%';c.style.transform=`translate(-50%,-50%) scale(${k})`;}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const off=parseFloat(q.get('t')||0)*1000;const t0=performance.now()-off;
+const W=1280,H=720,F='Helvetica Neue,Arial,sans-serif';
+const cl=v=>Math.max(0,Math.min(1,v));
+const eo=v=>1-Math.pow(1-cl(v),3);
+const eb=v=>{v=cl(v);const s=1.7;return 1+(s+1)*Math.pow(v-1,3)+s*Math.pow(v-1,2)};
+// win(t,a,b): 0..1 in, holds, out
+function win(t,a,b,f=.35){return Math.min(eo((t-a)/f),eo((b-t)/f));}
+const P=[];for(let i=0;i<90;i++)P.push({x:Math.random()*W,y:Math.random()*H,z:Math.random()*2+.3});
+function txt(s,X,Y,sz,col,al,a='center',w='800'){x.globalAlpha=al;x.fillStyle=col;x.font=`${w} ${sz}px ${F}`;x.textAlign=a;x.textBaseline='middle';x.fillText(s,X,Y);x.globalAlpha=1;}
+function logoX(cx,cy,s,a,glow){x.save();x.translate(cx,cy);x.globalAlpha=a;x.shadowColor='#1d9bf0';x.shadowBlur=glow;
+x.fillStyle='#fff';x.beginPath();x.moveTo(-s,-s);x.lineTo(-s*.45,-s);x.lineTo(s,s);x.lineTo(s*.45,s);x.closePath();x.fill();
+x.fillStyle='#1d9bf0';x.beginPath();x.moveTo(s*.85,-s);x.lineTo(s*.62,-s);x.lineTo(-s*.85,s);x.lineTo(-s*.62,s);x.closePath();x.fill();x.restore();}
+function rr(X,Y,w,h,r){x.beginPath();x.roundRect(X,Y,w,h,r);}
+function bg(t){x.fillStyle='#000';x.fillRect(0,0,W,H);
+const g=x.createRadialGradient(W/2+Math.sin(t*.4)*200,H/2,0,W/2,H/2,700);g.addColorStop(0,'rgba(29,155,240,.18)');g.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=g;x.fillRect(0,0,W,H);
+x.strokeStyle='rgba(255,255,255,.04)';x.lineWidth=1;const o=(t*30)%64;
+for(let i=-64;i<W+64;i+=64){x.beginPath();x.moveTo(i+o,0);x.lineTo(i+o,H);x.stroke();}
+for(let j=-64;j<H+64;j+=64){x.beginPath();x.moveTo(0,j+o);x.lineTo(W,j+o);x.stroke();}
+for(const p of P){const yy=(p.y-t*20*p.z+H*10)%H;x.fillStyle=`rgba(29,155,240,${.15*p.z})`;x.fillRect(p.x,yy,p.z*1.5,p.z*1.5);}}
+function flash(t,at){const v=1-cl(Math.abs(t-at)/.12);if(v>0){x.fillStyle=`rgba(255,255,255,${v*.6})`;x.fillRect(0,0,W,H);}}
+function frame(){
+const t=((performance.now()-t0)/1000)%DUR;bg(t);
+// S1 0-3.5 punch words
+const words=['POST.','ENGAGE.','GROW.'];
+for(let i=0;i<3;i++){const a=.2+i*.9,b=a+.9;if(t>a&&t<b){const k=eb((t-a)/.25);const al=win(t,a,b,.15);
+x.save();x.translate(W/2,H/2);x.scale(.6+.4*k,.6+.4*k);txt(words[i],0,0,170,i==2?'#1d9bf0':'#fff',al,'center','900');x.restore();}}
+if(t>3&&t<4.6){const k=win(t,3,4.6,.3);txt('Your audience is out there.',W/2,H/2,58,'#fff',k);txt('They just can’t see you yet.',W/2,H/2+70,34,'#8b98a5',k,'center','500');}
+// S2 logo reveal 4.6-8
+if(t>4.6&&t<8.4){const k=eb((t-4.6)/.6),al=win(t,4.6,8.4,.3);logoX(W/2-190,H/2,70*k,al,40);
+txt('X',W/2-50,H/2-5,0,'#fff',0);
+x.save();x.globalAlpha=al;x.font=`900 110px ${F}`;x.textAlign='left';x.textBaseline='middle';
+const rv=eo((t-5.0)/.6);x.beginPath();x.rect(W/2-100,H/2-80,520*rv,160);x.clip();x.fillStyle='#fff';x.fillText('X Vision',W/2-100,H/2);x.restore();
+txt('See further. Grow faster.',W/2+40,H/2+90,28,'#1d9bf0',al*eo((t-5.8)/.5),'center','600');}
+// S3 dashboard 8.4-15
+if(t>8.4&&t<15.2){const al=win(t,8.4,15.2,.4),sl=1-eo((t-8.4)/.6);
+x.save();x.globalAlpha=al;x.translate(0,sl*80);
+txt('Know exactly what works.',W/2,90,48,'#fff',1);
+rr(140,140,640,460,22);x.fillStyle='rgba(22,24,28,.92)';x.fill();x.strokeStyle='rgba(29,155,240,.4)';x.stroke();
+txt('Followers',175,180,22,'#8b98a5',1,'left','600');
+const g=eo((t-9)/3.5);const n=Math.floor(1200+g*47800);txt(n.toLocaleString('en-US'),175,225,52,'#fff',1,'left','900');
+txt('+'+Math.floor(g*3880)+'%',745,225,30,'#00ba7c',1,'right','800');
+x.beginPath();const pts=60;for(let i=0;i<=pts*g;i++){const u=i/pts;const v=Math.pow(u,2.3)+Math.sin(u*20)*.02;const X=175+u*570,Y=560-v*270;i?x.lineTo(X,Y):x.moveTo(X,Y);}
+x.strokeStyle='#1d9bf0';x.lineWidth=4;x.shadowColor='#1d9bf0';x.shadowBlur=18;x.stroke();x.shadowBlur=0;
+const cards=[['Best time to post','9:14 AM'],['Top hook','“Thread 🧵”'],['Reach score','98/100']];
+cards.forEach((cd,i)=>{const k=eb((t-9.6-i*.35)/.5);x.save();x.translate(820+(1-k)*200,150+i*155);x.globalAlpha=al*cl(k);
+rr(0,0,320,130,18);x.fillStyle='rgba(29,155,240,.12)';x.fill();x.strokeStyle='rgba(29,155,240,.5)';x.stroke();
+txt(cd[0],24,40,20,'#8b98a5',1,'left','600');txt(cd[1],24,88,36,'#fff',1,'left','900');x.restore();});
+x.restore();}
+// S4 features 15.2-19.5
+const feats=[['AI Analytics','Read the room in real time'],['Smart Scheduling','Post when it matters'],['Growth Insights','Turn views into followers']];
+feats.forEach((f,i)=>{const a=15.2+i*1.4,b=a+1.4;if(t>a&&t<b){const al=win(t,a,b,.2),k=eb((t-a)/.4);
+txt('0'+(i+1),W/2,H/2-110,40,'#1d9bf0',al,'center','800');
+x.save();x.translate(W/2,H/2);x.scale(.8+.2*k,.8+.2*k);txt(f[0],0,0,96,'#fff',al,'center','900');x.restore();
+txt(f[1],W/2,H/2+85,32,'#8b98a5',al,'center','500');
+x.fillStyle='#1d9bf0';x.globalAlpha=al;x.fillRect(W/2-150,H/2+130,300*eo((t-a)/1),4);x.globalAlpha=1;}});
+// S5 CTA 19.5-24
+if(t>19.5){const al=win(t,19.5,DUR+5,.4)*cl((DUR-t)/.4),k=eb((t-19.5)/.6);
+logoX(W/2,H/2-150,50*k,al,50);
+txt('Grow on X.',W/2,H/2-20,104,'#fff',al*eo((t-19.8)/.4),'center','900');
+txt('With vision.',W/2,H/2+80,56,'#1d9bf0',al*eo((t-20.3)/.4),'center','800');
+const b=eo((t-21)/.5);x.save();x.globalAlpha=al*b;rr(W/2-170,H/2+150,340,66,33);x.fillStyle='#1d9bf0';x.shadowColor='#1d9bf0';x.shadowBlur=30+10*Math.sin(t*5);x.fill();x.restore();
+txt('Start free → xvision',W/2,H/2+183,26,'#fff',al*b,'center','800');}
+[0.2,1.1,2.0,4.6,8.4,15.2,16.6,18,19.5].forEach(a=>flash(t,a));
+requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AURA // Spatial Engine</title>
+<style>
+  body { 
+    margin: 0; 
+    background: #000; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    height: 100vh; 
+    overflow: hidden; 
+  }
+  canvas { 
+    width: 1280px; 
+    height: 720px; 
+    max-width: 100vw; 
+    max-height: 100vh; 
+    object-fit: contain;
+    box-shadow: 0 0 80px rgba(0,0,0,0.9);
+  }
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', { alpha: false });
+window.DUR = 15;
+
+const C_BG = '#05070A';
+const C_CYAN = '#00F0FF';
+const C_MAGENTA = '#FF003C';
+const C_YELLOW = '#FFEA00';
+const C_WHITE = '#FFFFFF';
+const C_DIM = 'rgba(255,255,255,0.4)';
+
+const clamp = (v, min=0, max=1) => Math.max(min, Math.min(max, v));
+const easeOutExpo = t => t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
+const easeInOutCubic = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const easeOutElastic = t => {
+  if(t===0 || t===1) return t;
+  const c4 = (2 * Math.PI) / 3;
+  return Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * c4) + 1;
+};
+const easeOutBack = t => {
+  const c1 = 1.70158, c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+};
+
+function hash(n) {
+  let s = Math.sin(n) * 43758.5453123;
+  return s - Math.floor(s);
+}
+
+function T(t, start, dur, easeFn=null) {
+  let p = clamp((t - start) / dur);
+  return easeFn ? easeFn(p) : p;
+}
+
+function rotate3D(x, y, z, ax, ay, az) {
+  let cx = Math.cos(ax), sx = Math.sin(ax);
+  let cy = Math.cos(ay), sy = Math.sin(ay);
+  let cz = Math.cos(az), sz = Math.sin(az);
+  let y1 = y * cx - z * sx, z1 = y * sx + z * cx;
+  let x2 = x * cy + z1 * sy, z2 = -x * sy + z1 * cy;
+  let x3 = x2 * cz - y1 * sz, y3 = x2 * sz + y1 * cz;
+  return {x: x3, y: y3, z: z2};
+}
+
+function project(x, y, z, fov=600, dist=800) {
+  let scale = fov / Math.max(1, fov + z + dist);
+  return {x: x * scale, y: y * scale, scale};
+}
+
+function drawText(ctx, text, x, y, font, color, align='center', baseline='middle', tracking=0, alpha=1, scaleX=1, scaleY=1) {
+  if(alpha <= 0 || !text) return;
+  ctx.save();
+  ctx.font = font;
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = baseline;
+  ctx.globalAlpha = alpha;
+  ctx.translate(x, y);
+  ctx.scale(scaleX, scaleY);
+  
+  let chars = text.split('');
+  let widths = chars.map(c => ctx.measureText(c).width);
+  let totalW = widths.reduce((a,b)=>a+b, 0) + tracking * (chars.length - 1);
+  
+  let startX = align === 'center' ? -totalW/2 : (align === 'left' ? 0 : -totalW);
+  let currX = startX;
+  for(let i=0; i<chars.length; i++) {
+    ctx.fillText(chars[i], currX + widths[i]/2, 0);
+    currX += widths[i] + tracking;
+  }
+  ctx.restore();
+}
+
+function drawAberrationText(ctx, text, x, y, font, offset, tracking=0, alpha=1) {
+  if(alpha <= 0) return;
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  drawText(ctx, text, x - offset, y, font, C_MAGENTA, 'center', 'middle', tracking, alpha * 0.9);
+  drawText(ctx, text, x + offset, y, font, C_CYAN, 'center', 'middle', tracking, alpha * 0.9);
+  drawText(ctx, text, x, y, font, C_WHITE, 'center', 'middle', tracking, alpha * 0.6);
+  ctx.restore();
+}
+
+function drawFlatGrid(ctx, t, scale=1, alpha=0.1) {
+  ctx.save();
+  ctx.scale(scale, scale);
+  let panX = (t * 30) % 60;
+  let panY = (t * 15) % 60;
+  ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
+  ctx.lineWidth = 1 / scale;
+  ctx.beginPath();
+  for(let x = -1500; x <= 1500; x+=60) { ctx.moveTo(x + panX, -1000); ctx.lineTo(x + panX, 1000); }
+  for(let y = -1000; y <= 1000; y+=60) { ctx.moveTo(-1500, y + panY); ctx.lineTo(1500, y + panY); }
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawTorusKnot(ctx, t, scale, alpha) {
+  if(alpha <= 0 || scale <= 0) return;
+  let R = 120 * scale, r = 40 * scale;
+  let points = [], segments = 200;
+  let rotX = t * 0.4, rotY = t * 0.6, rotZ = t * 0.2;
+  
+  for(let i=0; i<=segments; i++) {
+    let u = (i / segments) * Math.PI * 2;
+    let cu = Math.cos(u * 5), su = Math.sin(u * 5);
+    let cp = Math.cos(u * 3), sp = Math.sin(u * 3);
+    let x = (R + r * cu) * cp, y = (R + r * cu) * sp, z = r * su;
+    let p3 = rotate3D(x, y, z, rotX, rotY, rotZ);
+    let proj = project(p3.x, p3.y, p3.z);
+    points.push({x: proj.x, y: proj.y, z: p3.z});
+  }
+  
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.lineCap = 'round';
+  for(let i=0; i<segments; i++) {
+    let p1 = points[i], p2 = points[i+1];
+    let depth = clamp((p1.z + 150) / 300);
+    ctx.strokeStyle = `rgba(0, 240, 255, ${alpha * (0.1 + depth * 0.9)})`;
+    ctx.lineWidth = (1 + depth * 2.5) * scale;
+    ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawHUD(ctx, t, p) {
+  if(p<=0) return;
+  ctx.save();
+  ctx.globalAlpha = p * 0.6;
+  ctx.strokeStyle = C_CYAN;
+  ctx.lineWidth = 1;
+  ctx.save(); ctx.rotate(t * 0.2); ctx.setLineDash([2, 10]);
+  ctx.beginPath(); ctx.arc(0,0, 280, 0, Math.PI*2); ctx.stroke(); ctx.restore();
+  ctx.save(); ctx.rotate(-t * 0.15); ctx.setLineDash([20, 5, 5, 5]);
+  ctx.beginPath(); ctx.arc(0,0, 240, 0, Math.PI*2); ctx.stroke(); ctx.restore();
+  ctx.setLineDash([]);
+  for(let i=0; i<72; i++) {
+    let a = (i/72) * Math.PI * 2, len = i%6===0 ? 12 : 4;
+    ctx.beginPath(); ctx.moveTo(Math.cos(a)*300, Math.sin(a)*300);
+    ctx.lineTo(Math.cos(a)*(300+len), Math.sin(a)*(300+len)); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawHit(ctx, t, start, text, color, y) {
+  let pIn = T(t, start, 0.4, easeOutExpo);
+  let pOut = T(t, start + 0.7, 0.3, easeInOutCubic);
+  let alpha = pIn * (1 - pOut);
+  if(alpha <= 0) return;
+  let slide = (1 - pIn) * -150 + pOut * 150;
+  let tracking = (1 - pIn) * 60 + pOut * -20;
+  
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = color;
+  ctx.fillRect(-640 + slide, y + 50, pIn * 1280 * (1 - pOut), 2);
+  ctx.shadowBlur = 15; ctx.shadowColor = color;
+  drawText(ctx, text, slide + 8, y + 8, "900 84px 'Arial Black', sans-serif", color, 'center', 'middle', tracking, alpha * 0.8);
+  drawText(ctx, text, slide, y, "900 84px 'Arial Black', sans-serif", C_WHITE, 'center', 'middle', tracking, alpha);
+  ctx.restore();
+}
+
+function drawImplosion(ctx, t, start, dur) {
+  let p = T(t, start, dur, easeInOutCubic);
+  if(p<=0 || p>=1) return;
+  for(let i=0; i<150; i++) {
+    let seed = i * 99.9, angle = hash(seed) * Math.PI * 2;
+    let dist = (hash(seed+1) * 1200 + 200) * (1 - p);
+    ctx.globalAlpha = p * 0.8; 
+    ctx.fillStyle = i%2 ? C_WHITE : C_CYAN;
+    ctx.fillRect(Math.cos(angle)*dist, Math.sin(angle)*dist, 4, 4);
+  }
+}
+
+function drawSparks(ctx, t, burstTime) {
+  let dt = t - burstTime;
+  if (dt < 0 || dt > 2) return;
+  for(let i=0; i<150; i++) {
+    let seed = i * 123.456, angle = hash(seed) * Math.PI * 2;
+    let speed = hash(seed+1) * 1200 + 300, k = 3;
+    let dist = speed * (1 - Math.exp(-k * dt)) / k;
+    let life = clamp(1 - dt / 1.5);
+    ctx.globalAlpha = life;
+    ctx.fillStyle = i%3===0 ? C_CYAN : (i%3===1 ? C_MAGENTA : C_WHITE);
+    ctx.beginPath(); ctx.arc(Math.cos(angle)*dist, Math.sin(angle)*dist, 3*life, 0, Math.PI*2); ctx.fill();
+  }
+}
+
+function drawCorners(ctx, t) {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+  ctx.lineWidth = 1;
+  let pad = 40, len = 15, w = 600, h = 320;
+  ctx.beginPath();
+  ctx.moveTo(-w, -h+len); ctx.lineTo(-w, -h); ctx.lineTo(-w+len, -h);
+  ctx.moveTo(w-len, -h); ctx.lineTo(w, -h); ctx.lineTo(w, -h+len);
+  ctx.moveTo(-w, h-len); ctx.lineTo(-w, h); ctx.lineTo(-w+len, h);
+  ctx.moveTo(w-len, h); ctx.lineTo(w, h); ctx.lineTo(w, h-len);
+  ctx.stroke();
+  
+  ctx.font = "11px 'Courier New', monospace";
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  let frame = Math.floor(t * 30).toString().padStart(4, '0');
+  let sec = Math.floor(t).toString().padStart(2, '0');
+  ctx.fillText(`TC 00:00:${sec}:${frame}`, -w, -h - 12);
+  ctx.textAlign = 'right'; ctx.fillText("AURA_OS v2.4", w, -h - 12);
+  if (Math.floor(t * 2) % 2 === 0) {
+    ctx.fillStyle = C_MAGENTA; ctx.fillText("● REC", w, h + 20);
+  }
+  ctx.restore();
+}
+
+function getShake(t) {
+  let impacts = [0, 3.5, 7.2, 8.3, 9.4, 11.0];
+  let sx = 0, sy = 0;
+  for(let imp of impacts) {
+    let dt = t - imp;
+    if(dt > 0 && dt < 0.25) {
+      let mag = Math.pow(1 - dt/0.25, 2) * 12;
+      sx += (hash(t*1000)-0.5) * mag;
+      sy += (hash(t*1000+1)-0.5) * mag;
+    }
+  }
+  return {x: sx, y: sy};
+}
+
+function render(t) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = C_BG;
+  ctx.fillRect(0, 0, 1280, 720);
+  
+  ctx.translate(640, 360);
+  let shake = getShake(t);
+  ctx.save();
+  ctx.translate(shake.x, shake.y);
+
+  // Ambient
+  drawFlatGrid(ctx, t, 1, 0.04);
+  for(let i=0; i<80; i++) {
+    let px = (((hash(i)*2000 + t * (hash(i+100)*40 - 20)) % 2000) + 2000) % 2000 - 1000;
+    let py = (((hash(i+200)*1200 + t * (hash(i+300)*20 - 10)) % 1200) + 1200) % 1200 - 600;
+    ctx.globalAlpha = 0.1 + hash(i+400)*0.3;
+    ctx.fillStyle = i%3===0 ? C_CYAN : C_WHITE;
+    ctx.fillRect(px, py, 2, 2);
+  }
+  ctx.globalAlpha = 1;
+
+  // Scene 1: 0 - 3.5
+  let text1Alpha = T(t, 0.2, 0.3) * (1 - T(t, 1.2, 0.4));
+  drawText(ctx, "FORM FOLLOWS MOTION", 0, 0, "300 36px 'Helvetica Neue', Arial, sans-serif", C_WHITE, 'center', 'middle', T(t, 0.2, 1.5, easeOutExpo) * 40, text1Alpha);
+  
+  let s1 = T(t, 1.0, 1.5, easeOutBack), s2 = 1 - T(t, 3.3, 0.3, easeInOutCubic);
+  drawTorusKnot(ctx, t * s1, s1 * s2, s1 * s2);
+  let aPres = T(t, 2.5, 0.5) * (1 - T(t, 3.2, 0.3));
+  drawText(ctx, "PRESENTING", 0, -140, "600 16px 'Courier New', monospace", C_CYAN, 'center', 'middle', 12, aPres);
+
+  // Scene 2: 3.5 - 7.0
+  let s2Alpha = 1 - T(t, 6.8, 0.3);
+  let s2Scale = 1 - T(t, 6.8, 0.5, easeInOutCubic) * 0.3;
+  if (s2Alpha > 0) {
+    ctx.save();
+    ctx.globalAlpha = s2Alpha;
+    ctx.scale(s2Scale, s2Scale);
+    let auraP = T(t, 3.5, 1.5, easeOutExpo);
+    let scaleAura = 0.8 + 0.2 * easeOutElastic(auraP);
+    ctx.save(); ctx.scale(scaleAura, scaleAura);
+    drawAberrationText(ctx, "AURA", 0, -10, "900 160px 'Arial Black', Impact, sans-serif", (1 - auraP) * 60, 15 * auraP);
+    ctx.restore();
+    
+    let subP = T(t, 4.2, 1.0, easeOutExpo);
+    drawText(ctx, "SPATIAL COMPUTING ENGINE", 0, 90, "500 20px 'Courier New', monospace", C_WHITE, 'center', 'middle', 20 * subP, subP);
+    drawHUD(ctx, t, T(t, 4.0, 1.0, easeOutExpo));
+    
+    let hudAlpha = T(t, 4.5, 0.5) * (1 - T(t, 6.5, 0.5));
+    if(hudAlpha > 0) {
+      ctx.font = "12px 'Courier New', monospace"; ctx.fillStyle = C_CYAN;
+      for(let i=0; i<8; i++) {
+        let a = i * Math.PI/4 + t*0.1, rx = Math.cos(a) * 340, ry = Math.sin(a) * 340;
+        ctx.globalAlpha = hudAlpha * s2Alpha * 0.8;
+        let val = Math.floor(hash(Math.floor(t*15) + i) * 65535).toString(16).toUpperCase().padStart(4, '0');
+        ctx.fillText(`0x${val}`, rx, ry);
+        ctx.beginPath(); ctx.moveTo(rx-30, ry+4); ctx.lineTo(rx-10, ry+4); ctx.strokeStyle = C_CYAN; ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  // Scene 3: 7.0 - 11.0
+  let g1 = T(t, 7.0, 0.2) * (1 - T(t, 8.2, 0.2));
+  if (g1 > 0) { ctx.save(); drawFlatGrid(ctx, t * 8, 1.2, g1 * 0.15); ctx.restore(); }
+
+  let g2 = T(t, 8.2, 0.2) * (1 - T(t, 9.3, 0.2));
+  if (g2 > 0) {
+    ctx.save(); ctx.globalAlpha = g2; ctx.strokeStyle = C_MAGENTA; ctx.lineWidth = 2;
+    ctx.beginPath();
+    for(let i=0; i<=40; i++) {
+      let x = -700 + i * 35;
+      let y = Math.sin(x * 0.008 + t * 6) * 120 + Math.cos(x*0.015 - t*4)*60;
+      if(i===0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      ctx.fillStyle = C_CYAN; ctx.fillRect(x-3, y-3, 6, 6);
+    }
+    ctx.stroke(); ctx.restore();
+  }
+
+  let g3 = T(t, 9.3, 0.2) * (1 - T(t, 10.5, 0.2));
+  if (g3 > 0) {
+    ctx.save(); ctx.strokeStyle = C_YELLOW;
+    let pScale = T(t, 9.3, 1.5);
+    for(let i=0; i<10; i++) {
+      let s = ((pScale * 1.5 + i/10) % 1), size = s * 1000;
+      ctx.globalAlpha = g3 * (1 - s) * 0.8;
+      ctx.lineWidth = 3 * (1-s);
+      ctx.strokeRect(-size/2, -size/2, size, size);
+    }
+    ctx.restore();
+  }
+
+  drawHit(ctx, t, 7.2, "ZERO LATENCY", C_CYAN, -40);
+  drawHit(ctx, t, 8.3, "NEURAL SYNC", C_MAGENTA, 0);
+  drawHit(ctx, t, 9.4, "INFINITE CANVAS", C_YELLOW, 40);
+  drawImplosion(ctx, t, 10.5, 0.5);
+
+  // Scene 4: 11.0 - 13.5
+  drawSparks(ctx, t, 11.0);
+  let climaxP = T(t, 11.0, 2.0, easeOutExpo);
+  if(climaxP > 0 && t < 13.5) {
+    ctx.save(); ctx.globalCompositeOperation = 'screen';
+    let fade = 1 - T(t, 12.8, 0.7);
+    for(let i=0; i<6; i++) {
+      let p = (climaxP * 1.5 - i*0.08);
+      if(p < 0) continue;
+      ctx.lineWidth = 15 * (1 - p/1.5);
+      ctx.strokeStyle = i%2 ? C_CYAN : C_MAGENTA;
+      ctx.globalAlpha = fade * clamp(1 - p/1.5) * 0.4;
+      ctx.beginPath(); ctx.arc(0, 0, p * 1500, 0, Math.PI*2); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  let bigAuraP = T(t, 11.1, 0.9, easeOutElastic);
+  let bigAuraAlpha = bigAuraP * (1 - T(t, 12.8, 0.6));
+  if(bigAuraAlpha > 0) {
+    let pulse = 1 + Math.sin(t * 20) * 0.01;
+    ctx.save(); ctx.scale(bigAuraP * pulse, bigAuraP * pulse);
+    ctx.shadowBlur = 50; ctx.shadowColor = C_CYAN;
+    drawAberrationText(ctx, "AURA", 0, 0, "900 200px 'Arial Black', sans-serif", 5 + Math.sin(t*10)*5, 20, bigAuraAlpha);
+    ctx.restore();
+  }
+
+  // Scene 5: 13.5 - 15.0
+  let outP = T(t, 13.5, 0.5, easeOutExpo);
+  if (outP > 0) {
+    let lineW = outP * 360;
+    ctx.fillStyle = C_WHITE; ctx.globalAlpha = 1;
+    ctx.fillRect(-lineW/2, -10, lineW, 1); ctx.fillRect(-lineW/2, 10, lineW, 1);
+    let logoP = T(t, 13.9, 0.5, easeOutExpo);
+    if (logoP > 0) {
+      ctx.save(); ctx.translate(-190, 0); ctx.rotate(Math.PI/4);
+      ctx.strokeStyle = C_CYAN; ctx.lineWidth = 2; ctx.globalAlpha = logoP;
+      ctx.strokeRect(-12, -12, 24, 24); ctx.fillStyle = C_CYAN; ctx.fillRect(-4, -4, 8, 8);
+      ctx.restore();
+      drawText(ctx, "A U R A", 20, 0, "600 36px 'Helvetica Neue', sans-serif", C_WHITE, 'center', 'middle', 0, logoP);
+      drawText(ctx, "THE FUTURE IS IN MOTION", 0, 70, "400 14px 'Courier New', monospace", C_DIM, 'center', 'middle', 10, T(t, 14.2, 0.6));
+    }
+  }
+
+  ctx.restore(); // end shake
+
+  // Overlays
+  let grad = ctx.createRadialGradient(0, 0, 300, 0, 0, 900);
+  grad.addColorStop(0, 'rgba(5,7,10,0)'); grad.addColorStop(1, 'rgba(0,0,0,0.9)');
+  ctx.fillStyle = grad; ctx.fillRect(-640, -360, 1280, 720);
+  
+  ctx.fillStyle = 'rgba(255,255,255,0.015)';
+  for(let y=-360; y<360; y+=3) ctx.fillRect(-640, y, 1280, 1);
+  
+  drawCorners(ctx, t);
+
+  let flash = 1 - T(t, 0, 0.4, easeOutExpo);
+  if(flash > 0) { ctx.fillStyle = `rgba(255,255,255,${flash})`; ctx.fillRect(-640, -360, 1280, 720); }
+  
+  let fadeOut = T(t, 14.7, 0.3);
+  if(fadeOut > 0) { ctx.fillStyle = `rgba(0,0,0,${fadeOut})`; ctx.fillRect(-640, -360, 1280, 720); }
+}
+
+let urlParams = new URLSearchParams(window.location.search);
+let startTime = parseFloat(urlParams.get('t')) || 0;
+let t0 = performance.now();
+
+function loop(now) {
+  let t = ((now - t0) / 1000 + startTime) % window.DUR;
+  render(t);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

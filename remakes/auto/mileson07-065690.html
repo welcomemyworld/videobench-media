@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>芝士相机 · 让他也会拍你</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}
+#tip{position:absolute;left:10px;bottom:8px;color:#888;font:12px sans-serif}
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<div id="tip">点击开启声音</div>
+<script>
+window.DUR=32;
+const cv=document.getElementById('c'),x=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px'}
+fit();addEventListener('resize',fit);
+const q=new URLSearchParams(location.search);const T0=parseFloat(q.get('t')||'0')||0;
+const F='"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif';
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),E=v=>{v=cl(v);return v<.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2};
+const R=(a,b,t)=>cl((t-a)/(b-a));
+// ---------- audio ----------
+let A=null,last=-1;
+function initA(){if(A){A.resume();return}try{A=new (window.AudioContext||window.webkitAudioContext)();document.getElementById('tip').style.display='none'}catch(e){}}
+addEventListener('click',initA);addEventListener('keydown',initA);initA();
+function tone(f,d,v,type='sine',delay=0){if(!A||A.state!=='running')return;const o=A.createOscillator(),g=A.createGain(),n=A.currentTime+delay;o.type=type;o.frequency.value=f;g.gain.setValueAtTime(0,n);g.gain.linearRampToValueAtTime(v,n+.02);g.gain.exponentialRampToValueAtTime(.0001,n+d);o.connect(g);g.connect(A.destination);o.start(n);o.stop(n+d+.05)}
+function shutter(){if(!A||A.state!=='running')return;const b=A.createBuffer(1,A.sampleRate*.12,A.sampleRate),d=b.getChannelData(0);for(let i=0;i<d.length;i++){const k=i/d.length;d[i]=(Math.random()*2-1)*(k<.3?1:.5)*(1-k)}const s=A.createBufferSource(),f=A.createBiquadFilter(),g=A.createGain();f.type='highpass';f.frequency.value=1800;g.gain.value=.5;s.buffer=b;s.connect(f);f.connect(g);g.connect(A.destination);s.start();tone(2400,.05,.15,'square')}
+const mf=m=>440*Math.pow(2,(m-69)/12);
+const prog=[[60,64,67,71],[57,60,64,67],[53,57,60,64],[55,59,62,65]];
+const mel=[76,79,81,79,76,74,72,74,76,72,69,72,74,77,76,74];
+const events={3.2:'sh',8:'ding',19.2:'sh',20.4:'sh',21.6:'sh',27:'ding',28.5:'ding'};
+function audioTick(t){
+ const step=Math.floor(t*4);if(step===last)return;
+ const prev=last;last=step;if(prev<0||step<prev){return}
+ const beat=step,bar=Math.floor(beat/8)%4,sad=t<6;
+ if(beat%8===0)prog[bar].forEach(m=>tone(mf(m-12+(sad?-1:0)),2.2,.035,'triangle'));
+ if(beat%2===0)tone(mf(prog[bar][0]-24),.4,.08,'sine');
+ if(t>6&&beat%2===0&&t<30)tone(mf(mel[(beat/2)%16]),.5,.05,'sine');
+ if(t>12&&t<30&&beat%4===2){tone(5000+Math.random()*2000,.03,.02,'square')}
+ for(const k in events){const e=+k;if(e>=(beat-1)/4&&e<beat/4+.0001&&e>=beat/4-.25){if(events[k]==='sh')shutter();else{tone(1318,.6,.08);tone(1760,.8,.06,'sine',.1);tone(2637,.9,.04,'sine',.2)}}}
+}
+// ---------- drawing ----------
+function rr(X,Y,w,h,r){x.beginPath();x.moveTo(X+r,Y);x.arcTo(X+w,Y,X+w,Y+h,r);x.arcTo(X+w,Y+h,X,Y+h,r);x.arcTo(X,Y+h,X,Y,r);x.arcTo(X,Y,X+w,Y,r);x.closePath()}
+function txt(s,X,Y,sz,a=1,col='#fff',al='center',w='600'){x.save();x.globalAlpha=cl(a);x.fillStyle=col;x.font=w+' '+sz+'px '+F;x.textAlign=al;x.textBaseline='middle';x.shadowColor='rgba(0,0,0,.4)';x.shadowBlur=12;x.fillText(s,X,Y);x.restore()}
+const bok=[...Array(40)].map((_,i)=>({x:(i*397)%1280,y:(i*211)%720,r:10+(i*37)%50,h:(i*53)%60,s:.2+(i%7)/10}));
+function bg(t,warm){const g=x.createLinearGradient(0,0,0,720);g.addColorStop(0,warm?'#2a1440':'#0b0d18');g.addColorStop(1,warm?'#8a3a4a':'#1a1d2a');x.fillStyle=g;x.fillRect(0,0,1280,720);
+ x.save();x.globalCompositeOperation='lighter';bok.forEach(b=>{const yy=(b.y-t*20*b.s+720)%720;x.globalAlpha=warm?.12:.05;x.fillStyle=`hsl(${20+b.h},90%,60%)`;x.beginPath();x.arc(b.x+Math.sin(t*.5+b.h)*20,yy,b.r,0,7);x.fill()});x.restore()}
+function scene(W,H,t,light){// park at sunset inside phone
+ const g=x.createLinearGradient(0,0,0,H);g.addColorStop(0,`hsl(${25},${60*light+10}%,${30+40*light}%)`);g.addColorStop(.6,`hsl(340,${50*light+10}%,${25+40*light}%)`);g.addColorStop(1,`hsl(280,30%,${10+20*light}%)`);x.fillStyle=g;x.fillRect(-W,-H,W*3,H*3);
+ x.fillStyle=`rgba(255,${200+40*light},150,${.4+.5*light})`;x.beginPath();x.arc(W*.7,H*.42,40,0,7);x.fill();
+ x.fillStyle=`hsl(150,20%,${8+12*light}%)`;for(let i=-3;i<9;i++){const tx=i*70;x.beginPath();x.arc(tx,H*.62,50+(i*13%20),0,7);x.fill();x.fillRect(tx-5,H*.62,10,H*.2)}
+ x.fillStyle=`hsl(100,20%,${10+15*light}%)`;x.fillRect(-W,H*.72,W*3,H);
+}
+function girl(X,Y,s,mood,t,pose){x.save();x.translate(X,Y);x.scale(s,s);
+ const sw=Math.sin(t*2)*3;
+ x.fillStyle='#3a2018';rr(-38,-170,76,130,36);x.fill();// hair back
+ x.strokeStyle='#f3cdb5';x.lineWidth=12;x.lineCap='round';x.beginPath();x.moveTo(-28,-60);x.lineTo(-48-pose*10,pose?-110:-10+sw);x.moveTo(28,-60);x.lineTo(48,-10-sw);x.stroke();
+ x.fillStyle='#ff8fab';x.beginPath();x.moveTo(-26,-70);x.lineTo(26,-70);x.lineTo(55,60);x.lineTo(-55,60);x.closePath();x.fill();
+ x.fillStyle='#fff';x.globalAlpha=.25;x.fillRect(-26,-70,52,8);x.globalAlpha=1;
+ x.strokeStyle='#f3cdb5';x.lineWidth=11;x.beginPath();x.moveTo(-15,60);x.lineTo(-17,130);x.moveTo(15,60);x.lineTo(17,130);x.stroke();
+ x.fillStyle='#f3cdb5';x.fillRect(-7,-90,14,22);x.beginPath();x.arc(0,-112,30,0,7);x.fill();
+ x.fillStyle='#3a2018';x.beginPath();x.arc(0,-120,32,Math.PI*1.05,Math.PI*1.95);x.fill();
+ x.fillStyle='#2a1a14';[-11,11].forEach(e=>{x.beginPath();if(mood>.5){x.lineWidth=3;x.strokeStyle='#2a1a14';x.arc(e,-112,5,Math.PI*1.1,Math.PI*1.9);x.stroke()}else{x.arc(e,-112,3.5,0,7);x.fill()}});
+ x.strokeStyle='#c0404f';x.lineWidth=3;x.beginPath();x.arc(0,-98-mood*6,10,mood>0?.2:Math.PI+.4,mood>0?Math.PI-.2:Math.PI*2-.4);x.stroke();
+ if(mood>.3){x.fillStyle='rgba(255,120,140,.45)';[-18,18].forEach(e=>{x.beginPath();x.arc(e,-102,6,0,7);x.fill()})}
+ x.restore()}
+function cheese(X,Y,s,rot=0){x.save();x.translate(X,Y);x.rotate(rot);x.scale(s,s);
+ const g=x.createLinearGradient(-60,-50,60,50);g.addColorStop(0,'#ffe066');g.addColorStop(1,'#ffb300');x.fillStyle=g;x.beginPath();x.moveTo(-60,40);x.lineTo(60,40);x.lineTo(60,-10);x.lineTo(-60,-45);x.closePath();x.fill();
+ x.fillStyle='#e69500';[[-25,10,10],[20,20,8],[35,-5,6],[-40,-20,5],[5,-8,5]].forEach(h=>{x.beginPath();x.arc(h[0],h[1],h[2],0,7);x.fill()});x.restore()}
+function heart(X,Y,s,a){x.save();x.globalAlpha=a;x.translate(X,Y);x.scale(s,s);x.fillStyle='#ff5f8a';x.beginPath();x.moveTo(0,8);x.bezierCurveTo(-14,-4,-8,-16,0,-8);x.bezierCurveTo(8,-16,14,-4,0,8);x.fill();x.restore()}
+// phone with viewfinder content fn
+function phone(cx,cy,s,inner){const W=300,H=600;x.save();x.translate(cx,cy);x.scale(s,s);
+ x.shadowColor='rgba(0,0,0,.6)';x.shadowBlur=40;x.fillStyle='#111';rr(-W/2-12,-H/2-12,W+24,H+24,44);x.fill();x.shadowBlur=0;
+ x.strokeStyle='#555';x.lineWidth=2;x.stroke();rr(-W/2,-H/2,W,H,34);x.save();x.clip();x.translate(-W/2,-H/2);inner(W,H);x.restore();
+ x.fillStyle='#000';rr(-45,-H/2+10,90,24,12);x.fill();x.restore()}
+function photoCard(X,Y,rot,s,mood,t,light,hue){x.save();x.translate(X,Y);x.rotate(rot);x.scale(s,s);x.shadowColor='rgba(0,0,0,.5)';x.shadowBlur=25;x.fillStyle='#fdfaf4';x.fillRect(-110,-140,220,280);x.shadowBlur=0;
+ x.beginPath();x.rect(-95,-125,190,210);x.save();x.clip();x.translate(-95,-125);x.filter=`hue-rotate(${hue}deg)`;scene(190,210,t,light);x.filter='none';girl(95,150,.55,mood,t,hue?1:0);x.restore();x.restore()}
+// ---------- main ----------
+let st=null;
+function frame(now){if(st===null)st=now;const t=((now-st)/1000+T0)%DUR;audioTick(t);draw(t);requestAnimationFrame(frame)}
+function draw(t){x.clearRect(0,0,1280,720);
+ if(t<6){// problem
+  bg(t,0);const a=R(0,.8,t)*(1-R(5.5,6,t));
+  phone(640,380,.95,(W,H)=>{x.save();x.translate(W/2,H/2);x.rotate(-.18+Math.sin(t*3)*.02);x.translate(-W/2,-H/2);scene(W,H,t,.15);girl(W*.78,H*.86,1.05,t>3.2?-.8:.2,t,0);x.restore();x.fillStyle='rgba(0,0,0,.35)';x.fillRect(0,0,W,H);
+   if(t>3.2&&t<3.5){x.fillStyle=`rgba(255,255,255,${1-(t-3.2)/.3})`;x.fillRect(0,0,W,H)}
+   x.fillStyle='#fff';x.beginPath();x.arc(W/2,H-50,26,0,7);x.fill()});
+  x.globalAlpha=a;txt('他很认真地在拍',260,280,40,R(.3,1.2,t));txt('可照片总是差一点',260,340,40,R(1.2,2,t));
+  const b=R(3.5,4.2,t);['构图歪了','光线太暗','腿被截短'].forEach((s,i)=>txt('✕ '+s,1010,250+i*70,32,R(3.5+i*.3,4+i*.3,t),'#ff7a8a'));
+  txt('“你就不能把我拍好看一点吗？”',640,670,28,b,'#ffd6de','center','400');x.globalAlpha=1;
+ }else if(t<12){// reveal
+  bg(t,1);const p=E(R(6,7.5,t)),o=1-R(11.4,12,t);x.globalAlpha=o;
+  x.save();x.globalCompositeOperation='lighter';const rg=x.createRadialGradient(640,300,0,640,300,400*p);rg.addColorStop(0,'rgba(255,200,80,.5)');rg.addColorStop(1,'rgba(255,200,80,0)');x.fillStyle=rg;x.fillRect(0,0,1280,720);x.restore();
+  for(let i=0;i<14;i++){const an=i/14*6.28+t*.3,d=180+40*Math.sin(t*2+i);heart(640+Math.cos(an)*d*p,300+Math.sin(an)*d*.6*p,1.2,p*.6)}
+  x.globalAlpha=o;cheese(640,290,1.6*(.6+.4*p)+Math.sin(t*3)*.03,Math.sin(t*1.5)*.06);
+  txt('芝士相机',640,450,72*(.8+.2*p),p,'#ffe066','center','800');
+  txt('让每个男朋友，都会拍女朋友',640,530,32,R(8,9,t)*o,'#fff','center','400');x.globalAlpha=1;
+ }else if(t<22){// guidance
+  bg(t,1);const k=E(R(13,17,t)),lit=.15+.8*E(R(15,17.5,t)),ok=t>18.2,inA=R(12,12.6,t)*(1-R(21.5,22,t));
+  x.globalAlpha=inA;
+  phone(640,370,.98,(W,H)=>{x.save();x.translate(W/2,H/2);x.rotate(-.18*(1-k));x.translate(-W/2,-H/2);scene(W,H,t,lit);girl(W*(.78-.28*k),H*(.86-.06*k),1.05+.12*k,ok?1:.3,t,ok?1:0);x.restore();
+   x.strokeStyle='rgba(255,255,255,.3)';x.lineWidth=1;for(let i=1;i<3;i++){x.beginPath();x.moveTo(W*i/3,0);x.lineTo(W*i/3,H);x.moveTo(0,H*i/3);x.lineTo(W,H*i/3);x.stroke()}
+   x.setLineDash([8,6]);x.lineDashOffset=-t*20;x.strokeStyle=ok?'#7CFFB2':'#ffe066';x.lineWidth=3;x.beginPath();x.ellipse(W/2,H*.62,62,165,0,0,7);x.stroke();x.setLineDash([]);
+   x.strokeStyle=ok?'#7CFFB2':'#fff';x.lineWidth=3;const lv=-.18*(1-k);x.save();x.translate(W/2,H*.12);x.rotate(lv);x.beginPath();x.moveTo(-50,0);x.lineTo(50,0);x.stroke();x.restore();
+   if(t>13&&t<17){txt('← 往左站一点',W/2,H*.2,20,Math.sin(t*6)*.3+.7,'#ffe066')}
+   if(ok)txt('完美！自动抓拍',W/2,H*.2,22,1,'#7CFFB2');
+   [19.2,20.4,21.6].forEach(s=>{if(t>s&&t<s+.3){x.fillStyle=`rgba(255,255,255,${1-(t-s)/.3})`;x.fillRect(0,0,W,H)}});
+   x.fillStyle=ok?'#ffe066':'#fff';x.beginPath();x.arc(W/2,H-50,26+(ok?Math.sin(t*10)*3:0),0,7);x.fill()});
+  const L=[['构图引导','站位、水平，一步到位',12.8],['光线优化','暗光也能透亮好气色',15],['姿势推荐','她不尴尬，你不慌张',17]];
+  L.forEach((l,i)=>{const a=R(l[2],l[2]+.6,t);const X=i%2?1010:270,Y=200+i*150;txt(l[0],X,Y,38,a,'#ffe066','center','800');txt(l[1],X,Y+46,22,a,'#fff','center','400')});
+  if(t>18.4){txt('自然美颜 · 真实又好看',1010,560,26,R(18.4,19,t),'#ffd6de')}
+  x.globalAlpha=1;
+ }else if(t<28.5){// result
+  bg(t,1);const a=R(22,22.8,t)*(1-R(28,28.5,t));x.globalAlpha=a;
+  const cards=[[-260,-.18,0],[0,.04,30],[260,.16,-25]];
+  cards.forEach((c,i)=>{const p=E(R(22.2+i*.4,23.4+i*.4,t));photoCard(640+c[0]*p,330+(1-p)*400+Math.sin(t+i)*6,c[1]*p,1.05,1,t,.95,c[2])});
+  for(let i=0;i<16;i++){const yy=720-((t-22)*90+i*55)%760;heart(100+(i*173)%1080,yy,1+(i%3)*.6,.5*R(24,25,t))}
+  txt('她笑了',640,600,54,R(24,25,t),'#fff','center','800');
+  txt('原来你也可以，把她拍得这么美',640,660,28,R(25,26,t),'#ffd6de','center','400');x.globalAlpha=1;
+ }else{// end
+  bg(t,1);const p=E(R(28.5,29.8,t)),o=1-R(31.4,32,t);x.globalAlpha=o;
+  cheese(640,250,1.3*p+.01);txt('芝士相机',640,400,80,p,'#ffe066','center','800');
+  txt('让他也会拍你',640,480,40,R(29.3,30.2,t),'#fff','center','600');
+  txt('每一张，都值得被好好拍',640,540,26,R(30,30.8,t),'#ffd6de','center','400');
+  x.globalAlpha=1;
+ }
+ // letterbox vignette
+ const v=x.createRadialGradient(640,360,300,640,360,800);v.addColorStop(0,'rgba(0,0,0,0)');v.addColorStop(1,'rgba(0,0,0,.6)');x.fillStyle=v;x.fillRect(0,0,1280,720);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

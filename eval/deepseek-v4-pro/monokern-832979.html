@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Psychedelic Motion Showreel</title>
+    <style>
+        body {
+            margin: 0;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        canvas {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="c" width="1280" height="720"></canvas>
+    <script>
+        const canvas = document.getElementById('c');
+        const ctx = canvas.getContext('2d');
+        const W = 1280,
+            H = 720;
+        const cx = W / 2,
+            cy = H / 2;
+        const DUR = 20;
+        window.DUR = DUR;
+
+        const params = new URLSearchParams(location.search);
+        const timeOffset = params.get('t') ? parseFloat(params.get('t')) : 0;
+        const startTime = performance.now();
+
+        function getTime() {
+            return ((performance.now() - startTime) / 1000 + timeOffset) % DUR;
+        }
+
+        // Resize canvas to fit viewport
+        function resizeCanvas() {
+            const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+            canvas.style.width = (W * scale) + 'px';
+            canvas.style.height = (H * scale) + 'px';
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Pre-rendered noise for grain
+        const noiseCanvas = document.createElement('canvas');
+        noiseCanvas.width = 256;
+        noiseCanvas.height = 256;
+        const nctx = noiseCanvas.getContext('2d');
+        const noiseData = nctx.createImageData(256, 256);
+        for (let i = 0; i < noiseData.data.length; i += 4) {
+            const v = Math.random() * 255;
+            noiseData.data[i] = v;
+            noiseData.data[i + 1] = v;
+            noiseData.data[i + 2] = v;
+            noiseData.data[i + 3] = 20;
+        }
+        nctx.putImageData(noiseData, 0, 0);
+
+        // Utility: HSLA color string
+        function hsla(h, s, l, a) {
+            return `hsla(${h},${s}%,${l}%,${a})`;
+        }
+
+        // Utility: HSL color string (opaque)
+        function hsl(h, s, l) {
+            return `hsl(${h},${s}%,${l}%)`;
+        }
+
+        // Smoothstep easing
+        function smoothstep(t) {
+            return t * t * (3 - 2 * t);
+        }
+
+        // Clamp
+        function clamp(v, mn, mx) {
+            return Math.max(mn, Math.min(mx, v));
+        }
+
+        // Map value from one range to another
+        function map(v, inMin, inMax, outMin, outMax) {
+            return outMin + (outMax - outMin) * ((v - inMin) / (inMax - inMin));
+        }
+
+        // === PARTICLE SYSTEM ===
+        class Particle {
+            constructor(index, total) {
+                this.index = index;
+                this.total = total;
+                this.baseAngle = (index / total) * Math.PI * 2;
+                this.goldenAngle = index * 2.39996323; // golden angle
+                this.orbitSpeed = 0.4 + (index % 7) * 0.15;
+                this.radialSpeed = 1.0 + (index % 5) * 0.2;
+                this.size = 1.5 + (index % 4) * 0.8;
+                this.trail = [];
+                this.maxTrail = 14;
+                this.hueOffset = (index % 6) * 45;
+            }
+            update(t) {
+                const spiralDur = DUR;
+                const radialProgress = (t / spiralDur) % 1;
+                const maxRadius = 340;
+                const radius = maxRadius * radialProgress;
+                const angle = this.baseAngle + this.orbitSpeed * 2 * Math.PI * radialProgress * 4;
+                const x = cx + radius * Math.cos(angle);
+                const y = cy + radius * Math.sin(angle);
+                const px = (x / W) * 2 - 1;
+                const py = (y / H) * 2 - 1;
+                const depth = Math.sin(radialProgress * Math.PI);
+                const zScale = 0.5 + depth * 0.8;
+                const sx = cx + px * 100 * zScale;
+                const sy = cy + py * 70 * zScale;
+                const size = this.size * zScale;
+                this.trail.unshift({ x: sx, y: sy, size: size });
+                if (this.trail.length > this.maxTrail) this.trail.pop();
+            }
+            draw(ctx, t) {
+                const baseHue = (t * 30 + this.hueOffset) % 360;
+                for (let i = 0; i < this.trail.length; i++) {
+                    const p = this.trail[i];
+                    const alpha = (1 - i / this.trail.length) * 0.55;
+                    const sz = p.size * (1 - i * 0.04);
+                    const hue = (baseHue + i * 2) % 360;
+                    ctx.fillStyle = hsla(hue, 85, 65, alpha);
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, Math.max(sz, 0.3), 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                // Glow center
+                if (this.trail.length > 0) {
+                    const p = this.trail[0];
+                    ctx.fillStyle = hsla(baseHue, 95, 80, 0.7);
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, p.size * 1.6, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+        }
+
+        const particles = [];
+        const numParticles = 220;
+        for (let i = 0; i < numParticles; i++) {
+            particles.push(new Particle(i, numParticles));
+        }
+
+        // === DRAWING FUNCTIONS ===
+
+        function drawBackground(t, hue) {
+            const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(W, H) * 0.65);
+            const l1 = 8 + 4 * Math.sin(t * 0.5);
+            const l2 = 3;
+            grad.addColorStop(0, hsla(hue, 40, l1 + 4, 1));
+            grad.addColorStop(0.4, hsla((hue + 40) % 360, 45, l1, 0.8));
+            grad.addColorStop(0.75, hsla((hue + 80) % 360, 50, l2, 0.6));
+            grad.addColorStop(1, '#000');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, W, H);
+        }
+
+        function drawFlowerOfLife(t, hue) {
+            const rotation = t * 0.12;
+            const radius = 52 + 8 * Math.sin(t * 0.8);
+            const alpha = 0.18 + 0.08 * Math.sin(t * 1.2);
+            const strokeHue = (hue + 30) % 360;
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(rotation);
+            ctx.strokeStyle = hsla(strokeHue, 60, 65, alpha);
+            ctx.lineWidth = 1.2;
+            const rings = 3;
+            const centers = [
+                [0, 0]
+            ];
+            const offsets = [
+                [1, 0],
+                [0.5, 0.866],
+                [-0.5, 0.866],
+                [-1, 0],
+                [-0.5, -0.866],
+                [0.5, -0.866]
+            ];
+            // Ring 1
+            for (const o of offsets) {
+                centers.push([o[0] * radius, o[1] * radius]);
+            }
+            // Ring 2
+            const ring2offsets = [
+                [2, 0],
+                [1.5, 0.866],
+                [0.5, 0.866],
+                [0, 0],
+                [-0.5, 0.866],
+                [-1.5, 0.866],
+                [-2, 0],
+                [-1.5, -0.866],
+                [-0.5, -0.866],
+                [0, 0],
+                [0.5, -0.866],
+                [1.5, -0.866],
+                [1.5, 1.732],
+                [0, 1.732],
+                [-1.5, 1.732],
+                [-1.5, -1.732],
+                [0, -1.732],
+                [1.5, -1.732]
+            ];
+            const seen = new Set();
+            for (const o of ring2offsets) {
+                const key = o[0] + ',' + o[1];
+                if (!seen.has(key) && Math.abs(o[0]) > 0.01 || Math.abs(o[1]) > 0.01) {
+                    centers.push([o[0] * radius, o[1] * radius]);
+                }
+                seen.add(key);
+            }
+            // Draw circles
+            for (const c of centers) {
+                ctx.beginPath();
+                ctx.arc(c[0], c[1], radius, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+            // Draw center circle with glow
+            ctx.beginPath();
+            ctx.arc(0, 0, radius * 1.4, 0, Math.PI * 2);
+            ctx.strokeStyle = hsla((hue + 180) % 360, 70, 70, alpha * 1.8);
+            ctx.lineWidth = 2.5;
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        function drawRoseCurve(t, hue, k, radius, rotation, alpha, lineWidth, fillAlpha) {
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(rotation);
+            const steps = 720;
+            ctx.beginPath();
+            for (let i = 0; i <= steps; i++) {
+                const theta = (i / steps) * Math.PI * 2;
+                const r = radius * Math.cos(k * theta);
+                const x = r * Math.cos(theta);
+                const y = r * Math.sin(theta);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            if (fillAlpha > 0) {
+                const fillGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
+                fillGrad.addColorStop(0, hsla(hue, 80, 60, fillAlpha));
+                fillGrad.addColorStop(0.6, hsla((hue + 60) % 360, 75, 50, fillAlpha * 0.6));
+                fillGrad.addColorStop(1, hsla((hue + 120) % 360, 70, 40, fillAlpha * 0.2));
+                ctx.fillStyle = fillGrad;
+                ctx.fill();
+            }
+            ctx.strokeStyle = hsla((hue + 180) % 360, 85, 70, alpha);
+            ctx.lineWidth = lineWidth;
+            ctx.stroke();
+            ctx.restore();
+        }
+
+        function drawMandalas(t) {
+            const hue = (t * 25) % 360;
+            const intensity = 0.55 + 0.45 * Math.sin(Math.PI * t / DUR);
+            // Layer 1 - large, slow
+            const k1 = 4 + 2 * Math.sin(t * 0.6);
+            const rot1 = t * 0.2;
+            const rad1 = 260 + 20 * Math.sin(t * 0.9);
+            const a1 = 0.5 + 0.3 * Math.sin(t * 1.1);
+            drawRoseCurve(t, hue, k1, rad1, rot1, a1 * 0.6, 1.8, a1 * 0.25);
+            // Layer 2 - medium, faster
+            const k2 = 6 + 3 * Math.sin(t * 0.4 + 1);
+            const rot2 = -t * 0.35;
+            const rad2 = 190 + 15 * Math.sin(t * 1.4 + 2);
+            const a2 = 0.6 + 0.3 * Math.sin(t * 0.7 + 1);
+            drawRoseCurve(t, (hue + 60) % 360, k2, rad2, rot2, a2 * 0.7, 2.2, a2 * 0.3);
+            // Layer 3 - small, opposite rotation, brighter
+            const k3 = 5 + 2 * Math.sin(t * 0.8 + 3);
+            const rot3 = t * 0.5;
+            const rad3 = 120 + 10 * Math.sin(t * 1.8);
+            const a3 = 0.7 + 0.3 * Math.sin(t * 1.0 + 4);
+            drawRoseCurve(t, (hue + 180) % 360, k3, rad3, rot3, a3 * 0.8, 2.8, a3 * 0.35);
+            // Layer 4 - core accent
+            const k4 = 3 + Math.sin(t * 1.2);
+            const rot4 = -t * 0.7;
+            const rad4 = 65 + 5 * Math.sin(t * 2.5);
+            const a4 = 0.85 + 0.15 * Math.sin(t * 1.6);
+            drawRoseCurve(t, (hue + 120) % 360, k4, rad4, rot4, a4 * 0.9, 3.5, a4 * 0.5);
+        }
+
+        function drawWaveRings(t) {
+            const hue = (t * 40 + 120) % 360;
+            const numRings = 6;
+            const baseSpeed = 0.6;
+            const maxRadius = 520;
+            const alphaMul = 0.4;
+            for (let i = 0; i < numRings; i++) {
+                const phase = (t * baseSpeed + i / numRings) % 1;
+                const radius = phase * maxRadius;
+                const alpha = (1 - phase) * alphaMul;
+                const lineW = map(phase, 0, 1, 4, 0.5);
+                ctx.strokeStyle = hsla((hue + i * 20) % 360, 90, 65, alpha);
+                ctx.lineWidth = lineW;
+                ctx.beginPath();
+                ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+                ctx.stroke();
+                // Inner glow for center ring
+                if (phase < 0.25) {
+                    ctx.fillStyle = hsla((hue + i * 30) % 360, 95, 75, alpha * 0.4);
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, radius * 0.4, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+            // Concentric static rings (subtle)
+            for (let i = 1; i <= 8; i++) {
+                const r = i * 50;
+                const a = 0.05 + 0.03 * Math.sin(t * 0.7 + i);
+                ctx.strokeStyle = hsla(hue, 60, 55, a);
+                ctx.lineWidth = 0.8;
+                ctx.beginPath();
+                ctx.arc(cx, cy, r, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+        }
+
+        function drawTunnelSpiral(t) {
+            const hue = (t * 20 + 240) % 360;
+            const numShapes = 30;
+            const maxRadius = 400;
+            const shapes = ['circle', 'hexagon', 'triangle', 'square'];
+            const shapeIndex = Math.floor(t / 2) % shapes.length;
+            const shape = shapes[shapeIndex];
+            const rotation = t * 0.3;
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(rotation);
+            for (let i = 0; i < numShapes; i++) {
+                const progress = ((t * 0.15 + i / numShapes) % 1);
+                const radius = progress * maxRadius;
+                const size = map(radius, 0, maxRadius, 8, 130) * (1 + 0.2 * Math.sin(t * 2 + i));
+                const alpha = (1 - progress) * 0.45;
+                const hueShift = (hue + i * 12) % 360;
+                const strokeW = 1.5 + 2.5 * (1 - progress);
+                ctx.strokeStyle = hsla(hueShift, 85, 65, alpha);
+                ctx.fillStyle = hsla(hueShift, 70, 50, alpha * 0.5);
+                ctx.lineWidth = strokeW;
+                const angle = i * 0.5;
+                const x = radius * Math.cos(angle);
+                const y = radius * Math.sin(angle);
+                ctx.beginPath();
+                if (shape === 'circle') {
+                    ctx.arc(x, y, size * 0.35, 0, Math.PI * 2);
+                } else if (shape === 'hexagon') {
+                    for (let j = 0; j < 6; j++) {
+                        const a = (j / 6) * Math.PI * 2 + t * 0.4;
+                        const px = x + size * 0.3 * Math.cos(a);
+                        const py = y + size * 0.3 * Math.sin(a);
+                        if (j === 0) ctx.moveTo(px, py);
+                        else ctx.lineTo(px, py);
+                    }
+                    ctx.closePath();
+                } else if (shape === 'triangle') {
+                    for (let j = 0; j < 3; j++) {
+                        const a = (j / 3) * Math.PI * 2 + t * 0.6;
+                        const px = x + size * 0.35 * Math.cos(a);
+                        const py = y + size * 0.35 * Math.sin(a);
+                        if (j === 0) ctx.moveTo(px, py);
+                        else ctx.lineTo(px, py);
+                    }
+                    ctx.closePath();
+                } else {
+                    for (let j = 0; j < 4; j++) {
+                        const a = (j / 4) * Math.PI * 2 + t * 0.3;
+                        const px = x + size * 0.28 * Math.cos(a);
+                        const py = y + size * 0.28 * Math.sin(a);
+                        if (j === 0) ctx.moveTo(px, py);
+                        else ctx.lineTo(px, py);
+                    }
+                    ctx.closePath();
+                }
+                ctx.stroke();
+                if (progress < 0.3) {
+                    ctx.fill();
+                }
+            }
+            ctx.restore();
+        }
+
+        function drawLightStreaks(t) {
+            const hue = (t * 30 + 60) % 360;
+            const numStreaks = 12;
+            const rotSpeed = 0.15 - 0.05 * Math.sin(t * 0.5);
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(t * rotSpeed);
+            for (let i = 0; i < numStreaks; i++) {
+                const angle = (i / numStreaks) * Math.PI * 2;
+                const len = 250 + 40 * Math.sin(t * 0.6 + i);
+                const alpha = 0.12 + 0.08 * Math.sin(t * 0.9 + i * 0.7);
+                const width = 20 + 8 * Math.sin(t * 0.4 + i * 0.5);
+                ctx.save();
+                ctx.rotate(angle);
+                const grad = ctx.createLinearGradient(0, 0, len, 0);
+                grad.addColorStop(0, hsla(hue + i * 8, 90, 75, alpha));
+                grad.addColorStop(1, hsla(hue + i * 8, 90, 65, 0));
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.moveTo(0, -width / 2);
+                ctx.lineTo(len, -width * 0.2);
+                ctx.lineTo(len, width * 0.2);
+                ctx.lineTo(0, width / 2);
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+            }
+            ctx.restore();
+        }
+
+        function drawSacredGeometry(t) {
+            const hue = (t * 15 + 200) % 360;
+            const alpha = 0.12 + 0.08 * Math.sin(t * 0.6);
+            const rotation = t * 0.08;
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(rotation);
+            ctx.strokeStyle = hsla(hue, 60, 60, alpha);
+            ctx.fillStyle = hsla((hue + 180) % 360, 80, 60, alpha * 0.5);
+            ctx.lineWidth = 1.5;
+            // Metatron's Cube / Flower of Life variant
+            const r = 70 + 5 * Math.sin(t * 0.7);
+            const angles = 6;
+            // Draw central hexagon
+            ctx.beginPath();
+            for (let i = 0; i < angles; i++) {
+                const a = (i / angles) * Math.PI * 2 - Math.PI / 6;
+                const x = r * Math.cos(a);
+                const y = r * Math.sin(a);
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.stroke();
+            ctx.fill();
+            // Draw connecting lines (Star of David)
+            ctx.strokeStyle = hsla(hue, 70, 70, alpha * 1.5);
+            ctx.lineWidth = 1;
+            for (let i = 0; i < angles; i++) {
+                const a1 = (i / angles) * Math.PI * 2 - Math.PI / 6;
+                const a2 = ((i + 2) % angles / angles) * Math.PI * 2 - Math.PI / 6;
+                ctx.beginPath();
+                ctx.moveTo(r * Math.cos(a1), r * Math.sin(a1));
+                ctx.lineTo(r * Math.cos(a2), r * Math.sin(a2));
+                ctx.stroke();
+            }
+            // Outer circles
+            for (let i = 0; i < angles; i++) {
+                const a = (i / angles) * Math.PI * 2 - Math.PI / 6;
+                const x = r * Math.cos(a);
+                const y = r * Math.sin(a);
+                ctx.beginPath();
+                ctx.arc(x, y, r * 0.55, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+            ctx.restore();
+        }
+
+        function drawKaleidoscope(t) {
+            const hue = (t * 22 + 300) % 360;
+            const intensity = 0.5 + 0.5 * Math.sin(Math.PI * t / DUR);
+            const numSlices = 10;
+            const radius = 100 + 20 * Math.sin(t * 1.3);
+            const rotation = t * 0.15;
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(rotation);
+            for (let slice = 0; slice < numSlices; slice++) {
+                const angle = (slice / numSlices) * Math.PI * 2;
+                ctx.save();
+                ctx.rotate(angle);
+                // Draw a wedge shape with oscillating pattern
+                const wedgeAlpha = 0.2 + 0.15 * Math.sin(t * 0.8 + slice);
+                const grad = ctx.createLinearGradient(0, 0, radius, 0);
+                grad.addColorStop(0, hsla((hue + slice * 20) % 360, 85, 65, wedgeAlpha));
+                grad.addColorStop(0.5, hsla((hue + slice * 20 + 60) % 360, 80, 55, wedgeAlpha * 0.7));
+                grad.addColorStop(1, hsla((hue + slice * 20 + 120) % 360, 75, 45, wedgeAlpha * 0.2));
+                ctx.fillStyle = grad;
+                const wedgeAngle = Math.PI / numSlices;
+                ctx.beginPath();
+                ctx.moveTo(0, 0);
+                const steps = 40;
+                for (let s = 0; s <= steps; s++) {
+                    const a = (s / steps) * wedgeAngle;
+                    const rr = radius * (1 + 0.15 * Math.sin(t * 2 + s * 0.4));
+                    ctx.lineTo(rr * Math.cos(a), rr * Math.sin(a));
+                }
+                ctx.closePath();
+                ctx.fill();
+                // Edge stroke
+                ctx.strokeStyle = hsla((hue + slice * 25 + 180) % 360, 90, 75, 0.5);
+                ctx.lineWidth = 1.8;
+                ctx.beginPath();
+                for (let s = 0; s <= steps; s++) {
+                    const a = (s / steps) * wedgeAngle;
+                    const rr = radius * (1 + 0.15 * Math.sin(t * 2 + s * 0.4));
+                    if (s === 0) ctx.moveTo(rr * Math.cos(a), rr * Math.sin(a));
+                    else ctx.lineTo(rr * Math.cos(a), rr * Math.sin(a));
+                }
+                ctx.stroke();
+                ctx.restore();
+            }
+            ctx.restore();
+        }
+
+        function drawCenterGlow(t) {
+            const hue = (t * 35) % 360;
+            const intensity = 0.6 + 0.4 * Math.sin(Math.PI * t / DUR);
+            const radius = 100 + 20 * Math.sin(t * 1.5);
+            const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius);
+            grad.addColorStop(0, hsla(hue, 95, 85, 0.5 * intensity));
+            grad.addColorStop(0.3, hsla((hue + 40) % 360, 90, 70, 0.3 * intensity));
+            grad.addColorStop(0.7, hsla((hue + 80) % 360, 85, 55, 0.1 * intensity));
+            grad.addColorStop(1, 'hsla(0,0%,0%,0)');
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function drawText(t) {
+            const textAlpha = Math.max(0, Math.sin((t - 6) / 4 * Math.PI));
+            const fadeIn = smoothstep(clamp((t - 5.5) / 1.5, 0, 1));
+            const fadeOut = 1 - smoothstep(clamp((t - 11.5) / 2.5, 0, 1));
+            const alpha = Math.min(fadeIn, fadeOut);
+            if (alpha > 0.01) {
+                const hue = (t * 18 + 180) % 360;
+                const scale = 1 + 0.03 * Math.sin(t * 2);
+                ctx.save();
+                ctx.translate(cx, cy - 30);
+                ctx.scale(scale, scale);
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                const fontSize = 72;
+                ctx.font = `200 ${fontSize}px system-ui, -apple-system, 'Segoe UI', sans-serif`;
+                const gradient = ctx.createLinearGradient(-200, 0, 200, 0);
+                gradient.addColorStop(0, hsla(hue, 90, 75, alpha * 0.9));
+                gradient.addColorStop(0.5, hsla((hue + 60) % 360, 95, 85, alpha));
+                gradient.addColorStop(1, hsla((hue + 120) % 360, 90, 70, alpha * 0.9));
+                ctx.fillStyle = gradient;
+                ctx.fillText('MOTION DESIGN', 0, 0);
+                // Subtle underline
+                ctx.strokeStyle = hsla((hue + 180) % 360, 90, 80, alpha * 0.7);
+                ctx.lineWidth = 2;
+                const lineW = 250 * alpha;
+                ctx.beginPath();
+                ctx.moveTo(-lineW / 2, fontSize * 0.65);
+                ctx.lineTo(lineW / 2, fontSize * 0.65);
+                ctx.stroke();
+                ctx.restore();
+            }
+        }
+
+        function drawVignette() {
+            const grad = ctx.createRadialGradient(cx, cy, Math.min(W, H) * 0.3, cx, cy, Math.max(W, H) * 0.75);
+            grad.addColorStop(0, 'rgba(0,0,0,0)');
+            grad.addColorStop(0.6, 'rgba(0,0,0,0.15)');
+            grad.addColorStop(1, 'rgba(0,0,0,0.65)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, W, H);
+        }
+
+        function drawGrain(t) {
+            const offsetX = Math.floor(t * 40) % 256;
+            const offsetY = Math.floor(t * 25) % 256;
+            ctx.globalAlpha = 0.04;
+            ctx.drawImage(noiseCanvas, -offsetX, -offsetY);
+            ctx.drawImage(noiseCanvas, 256 - offsetX, -offsetY);
+            ctx.drawImage(noiseCanvas, -offsetX, 256 - offsetY);
+            ctx.drawImage(noiseCanvas, 256 - offsetX, 256 - offsetY);
+            ctx.globalAlpha = 1;
+        }
+
+        function drawOrbitingDots(t) {
+            const hue = (t * 28 + 45) % 360;
+            const numDots = 4;
+            for (let i = 0; i < numDots; i++) {
+                const orbitSpeed = 0.5 + i * 0.12;
+                const angle = t * orbitSpeed + i * (Math.PI * 2 / numDots);
+                const radius = 150 + i * 45 + 20 * Math.sin(t * 0.7 + i);
+                const x = cx + radius * Math.cos(angle);
+                const y = cy + radius * Math.sin(angle);
+                const size = 8 + 4 * Math.sin(t * 1.2 + i);
+                const alpha = 0.6 + 0.3 * Math.sin(t * 0.9 + i);
+                ctx.fillStyle = hsla((hue + i * 45) % 360, 90, 75, alpha);
+                ctx.beginPath();
+                ctx.arc(x, y, size, 0, Math.PI * 2);
+                ctx.fill();
+                // Trail ring
+                ctx.strokeStyle = hsla((hue + i * 45) % 360, 85, 65, alpha * 0.3);
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.arc(x, y, size * 1.8, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+        }
+
+        // === MAIN DRAW LOOP ===
+        function draw() {
+            const t = getTime();
+            const hue = (t * 20) % 360;
+
+            // Clear with full black
+            ctx.fillStyle = '#000';
+            ctx.fillRect(0, 0, W, H);
+
+            // Layer order: background -> sacred geometry -> flower of life -> mandalas -> kaleidoscope -> tunnel -> particles -> waves -> orbiting dots -> center glow -> light streaks -> text -> vignette -> grain
+
+            drawBackground(t, hue);
+            drawSacredGeometry(t);
+            drawFlowerOfLife(t, hue);
+            drawMandalas(t);
+            drawKaleidoscope(t);
+            drawTunnelSpiral(t);
+
+            // Update and draw particles
+            for (const p of particles) {
+                p.update(t);
+                p.draw(ctx, t);
+            }
+
+            drawWaveRings(t);
+            drawOrbitingDots(t);
+            drawCenterGlow(t);
+            drawLightStreaks(t);
+            drawText(t);
+            drawVignette();
+            drawGrain(t);
+
+            requestAnimationFrame(draw);
+        }
+
+        requestAnimationFrame(draw);
+    </script>
+</body>
+</html>

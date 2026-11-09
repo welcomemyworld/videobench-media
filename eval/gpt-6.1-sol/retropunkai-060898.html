@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sphere — From Sketch to Spectacle</title>
+<style>
+*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;background:#000;overflow:hidden}
+body{display:flex;align-items:center;justify-content:center}
+#stage{position:relative;width:1280px;height:720px;flex:none;transform-origin:center}
+canvas{display:block;width:1280px;height:720px}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="screen" width="1280" height="720"></canvas></div>
+<script>
+/* Self-contained, offline GSAP-compatible tween/timeline subset.
+   Its clock is explicitly advanced by the single requestAnimationFrame loop. */
+const gsap=(()=>{
+  const eases={
+    none:x=>x,
+    "power2.out":x=>1-Math.pow(1-x,3),
+    "power2.inOut":x=>x<.5?4*x*x*x:1-Math.pow(-2*x+2,3)/2,
+    "power3.out":x=>1-Math.pow(1-x,4)
+  };
+  return {timeline(){
+    let jobs=[],end=0;
+    return {
+      fromTo(target,from,to,position=0){
+        const duration=to.duration||1;
+        jobs.push({target,from,to,start:position,duration});
+        end=Math.max(end,position+duration);return this;
+      },
+      time(t){
+        for(const j of jobs){
+          const p=Math.max(0,Math.min(1,(t-j.start)/j.duration));
+          const e=(eases[j.to.ease]||eases.none)(p);
+          for(const k in j.from)j.target[k]=j.from[k]+(j.to[k]-j.from[k])*e;
+        }
+        return this;
+      },duration(){return end}
+    };
+  }};
+})();
+window.DUR=42;
+const canvas=document.getElementById("screen"),c=canvas.getContext("2d");
+const stage=document.getElementById("stage");
+function fit(){stage.style.transform=`scale(${Math.min(innerWidth/1280,innerHeight/720)})`}
+addEventListener("resize",fit);fit();
+const TAU=Math.PI*2,clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const lerp=(a,b,p)=>a+(b-a)*p;
+const ease=p=>1-Math.pow(1-clamp(p),3);
+const chapters=[
+ {date:"2018",tag:"01 / THE IDEA",title:["A bold idea.","A simple shape."],body:["Announced in 2018, Sphere reimagined","what a live entertainment venue could be."],note:"FROM ARCHITECTURE TO EXPERIENCE",color:"#a3e4ee",label:"ANNOUNCED"},
+ {date:"2019",tag:"02 / TAKING SHAPE",title:["From the ground","to the skyline."],body:["Construction began in 2019.","A vast spherical structure rose in Las Vegas."],note:"AN ENGINEERING LANDMARK",color:"#ffb568",label:"CONSTRUCTION"},
+ {date:"JULY 2023",tag:"03 / LIGHTS ON",title:["The outside","became a canvas."],body:["The exterior lit up on July 4, 2023.","Its LED skin turned the skyline into a show."],note:"580,000 SQ FT OF EXTERIOR LED DISPLAY",color:"#a4a0ff",label:"EXTERIOR DEBUT"},
+ {date:"SEPTEMBER 2023",tag:"04 / OPENING NIGHT",title:["The music","went immersive."],body:["Sphere opened September 29, 2023.","U2 launched the venue with U2:UV."],note:"A BAND. A CROWD. A WHOLE NEW WORLD.",color:"#ff7b9b",label:"U2 OPENS"},
+ {date:"2024 →",tag:"05 / THE BANDS GO LIVE",title:["More artists.","New dimensions."],body:["Residencies and multi-night runs","made Sphere a destination for live music."],note:"ONE VENUE. MANY MUSICAL WORLDS.",color:"#7ce5ce",label:"LIVE RESIDENCIES"},
+ {date:"TODAY",tag:"06 / THE EXPERIENCE",title:["Not just a venue.","A world around you."],body:["Live bands, immersive films and a glowing","exterior keep the spectacle evolving."],note:"LAS VEGAS, REIMAGINED",color:"#bcd7ff",label:"SPHERE"}
+];
+const anim=chapters.map(()=>{
+  const a={intro:0,exit:0,draw:0,build:0};
+  const tl=gsap.timeline()
+    .fromTo(a,{intro:0},{intro:1,duration:1.05,ease:"power3.out"},.15)
+    .fromTo(a,{draw:0},{draw:1,duration:3.8,ease:"power2.inOut"},.3)
+    .fromTo(a,{build:0},{build:1,duration:5,ease:"power2.out"},.5)
+    .fromTo(a,{exit:0},{exit:1,duration:.55,ease:"power2.inOut"},6.45);
+  return {a,tl};
+});
+function text(s,x,y,size,color="#fff",weight=400,align="left"){
+  c.fillStyle=color;c.font=`${weight} ${size}px Arial, sans-serif`;c.textAlign=align;c.fillText(s,x,y);
+}
+function spaced(s,x,y,size,color,spacing=2){
+  c.font=`600 ${size}px Arial, sans-serif`;c.fillStyle=color;c.textAlign="left";
+  for(const ch of s){c.fillText(ch,x,y);x+=c.measureText(ch).width+spacing}
+}
+function line(x1,y1,x2,y2,color,width=1){
+  c.strokeStyle=color;c.lineWidth=width;c.beginPath();c.moveTo(x1,y1);c.lineTo(x2,y2);c.stroke();
+}
+function circle(x,y,r,color){c.fillStyle=color;c.beginPath();c.arc(x,y,r,0,TAU);c.fill()}
+function rr(x,y,w,h,r,fill){c.fillStyle=fill;c.beginPath();c.roundRect(x,y,w,h,r);c.fill()}
+const leds=[];
+for(let lat=-1.5;lat<=1.5;lat+=.029){
+  const count=Math.max(8,Math.round(210*Math.cos(lat)));
+  for(let j=0;j<=count;j++){
+    const lon=-Math.PI/2+Math.PI*j/count;
+    const z=Math.cos(lat)*Math.cos(lon);
+    leds.push({x:Math.cos(lat)*Math.sin(lon),y:Math.sin(lat),z,lat,lon});
+  }
+}
+function background(t,col){
+  c.fillStyle="#060b14";c.fillRect(0,0,1280,720);
+  const g=c.createRadialGradient(914,341,40,914,341,620);
+  g.addColorStop(0,"#132235");g.addColorStop(.65,"#091321");g.addColorStop(1,"#060b14");
+  c.fillStyle=g;c.fillRect(0,0,1280,720);
+  c.globalAlpha=.11;
+  for(let x=0;x<1280;x+=64)line(x,96,x,622,"#668aaa");
+  for(let y=110;y<622;y+=64)line(0,y,1280,y,"#668aaa");
+  c.globalAlpha=1;
+  // Quiet, abstract Las Vegas skyline.
+  c.fillStyle="#111e2d";
+  for(let j=0;j<37;j++){
+    const x=543+j*21,h=17+((j*67)%47);
+    c.fillRect(x,591-h,17,h);
+    if(j%7===0)c.fillRect(x+6,591-h-14,4,14);
+  }
+  line(552,592,1232,592,"#294055");
+  c.globalAlpha=.22;
+  const glow=c.createRadialGradient(893,594,0,893,594,320);
+  glow.addColorStop(0,col);glow.addColorStop(1,"transparent");
+  c.fillStyle=glow;c.save();c.translate(0,510);c.scale(1,.14);c.fillRect(570,0,660,1000);c.restore();
+  c.globalAlpha=1;
+}
+function header(t){
+  spaced("SPHERE",48,48,20,"#f1f6ff",4);
+  line(193,27,193,51,"#3b4b60");
+  spaced("LAS VEGAS",214,46,11,"#90a7bc",2);
+  spaced("FROM SKETCH TO SPECTACLE",1232-292,46,11,"#90a7bc",1.7);
+  line(48,72,1232,72,"#233245");
+}
+const X=904,Y=339,R=235;
+function shellShadow(){
+  const g=c.createRadialGradient(X-65,Y-95,8,X,Y,R);
+  g.addColorStop(0,"#20354a");g.addColorStop(.65,"#101c2c");g.addColorStop(1,"#030911");
+  circle(X,Y,R,g);
+}
+function architecture(t,a,construction=false){
+  shellShadow();
+  c.save();
+  c.beginPath();c.arc(X,Y,R,0,TAU);c.clip();
+  const reveal=construction?a.build:a.draw;
+  if(construction){
+    c.fillStyle="#3e4851";c.globalAlpha=.3;
+    c.fillRect(X-R,Y+R-2*R*reveal,2*R,2*R*reveal);c.globalAlpha=1;
+  }
+  c.lineWidth=construction?1.15:1;
+  for(let j=-7;j<=7;j++){
+    const u=j/8,ry=R*Math.sqrt(1-u*u),yy=Y+R*u;
+    c.strokeStyle=construction?"#c39c68":"#72b5cf";
+    c.globalAlpha=(construction?.47:.57)*clamp((reveal*17-(j+7))/2);
+    c.beginPath();c.ellipse(X,yy,ry,ry*.16,0,0,TAU);c.stroke();
+  }
+  for(let j=-6;j<=6;j++){
+    c.globalAlpha=(construction?.52:.6)*clamp((reveal*16-(j+6))/2);
+    c.strokeStyle=construction?"#e0ac70":"#9fd4e7";
+    c.beginPath();c.ellipse(X,Y,R*Math.abs(j/7),R,0,0,TAU);c.stroke();
+  }
+  c.globalAlpha=1;c.restore();
+  c.strokeStyle=construction?"#e3b27c":"#c0e4ee";c.lineWidth=1.5;
+  c.beginPath();c.arc(X,Y,R,-Math.PI/2,-Math.PI/2+TAU*reveal);c.stroke();
+  if(!construction){
+    c.globalAlpha=.6;
+    line(X-R-28,Y+R+28,X+R+28,Y+R+28,"#658da8");
+    for(const xx of [X-R,X+R])line(xx,Y+R+21,xx,Y+R+35,"#658da8");
+    line(X,Y-R-22,X,Y+R+21,"#527b95");
+    c.globalAlpha=1;
+    rr(783,555,242,24,4,"#0a1421");
+    spaced("CONCEPT / SPHERICAL VENUE",797,571,9,"#9bbdce",1.1);
+  }else{
+    // Two cranes, scaffolding, and an animated construction lift.
+    const lift=20*Math.sin(t*1.5);
+    for(const q of [{x:668,y:210,w:185},{x:1150,y:158,w:-170}]){
+      line(q.x,579,q.x,q.y,"#d39952",3);
+      line(q.x,q.y,q.x+q.w,q.y,"#e6b576",3);
+      line(q.x,q.y-36,q.x+q.w,q.y,"#977853");
+      line(q.x,q.y-36,q.x,q.y,"#977853");
+      line(q.x+q.w*.72,q.y,q.x+q.w*.72,q.y+87+lift,"#c3a276");
+      rr(q.x+q.w*.72-7,q.y+83+lift,14,12,2,"#edbe7f");
+      for(let y=q.y+10;y<575;y+=25){
+        line(q.x-6,y,q.x+6,y+25,"#8b6c46");
+        line(q.x+6,y,q.x-6,y+25,"#8b6c46");
+      }
+    }
+    rr(797,558,214,24,4,"#121820");
+    spaced("STRUCTURE / ASSEMBLY",817,574,9,"#edbf85",1.2);
+  }
+}
+function ledSphere(t,mode=0,opacity=1){
+  c.save();c.globalAlpha=opacity;shellShadow();
+  for(const p of leds){
+    let hue,light,sat=92;
+    if(mode===0){
+      const wave=Math.sin(p.lon*3.2+t*.85+p.lat*4);
+      hue=(230+90*wave+55*Math.sin(p.lat*2-t*.65)+360)%360;
+      light=33+23*Math.pow((1+Math.sin(p.lat*6-p.lon*3+t*1.3))/2,2);
+    }else if(mode===1){
+      hue=(175+100*Math.sin(p.lat*3+t*.55)+65*Math.cos(p.lon*2-t*.5)+360)%360;
+      light=38+16*Math.sin(p.lat*5+p.lon*4-t);
+    }else{
+      hue=lerp(280,345,(1+Math.sin(p.lat*4-p.lon*3+t))/2);
+      light=33+15*Math.cos(p.lon*5+p.lat*2+t);
+    }
+    light*=.45+.55*Math.pow(p.z,.4);
+    c.fillStyle=`hsl(${hue} ${sat}% ${light}%)`;
+    const size=1.15+.58*p.z;
+    c.fillRect(X+p.x*R-size/2,Y-p.y*R-size/2,size,size);
+  }
+  const shine=c.createRadialGradient(X-95,Y-105,0,X-55,Y-55,240);
+  shine.addColorStop(0,"#cde9ff18");shine.addColorStop(1,"#ffffff00");
+  circle(X,Y,R,shine);
+  c.strokeStyle="#aac9ff30";c.lineWidth=1;c.beginPath();c.arc(X,Y,R,0,TAU);c.stroke();
+  c.restore();
+}
+function musician(x,y,scale,kind,t){
+  c.save();c.translate(x,y);c.scale(scale,scale);c.fillStyle="#060811";c.strokeStyle="#060811";c.lineWidth=7;
+  const sway=Math.sin(t*2+x)*2;
+  circle(sway,-45,6,"#070913");
+  c.beginPath();c.moveTo(sway,-39);c.lineTo(-7,-13);c.lineTo(7,-13);c.closePath();c.fill();
+  line(-4,-16,-9,0,"#060811",5);line(4,-16,10,0,"#060811",5);
+  if(kind==="guitar"){
+    line(-3,-30,10,-20,"#070913",5);line(4,-31,25,-29,"#070913",5);
+    c.save();c.rotate(-.32);c.fillStyle="#172034";c.beginPath();c.ellipse(8,-20,11,7,0,0,TAU);c.fill();line(12,-20,35,-20,"#192336",4);c.restore();
+  }else{
+    line(1,-30,14,-39,"#060811",5);line(14,-39,18,-44,"#0b0b15",3);
+    line(19,-43,19,0,"#142030",2);
+  }
+  c.restore();
+}
+function concert(t,a){
+  ledSphere(t,2,.3);
+  c.save();c.beginPath();c.arc(X,Y,R-10,0,TAU);c.clip();
+  const g=c.createLinearGradient(0,Y-R,0,Y+R);
+  g.addColorStop(0,"#392374");g.addColorStop(.55,"#db658f");g.addColorStop(1,"#101024");
+  c.fillStyle=g;c.fillRect(X-R,Y-R,2*R,2*R);
+  // Immersive screen: concentric animated vistas.
+  for(let i=12;i>=0;i--){
+    const radius=35+i*25+15*Math.sin(t*.8);
+    c.strokeStyle=`hsla(${255+i*7},75%,${65-i*2}%,${.18+i*.018})`;c.lineWidth=10;
+    c.beginPath();c.ellipse(X,Y-35,radius,radius*.76,0,0,TAU);c.stroke();
+  }
+  for(let j=0;j<7;j++){
+    const px=X-140+j*47,ex=X+Math.sin(t*.7+j)*215;
+    const beam=c.createLinearGradient(px,480,ex,145);
+    beam.addColorStop(0,"#bde4ff65");beam.addColorStop(1,"#bac5ff00");
+    c.fillStyle=beam;c.beginPath();c.moveTo(px-3,479);c.lineTo(ex-28,130);c.lineTo(ex+28,130);c.lineTo(px+3,479);c.fill();
+  }
+  c.fillStyle="#080e1b";c.fillRect(X-170,476,340,12);
+  c.fillStyle="#15213a";c.beginPath();c.ellipse(X,471,34,10,0,0,TAU);c.fill();
+  circle(X,452,17,"#111c30");circle(X-26,453,10,"#101828");circle(X+26,453,10,"#101828");
+  line(X-39,435,X-15,435,"#b4a1bc",2);line(X+16,433,X+41,433,"#b4a1bc",2);
+  musician(X-103,475,1.18,"guitar",t);
+  musician(X+4,449,.68,"singer",t);
+  musician(X+55,475,1.1,"singer",t);
+  musician(X+119,475,1.05,"guitar",t);
+  // Dense crowd of moving silhouettes.
+  for(let row=0;row<4;row++)for(let j=0;j<32;j++){
+    const x=X-245+j*16+(row%2)*7,y=507+row*21+Math.sin(j*6+row)*6;
+    circle(x,y,5+row*.6,row%2?"#050b14":"#0b1220");
+    c.fillStyle="#080f1c";c.fillRect(x-5,y,10,23);
+    if(j%5===0){line(x,y+8,x+9*Math.sin(t*3+j),y-15,"#0a101d",3)}
+    if(j%9===0)rr(x+8,y-12,3,5,1,"#dfcbff");
+  }
+  c.restore();
+  c.strokeStyle="#f9a9d2";c.lineWidth=1.5;c.beginPath();c.arc(X,Y,R,0,TAU);c.stroke();
+  rr(791,554,226,26,5,"#101725");
+  spaced("LIVE / IMMERSIVE / TOGETHER",805,571,9,"#f3b4cb",1);
+}
+function bands(t,a){
+  ledSphere(t,1);
+  c.save();c.beginPath();c.arc(X,Y,R-8,0,TAU);c.clip();
+  c.fillStyle="#051018aa";c.fillRect(X-R,Y-R,R*2,R*2);
+  const names=[["U2","2023–2024"],["PHISH","APRIL 2024"],["DEAD & COMPANY","FROM MAY 2024"],["EAGLES","FROM SEPTEMBER 2024"]];
+  for(let j=0;j<4;j++){
+    const p=ease((t-.7-j*.38)/.65),yy=204+j*80+(1-p)*18;
+    c.globalAlpha=p;
+    line(744,yy+38,1064,yy+38,"#72d6ca44");
+    text(names[j][0],746,yy,j===2?21:29,"#f1fff9",700);
+    spaced(names[j][1],748,yy+23,9,"#83d7c7",1.3);
+    text("↗",1058,yy+4,27,"#7ce5ce",400,"right");
+  }
+  c.restore();
+}
+function left(ch,a,t){
+  const alpha=a.intro*(1-a.exit);
+  c.save();c.globalAlpha=alpha;c.translate(-26*(1-a.intro)-12*a.exit,0);
+  spaced(ch.tag,48,133,11,ch.color,1.8);
+  text(ch.date,48,181,26,ch.color,400);
+  ch.title.forEach((s,i)=>text(s,45,256+i*59,48,"#f1f5fc",700));
+  ch.body.forEach((s,i)=>text(s,48,367+i*27,18,"#a8b7c9",400));
+  line(48,439,84,439,ch.color,3);
+  spaced(ch.note,48,467,10,ch.color,1.05);
+  if(ch===chapters[0]){
+    text("THE STORY OF",48,536,10,"#60798e",600);
+    text("Sphere",46,578,38,"#e5eef9",600);
+  }else if(ch===chapters[2]){
+    rr(48,504,270,63,8,"#111a2b");
+    text("A new landmark after dark",64,529,15,"#e3e1ff",600);
+    text("Art + light at architectural scale",64,551,12,"#8d9bb2");
+  }else if(ch===chapters[3]){
+    rr(48,504,267,63,8,"#1c1728");
+    text("U2:UV Achtung Baby Live",64,530,15,"#ffe0eb",600);
+    text("40 shows · September 2023–March 2024",64,550,11,"#b8a3b6");
+  }else if(ch===chapters[5]){
+    const labs=["LIVE MUSIC","IMMERSIVE FILM","LED ART"];
+    labs.forEach((s,i)=>{
+      const xx=48+i*124;rr(xx,508,i===1?116:110,33,16,"#152338");
+      text(s,xx+(i===1?58:55),529,10,"#c5d8ef",600,"center");
+    });
+  }
+  c.restore();
+}
+function timeline(t,index){
+  const y=639,left=64,right=1216,step=(right-left)/5;
+  line(left,y,right,y,"#28364a",2);
+  line(left,y,left+(right-left)*t/42,y,"#95bbdb",2);
+  const dates=["2018","2019","JUL ’23","SEP ’23","2024 →","TODAY"];
+  for(let i=0;i<6;i++){
+    const x=left+i*step,active=i===index,col=active?chapters[i].color:i<index?"#7a9bb7":"#435369";
+    if(active)circle(x,y,10,col+"20");
+    circle(x,y,active?4.5:3,col);
+    text(dates[i],x,666,12,col,active?700:400,"center");
+    text(chapters[i].label,x,685,8.5,active?"#aabed0":"#54667d",600,"center");
+  }
+}
+let offset=parseFloat(new URLSearchParams(location.search).get("t")||"0");
+if(!Number.isFinite(offset))offset=0;
+let origin;
+function frame(now){
+  if(origin===undefined)origin=now;
+  const time=((now-origin)/1000+offset)%window.DUR;
+  const T=(time+window.DUR)%window.DUR;
+  const index=Math.min(5,Math.floor(T/7)),local=T-index*7;
+  const ch=chapters[index],entry=anim[index];
+  entry.tl.time(local);const a=entry.a;
+  background(T,ch.color);header(T);
+  left(ch,a,local);
+  c.save();c.globalAlpha=(.25+.75*a.intro)*(1-a.exit);
+  c.translate(0,(1-a.intro)*12); 
+  if(index===0)architecture(local,a);
+  if(index===1)architecture(local,a,true);
+  if(index===2)ledSphere(T,0,a.build);
+  if(index===3)concert(T,a);
+  if(index===4)bands(local,a);
+  if(index===5){
+    ledSphere(T,0);
+    c.save();c.globalAlpha=clamp((local-1.3)/.8);
+    c.shadowColor="#020616";c.shadowBlur=24;
+    text("Sphere",X,Y+8,71,"#fff",700,"center");
+    spaced("A NEW WAY TO BE THERE",X-99,Y+40,10,"#e2e6ff",1.1);
+    c.restore();
+  }
+  c.restore();
+  timeline(T,index);
+  const small=Math.floor(local/7*100);
+  text(String(index+1).padStart(2,"0")+" / 06",1231,111,10,"#647c94",600,"right");
+  // A soft filmic edge, drawn rather than animated by CSS.
+  const edge=c.createLinearGradient(0,0,0,720);
+  edge.addColorStop(0,"#00000015");edge.addColorStop(.25,"#00000000");edge.addColorStop(.82,"#00000000");edge.addColorStop(1,"#00000025");
+  c.fillStyle=edge;c.fillRect(0,0,1280,720);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

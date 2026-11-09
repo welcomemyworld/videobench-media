@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>余白</title>
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
+  #stage {
+    position: absolute; top: 50%; left: 50%;
+    width: 1280px; height: 720px;
+    transform: translate(-50%, -50%) scale(var(--s, 1));
+    transform-origin: center center;
+    box-shadow: 0 0 60px rgba(0,0,0,0.9);
+    background: #000;
+  }
+  canvas { display: block; width: 1280px; height: 720px; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+(() => {
+  'use strict';
+  window.DUR = 36;
+  const cv = document.getElementById('c'), ctx = cv.getContext('2d', {alpha:false});
+  const stage = document.getElementById('stage');
+  function resize(){ stage.style.setProperty('--s', Math.min(innerWidth/1280, innerHeight/720)); }
+  addEventListener('resize', resize); resize();
+
+  const params = new URLSearchParams(location.search);
+  const offset = parseFloat(params.get('t')) || 0;
+  const startPerf = performance.now();
+
+  const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+  const lerp = (a,b,p) => a + (b-a)*p;
+  const smooth = (a,b,t) => { let p = clamp((t-a)/(b-a),0,1); return p*p*(3-2*p); };
+
+  // --- Offscreen Buffers ---
+  function mk(w,h){ let c=document.createElement('canvas'); c.width=w; c.height=h; return c; }
+  const gCol = mk(400,800), gWht = mk(400,800);
+  const maskC = mk(400,800), mCtx = maskC.getContext('2d');
+  const tmpC  = mk(400,800), tCtx = tmpC.getContext('2d');
+  const blurC = mk(400,800), bCtx = blurC.getContext('2d');
+
+  const PAL_C = { bg:'#0d1b4c', gold:'#ffc825', red:'#e01a2b', blue:'#0a6ed1', teal:'#00a88f', skin:'#ffdfb0', white:'#f0f8ff', lead:'#0a0a12' };
+  const PAL_W = { bg:'#d8dce0', gold:'#ffffff', red:'#e8ecf0', blue:'#d0d8e0', teal:'#e0e4e8', skin:'#ffffff', white:'#ffffff', lead:'#888c94' };
+
+  function archPath(c){
+    c.beginPath(); c.moveTo(0,800); c.lineTo(0,260);
+    c.bezierCurveTo(0,100,140,0,200,0);
+    c.bezierCurveTo(260,0,400,100,400,260);
+    c.lineTo(400,800); c.closePath();
+  }
+
+  function makeGlass(canvas, P){
+    const c = canvas.getContext('2d');
+    c.save(); archPath(c); c.clip();
+    c.fillStyle = P.bg; c.fillRect(0,0,400,800);
+    c.strokeStyle = P.lead; c.lineJoin = 'round';
+
+    // Rose Window
+    c.save(); c.translate(200,150);
+    c.lineWidth = 5; c.beginPath(); c.arc(0,0,84,0,7); c.stroke();
+    for(let i=0;i<12;i++){
+      c.rotate(Math.PI/6);
+      c.fillStyle = i%2 ? P.red : P.blue;
+      c.beginPath(); c.moveTo(0,-18); c.quadraticCurveTo(34,-46,0,-78); c.quadraticCurveTo(-34,-46,0,-18); c.fill(); c.stroke();
+    }
+    c.fillStyle = P.gold; c.beginPath(); c.arc(0,0,21,0,7); c.fill(); c.stroke();
+    c.restore();
+
+    // Madonna
+    c.save(); c.translate(200,0); c.lineWidth = 4;
+    c.fillStyle = P.gold; c.beginPath(); c.arc(0,310,46,0,7); c.fill(); c.stroke();
+    c.fillStyle = P.skin; c.save(); c.translate(0,315); c.scale(0.75,1); c.beginPath(); c.arc(0,0,33,0,7); c.fill(); c.stroke(); c.restore();
+    c.fillStyle = P.blue;
+    c.beginPath(); c.moveTo(0,278);
+    c.bezierCurveTo(-62,290,-92,420,-112,720); c.lineTo(112,720);
+    c.bezierCurveTo(92,420,62,290,0,278); c.fill(); c.stroke();
+    c.fillStyle = P.red;
+    c.beginPath(); c.moveTo(0,350);
+    c.bezierCurveTo(-42,362,-56,500,-66,720); c.lineTo(66,720);
+    c.bezierCurveTo(56,500,42,362,0,350); c.fill(); c.stroke();
+    c.fillStyle = P.gold; c.beginPath(); c.arc(0,480,17,0,7); c.fill(); c.stroke();
+    c.restore();
+
+    // Angels
+    function angel(cx,cy,dir){
+      c.save(); c.translate(cx,cy); c.scale(dir,1); c.lineWidth = 3.5;
+      c.fillStyle = P.gold; c.beginPath(); c.arc(0,0,25,0,7); c.fill(); c.stroke();
+      c.fillStyle = P.skin; c.beginPath(); c.arc(0,2,14,17,0,7); c.fill(); c.stroke();
+      c.fillStyle = P.white; c.beginPath(); c.moveTo(-17,24); c.lineTo(17,24); c.lineTo(24,140); c.lineTo(-24,140); c.fill(); c.stroke();
+      c.fillStyle = P.teal; c.beginPath(); c.moveTo(-14,30); c.quadraticCurveTo(-70,-10,-86,-92); c.quadraticCurveTo(-40,-50,-10,80); c.fill(); c.stroke();
+      c.fillStyle = P.gold; c.beginPath(); c.moveTo(-14,34); c.quadraticCurveTo(-50,0,-60,-56); c.quadraticCurveTo(-30,-24,-8,74); c.fill(); c.stroke();
+      c.fillStyle = P.white; c.beginPath(); c.moveTo(-12,50); c.quadraticCurveTo(-55,28,-76,-22); c.quadraticCurveTo(-35,10,-5,100); c.fill(); c.stroke();
+      c.restore();
+    }
+    angel(74,420,1); angel(326,420,-1);
+
+    // Armature grid
+    c.strokeStyle = P.lead; c.lineWidth = 3; c.globalAlpha = 0.65;
+    for(let y=0;y<=800;y+=50){ c.beginPath(); c.moveTo(0,y); c.lineTo(400,y); c.stroke(); }
+    for(let x=0;x<=400;x+=50){ c.beginPath(); c.moveTo(x,0); c.lineTo(x,800); c.stroke(); }
+    c.globalAlpha = 1;
+    c.restore();
+
+    // Thick arch border
+    c.save(); archPath(c); c.lineWidth = 14; c.strokeStyle = P.lead; c.stroke(); c.restore();
+  }
+  makeGlass(gCol, PAL_C);
+  makeGlass(gWht, PAL_W);
+  const gColData = gCol.getContext('2d').getImageData(0,0,400,800).data;
+
+  // --- Blocks ---
+  const WORDS = ["忙しい","効率化","至急","締切","タスク","会議","返信","最適化","早起き","時短","スキル","成果","KPI","TODO","通知","深夜"];
+  const blocks = [];
+  for(let r=0;r<16;r++) for(let c=0;c<8;c++){
+    let px = (c*50+25 + (r*50+25)*400)*4;
+    let a = gColData[px+3];
+    let b = { c, r, valid: a>20, fill:0, word: WORDS[(c*3+r*7)%WORDS.length], rgb:[gColData[px],gColData[px+1],gColData[px+2]] };
+    blocks.push(b);
+  }
+  const valid = blocks.filter(b=>b.valid).sort((a,b)=> (15-a.r)*8+a.c - ((15-b.r)*8+b.c));
+  valid.forEach((b,i)=>{
+    let u = i/(valid.length-1);
+    b.tIn = 3 + 7.5*u*u;
+    let d = Math.hypot(b.c-3, b.r-9);
+    b.tOut = clamp(19 + 6.4*(d/11.4) + (Math.sin(i*12.9)*0.2), 19, 25.4);
+  });
+  const first = blocks.find(b=>b.c===3 && b.r===9);
+  if(first){ first.isFirst = true; first.tOut = 14.2; first.word = "忙しい"; }
+
+  // --- Dust ---
+  const dust = Array.from({length:190},()=>({
+    x: Math.random()*1080, y: Math.random()*1920,
+    r: 0.6+Math.random()*1.6, sp: 0.15+Math.random()*0.4, ph: Math.random()*6.28
+  }));
+
+  function drawCube(c, x, y, s, word, dim){
+    c.save(); c.translate(x,y); c.scale(s/50, s/50); c.globalAlpha *= dim;
+    c.fillStyle = '#3e3e44'; c.fillRect(0,0,50,50);
+    c.fillStyle = '#52525a'; c.beginPath(); c.moveTo(0,0); c.lineTo(50,0); c.lineTo(44,6); c.lineTo(6,6); c.fill();
+    c.fillStyle = '#28282c'; c.beginPath(); c.moveTo(50,0); c.lineTo(50,50); c.lineTo(44,44); c.lineTo(44,6); c.fill();
+    c.fillStyle = '#323238'; c.beginPath(); c.moveTo(0,50); c.lineTo(50,50); c.lineTo(44,44); c.lineTo(6,44); c.fill();
+    let fs = word.length>=3 ? 14 : (word.length===2 ? 18 : 20);
+    c.font = `${fs}px "Yu Mincho", "MS Mincho", "Hiragino Mincho ProN", serif`;
+    c.textAlign='center'; c.textBaseline='middle';
+    c.fillStyle = '#151518'; c.fillText(word, 26, 26);
+    c.fillStyle = '#b8b8c0'; c.fillText(word, 25, 25);
+    c.restore();
+  }
+
+  function showText(str, t, s, e, y, size, isFinal){
+    if(t<s || t>e) return;
+    let a = Math.min(smooth(s,s+0.8,t), 1-smooth(e-0.8,e,t));
+    ctx.save(); ctx.globalAlpha = a;
+    ctx.fillStyle = isFinal ? '#2b1a05' : '#e0e0e0';
+    ctx.shadowColor = isFinal ? 'rgba(255,255,255,0.95)' : '#000';
+    ctx.shadowBlur = isFinal ? 35 : 12;
+    ctx.font = `${size}px "Yu Mincho", "MS Mincho", "Hiragino Mincho ProN", serif`;
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(str, 540, y);
+    ctx.restore();
+  }
+
+  function drawCathedral(t){
+    let wg = ctx.createLinearGradient(0,0,0,1000);
+    wg.addColorStop(0,'#0d0d14'); wg.addColorStop(1,'#1a1a22');
+    ctx.fillStyle = wg; ctx.fillRect(0,0,1080,1000);
+    ctx.strokeStyle = 'rgba(255,255,255,0.03)'; ctx.lineWidth = 2;
+    for(let y=0;y<1000;y+=100){
+      ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(1080,y); ctx.stroke();
+      let off = (y/100)%2 ? 0 : 90;
+      for(let x=off;x<1080;x+=180){ ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x,y+100); ctx.stroke(); }
+    }
+    ctx.save(); ctx.translate(340,150);
+    archPath(ctx); ctx.lineWidth = 38; ctx.strokeStyle = '#06060a'; ctx.stroke();
+    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.stroke();
+    ctx.restore();
+
+    let fg = ctx.createLinearGradient(0,950,0,1920);
+    fg.addColorStop(0,'#121218'); fg.addColorStop(1,'#050508');
+    ctx.fillStyle = fg; ctx.fillRect(0,950,1080,970);
+    ctx.strokeStyle = 'rgba(255,255,255,0.02)';
+    for(let i=-10;i<=20;i++){ ctx.beginPath(); ctx.moveTo(540+i*90,950); ctx.lineTo(540+i*240,1920); ctx.stroke(); }
+    for(let y=980;y<1920;y+=(y-930)*0.25){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(1080,y); ctx.stroke(); }
+  }
+
+  function frame(){
+    let raw = (performance.now() - startPerf)/1000 + offset;
+    let t = (Math.floor(raw * 30) / 30) % window.DUR;
+    if(t < 0) t += window.DUR;
+
+    // --- State ---
+    let fillSum = 0;
+    blocks.forEach(b=>{
+      if(!b.valid){ b.fill = 0; return; }
+      if(t < 3) b.fill = 0;
+      else if(t < 11.5) b.fill = clamp((t - b.tIn)/0.5, 0, 1);
+      else if(t < 14.0) b.fill = 1;
+      else b.fill = 1 - clamp((t - b.tOut)/(b.isFirst?0.4:0.6), 0, 1);
+      fillSum += b.fill;
+    });
+    let fillRatio = fillSum / valid.length;
+    let amb = 1 - 0.93 * smooth(0, 1, fillRatio);
+    let blockAlpha = 0.16 + 0.84 * amb;
+
+    // --- Camera ---
+    let camP = smooth(26, 32.5, t), ez = camP*camP*(3-2*camP);
+    let breathe = t > 32.5 ? 1 + 0.02*Math.sin(t*1.2) : 1;
+    let camW = { dx: ez*220, dy: ez*1300, s: (1+ez*2.6), a: 1-smooth(0.1,0.65,ez) };
+    let A = [1.2, 0, 0.4, 0.6, 180, 950], B = [1.7*breathe, 0, 0, 1.7*breathe, 540-340*breathe, 960-680*breathe];
+    let camF = { a:lerp(A[0],B[0],ez), b:0, c:lerp(A[2],B[2],ez), d:lerp(A[3],B[3],ez), e:lerp(A[4],B[4],ez), f:lerp(A[5],B[5],ez) };
+
+    // --- Mask & Glass (Single Source of Truth) ---
+    mCtx.clearRect(0,0,400,800); mCtx.fillStyle = '#fff';
+    blocks.forEach(b=>{
+      let open = 1 - b.fill;
+      if(open > 0.001){ mCtx.globalAlpha = open; mCtx.fillRect(b.c*50, b.r*50, 50, 50); }
+    });
+    mCtx.globalAlpha = 1;
+    tCtx.clearRect(0,0,400,800); tCtx.globalCompositeOperation = 'source-over';
+    tCtx.drawImage(t < 14.0 ? gWht : gCol, 0, 0);
+    tCtx.globalCompositeOperation = 'destination-in'; tCtx.drawImage(maskC, 0, 0);
+    tCtx.globalCompositeOperation = 'source-over';
+    bCtx.clearRect(0,0,400,800); bCtx.filter = 'blur(5px)'; bCtx.drawImage(tmpC,0,0); bCtx.filter = 'none';
+
+    // --- Render Base ---
+    ctx.setTransform(1,0,0,1,0,0);
+    ctx.fillStyle = '#030305'; ctx.fillRect(0,0,1280,720);
+    let vg = ctx.createRadialGradient(640,360,80, 640,360,850);
+    vg.addColorStop(0,'#0a0a10'); vg.addColorStop(1,'#000');
+    ctx.fillStyle = vg; ctx.fillRect(0,0,1280,720);
+
+    // Enter 1080x1920 logical space (centered pillarbox)
+    ctx.setTransform(0.375, 0, 0, 0.375, 437.5, 0);
+    ctx.save(); ctx.beginPath(); ctx.rect(0,0,1080,1920); ctx.clip();
+
+    drawCathedral(t);
+    ctx.fillStyle = `rgba(0,0,0,${1-amb})`; ctx.fillRect(0,0,1080,1920);
+
+    // --- Shafts (sampled from gCol) ---
+    ctx.globalCompositeOperation = 'screen';
+    let shaftBase = 1 - smooth(0.4, 0.9, camP);
+    blocks.forEach(b=>{
+      if(!b.valid || b.fill >= 0.99 || shaftBase <= 0.01) return;
+      let cx = b.c*50+25, cy = b.r*50+25;
+      let sx = 340 + cx + camW.dx*0.1, sy = 150 + cy + camW.dy*0.1;
+      let ex = camF.a*cx + camF.c*cy + camF.e;
+      let ey = camF.b*cx + camF.d*cy + camF.f;
+      let ex2 = sx + (ex-sx)*(1+camP*1.6), ey2 = sy + (ey-sy)*(1+camP*1.6);
+      let al = (1-b.fill) * 0.30 * shaftBase * (t<14 ? 0.5 : 1);
+      let col = t < 14 ? '220,225,235' : b.rgb.join(',');
+      let gr = ctx.createLinearGradient(sx,sy,ex2,ey2);
+      gr.addColorStop(0, `rgba(${col},${al*1.6})`);
+      gr.addColorStop(0.35, `rgba(${col},${al})`);
+      gr.addColorStop(1, `rgba(${col},0)`);
+      ctx.fillStyle = gr;
+      ctx.beginPath(); ctx.moveTo(sx-16,sy-8); ctx.lineTo(sx+16,sy-8);
+      ctx.lineTo(ex2+38,ey2+16); ctx.lineTo(ex2-38,ey2+16); ctx.fill();
+    });
+
+    // --- Floor Projection (same tmpC, transformed) ---
+    ctx.save();
+    ctx.transform(camF.a, camF.b, camF.c, camF.d, camF.e, camF.f);
+    ctx.globalAlpha = 0.7 + 0.3*camP; ctx.drawImage(blurC,0,0);
+    ctx.globalAlpha = 0.45 + 0.55*camP; ctx.drawImage(tmpC,0,0);
+    ctx.restore();
+    ctx.globalCompositeOperation = 'source-over';
+
+    // --- Window (same tmpC) ---
+    if(camW.a > 0.01){
+      ctx.save();
+      ctx.translate(340 + camW.dx, 150 + camW.dy); ctx.scale(camW.s, camW.s);
+      ctx.globalAlpha = camW.a;
+      ctx.globalCompositeOperation = 'screen';
+      ctx.shadowColor = t < 14 ? 'rgba(255,255,255,0.8)' : 'rgba(255,200,80,0.85)';
+      ctx.shadowBlur = 45; ctx.drawImage(tmpC,0,0);
+      ctx.shadowBlur = 0; ctx.globalCompositeOperation = 'source-over'; ctx.drawImage(tmpC,0,0);
+      ctx.restore();
+    }
+
+    // --- Blocks ---
+    blocks.forEach(b=>{
+      if(!b.valid) return;
+      let bx = 340 + b.c*50, by = 150 + b.r*50;
+      // Flying in
+      if(t >= b.tIn && t < b.tIn+0.5 && t < 11.5){
+        let p = (t-b.tIn)/0.5, z = 1-p, z2 = z*z;
+        let cx = bx+25, cy = by+25;
+        let sx = cx + (cx-540)*z2*1.25, sy = cy + z2*950, s = 1+z2*3.2;
+        ctx.save();
+        ctx.strokeStyle = `rgba(110,110,120,${(1-p)*0.22})`; ctx.lineWidth = 42*s;
+        ctx.beginPath(); ctx.moveTo(sx, sy+220*z); ctx.lineTo(sx, sy); ctx.stroke();
+        ctx.translate(sx,sy); ctx.scale(s,s); ctx.globalAlpha = Math.min(1,p*4)*camW.a;
+        drawCube(ctx,-25,-25,50,b.word,1); ctx.restore();
+      }
+      // Settled
+      else if(b.fill > 0.98 && t < b.tOut){
+        ctx.save(); ctx.globalAlpha = camW.a;
+        ctx.translate(camW.dx, camW.dy); // slight parallax with window
+        drawCube(ctx, bx, by, 50, b.word, blockAlpha);
+        ctx.restore();
+      }
+      // Falling & dissolving
+      else if(t >= b.tOut && t < b.tOut + 0.8){
+        let p = (t-b.tOut)/0.8;
+        ctx.save(); ctx.translate(bx+25, by+25 + camW.dy*0.2);
+        ctx.globalAlpha = Math.max(0, 1-p*2.6) * camW.a;
+        ctx.translate(0, p*p*130); ctx.rotate(p*0.45*(b.c%2?1:-1));
+        drawCube(ctx,-25,-25,50,b.word,1); ctx.restore();
+
+        ctx.globalCompositeOperation = 'screen';
+        for(let k=0;k<6;k++){
+          let sd = b.c*100+b.r*10+k;
+          let px = Math.sin(sd)*22, py = p*p*130 - p*(45+(sd%7)*16);
+          let pa = Math.max(0,1-p) * (0.5+0.5*Math.sin(sd+t*12));
+          ctx.fillStyle = t<14 ? `rgba(255,255,255,${pa})` : `rgba(${b.rgb.join(',')},${pa})`;
+          ctx.beginPath(); ctx.arc(bx+25+px, by+25+py+camW.dy*0.2, 1.5+(sd%3), 0, 7); ctx.fill();
+        }
+        ctx.globalCompositeOperation = 'source-over';
+      }
+    });
+
+    // --- Dust ---
+    ctx.globalCompositeOperation = 'screen';
+    let dA = amb * (t<14 ? 0.28 : 0.85) * (1-smooth(34,35.5,t)*0.5);
+    let dCol = t<14 ? '235,240,255' : '255,225,165';
+    dust.forEach(d=>{
+      let dy = d.y - t*d.sp*32 + camP*camP*1400*(d.r/2);
+      dy = ((dy%2100)+2100)%2100 - 90;
+      let dx = d.x + Math.sin(t*0.8+d.ph)*18;
+      ctx.fillStyle = `rgba(${dCol},${dA*(0.35+0.65*Math.abs(Math.sin(t*1.5+d.ph)))})`;
+      ctx.beginPath(); ctx.arc(dx,dy,d.r,0,7); ctx.fill();
+    });
+    ctx.globalCompositeOperation = 'source-over';
+
+    // --- Finale Bloom ---
+    if(t >= 33){
+      let fl = Math.sin(Math.min(1,(t-33)*2)*Math.PI/2);
+      let a = fl * 0.82;
+      let rg = ctx.createRadialGradient(540,960,80, 540,960,1250);
+      rg.addColorStop(0, `rgba(255,246,215,${a})`);
+      rg.addColorStop(0.45, `rgba(255,214,120,${a*0.65})`);
+      rg.addColorStop(1, `rgba(255,180,80,0)`);
+      ctx.globalCompositeOperation = 'screen'; ctx.fillStyle = rg; ctx.fillRect(0,0,1080,1920);
+      ctx.globalCompositeOperation = 'source-over';
+    }
+
+    // --- Texts ---
+    showText("毎日、もっと速く。", t, 0.5, 3.0, 1630, 40, false);
+    showText("もっと、効率よく。", t, 3.2, 6.0, 1630, 40, false);
+    showText("気づけば、光が入らなくなっていた。", t, 11.5, 14.0, 1630, 37, false);
+    showText("ひとつ、手放してみる。", t, 15.8, 19.0, 1630, 42, false);
+    showText("空いたところから、光が入る。", t, 20.5, 24.0, 1630, 42, false);
+    showText("その光は、前より豊かだった。", t, 24.2, 27.5, 1630, 42, false);
+    showText("豊かさは余白に宿る", t, 33.2, 35.9, 960, 84, true);
+
+    // --- Seamless Loop Seam ---
+    if(t > 35.7){ ctx.fillStyle = `rgba(255,250,242,${smooth(35.7,36.0,t)})`; ctx.fillRect(0,0,1080,1920); }
+    if(t < 0.4){ ctx.fillStyle = `rgba(255,250,242,${1-smooth(0,0.4,t)})`; ctx.fillRect(0,0,1080,1920); }
+
+    ctx.restore();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>JS Paint – Mona Lisa</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=50;
+const C=document.getElementById('c'),X=C.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);C.style.width=1280*s+'px';C.style.height=720*s+'px'}
+fit();addEventListener('resize',fit);
+const CX=330,CY=150,CW=420,CH=500;
+const P=document.createElement('canvas');P.width=CW;P.height=CH;const PX=P.getContext('2d');
+let seed=7;const R=()=>(seed=(seed*16807)%2147483647)/2147483647;
+const PAL=['#000','#7f7f7f','#880015','#ed1c24','#ff7f27','#fff200','#22b14c','#00a2e8','#3f48cc','#a349a4','#fff','#c3c3c3','#b97a57','#ffaec9','#ffc90e','#efe4b0','#b5e61d','#99d9ea','#7092be','#c8bfe7'];
+const sw=(i)=>({x:120+(i%10)*24+11,y:660+Math.floor(i/10)*22+10});
+const acts=[];let cur={x:640,y:400},curCol=null,palSlot=0;
+function pickColor(col){if(col===curCol)return;curCol=col;const p=sw(palSlot++%20);
+ acts.push({t:'move',pts:[cur,p],col});acts.push({t:'click',pts:[p,p],col});cur=p}
+function paint(pts,col,w){pickColor(col);const g=pts.map(q=>({x:q.x+CX,y:q.y+CY}));
+ acts.push({t:'move',pts:[cur,g[0]]});acts.push({t:'paint',pts:g,col,w});cur=g[g.length-1]}
+function fill(f,y0,y1,col,w,jit){const pts=[];let d=0;
+ for(let y=y0;y<=y1;y+=w*0.6){const r=f(y);if(!r)continue;const a=[r[0],r[1]];if(d++%2)a.reverse();
+  for(let k=0;k<=4;k++){const x=a[0]+(a[1]-a[0])*k/4;pts.push({x,y:y+(R()-.5)*(jit||4)})}}
+ if(pts.length)paint(pts,col,w)}
+const ell=(cx,cy,rx,ry)=>y=>{const v=1-((y-cy)/ry)**2;if(v<=0)return null;const h=rx*Math.sqrt(v);return[cx-h,cx+h]};
+// background sky & landscape
+fill(y=>[0,CW],0,140,'#9aa77c',34,8);
+fill(y=>[0,CW],120,230,'#7d8a5c',28,10);
+fill(y=>[0,120+Math.sin(y/20)*20],150,330,'#6b5a35',22,12);
+fill(y=>[300-Math.sin(y/25)*20,CW],140,330,'#5f6a45',22,12);
+fill(y=>[0,CW],300,360,'#4f4a2c',24,8);
+paint([{x:20,y:190},{x:80,y:200},{x:60,y:240},{x:110,y:260}],'#c9b47a',6);
+paint([{x:330,y:170},{x:380,y:190},{x:350,y:230},{x:400,y:250}],'#8fa3a0',8);
+// dress
+fill(y=>{const h=60+(y-280)*1.1;return[210-h,210+h]},280,CH,'#2b2516',26,6);
+// hair
+fill(ell(210,190,88,135),60,320,'#2a1d10',20,4);
+// veil hint
+paint([{x:125,y:110},{x:150,y:70},{x:210,y:55},{x:270,y:70},{x:295,y:110}],'#1a140b',8);
+// face, neck, chest
+fill(ell(210,175,52,72),105,248,'#c9a064',14,2);
+fill(y=>{const h=24+(y-235)*0.9;return[210-h,210+h]},235,330,'#c79c5e',16,3);
+fill(ell(210,330,95,18),318,345,'#b88a50',14,3);
+// hands
+fill(ell(235,445,85,30),418,472,'#c9a064',16,3);
+paint([{x:150,y:450},{x:200,y:438},{x:260,y:430},{x:315,y:438}],'#8a6232',3);
+// shading
+paint([{x:165,y:140},{x:162,y:190},{x:175,y:235},{x:205,y:250}],'#a57d48',8);
+paint([{x:255,y:140},{x:258,y:200},{x:240,y:240}],'#a57d48',6);
+// features
+paint([{x:178,y:160},{x:190,y:156},{x:200,y:161}],'#3a2814',4);
+paint([{x:222,y:161},{x:232,y:156},{x:244,y:160}],'#3a2814',4);
+paint([{x:186,y:160},{x:190,y:162}],'#120c06',5);
+paint([{x:232,y:160},{x:236,y:162}],'#120c06',5);
+paint([{x:212,y:165},{x:209,y:190},{x:203,y:198},{x:215,y:200}],'#8f6434',3);
+paint([{x:193,y:215},{x:204,y:219},{x:216,y:219},{x:230,y:213}],'#6e3f22',3);
+paint([{x:178,y:150},{x:195,y:146}],'#a57d48',3);paint([{x:224,y:146},{x:244,y:150}],'#a57d48',3);
+// neckline
+paint([{x:150,y:345},{x:210,y:355},{x:270,y:345}],'#c8a24a',3);
+acts.push({t:'move',pts:[cur,{x:1000,y:420}]});
+// timing
+const len=a=>{let s=0;for(let i=1;i<a.pts.length;i++)s+=Math.hypot(a.pts[i].x-a.pts[i-1].x,a.pts[i].y-a.pts[i-1].y);return s};
+let T=0;for(const a of acts){a.d=a.t==='click'?0.25:a.t==='move'?0.12+len(a)/2500:len(a)/1;a.s=T;T+=a.d}
+const T0=2,T1=DUR-5,k=(T1-T0)/T;
+const paintActs=acts.filter(a=>a.t==='paint');
+for(const a of acts){a.s=T0+a.s*k;a.d*=k}
+function posOn(a,f){const L=len(a)*f;let s=0;for(let i=1;i<a.pts.length;i++){const p=a.pts[i-1],q=a.pts[i],l=Math.hypot(q.x-p.x,q.y-p.y);
+ if(s+l>=L){const u=l?(L-s)/l:0;return{x:p.x+(q.x-p.x)*u,y:p.y+(q.y-p.y)*u,i}}s+=l}const z=a.pts[a.pts.length-1];return{x:z.x,y:z.y,i:a.pts.length-1}}
+// incremental painting
+let done=-1;function stroke(a,f){const e=posOn(a,f);PX.strokeStyle=a.col;PX.lineWidth=a.w;PX.lineCap=PX.lineJoin='round';PX.beginPath();
+ PX.moveTo(a.pts[0].x-CX,a.pts[0].y-CY);for(let i=1;i<=e.i;i++)PX.lineTo(a.pts[i].x-CX,a.pts[i].y-CY);PX.lineTo(e.x-CX,e.y-CY);PX.stroke()}
+let lastT=-1;
+function updatePaint(t){if(t<lastT){PX.fillStyle='#fff';PX.fillRect(0,0,CW,CH);done=-1}lastT=t;
+ for(let i=done+1;i<paintActs.length;i++){const a=paintActs[i];if(t>=a.s+a.d){stroke(a,1);done=i}else break}}
+PX.fillStyle='#fff';PX.fillRect(0,0,CW,CH);
+function bevel(x,y,w,h,inset){X.fillStyle='#c0c0c0';X.fillRect(x,y,w,h);X.strokeStyle=inset?'#808080':'#fff';X.beginPath();X.moveTo(x,y+h);X.lineTo(x,y);X.lineTo(x+w,y);X.stroke();
+ X.strokeStyle=inset?'#fff':'#404040';X.beginPath();X.moveTo(x+w,y);X.lineTo(x+w,y+h);X.lineTo(x,y+h);X.stroke()}
+function cursor(x,y,down){X.save();X.translate(x,y);X.fillStyle='#fff';X.strokeStyle='#000';X.lineWidth=1.2;X.beginPath();
+ X.moveTo(0,0);X.lineTo(0,20);X.lineTo(5,15);X.lineTo(9,24);X.lineTo(12,22);X.lineTo(8,14);X.lineTo(14,14);X.closePath();X.fill();X.stroke();
+ if(down){X.strokeStyle='rgba(255,80,40,.8)';X.lineWidth=2;X.beginPath();X.arc(0,0,10,0,7);X.stroke()}X.restore()}
+const t0=performance.now()-(parseFloat(new URLSearchParams(location.search).get('t'))||0)*1000;
+function frame(now){const t=((now-t0)/1000)%DUR;updatePaint(t);
+ // chrome
+ X.fillStyle='#dee1e6';X.fillRect(0,0,1280,720);X.fillStyle='#fff';X.beginPath();X.roundRect(12,8,240,34,[10,10,0,0]);X.fill();
+ X.fillStyle='#333';X.font='13px sans-serif';X.fillText('JS Paint',44,30);X.fillStyle='#3f48cc';X.fillRect(22,18,14,14);X.fillStyle='#666';X.fillText('×',232,30);
+ X.fillStyle='#fff';X.fillRect(0,42,1280,40);X.fillStyle='#f1f3f4';X.beginPath();X.roundRect(110,48,1050,28,14);X.fill();
+ X.fillStyle='#555';X.font='14px sans-serif';X.fillText('←   →   ⟳',20,67);X.fillStyle='#202124';X.fillText('jspaint.app',130,67);
+ // paint app
+ X.fillStyle='#008080';X.fillRect(0,82,1280,638);bevel(40,96,1200,612);X.fillStyle='#000080';X.fillRect(44,100,1192,20);
+ X.fillStyle='#fff';X.font='bold 12px sans-serif';X.fillText('mona_lisa.png - Paint',50,114);
+ X.fillStyle='#000';X.font='12px sans-serif';['File','Edit','View','Image','Colors','Help'].forEach((m,i)=>X.fillText(m,52+i*50,136));
+ X.fillStyle='#808080';X.fillRect(110,142,1120,500);
+ for(let i=0;i<16;i++)bevel(52+(i%2)*25,146+Math.floor(i/2)*25,23,23,i===6);
+ X.fillStyle='#000';X.fillRect(58+25,152+75,10,10);
+ X.drawImage(P,CX,CY);
+ // palette
+ bevel(52,654,1176,48);const cc=curColAt(t);X.fillStyle=cc||'#000';X.fillRect(64,664,40,30);
+ PAL.forEach((c,i)=>{const p=sw(i);X.fillStyle=c;X.fillRect(p.x-10,p.y-9,20,18);X.strokeStyle='#808080';X.strokeRect(p.x-10,p.y-9,20,18)});
+ // reference panel
+ X.fillStyle='#000';X.font='12px sans-serif';X.fillText('Reference: Leonardo da Vinci, c.1503–1519 (public domain)',800,170);
+ // cursor
+ let cp={x:640,y:400},down=false;for(const a of acts){if(t>=a.s){cp=posOn(a,Math.min(1,(t-a.s)/a.d));down=a.t!=='move'&&t<a.s+a.d}}
+ if(cp.x>CX&&cp.x<CX+CW&&cp.y>CY&&cp.y<CY+CH){X.fillStyle='#000';X.fillText(Math.round(cp.x-CX)+', '+Math.round(cp.y-CY)+' px',800,630)}
+ const prog=Math.min(1,Math.max(0,(t-T0)/(T1-T0)));X.fillText('Progress: '+Math.round(prog*100)+'%',800,612);
+ X.fillStyle='#c0c0c0';X.fillRect(800,580,300,14);X.fillStyle='#000080';X.fillRect(800,580,300*prog,14);
+ cursor(cp.x,cp.y,down);
+ // title overlay
+ const ov=t<2.5?1-Math.max(0,t-1.8)/0.7:t>DUR-4?Math.min(1,(t-DUR+4)/0.8):0;
+ if(ov>0){X.fillStyle=`rgba(0,0,0,${0.6*ov})`;X.fillRect(0,300,1280,120);X.fillStyle=`rgba(255,255,255,${ov})`;X.font='bold 34px sans-serif';X.textAlign='center';
+  X.fillText(t<10?'Painting the Mona Lisa in JS Paint':'Finished — mouse-painted Mona Lisa',640,355);X.font='18px sans-serif';
+  X.fillText('Reenactment of every brush stroke and mouse movement',640,392);X.textAlign='left'}
+ requestAnimationFrame(frame)}
+function curColAt(t){let c='#000';for(const a of acts){if(a.t==='click'&&t>=a.s+a.d*.5)c=a.col}return c}
+requestAnimationFrame(frame);
+</script></body></html>

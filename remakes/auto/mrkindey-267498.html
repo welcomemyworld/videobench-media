@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Hillside Villa — Construction Timeline</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+const DUR=48;window.DUR=DUR;
+const cv=document.getElementById('c'),g=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px'}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const T0=parseFloat(q.get('t')||0)||0;const start=performance.now();
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),sm=v=>{v=cl(v);return v*v*(3-2*v)},L=(a,b,t)=>a+(b-a)*t;
+const STG=['Foundation','Skeleton','Systems','Envelope','Finished'];
+// ---------- parts ----------
+const parts=[];// {type:'box',x0,x1,y0,y1,z0,z1,c,s,f,layer,glass}
+function box(s,layer,x0,x1,y0,y1,z0,z1,c,o={}){parts.push(Object.assign({type:'box',x0,x1,y0,y1,z0,z1,c,s,layer},o))}
+// foundation
+for(const x of[-6,-2,2,6])for(const z of[-4,0,4])box(0,0,x-.6,x+.6,-1.2,-.4,z-.6,z+.6,[120,115,108]);
+box(0,0,-6.4,6.4,-.4,0,-4.4,4.4,[170,165,155]);
+box(0,0,6.4,11,-.6,-.2,-4.4,4.4,[190,175,150]);//terrace slab
+// skeleton
+for(let fl=0;fl<2;fl++){const y=fl*3.2;
+ for(const x of[-6,-2,2,6])for(const z of[-4,0,4])box(1,1+fl*2,x-.2,x+.2,y,y+3,z-.2,z+.2,[200,195,185]);
+ for(const z of[-4,0,4])box(1,1+fl*2,-6.2,6.2,y+2.8,y+3.2,z-.2,z+.2,[185,180,172]);
+ for(const x of[-6,6])box(1,1+fl*2,x-.2,x+.2,y+2.8,y+3.2,-4.2,4.2,[185,180,172]);}
+box(1,3,-6.3,6.3,3,3.2,-4.3,4.3,[175,170,162]);
+// envelope walls (stone)
+const ST=[214,190,150];
+for(let fl=0;fl<2;fl++){const y=fl*3.2,ly=1+fl*2;
+ box(3,ly,-6.3,6.3,y,y+3.2,-4.3,-4,ST);box(3,ly,-6.3,6.3,y,y+3.2,4,4.3,ST);
+ box(3,ly,-6.3,-6,y,y+3.2,-4,4,ST);box(3,ly,6,6.3,y,y+3.2,-4,4,ST);}
+// roof (stage 3 end) handled as polys
+const roofs=[];
+function rq(pts,c){roofs.push({pts,c})}
+const RH=8.6,RY=6.4;
+rq([[-6.8,RY,-4.8],[6.8,RY,-4.8],[6.8,RH,0],[-6.8,RH,0]],[178,88,58]);
+rq([[-6.8,RY,4.8],[-6.8,RH,0],[6.8,RH,0],[6.8,RY,4.8]],[190,96,62]);
+rq([[6.3,RY,-4.3],[6.3,RY,4.3],[6.3,RH-.2,0]],ST);rq([[-6.3,RY,4.3],[-6.3,RY,-4.3],[-6.3,RH-.2,0]],ST);
+// finished: windows, door, pool, pergola
+for(let fl=0;fl<2;fl++){const y=fl*3.2;
+ for(const x of[-4,0,4]){box(4,1+fl*2,x-.6,x+.6,y+.9,y+2.4,4.3,4.4,[60,80,95],{glass:1});
+  box(4,1+fl*2,x-1,x-.65,y+.9,y+2.4,4.3,4.45,[70,110,80]);box(4,1+fl*2,x+.65,x+1,y+.9,y+2.4,4.3,4.45,[70,110,80]);}
+ for(const z of[-2,2])box(4,1+fl*2,6.3,6.4,y+.9,y+2.4,z-.6,z+.6,[60,80,95],{glass:1});}
+box(4,1,6.3,6.45,0,2.4,-.6,.6,[110,70,45]);
+box(4,0,7.5,10.5,-.25,-.15,-3.5,0,[60,170,200],{glass:1,pool:1});
+for(const x of[7,10.6])for(const z of[1,4])box(4,1,x-.1,x+.1,-.2,2.8,z-.1,z+.1,[150,110,75]);
+for(let i=0;i<6;i++)box(4,1,6.8+i*.75,6.95+i*.75,2.8,2.95,.8,4.2,[150,110,75]);
+// within-stage stagger
+for(let s=0;s<5;s++){const ps=parts.filter(p=>p.s==s);ps.forEach((p,i)=>p.f=ps.length>1?i/(ps.length-1):0)}
+// ---------- systems routes ----------
+const SYS=[{n:'Water',c:'#3ab4ff',r:[]},{n:'Power',c:'#ffd23a',r:[]},{n:'Sewage',c:'#c08850',r:[]},{n:'Airflow',c:'#bff6ff',r:[]}];
+SYS[0].r.push([[12,-1,-3],[6,-.3,-3],[-5,-.3,-3],[-5,2.5,-3],[-5,2.5,3],[3,2.5,3]],[[-5,2.5,-3],[-5,5.7,-3],[-1,5.7,-3],[-1,5.7,2]],[[6,-.3,-3],[8,-.3,-2]]);
+SYS[1].r.push([[12,-.8,3.5],[5.5,.4,3.5],[5.5,2.8,3.5],[-5.5,2.8,3.5],[-5.5,2.8,-3.5]],[[5.5,2.8,3.5],[5.5,6,3.5],[-5.5,6,3.5],[-5.5,6,-3.5],[5.5,6,-3.5]],[[0,2.8,3.5],[0,1.2,3.8]]);
+SYS[2].r.push([[-3,5.2,-1],[-3,.2,-1],[-3,-.9,-1],[-3,-.9,-6],[-3,-2.5,-9]],[[1,3.3,-2],[1,-.7,-2],[-3,-.9,-1]]);
+SYS[3].r.push([[-4,7.4,-1.5],[-4,6.1,-1.5],[4,6.1,-1.5],[4,3,-1.5]],[[-4,6.1,-1.5],[-4,6.1,2],[3,6.1,2]],[[-1,6.1,-1.5],[-1,2.9,1.5],[3,2.9,1.5]]);
+// ---------- trees (instanced: one template, many transforms) ----------
+const trees=[];{let r=7;const rnd=()=>(r=(r*16807)%2147483647)/2147483647;
+for(let i=0;i<12;i++){const a=rnd()*6.28,d=11+rnd()*9;let x=Math.cos(a)*d,z=Math.sin(a)*d;trees.push({x,z,y:hill(x,z),s:.8+rnd()*.5,ph:rnd()*6})}}
+function hill(x,z){return x<11&&Math.abs(z)<9&&x>-11?-.6:-.6-cl((x-11)/12,0,1)*4-cl((-x-11)/12,0,1)*1.5-Math.max(0,Math.abs(z)-9)*.15}
+// ---------- camera ----------
+let cam={};
+function setCam(yaw,pit,dist,ty){const cy=Math.cos(yaw),sy=Math.sin(yaw),cp=Math.cos(pit),sp=Math.sin(pit);cam={cy,sy,cp,sp,dist,ty}}
+function P(x,y,z){y-=cam.ty;let X=cam.cy*x-cam.sy*z,Z=cam.sy*x+cam.cy*z;let Y=cam.cp*y-cam.sp*Z;Z=cam.sp*y+cam.cp*Z+cam.dist;const f=1000/Math.max(Z,.5);return[640+X*f,380-Y*f,Z]}
+const PRE=[[.7,.55,26,0],[2.2,.7,24,1],[-.6,.45,20,3],[.35,.32,27,3],[-.9,.25,30,2.5]];
+// ---------- render ----------
+const LT=(()=>{const v=[.5,.8,.35],l=Math.hypot(...v);return v.map(a=>a/l)})();
+function shade(c,n,k,a){const d=.45+.55*Math.max(0,n[0]*LT[0]+n[1]*LT[1]+n[2]*LT[2]);return`rgba(${c[0]*d*k|0},${c[1]*d*k|0},${c[2]*d*k*(k<.6?1.5:1)|0},${a})`}
+function boxFaces(b,x0,x1,y0,y1,z0,z1){const v=[[x0,y0,z0],[x1,y0,z0],[x1,y1,z0],[x0,y1,z0],[x0,y0,z1],[x1,y0,z1],[x1,y1,z1],[x0,y1,z1]];
+ return[[[0,1,2,3],[0,0,-1]],[[5,4,7,6],[0,0,1]],[[4,0,3,7],[-1,0,0]],[[1,5,6,2],[1,0,0]],[[3,2,6,7],[0,1,0]],[[4,5,1,0],[0,-1,0]]].map(([ix,n])=>({pts:ix.map(i=>v[i]),n}))}
+function frame(t){
+ const sb=Math.min(t/5,5),stage=Math.min(4,Math.floor(t/5));
+ const xr=sm((t-25)/1.2)*(1-sm((t-30.6)/.6));
+ const ex=sm((t-31)/1.5)*(1-sm((t-35)/1));
+ const cut=sm((t-36)/1.5)*(1-sm((t-40.4)/.6));
+ const dusk=sm((t-41)/2.5)*(1-sm((t-47.3)/.7));
+ const filt=t<25?-1:Math.floor((t-25.6)/1.25);// 0..3 each system, 4 all
+ // camera
+ let ci;if(t<25){const k=t/5,i=Math.min(4,Math.floor(k)),fr=sm((k-i)/.35);const a=PRE[Math.max(0,i-1)],b=PRE[i];ci=a.map((v,j)=>L(v,b[j],i==0?1:fr))}
+ else{const base=PRE[4],tt=t-25;ci=[base[0]+tt*.11,L(.3,.42,xr+ex),L(28,32,ex),L(2.5,4.5,ex)]}
+ ci[0]+=Math.sin(t*.2)*.05;setCam(...ci);
+ // sky
+ const sk=g.createLinearGradient(0,0,0,720);
+ const mix=(a,b)=>`rgb(${a.map((v,i)=>L(v,b[i],dusk)|0)})`;
+ sk.addColorStop(0,mix([120,170,215],[14,18,44]));sk.addColorStop(.6,mix([230,215,190],[120,60,70]));sk.addColorStop(1,mix([200,180,150],[30,20,30]));
+ g.fillStyle=sk;g.fillRect(0,0,1280,720);
+ if(dusk>0){g.fillStyle=`rgba(255,250,230,${dusk*.8})`;for(let i=0;i<60;i++){g.fillRect((i*197)%1280,(i*89)%300,1.5,1.5)}}
+ if(xr>0){g.fillStyle=`rgba(5,15,30,${xr*.75})`;g.fillRect(0,0,1280,720)}
+ const lk=L(1,.38,dusk);
+ const faces=[];
+ // terrain grid quads
+ const N=10,S=5;
+ for(let i=-N;i<N;i++)for(let j=-N;j<N;j++){const x0=i*S/2,x1=x0+S/2,z0=j*S/2,z1=z0+S/2;
+  const pts=[[x0,hill(x0,z0),z0],[x1,hill(x1,z0),z0],[x1,hill(x1,z1),z1],[x0,hill(x0,z1),z1]];
+  const cc=((i+j)&1)?[150,140,95]:[140,132,88];faces.push({pts,n:[(pts[0][1]-pts[1][1])*.4,1,(pts[0][1]-pts[3][1])*.4],c:cc,a:1-xr*.6,ground:1})}
+ const cutX=L(20,0,cut);
+ for(const p of parts){const st=p.s*5+p.f*3,pr=sm((sb-st)/2);if(pr<=0)continue;
+  let{x0,x1,y0,y1,z0,z1}=p;if(x0>cutX)continue;x1=Math.min(x1,cutX);
+  y1=y0+(y1-y0)*pr;const dy=p.layer*ex*2.4;
+  let a=pr;const isWall=p.s==3||p.s==4;if(xr>0)a*=L(1,isWall?.08:.22,xr);
+  let c=p.c;if(p.glass&&dusk>0&&!p.pool)c=[L(c[0],255,dusk),L(c[1],200,dusk),L(c[2],120,dusk)];
+  for(const f of boxFaces(p,x0,x1,y0+dy,y1+dy,z0,z1))faces.push({pts:f.pts,n:f.n,c,a,glow:p.glass&&!p.pool?dusk:0,cutf:cut>0&&f.n[0]==1&&x1==cutX})}
+ const rp=sm((sb-3*5-3)/2);
+ if(rp>0&&cutX>6.9)for(const r of roofs){const dy=4*ex*2.4+(1-rp)*3;const pts=r.pts.map(v=>[v[0],v[1]+dy,v[2]]);
+  const a=pts[0],b=pts[1],c=pts[2],u=[b[0]-a[0],b[1]-a[1],b[2]-a[2]],w=[c[0]-a[0],c[1]-a[1],c[2]-a[2]];
+  let n=[u[1]*w[2]-u[2]*w[1],u[2]*w[0]-u[0]*w[2],u[0]*w[1]-u[1]*w[0]];const l=Math.hypot(...n);n=n.map(v=>v/l);if(n[1]<0)n=n.map(v=>-v);
+  faces.push({pts,n,c:r.c,a:rp*L(1,.07,xr)})}
+ // project & sort
+ for(const f of faces){f.s=f.pts.map(v=>P(...v));f.z=f.ground?999+f.s.reduce((a,v)=>a+v[2],0)/4:f.s.reduce((a,v)=>a+v[2],0)/f.s.length}
+ faces.sort((a,b)=>b.z-a.z);
+ const treeP=trees.map(tr=>{const s=P(tr.x,tr.y,tr.z);return{tr,s}});
+ let ti=0;treeP.sort((a,b)=>b.s[2]-a.s[2]);
+ const drawTree=({tr,s})=>{const gp=sm((sb-4*5-tr.ph*.3)/2.5);if(gp<=0)return;const k=1000/s[2]*tr.s*gp;const al=1-xr*.7;
+  g.fillStyle=`rgba(${90*lk|0},${70*lk|0},${50*lk|0},${al})`;g.fillRect(s[0]-.15*k,s[1]-1.6*k,.3*k,1.6*k);
+  for(let i=0;i<5;i++){const a=i*1.3+tr.ph,sw=Math.sin(t*1.3+tr.ph+i)*.05*k;
+   g.fillStyle=`rgba(${(100+i*8)*lk|0},${(125+i*6)*lk|0},${(85)*lk|0},${al})`;g.beginPath();g.ellipse(s[0]+Math.cos(a)*.6*k+sw,s[1]-2.2*k+Math.sin(a)*.4*k,.9*k,.6*k,0,0,7);g.fill()}};
+ for(const f of faces){
+  if(!f.ground)while(ti<treeP.length&&treeP[ti].s[2]>f.z)drawTree(treeP[ti++]);
+  if(f.s.some(v=>v[2]<.6))continue;
+  g.beginPath();f.s.forEach((v,i)=>i?g.lineTo(v[0],v[1]):g.moveTo(v[0],v[1]));g.closePath();
+  g.fillStyle=f.cutf?`rgba(230,60,60,${f.a})`:shade(f.c,f.n,f.glow?1:lk,f.a);g.fill();
+  if(xr>.1&&!f.ground){g.strokeStyle=`rgba(140,200,255,${xr*.25})`;g.lineWidth=.7;g.stroke()}
+  if(f.glow){g.shadowColor='#ffb860';}
+ }
+ while(ti<treeP.length)drawTree(treeP[ti++]);
+ // systems
+ const sysP=sm((sb-10)/3);
+ if(sysP>0){const env=sm((sb-15)/3);
+  SYS.forEach((sy,k)=>{let a=Math.max(L(1,.12,env)*(1-cut*.7),xr);if(xr>0&&filt>=0&&filt<4&&filt!=k)a*=1-xr*.85;if(a<.02)return;
+   sy.r.forEach((rt,ri)=>{const pts=rt.map(v=>{const dy=(v[1]>3?2:2)*ex*2.4;return P(v[0],v[1]+dy,v[2])});
+    const tot=Math.min(1,sysP*1.4-ri*.15);if(tot<=0)return;const n=Math.max(2,Math.ceil(pts.length*tot));
+    g.globalAlpha=a;g.lineCap='round';g.lineJoin='round';
+    for(const [w,al] of[[9,.25],[3.5,1]]){g.strokeStyle=sy.c;g.lineWidth=w;g.globalAlpha=a*al;g.setLineDash([]);
+     g.beginPath();for(let i=0;i<n;i++)i?g.lineTo(pts[i][0],pts[i][1]):g.moveTo(pts[i][0],pts[i][1]);g.stroke()}
+    g.strokeStyle='#fff';g.lineWidth=1.5;g.setLineDash([3,14]);g.lineDashOffset=-t*40*(k==2?-1:1);g.globalAlpha=a*.8;g.stroke();g.setLineDash([]);g.globalAlpha=1})})}
+ // callouts
+ const CO=[[[-6,0,4.4],'Reinforced slab · 40 cm',0],[[6,3,4],'RC frame · 2 levels',1],[[-5,2.5,-3],'Water supply riser',2],[[6.3,1.6,4.3],'Local stone, 30 cm',3],[[9,0,-1.7],'Infinity pool',4]];
+ if(t<25){const [pos,txt,si]=CO[stage];const ap=sm((t-si*5-2)/1)*(1-sm((t-si*5-4.6)/.4));
+  if(ap>0){const s=P(pos[0],pos[1],pos[2]);const ox=s[0]+(s[0]<640?-150:150)*0,lx=s[0]+90,ly=s[1]-90;
+   g.globalAlpha=ap;g.strokeStyle='#fff';g.lineWidth=1.5;g.beginPath();g.arc(s[0],s[1],5,0,7);g.moveTo(s[0],s[1]);g.lineTo(lx,ly);g.lineTo(lx+20,ly);g.stroke();
+   g.font='600 18px sans-serif';const w=g.measureText(txt).width;g.fillStyle='rgba(10,14,20,.75)';g.fillRect(lx+24,ly-16,w+20,30);
+   g.fillStyle='#fff';g.fillText(txt,lx+34,ly+5);g.globalAlpha=1}}
+ // UI
+ g.fillStyle='rgba(8,10,14,.6)';g.fillRect(28,24,380,74);
+ g.fillStyle='#fff';g.font='700 24px sans-serif';g.fillText('Hillside Villa',44,54);
+ g.font='15px sans-serif';g.fillStyle='#cdd';g.fillText(t<25?`Stage ${stage+1}/5 — ${STG[stage]}`:'Finished · inspection modes',44,82);
+ const modes=[['X-RAY',xr],['EXPLODE',ex],['CUT',cut],['DUSK',dusk]];
+ modes.forEach(([m,v],i)=>{const x=1252-(4-i)*112,y=28;g.fillStyle=`rgba(${L(20,60,v)|0},${L(24,140,v)|0},${L(30,220,v)|0},.8)`;g.fillRect(x,y,104,34);
+  g.strokeStyle='rgba(255,255,255,.4)';g.strokeRect(x+.5,y+.5,103,33);g.fillStyle='#fff';g.font='600 14px sans-serif';g.textAlign='center';g.fillText(m,x+52,y+22);g.textAlign='left'});
+ if(xr>.05){SYS.forEach((sy,k)=>{const on=filt>=4||filt==k,y=80+k*30;g.globalAlpha=xr;g.fillStyle=on?sy.c:'rgba(120,120,120,.5)';g.fillRect(1112,y,16,16);
+   g.fillStyle=on?'#fff':'#888';g.font='15px sans-serif';g.fillText(sy.n,1136,y+13);g.globalAlpha=1})}
+ // timeline
+ const bx=140,bw=1000,by=670;g.fillStyle='rgba(8,10,14,.6)';g.fillRect(bx-20,by-34,bw+40,62);
+ STG.forEach((s,i)=>{const x=bx+i*bw/5,on=sb>=i;g.fillStyle=on?'#e8a860':'#445';g.fillRect(x+2,by,bw/5-4,6);
+  g.fillStyle=stage==i&&t<25?'#fff':'#aab';g.font='13px sans-serif';g.textAlign='center';g.fillText(s,x+bw/10,by-12);g.textAlign='left'});
+ const hx=bx+bw*cl(t/25);g.fillStyle='#fff';g.beginPath();g.arc(hx,by+3,7,0,7);g.fill();
+ g.fillStyle='#aab';g.font='12px monospace';g.fillText(t.toFixed(1)+'s',bx+bw+28-30,by+22);
+}
+function loop(){const t=((performance.now()-start)/1000+T0)%DUR;frame(t);requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+</script></body></html>

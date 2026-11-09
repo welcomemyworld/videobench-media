@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>NO HANDS LABS</title>
+<style>
+  body { 
+    margin: 0; 
+    background: #000; 
+    overflow: hidden; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    height: 100vh; 
+  }
+  #stage { 
+    width: 1280px; 
+    height: 720px; 
+    max-width: 100vw; 
+    max-height: 100vh; 
+    object-fit: contain; 
+    background: #000; 
+    box-shadow: 0 0 100px rgba(0, 30, 60, 0.4); 
+  }
+  svg { 
+    position: absolute; 
+    width: 0; 
+    height: 0; 
+    pointer-events: none; 
+  }
+</style>
+</head>
+<body>
+<svg>
+  <filter id="fR"><feColorMatrix type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1 0"/></filter>
+  <filter id="fC"><feColorMatrix type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 1 0"/></filter>
+</svg>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+window.DUR = 15;
+const W = 1280, H = 720;
+const canvas = document.getElementById('stage');
+const ctx = canvas.getContext('2d', { alpha: false });
+
+const fx = document.createElement('canvas'); fx.width = W; fx.height = H;
+const fctx = fx.getContext('2d');
+const main = document.createElement('canvas'); main.width = W; main.height = H;
+const mctx = main.getContext('2d');
+
+const urlParams = new URLSearchParams(location.search);
+const tOffset = parseFloat(urlParams.get('t')) || 0;
+
+// Pre-compute text particle targets
+const tCanvas = document.createElement('canvas');
+tCanvas.width = W; tCanvas.height = H;
+const tCtx = tCanvas.getContext('2d', { willReadFrequently: true });
+tCtx.fillStyle = '#fff';
+tCtx.textAlign = 'center'; tCtx.textBaseline = 'middle';
+tCtx.font = '900 130px "Arial Black", Impact, sans-serif';
+tCtx.fillText('NO HANDS', 640, 280);
+tCtx.font = '900 240px "Arial Black", Impact, sans-serif';
+tCtx.fillText('LABS', 640, 440);
+
+const imgData = tCtx.getImageData(0, 0, W, H).data;
+const pts = [];
+for (let y = 0; y < H; y += 5) {
+    for (let x = 0; x < W; x += 5) {
+        if (imgData[(y * W + x) * 4 + 3] > 128) pts.push({ tx: x, ty: y });
+    }
+}
+for (let i = pts.length - 1; i > 0; i--) {
+    let j = Math.floor(Math.random() * (i + 1));
+    [pts[i], pts[j]] = [pts[j], pts[i]];
+}
+const particles = pts.slice(0, 2800).map((p, i) => ({
+    tx: p.tx, ty: p.ty,
+    sx: Math.random() * 3000 - 860,
+    sy: Math.random() * 2000 - 640,
+    off: Math.random() * Math.PI * 2,
+    c: i % 3 === 0 ? '#f0f' : (i % 3 === 1 ? '#0ff' : '#fff'),
+    sz: 1 + Math.random() * 2.5
+}));
+
+let startTime = performance.now();
+const lerp = (a, b, t) => a + (b - a) * t;
+const easeOutQuart = x => 1 - Math.pow(1 - x, 4);
+
+function render(now) {
+    let t = ((now - startTime) / 1000 + tOffset) % 15;
+    
+    // ==========================================
+    // 1. FX LAYER (Trails, Particles, Warp)
+    // ==========================================
+    fctx.globalCompositeOperation = 'source-over';
+    let fade = (t > 13.5) ? 0.3 : (t > 11 ? 0.4 : 0.15);
+    fctx.fillStyle = `rgba(0,0,0,${fade})`;
+    fctx.fillRect(0, 0, W, H);
+    fctx.globalCompositeOperation = 'lighter';
+    
+    if (t < 11.0) {
+        let p = Math.min(1, t / 2.5);
+        let ease = easeOutQuart(p);
+        let swirl = (1 - ease) * 600;
+        let vib = (t > 2.5 && t < 3.2) ? (3.2 - t) * 5 : 0;
+        if (t > 7.0) vib = Math.sin(t * 20) * 0.5;
+        
+        for (let i = 0; i < particles.length; i++) {
+            let pt = particles[i];
+            let ang = p * 8 + pt.off;
+            let x = lerp(pt.sx, pt.tx, ease) + Math.cos(ang) * swirl + (Math.random() - 0.5) * vib;
+            let y = lerp(pt.sy, pt.ty, ease) + Math.sin(ang) * swirl + (Math.random() - 0.5) * vib;
+            fctx.fillStyle = pt.c;
+            fctx.fillRect(x, y, pt.sz, pt.sz);
+        }
+        
+        if (t > 7.0) {
+            let sp = t - 7.0;
+            for (let i = 0; i < 60; i++) {
+                let sx = 640 + Math.sin(i * 12.3 + sp * 2) * 450;
+                let sy = 720 - ((sp * 180 + i * 37) % 850);
+                fctx.fillStyle = i % 2 ? '#0ff' : '#f0f';
+                fctx.fillRect(sx, sy, 2, 8);
+            }
+        }
+    } else if (t < 13.5) {
+        let wt = t - 11.0;
+        fctx.lineWidth = 2 + wt;
+        for (let i = 0; i < 400; i++) {
+            let a = i * 2.39996;
+            let r = 50 + ((wt * 800 * (1 + i % 5)) % 1200);
+            let len = 20 + wt * 150 + (i % 10) * 10;
+            fctx.strokeStyle = `hsla(${180 + (i % 80)}, 100%, ${60 + (i % 20)}%, 0.7)`;
+            fctx.beginPath();
+            fctx.moveTo(640 + Math.cos(a) * r, 360 + Math.sin(a) * r);
+            fctx.lineTo(640 + Math.cos(a) * (r + len), 360 + Math.sin(a) * (r + len));
+            fctx.stroke();
+        }
+    }
+
+    // ==========================================
+    // 2. MAIN LAYER (Sharp UI, Text, Grid)
+    // ==========================================
+    mctx.globalCompositeOperation = 'source-over';
+    mctx.clearRect(0, 0, W, H);
+    
+    let bgGrd = mctx.createRadialGradient(640, 360, 0, 640, 360, 800);
+    bgGrd.addColorStop(0, t < 2.5 ? '#011022' : '#000814');
+    bgGrd.addColorStop(1, '#000000');
+    mctx.fillStyle = bgGrd;
+    mctx.fillRect(0, 0, W, H);
+
+    if (t >= 2.4 && t < 11.0) {
+        let gridAlpha = t < 7 ? 1 : 1 - (t - 7) / 4;
+        mctx.strokeStyle = `rgba(255, 0, 255, ${0.25 * gridAlpha})`;
+        mctx.lineWidth = 2;
+        let gz = (t * 400) % 100;
+        for (let i = 1; i < 25; i++) {
+            let z = i * 100 - gz;
+            if (z <= 0) continue;
+            let y1 = 360 + 25000 / z, y2 = 360 - 25000 / z;
+            mctx.beginPath(); mctx.moveTo(0, y1); mctx.lineTo(W, y1); mctx.stroke();
+            mctx.beginPath(); mctx.moveTo(0, y2); mctx.lineTo(W, y2); mctx.stroke();
+        }
+        mctx.strokeStyle = `rgba(0, 255, 255, ${0.2 * gridAlpha})`;
+        for (let i = -12; i <= 12; i++) {
+            mctx.beginPath(); mctx.moveTo(640, 360); mctx.lineTo(640 + i * 150, 720); mctx.stroke();
+            mctx.beginPath(); mctx.moveTo(640, 360); mctx.lineTo(640 + i * 150, 0); mctx.stroke();
+        }
+        
+        mctx.save();
+        mctx.translate(640, 360);
+        mctx.rotate(t * 0.4);
+        mctx.strokeStyle = `rgba(0,255,255,${0.6 * gridAlpha})`;
+        mctx.lineWidth = 3;
+        mctx.beginPath(); mctx.arc(0, 0, 330, 0, Math.PI * 1.2); mctx.stroke();
+        mctx.rotate(-t * 0.9);
+        mctx.beginPath(); mctx.arc(0, 0, 350, 0, Math.PI * 0.5); mctx.stroke();
+        mctx.lineWidth = 1;
+        for (let i = 0; i < 72; i++) {
+            mctx.rotate(Math.PI / 36);
+            mctx.beginPath(); mctx.moveTo(360, 0); mctx.lineTo(i % 6 === 0 ? 375 : 368, 0); mctx.stroke();
+        }
+        mctx.restore();
+    }
+
+    if (t > 2.45 && t < 4.0) {
+        let sw = (t - 2.45) / 1.55;
+        mctx.strokeStyle = `rgba(0, 255, 255, ${1 - sw})`;
+        mctx.lineWidth = 30 * (1 - sw);
+        mctx.beginPath(); mctx.arc(640, 360, easeOutQuart(sw) * 1400, 0, Math.PI * 2); mctx.stroke();
+        mctx.strokeStyle = `rgba(255, 255, 255, ${(1 - sw) * 0.8})`;
+        mctx.lineWidth = 5 * (1 - sw);
+        mctx.beginPath(); mctx.arc(640, 360, easeOutQuart(sw) * 1200, 0, Math.PI * 2); mctx.stroke();
+    }
+
+    mctx.textAlign = 'center'; mctx.textBaseline = 'middle';
+    
+    if (t >= 2.5 && t < 11.5) {
+        let textAlpha = Math.min(1, (t - 2.5) * 5);
+        if (t > 11.0) textAlpha = 1 - (t - 11.0) * 2;
+        let zoom = t > 11.0 ? 1 + Math.pow(t - 11.0, 2) * 5 : 1;
+        
+        mctx.save();
+        mctx.translate(640, 360); mctx.scale(zoom, zoom); mctx.translate(-640, -360);
+        mctx.globalCompositeOperation = 'lighter';
+        
+        let px = t > 7 ? Math.sin(t * 1.5) * 12 : 0;
+        let py = t > 7 ? Math.cos(t * 1.2) * 8 : 0;
+        
+        const drawTxt = (txt, y, size, color, dx, dy) => {
+            mctx.font = `900 ${size}px "Arial Black", Impact, sans-serif`;
+            mctx.fillStyle = color;
+            mctx.fillText(txt, 640 + dx, y + dy);
+        };
+        
+        mctx.shadowBlur = 20; mctx.shadowColor = '#0ff';
+        drawTxt('NO HANDS', 280, 130, `rgba(255,0,255,${textAlpha * 0.7})`, -px, -py);
+        mctx.shadowColor = '#f0f';
+        drawTxt('NO HANDS', 280, 130, `rgba(0,255,255,${textAlpha * 0.7})`, px, py);
+        drawTxt('LABS', 440, 240, `rgba(255,0,255,${textAlpha * 0.7})`, -px * 1.5, -py * 1.5);
+        drawTxt('LABS', 440, 240, `rgba(0,255,255,${textAlpha * 0.7})`, px * 1.5, py * 1.5);
+        
+        mctx.shadowBlur = 30; mctx.shadowColor = '#fff';
+        drawTxt('NO HANDS', 280, 130, `rgba(255,255,255,${textAlpha})`, 0, 0);
+        drawTxt('LABS', 440, 240, `rgba(255,255,255,${textAlpha})`, 0, 0);
+        
+        if (t > 4.0) {
+            let sa = Math.min(1, (t - 4) * 2) * textAlpha;
+            mctx.shadowBlur = 10; mctx.shadowColor = '#0ff';
+            mctx.font = '600 28px "Helvetica Neue", Arial, sans-serif';
+            mctx.letterSpacing = '14px';
+            mctx.fillStyle = `rgba(0, 255, 255, ${sa})`;
+            mctx.fillText('NOHANDSLABS.COM', 645, 600);
+            mctx.letterSpacing = '0px';
+        }
+        mctx.restore();
+    }
+    
+    if (t > 7.0 && t < 11.0) {
+        let lx = 640 + Math.sin(t * 0.8) * 500;
+        let ly = 360 + Math.cos(t * 1.1) * 250;
+        let rg = mctx.createRadialGradient(lx, ly, 0, lx, ly, 400);
+        rg.addColorStop(0, 'rgba(255,255,255,0.6)');
+        rg.addColorStop(0.1, 'rgba(0,255,255,0.2)');
+        rg.addColorStop(1, 'rgba(0,0,0,0)');
+        mctx.globalCompositeOperation = 'lighter';
+        mctx.fillStyle = rg; mctx.fillRect(0, 0, W, H);
+        mctx.fillStyle = 'rgba(0,255,255,0.3)';
+        mctx.fillRect(0, ly - 1, W, 2);
+        
+        let gx = W - lx, gy = H - ly;
+        let rg2 = mctx.createRadialGradient(gx, gy, 0, gx, gy, 150);
+        rg2.addColorStop(0, 'rgba(255,0,255,0.4)');
+        rg2.addColorStop(1, 'rgba(0,0,0,0)');
+        mctx.fillStyle = rg2; mctx.fillRect(0, 0, W, H);
+    }
+
+    if (t >= 13.5) {
+        let rt = t - 13.5;
+        let fadeIn = Math.min(1, rt * 3);
+        let fadeOut = rt > 1.0 ? 1 - (rt - 1.0) * 2 : 1;
+        let a = fadeIn * fadeOut;
+        
+        mctx.globalCompositeOperation = 'source-over';
+        mctx.font = '300 44px "Helvetica Neue", Arial, sans-serif';
+        mctx.letterSpacing = '16px';
+        mctx.fillStyle = `rgba(255,255,255,${a})`;
+        mctx.shadowBlur = 15; mctx.shadowColor = `rgba(0,255,255,${a})`;
+        mctx.fillText('nohandslabs.com', 648, 360);
+        mctx.letterSpacing = '0px';
+        
+        let scanY = (rt / 1.5) * H;
+        mctx.shadowBlur = 20; mctx.shadowColor = '#0ff';
+        mctx.fillStyle = `rgba(0,255,255,${a})`;
+        mctx.fillRect(0, scanY, W, 2);
+        let sg = mctx.createLinearGradient(0, scanY - 30, 0, scanY);
+        sg.addColorStop(0, 'rgba(0,255,255,0)');
+        sg.addColorStop(1, `rgba(0,255,255,${0.3 * a})`);
+        mctx.fillStyle = sg;
+        mctx.fillRect(0, scanY - 30, W, 30);
+    }
+
+    // ==========================================
+    // 3. COMPOSITE & POST-PROCESS
+    // ==========================================
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    ctx.filter = 'none';
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+    
+    let shake = 0;
+    if (t > 2.4 && t < 2.9) shake = (2.9 - t) * 50;
+    if (t > 11.0 && t < 13.5) shake = Math.sin(t * 60) * 6 + (t - 11) * 2;
+    let cx = (Math.random() - 0.5) * shake;
+    let cy = (Math.random() - 0.5) * shake;
+    
+    ctx.save();
+    ctx.translate(640 + cx, 360 + cy);
+    let zScale = (t > 2.45 && t < 2.8) ? 1 + (2.8 - t) * 0.1 : 1;
+    ctx.scale(zScale, zScale);
+    ctx.translate(-640, -360);
+    
+    let ca = 0;
+    if (t > 2.4 && t < 3.4) ca = (3.4 - t) * 12;
+    if (t > 11.0 && t < 13.5) ca = Math.abs(Math.sin(t * 40)) * 15 + (t - 11) * 3;
+    if (t > 0 && t < 2.5 && Math.random() > 0.9) ca = 4;
+    
+    if (ca > 0.5) {
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.filter = 'url(#fR)';
+        ctx.drawImage(main, -ca, 0);
+        ctx.filter = 'url(#fC)';
+        ctx.drawImage(main, ca, 0);
+        ctx.filter = 'none';
+        ctx.globalAlpha = 0.7;
+        ctx.drawImage(fx, -ca * 0.5, 0);
+        ctx.globalAlpha = 1;
+    } else {
+        ctx.drawImage(main, 0, 0);
+    }
+    
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.drawImage(fx, 0, 0);
+    
+    let glitch = false;
+    if (t > 0 && t < 2.5 && Math.random() > 0.85) glitch = true;
+    if (t > 2.4 && t < 3.0) glitch = true;
+    if (t > 11.5 && t < 13.5 && Math.random() > 0.4) glitch = true;
+    
+    if (glitch) {
+        let slices = 3 + Math.floor(Math.random() * 5);
+        for (let i = 0; i < slices; i++) {
+            let gy = Math.random() * H;
+            let gh = 5 + Math.random() * 60;
+            let gx = (Math.random() - 0.5) * (ca > 0 ? 100 : 30);
+            ctx.drawImage(canvas, 0, gy, W, gh, gx, gy, W, gh);
+        }
+    }
+    
+    let flash = 0;
+    if (t > 2.45 && t < 2.6) flash = (2.6 - t) * 10;
+    if (t > 13.4 && t < 13.6) flash = 1 - Math.abs(t - 13.5) * 10;
+    if (t > 11.5 && t < 13.5 && Math.sin(t * 50) > 0.8) flash = 0.15;
+    
+    if (flash > 0) {
+        ctx.globalCompositeOperation = 'screen';
+        ctx.fillStyle = `rgba(255,255,255,${Math.min(1, flash)})`;
+        ctx.fillRect(0, 0, W, H);
+    }
+    ctx.restore();
+    
+    let vg = ctx.createRadialGradient(640, 360, 300, 640, 360, 900);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, 'rgba(0,0,0,0.85)');
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.filter = 'none';
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, W, H);
+    
+    if (Math.random() > 0.5) {
+        ctx.fillStyle = 'rgba(255,255,255,0.02)';
+        for (let i = 0; i < 30; i++) {
+            ctx.fillRect(Math.random() * W, Math.random() * H, 2, 2);
+        }
+    }
+    
+    requestAnimationFrame(render);
+}
+
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

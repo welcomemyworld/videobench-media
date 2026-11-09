@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8"><title>网站宣传片</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#s{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}
+#m{position:absolute;right:10px;bottom:10px;color:#888;font:12px sans-serif;cursor:pointer}</style></head>
+<body><canvas id="s" width="1280" height="720"></canvas><div id="m">♪ 点击开启配乐</div>
+<script>
+window.DUR=30;const C=document.getElementById('s'),X=C.getContext('2d');
+function fit(){const k=Math.min(innerWidth/1280,innerHeight/720);C.style.width=1280*k+'px';C.style.height=720*k+'px'}fit();onresize=fit;
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t')||0)||0,T0=performance.now();
+const BPM=120,B=60/BPM;
+// ---- 配乐 (WebAudio, 程序生成) ----
+let ac=null,nextBar=0;
+function startAudio(){if(ac)return;ac=new (window.AudioContext||window.webkitAudioContext)();nextBar=0;document.getElementById('m').style.display='none'}
+document.addEventListener('click',startAudio);try{startAudio();if(ac.state!=='running'){ac.close();ac=null;document.getElementById('m').style.display='block'}}catch(e){ac=null}
+const prog=[[57,60,64],[53,57,60],[48,52,55],[55,59,62]];
+function f(n){return 440*Math.pow(2,(n-69)/12)}
+function tone(t,fr,d,type,v){const o=ac.createOscillator(),g=ac.createGain();o.type=type;o.frequency.value=fr;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+.02);g.gain.exponentialRampToValueAtTime(.0001,t+d);o.connect(g).connect(ac.destination);o.start(t);o.stop(t+d+.05)}
+function kick(t){const o=ac.createOscillator(),g=ac.createGain();o.frequency.setValueAtTime(140,t);o.frequency.exponentialRampToValueAtTime(40,t+.15);g.gain.setValueAtTime(.6,t);g.gain.exponentialRampToValueAtTime(.001,t+.3);o.connect(g).connect(ac.destination);o.start(t);o.stop(t+.35)}
+function sched(){if(!ac)return;while(nextBar<ac.currentTime+1){if(nextBar<ac.currentTime)nextBar=ac.currentTime+.05;
+ const songT=((nextBar-ac.currentTime)+cur)%DUR,bar=Math.floor(songT/(4*B)),ch=prog[bar%4];
+ ch.forEach(n=>tone(nextBar,f(n),4*B,'triangle',.05));tone(nextBar,f(ch[0]-24),4*B*.9,'sine',.18);
+ for(let i=0;i<8;i++){const t=nextBar+i*B/2;tone(t,f(ch[i%3]+12+(i>3?12:0)),.25,'square',.02);if(songT>4&&i%2==0)kick(t)}
+ nextBar+=4*B}}
+// ---- 视觉 ----
+const P=[];for(let i=0;i<140;i++)P.push({x:Math.random()*1280,y:Math.random()*720,z:Math.random()*2+.3,p:Math.random()*6});
+const E=x=>x<0?0:x>1?1:1-Math.pow(1-x,3);
+const scenes=[
+ {a:4,b:11,t:'更快',s:'毫秒级响应，打开即用',ic:0},
+ {a:11,b:18,t:'更简单',s:'清晰的设计，专注真正重要的事',ic:1},
+ {a:18,b:24,t:'更可靠',s:'安全稳定，随时随地为你服务',ic:2}];
+let cur=0;
+function txt(s,x,y,sz,a,c,w){X.globalAlpha=a;X.fillStyle=c||'#fff';X.font=(w||'600')+' '+sz+'px "PingFang SC","Microsoft YaHei",sans-serif';X.textAlign='center';X.fillText(s,x,y);X.globalAlpha=1}
+function icon(k,x,y,r,t){X.strokeStyle='#7cf';X.lineWidth=6;X.beginPath();
+ if(k==0){for(let i=0;i<3;i++){X.moveTo(x-r+i*25,y-r*.6);X.lineTo(x+i*25,y);X.lineTo(x-r+i*25,y+r*.6)}}
+ else if(k==1){X.roundRect(x-r,y-r*.7,r*2,r*1.4,16);X.moveTo(x-r*.6,y);X.lineTo(x+r*.6*Math.sin(t*2),y)}
+ else{X.moveTo(x,y-r);X.lineTo(x+r*.8,y-r*.6);X.lineTo(x+r*.7,y+r*.2);X.lineTo(x,y+r);X.lineTo(x-r*.7,y+r*.2);X.lineTo(x-r*.8,y-r*.6);X.closePath();X.moveTo(x-r*.35,y);X.lineTo(x-r*.05,y+r*.3);X.lineTo(x+r*.4,y-r*.3)}
+ X.stroke()}
+function frame(){cur=((performance.now()-T0)/1000+off)%DUR;const t=cur;sched();
+ const beat=Math.pow(1-((t/B)%1),4)*(t>4?1:0);
+ const g=X.createRadialGradient(640,360,0,640,360,800);g.addColorStop(0,`hsl(${220+t*2},60%,${12+beat*4}%)`);g.addColorStop(1,'#03040a');X.fillStyle=g;X.fillRect(0,0,1280,720);
+ for(const p of P){const x=(p.x-t*30*p.z)%1280+(p.x-t*30*p.z<0?1280:0),y=p.y+Math.sin(t+p.p)*8;X.fillStyle=`rgba(140,200,255,${.15*p.z})`;X.fillRect(x,y,p.z*2,p.z*2)}
+ // 网格
+ X.strokeStyle='rgba(120,180,255,.07)';X.lineWidth=1;for(let i=-10;i<=10;i++){X.beginPath();X.moveTo(640+i*40,460);X.lineTo(640+i*200,720);X.stroke()}
+ for(let j=0;j<8;j++){const y=460+Math.pow((j+(t*.5)%1)/8,2)*260;X.beginPath();X.moveTo(0,y);X.lineTo(1280,y);X.stroke()}
+ // 开场
+ if(t<4.5){const a=E(t/1.2)*(t>3.8?1-(t-3.8)/.7:1);const r=60+E(t/1.5)*40;
+  X.strokeStyle=`rgba(120,200,255,${a})`;X.lineWidth=4;X.beginPath();X.arc(640,300,r,-1.57,-1.57+E(t/1.6)*6.283);X.stroke();
+  txt('◆',640,322,60,a,'#7cf');txt('全新上线',640,450,64,a*E((t-.8)/1),'#fff','700');txt('探索更好的网络体验',640,510,28,a*E((t-1.5)/1),'#9bd','400')}
+ for(const s of scenes){if(t>s.a-.3&&t<s.b+.3){const l=t-s.a,a=Math.min(E(l/.8),E((s.b-t)/.6));const sl=(1-E(l/.8))*80;
+  // 浏览器窗口
+  X.save();X.globalAlpha=a;X.translate(sl,0);X.fillStyle='rgba(20,30,55,.85)';X.strokeStyle='rgba(120,180,255,.4)';X.lineWidth=2;
+  X.beginPath();X.roundRect(560,170,620,380,18);X.fill();X.stroke();
+  ['#f66','#fc5','#5d8'].forEach((c,i)=>{X.fillStyle=c;X.beginPath();X.arc(590+i*22,195,6,0,7);X.fill()});
+  X.fillStyle='rgba(255,255,255,.08)';X.fillRect(670,186,420,18);
+  for(let i=0;i<4;i++){const w=E((l-.5-i*.2)/.8);X.fillStyle=`rgba(120,200,255,${.15+i*.05})`;X.fillRect(600,250+i*60,500*w*(1-i*.15),30)}
+  icon(s.ic,870,480,40,t);X.restore();
+  txt(s.t,330,330,96,a,'#fff','800');txt(s.s,330,400,26,a*E((l-.4)/.8),'#9cd','400');
+  X.globalAlpha=a;X.fillStyle='#7cf';X.fillRect(330-60*E(l),430,120*E(l),4);X.globalAlpha=1}}
+ // 收尾
+ if(t>24){const l=t-24,a=E(l/1)*(t>29.4?(30-t)/.6:1);
+  for(let i=0;i<3;i++){X.strokeStyle=`rgba(120,200,255,${a*(.5-i*.15)})`;X.lineWidth=2;X.beginPath();X.arc(640,280,80+i*30+beat*10,0,7);X.stroke()}
+  txt('◆',640,305,70,a,'#7cf');txt('即刻体验',640,440,72,a*E((l-.4)/.8),'#fff','800');
+  const bw=300*E((l-1)/.8);X.globalAlpha=a;X.fillStyle='#4af';X.beginPath();X.roundRect(640-bw/2,480,bw,64,32);X.fill();X.globalAlpha=1;
+  txt('立即访问 →',640,523,28,a*E((l-1.5)/.6),'#fff','700')}
+ // 进度条
+ X.fillStyle='rgba(120,200,255,.5)';X.fillRect(0,716,1280*t/DUR,4);
+ requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

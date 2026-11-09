@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Nova Launch</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#s{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}</style></head>
+<body><canvas id="s" width="1280" height="720"></canvas>
+<script>
+window.DUR=26;
+const C=document.getElementById('s'),X=C.getContext('2d');
+function fit(){const k=Math.min(innerWidth/1280,innerHeight/720);C.style.transform=`scale(${k}) translate(-50%,-50%)`;C.style.left='50%';C.style.top='50%';C.style.transformOrigin='0 0';C.style.translate=`${-640*k}px ${-360*k}px`;C.style.transform=`scale(${k})`;}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),T0=parseFloat(q.get('t')||0)||0,st=performance.now();
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),L=(a,b,t)=>a+(b-a)*t;
+const E=t=>{t=cl(t);return t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2};
+const EO=t=>1-Math.pow(1-cl(t),3);
+const seg=(t,a,b)=>cl((t-a)/(b-a));
+function rr(x,y,w,h,r){X.beginPath();X.roundRect(x,y,w,h,r);}
+const F='system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif';
+function txt(s,x,y,sz,c,w=600,al='left'){X.font=`${w} ${sz}px ${F}`;X.fillStyle=c;X.textAlign=al;X.textBaseline='middle';X.fillText(s,x,y);}
+// background
+function bg(t){const g=X.createLinearGradient(0,0,1280,720);g.addColorStop(0,'#0b0b1f');g.addColorStop(1,'#140a2a');X.fillStyle=g;X.fillRect(0,0,1280,720);
+for(let i=0;i<3;i++){const x=640+Math.cos(t*.3+i*2)*420,y=360+Math.sin(t*.4+i*2.3)*220;const r=X.createRadialGradient(x,y,0,x,y,420);
+r.addColorStop(0,['rgba(124,92,255,.35)','rgba(0,200,255,.22)','rgba(255,80,180,.18)'][i]);r.addColorStop(1,'rgba(0,0,0,0)');X.fillStyle=r;X.fillRect(0,0,1280,720);}
+X.strokeStyle='rgba(255,255,255,.04)';X.lineWidth=1;for(let x=0;x<1280;x+=40){X.beginPath();X.moveTo(x,0);X.lineTo(x,720);X.stroke();}for(let y=0;y<720;y+=40){X.beginPath();X.moveTo(0,y);X.lineTo(1280,y);X.stroke();}}
+function logo(x,y,s,a){X.save();X.globalAlpha=a;X.translate(x,y);X.scale(s,s);const g=X.createLinearGradient(-30,-30,30,30);g.addColorStop(0,'#7c5cff');g.addColorStop(1,'#00c8ff');X.fillStyle=g;rr(-30,-30,60,60,16);X.fill();
+X.fillStyle='#fff';X.beginPath();X.moveTo(0,-17);X.lineTo(5,-5);X.lineTo(17,0);X.lineTo(5,5);X.lineTo(0,17);X.lineTo(-5,5);X.lineTo(-17,0);X.lineTo(-5,-5);X.closePath();X.fill();X.restore();}
+const QUERY='Q3 revenue by region',DATA=[42,58,51,73,66,88,95,81,104,118,112,136];
+// App UI at 1000x620 local
+function app(t,st){
+X.save();X.shadowColor='rgba(0,0,0,.6)';X.shadowBlur=60;X.shadowOffsetY=30;X.fillStyle='#11121c';rr(0,0,1000,620,18);X.fill();X.restore();
+X.save();rr(0,0,1000,620,18);X.clip();
+X.fillStyle='#181a28';X.fillRect(0,0,1000,40);['#ff5f57','#febc2e','#28c840'].forEach((c,i)=>{X.fillStyle=c;X.beginPath();X.arc(20+i*18,20,6,0,7);X.fill();});
+X.fillStyle='#0f1019';rr(380,10,240,20,6);X.fill();txt('app.nova.io',500,20,11,'#8a8fb0',500,'center');
+// sidebar
+X.fillStyle='#141522';X.fillRect(0,40,200,580);logo(32,72,.4,1);txt('Nova',52,72,17,'#fff',700);
+['Dashboard','Insights','Reports','Automations','Team','Settings'].forEach((n,i)=>{const y=120+i*40;if(i==st.nav){X.fillStyle='rgba(124,92,255,.18)';rr(12,y-15,176,30,8);X.fill();}
+X.fillStyle=i==st.nav?'#7c5cff':'#3a3d55';rr(26,y-6,12,12,3);X.fill();txt(n,50,y,13,i==st.nav?'#fff':'#8a8fb0',500);});
+// search
+X.fillStyle='#1b1d2c';rr(230,62,480,40,10);X.fill();X.strokeStyle=st.focus?'#7c5cff':'#2a2d42';X.lineWidth=st.focus?2:1;X.stroke();
+X.strokeStyle='#8a8fb0';X.lineWidth=2;X.beginPath();X.arc(252,81,7,0,7);X.stroke();X.beginPath();X.moveTo(257,86);X.lineTo(262,91);X.stroke();
+const s=QUERY.slice(0,st.typed);txt(s||'Ask Nova anything…',274,82,14,s?'#fff':'#5a5e7a',500);
+if(st.focus&&(t*2|0)%2==0){X.font=`500 14px ${F}`;const w=X.measureText(s).width;X.fillStyle='#7c5cff';X.fillRect(276+w,72,2,20);}
+const bp=st.press;X.fillStyle='#7c5cff';rr(850+bp*2,62+bp*2,120-bp*4,40-bp*4,10);X.fill();txt('Generate',910,82,14,'#fff',700,'center');
+X.fillStyle='#2a2d42';X.beginPath();X.arc(810,82,16,0,7);X.fill();txt('JD',810,82,11,'#fff',700,'center');
+// KPI cards
+const k=[['Revenue','$'+(1.28*st.kpi).toFixed(2)+'M','+24%'],['Active users',Math.round(48210*st.kpi).toLocaleString(),'+12%'],['Conversion',(6.4*st.kpi).toFixed(1)+'%','+3.1%']];
+k.forEach((c,i)=>{const x=230+i*252;X.fillStyle='#181a28';rr(x,124,236,96,12);X.fill();txt(c[0],x+18,148,12,'#8a8fb0',500);txt(c[1],x+18,182,26,'#fff',800);
+X.fillStyle='rgba(40,200,120,.15)';rr(x+160,172,58,22,11);X.fill();txt(c[2],x+189,183,11,'#3ee08f',700,'center');});
+// chart
+X.fillStyle='#181a28';rr(230,238,740,360,12);X.fill();txt(st.typed>=QUERY.length&&st.cg>0?'Q3 revenue by region':'Revenue overview',250,264,15,'#fff',700);
+txt('Last 12 weeks',950,264,12,'#8a8fb0',500,'right');
+const cx=260,cy=570,cw=690,ch=260;X.strokeStyle='#23263a';X.lineWidth=1;for(let i=0;i<5;i++){X.beginPath();X.moveTo(cx,cy-i*ch/4);X.lineTo(cx+cw,cy-i*ch/4);X.stroke();}
+const g=st.cg;DATA.forEach((v,i)=>{const p=EO(seg(g*1.6,i*.05,i*.05+.6));const h=v/140*ch*p,x=cx+i*(cw/12)+10,w=cw/12-20;
+const gr=X.createLinearGradient(0,cy-h,0,cy);gr.addColorStop(0,i==st.hov?'#00c8ff':'#7c5cff');gr.addColorStop(1,'rgba(124,92,255,.15)');X.fillStyle=gr;rr(x,cy-h,w,h,6);X.fill();});
+// line
+X.strokeStyle='#00c8ff';X.lineWidth=3;X.beginPath();DATA.forEach((v,i)=>{const x=cx+i*(cw/12)+cw/24,y=cy-v*0.85/140*ch*EO(g);i?X.lineTo(x,y):X.moveTo(x,y);});X.stroke();
+if(st.hov>=0&&g>.9){const i=st.hov,x=cx+i*(cw/12)+cw/24,y=cy-DATA[i]/140*ch-50;X.fillStyle='#fff';rr(x-60,y-24,120,44,8);X.fill();txt('Week '+(i+1),x,y-10,11,'#555',600,'center');txt('$'+DATA[i]+'K',x,y+8,15,'#111',800,'center');}
+// AI panel
+if(st.ai>0){const a=EO(st.ai);X.globalAlpha=a;X.fillStyle='#1f2135';rr(600,290-20*(1-a),350,92,12);X.fill();X.strokeStyle='rgba(124,92,255,.6)';X.lineWidth=1;X.stroke();
+txt('✦ Nova AI',618,312-20*(1-a),12,'#a993ff',700);const m='EMEA grew 31% — your fastest region this quarter.';txt(m.slice(0,Math.floor(st.ai*m.length*1.2)),618,340-20*(1-a),12,'#e6e7f2',500);
+txt('Export report →',618,364-20*(1-a),12,'#00c8ff',700);X.globalAlpha=1;}
+X.restore();}
+function cursor(x,y,p){X.save();X.translate(x,y);X.scale(1-p*.15,1-p*.15);if(p>0){X.strokeStyle=`rgba(124,92,255,${p})`;X.lineWidth=3;X.beginPath();X.arc(0,0,22*(1.3-p*.3),0,7);X.stroke();}
+X.fillStyle='#fff';X.strokeStyle='#000';X.lineWidth=1.5;X.beginPath();X.moveTo(0,0);X.lineTo(0,22);X.lineTo(6,17);X.lineTo(10,26);X.lineTo(14,24);X.lineTo(10,15);X.lineTo(17,15);X.closePath();X.fill();X.stroke();X.restore();}
+// cursor keyframes (time, x, y) app coords
+const CK=[[3,1100,700],[4.6,420,82],[8.3,420,82],[9.2,905,82],[10.8,905,82],[12,680,360],[13.2,875,360],[14.5,860,365]];
+function cpos(t){for(let i=0;i<CK.length-1;i++){const a=CK[i],b=CK[i+1];if(t<b[0]){const k=E(seg(t,a[0],b[0]));return[L(a[1],b[1],k),L(a[2],b[2],k)];}}const l=CK[CK.length-1];return[l[1],l[2]];}
+function pulse(t,c){return Math.max(0,1-Math.abs(t-c)/.25);}
+function frame(t){
+bg(t);
+// Scene 1: intro 0-3
+if(t<3.4){const a=EO(seg(t,.2,1.2))*(1-seg(t,2.9,3.4));logo(640,300,L(.3,1.6,EO(seg(t,.1,1.1))),a);
+const tl='Meet Nova.';X.globalAlpha=a;txt(tl.slice(0,Math.floor(seg(t,1,1.8)*tl.length)),640,410,64,'#fff',800,'center');
+txt('Your data, finally answering back.',640,470,22,'rgba(200,200,230,'+EO(seg(t,1.8,2.4))+')',500,'center');X.globalAlpha=1;}
+// Scene 2: app 3-15
+if(t>=3&&t<15.6){const ap=EO(seg(t,3,4));
+const st={nav:0,typed:Math.floor(seg(t,5,8)*QUERY.length),focus:t>4.6&&t<9.3,press:pulse(t,9.3),kpi:EO(seg(t,3.6,5)),cg:t<9.4?EO(seg(t,3.4,5))*.999+0.001:EO(seg(t,9.4,11)),hov:t>12.2&&t<13.2?Math.min(11,Math.floor(seg(t,12,13.2)*4)+7):-1,ai:seg(t,13.3,14.8)};
+if(t<9.4&&t>=9.35)st.cg=0;
+// camera: keyframes scale & focus point in app coords
+const CAM=[[3,.82,500,310,-.18],[4.4,1,500,310,0],[4.9,1.9,430,82,0],[8.2,1.9,520,82,0],[9.6,1.25,700,180,0],[11,1.1,600,420,.08],[12.2,1.6,720,420,.08],[13.4,1.7,780,330,-.05],[15,.95,500,310,-.12]];
+let cm=CAM[CAM.length-1];for(let i=0;i<CAM.length-1;i++){const a=CAM[i],b=CAM[i+1];if(t<b[0]){const k=E(seg(t,a[0],b[0]));cm=a.map((v,j)=>L(v,b[j],k));break;}}
+const out=seg(t,15,15.6);
+X.save();X.globalAlpha=ap*(1-out);X.translate(640,360+(1-ap)*80);X.transform(1,cm[4]*.25,0,1,0,0);X.scale(cm[1],cm[1]);X.translate(-cm[2],-cm[3]);
+app(t,st);const [px,py]=cpos(t);if(t>3.2)cursor(px,py,Math.max(pulse(t,4.6),pulse(t,9.3),pulse(t,14.5))/cm[1]*1.5);
+X.restore();
+const cap=t<9.4?['Ask in plain English.',4.8,9.2]:t<13.2?['Instant, beautiful insights.',9.6,13]:['AI that tells you what matters.',13.3,15.2];
+const ca=seg(t,cap[1],cap[1]+.4)*(1-seg(t,cap[2]-.3,cap[2]));X.globalAlpha=ca;X.fillStyle='rgba(10,10,25,.75)';X.font=`700 30px ${F}`;const w=X.measureText(cap[0]).width+60;rr(640-w/2,620,w,58,29);X.fill();
+txt(cap[0],640,650,30,'#fff',700,'center');X.globalAlpha=1;}
+// Scene 3: angles 15-21
+if(t>=15.2&&t<21.4){const a=EO(seg(t,15.2,16))*(1-seg(t,20.9,21.4));X.globalAlpha=a;
+txt('Built for every angle of your business',640,80,34,'#fff',800,'center');
+const feats=[['Live dashboards','Real-time sync across 120+ sources','#7c5cff'],['AI Insights','Anomalies flagged before you ask','#00c8ff'],['Automations','Reports delivered while you sleep','#ff50b4']];
+feats.forEach((f,i)=>{const d=EO(seg(t,15.5+i*.3,16.5+i*.3)),sp=t-15;
+X.save();X.translate(240+i*400,380+(1-d)*120+Math.sin(sp*1.5+i)*8);const sk=(i-1)*.12*Math.cos(sp*.5);X.transform(1,sk,0,1,0,0);X.scale(.36,.36);X.translate(-500,-310);
+app(t,{nav:i,typed:i==1?QUERY.length:0,focus:false,press:0,kpi:d,cg:EO(seg(t,15.8+i*.3,17.5)),hov:-1,ai:i==1?1:0});X.restore();
+txt(f[0],240+i*400,540,22,'#fff',700,'center');txt(f[1],240+i*400,572,14,'#a6a9c8',500,'center');X.fillStyle=f[2];rr(215+i*400,595,50,4,2);X.fill();});
+X.globalAlpha=1;}
+// Scene 4: CTA 21-26
+if(t>=21){const a=EO(seg(t,21.1,22))*(1-seg(t,25.5,26));X.globalAlpha=a;
+X.save();X.translate(640,330);X.transform(1,0,-.2,1,0,0);X.globalAlpha=a*.25;X.translate(0,0);X.scale(.5,.5);X.rotate(-.05);X.translate(-500,-310);X.restore();X.globalAlpha=a;
+logo(640,200,1.2+Math.sin(t*2)*.03,a);txt('Nova is live.',640,315,72,'#fff',800,'center');
+txt('Turn questions into answers in seconds.',640,380,24,'#b8bbd8',500,'center');
+const b=EO(seg(t,22.3,23));X.save();X.translate(640,470);X.scale(b,b);const g=X.createLinearGradient(-150,0,150,0);g.addColorStop(0,'#7c5cff');g.addColorStop(1,'#00c8ff');X.fillStyle=g;X.shadowColor='#7c5cff';X.shadowBlur=30;rr(-150,-32,300,64,32);X.fill();X.shadowBlur=0;
+txt('Start free → nova.io',0,0,22,'#fff',800,'center');X.restore();
+if(t>22.6){const k=E(seg(t,22.6,23.6));const cx=L(900,700,k),cy=L(640,490,k);cursor(cx,cy,pulse(t,23.8));}
+txt('No credit card required',640,550,15,'#8a8fb0',500,'center');X.globalAlpha=1;}
+// vignette
+const v=X.createRadialGradient(640,360,300,640,360,800);v.addColorStop(0,'rgba(0,0,0,0)');v.addColorStop(1,'rgba(0,0,0,.55)');X.fillStyle=v;X.fillRect(0,0,1280,720);}
+function loop(){const t=((performance.now()-st)/1000+T0)%window.DUR;X.setTransform(1,0,0,1,0,0);X.globalAlpha=1;frame(t);requestAnimationFrame(loop);}
+requestAnimationFrame(loop);
+</script></body></html>

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Taskflow 2.0 — Launch</title>
+<!-- Fictional SaaS brand; all visuals drawn procedurally (no external assets allowed). -->
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=34;
+const c=document.getElementById('c'),x=c.getContext('2d'),W=1280,H=720;
+function fit(){const s=Math.min(innerWidth/W,innerHeight/H);c.style.width=W*s+'px';c.style.height=H*s+'px'}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),T0=parseFloat(q.get('t')||0)||0,start=performance.now();
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const eo=t=>1-Math.pow(1-cl(t),3), eio=t=>{t=cl(t);return t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2};
+const back=t=>{t=cl(t);const s=1.7;return 1+(s+1)*Math.pow(t-1,3)+s*Math.pow(t-1,2)};
+const F="-apple-system,'Segoe UI',Helvetica,Arial,sans-serif";
+const ACC='#7c6cff',ACC2='#22d3ee';
+function rr(X,Y,w,h,r){x.beginPath();x.roundRect(X,Y,w,h,r)}
+function txt(s,X,Y,size,col,wt=700,al='center',a=1){x.globalAlpha=a;x.font=`${wt} ${size}px ${F}`;x.fillStyle=col;x.textAlign=al;x.textBaseline='middle';x.fillText(s,X,Y);x.globalAlpha=1}
+function grad(X1,Y1,X2,Y2){const g=x.createLinearGradient(X1,Y1,X2,Y2);g.addColorStop(0,ACC);g.addColorStop(1,ACC2);return g}
+function gtxt(s,X,Y,size,a=1){x.font=`800 ${size}px ${F}`;const w=x.measureText(s).width;x.globalAlpha=a;x.fillStyle=grad(X-w/2,0,X+w/2,0);x.textAlign='center';x.textBaseline='middle';x.fillText(s,X,Y);x.globalAlpha=1}
+function logo(X,Y,s,rot=0){x.save();x.translate(X,Y);x.rotate(rot);x.scale(s,s);rr(-40,-40,80,80,22);x.fillStyle=grad(-40,-40,40,40);x.fill();
+x.strokeStyle='#fff';x.lineWidth=9;x.lineCap='round';x.lineJoin='round';x.beginPath();x.moveTo(-18,-14);x.lineTo(18,-14);x.moveTo(-18,2);x.lineTo(8,2);x.moveTo(-18,18);x.lineTo(-2,18);x.stroke();x.restore()}
+// background
+function bg(t){x.fillStyle='#07070d';x.fillRect(0,0,W,H);
+for(let i=0;i<3;i++){const px=W/2+Math.cos(t*.3+i*2.1)*380,py=H/2+Math.sin(t*.25+i*1.7)*200;const g=x.createRadialGradient(px,py,0,px,py,420);g.addColorStop(0,i%2?'rgba(34,211,238,.13)':'rgba(124,108,255,.18)');g.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=g;x.fillRect(0,0,W,H)}
+x.strokeStyle='rgba(255,255,255,.035)';x.lineWidth=1;const o=(t*12)%48;
+for(let gx=-48+o;gx<W;gx+=48){x.beginPath();x.moveTo(gx,0);x.lineTo(gx,H);x.stroke()}
+for(let gy=-48+o;gy<H;gy+=48){x.beginPath();x.moveTo(0,gy);x.lineTo(W,gy);x.stroke()}}
+// app window
+function win(X,Y,w,h,title){x.save();x.shadowColor='rgba(124,108,255,.35)';x.shadowBlur=60;rr(X,Y,w,h,16);x.fillStyle='#11111b';x.fill();x.restore();
+rr(X,Y,w,h,16);x.strokeStyle='rgba(255,255,255,.1)';x.lineWidth=1;x.stroke();
+['#ff5f57','#febc2e','#28c840'].forEach((cc,i)=>{x.beginPath();x.arc(X+22+i*18,Y+20,5.5,0,7);x.fillStyle=cc;x.fill()});
+txt(title,X+w/2,Y+20,13,'rgba(255,255,255,.5)',500);x.fillStyle='rgba(255,255,255,.06)';x.fillRect(X,Y+40,w,1)}
+function sidebar(X,Y,h,sel){x.fillStyle='#0d0d15';x.fillRect(X,Y,170,h);logo(X+24,Y+24,.25);txt('Taskflow',X+44,Y+24,14,'#fff',700,'left');
+['Inbox','My Issues','Board','AI Assist','Insights','Settings'].forEach((s,i)=>{const yy=Y+64+i*34;if(i==sel){rr(X+10,yy-13,150,26,7);x.fillStyle='rgba(124,108,255,.2)';x.fill()}
+rr(X+20,yy-6,12,12,3);x.fillStyle=i==sel?ACC:'rgba(255,255,255,.25)';x.fill();txt(s,X+42,yy,13,i==sel?'#fff':'rgba(255,255,255,.55)',500,'left')})}
+function caption(kick,head,t,dur){const a=cl(t/.4)*cl((dur-t)/.4);const y=70+(1-eo(t/.6))*20;
+txt(kick,W/2,y,14,ACC2,700,'center',a);txt(head,W/2,y+38,38,'#fff',800,'center',a)}
+const TAGS=[['#f472b6','Design'],['#34d399','Backend'],['#fbbf24','Bug'],['#60a5fa','Feature']];
+function card(X,Y,w,i,a=1,glow=0){x.globalAlpha=a;if(glow){x.save();x.shadowColor=ACC;x.shadowBlur=30*glow;}
+rr(X,Y,w,64,10);x.fillStyle='#1a1a28';x.fill();if(glow)x.restore();x.strokeStyle=glow?`rgba(124,108,255,${.4+glow*.6})`:'rgba(255,255,255,.07)';x.stroke();
+const tg=TAGS[i%4];rr(X+12,Y+12,58,16,8);x.fillStyle=tg[0]+'33';x.fill();txt(tg[1],X+41,Y+20,10,tg[0],700);
+txt(['Onboarding flow','Auth refactor','Fix sync crash','Dark mode','Billing API','Search v2','Export CSV','Perf audit'][i%8],X+12,Y+44,13,'#e5e5f0',600,'left',a);
+x.beginPath();x.arc(X+w-20,Y+44,9,0,7);x.fillStyle=['#7c6cff','#22d3ee','#f472b6','#34d399'][(i*3)%4];x.fill();x.globalAlpha=1}
+// scenes
+const S=[
+[0,4.5,(t,d)=>{ // intro kinetic
+const w1=['Work','moves','fast.'];w1.forEach((w,i)=>{const p=eo((t-.2-i*.25)/.5);txt(w,W/2+(i-1)*190,H/2+(1-p)*40,84,'#fff',800,'center',p*cl((2.4-t)/.3))});
+if(t>2.3){const p=eo((t-2.4)/.6);x.save();x.translate(W/2,H/2);x.scale(.9+.1*p,.9+.1*p);gtxt('Your tools should too.',0,0,64,p);x.restore()}}],
+[4.5,10,(t,d)=>{ // logo + window reveal
+const p=back((t)/.8);logo(W/2,H/2-140+(t>2?-eio((t-2)/1)*90:0),p*(1-(t>2?eio((t-2)/1)*.45:0)),(1-cl(t/.8))*-1);
+const a=cl((t-.5)/.5)*(t<2?1:1-cl((t-2)/.5));txt('Taskflow',W/2,H/2-20,72,'#fff',800,'center',a);txt('2.0',W/2,H/2+50,30,ACC2,700,'center',a);
+if(t>2.2){const q2=eo((t-2.2)/1.2);x.save();x.translate(W/2,H/2+60+(1-q2)*300);const s=.75+q2*.1+(t-3)*.01;x.scale(s,s);x.translate(-500,-250);
+win(0,0,1000,500,'taskflow.app');sidebar(0,41,459,2);for(let col=0;col<4;col++)for(let r=0;r<4;r++)card(190+col*200,70+r*78,184,col*4+r,cl(q2*3-col*.4-r*.2));x.restore();
+txt('The fastest way to ship.',W/2,62,34,'#fff',800,'center',cl((t-2.6)/.5))}}],
+[10,16,(t,d)=>{ // kanban
+caption('01 · BOARDS','Plan, track, and ship in one place.',t,d);
+x.save();x.translate(140,150);win(0,0,1000,520,'Board · Q3 Launch');sidebar(0,41,479,2);
+const cols=['Backlog','In Progress','Review','Done'];cols.forEach((n,i)=>{txt(n,192+i*200,66,13,'rgba(255,255,255,.6)',700,'left');rr(192+i*200+95,58,24,16,8);x.fillStyle='rgba(255,255,255,.08)';x.fill()});
+const pos=[[0,0],[0,1],[0,2],[1,0],[1,1],[2,0],[3,0],[3,1]];
+// moving card across columns
+const mv=(t-.8)/4,step=Math.floor(cl(mv,0,.999)*3),fr=eio((cl(mv,0,.999)*3)%1/.5);
+pos.forEach((p,i)=>{let yy=90+p[1]*78;if(p[0]==0&&p[1]>0&&mv>0)yy-=78*eio(cl(mv*3));card(192+p[0]*200,yy,184,i+2)});
+const cx=192+(Math.min(step+fr,3))*200,cy=90+[3,2,1,2][Math.min(step+(fr>.5?1:0),3)]*78-10*Math.sin(fr*Math.PI);
+card(cx,cy,184,0,1,mv>0&&mv<1?1:.3);
+// cursor
+x.translate(cx+150,cy+40);x.fillStyle='#fff';x.beginPath();x.moveTo(0,0);x.lineTo(0,20);x.lineTo(5,15);x.lineTo(13,15);x.closePath();x.fill();x.restore();
+if(mv>=1){const a=eo((t-5)/.4);rr(W/2-120,640,240,40,20);x.globalAlpha=a;x.fillStyle='rgba(52,211,153,.15)';x.fill();x.globalAlpha=1;txt('✓  Shipped to production',W/2,660,15,'#34d399',700,'center',a)}}],
+[16,22,(t,d)=>{ // AI
+caption('02 · TASKFLOW AI','Describe it. AI builds the plan.',t,d);
+x.save();x.translate(240,150);win(0,0,800,500,'AI Assist');
+rr(40,70,720,56,12);x.fillStyle='#1a1a28';x.fill();x.strokeStyle=grad(40,0,760,0);x.lineWidth=1.5;x.stroke();
+txt('✦',66,98,20,ACC2,700);const pr='Plan a mobile app launch for September',n=Math.floor(cl((t-.6)/1.6)*pr.length);
+txt(pr.slice(0,n)+((t*2|0)%2&&n<pr.length?'|':''),90,98,17,'#fff',500,'left');
+if(t>2.4&&t<2.9){for(let i=0;i<3;i++){x.beginPath();x.arc(380+i*20,170,5,0,7);x.fillStyle=`rgba(124,108,255,${.4+.6*Math.abs(Math.sin(t*8+i))})`;x.fill()}}
+const it=['Finalize app store assets','QA on iOS & Android','Write launch blog post','Set up analytics events','Press & social outreach'];
+it.forEach((s,i)=>{const p=eo((t-2.9-i*.3)/.5);if(p<=0)return;const yy=160+i*60;x.globalAlpha=p;rr(40+(1-p)*30,yy,720,48,10);x.fillStyle='#161622';x.fill();
+rr(58+(1-p)*30,yy+15,18,18,5);x.strokeStyle=ACC;x.lineWidth=2;x.stroke();txt(s,92+(1-p)*30,yy+24,15,'#e5e5f0',600,'left',p);
+txt('Sep '+(4+i*5),730,yy+24,13,'rgba(255,255,255,.45)',600,'right',p);x.globalAlpha=1});
+x.restore()}],
+[22,27,(t,d)=>{ // insights
+caption('03 · INSIGHTS','Know exactly where your team stands.',t,d);
+const stats=[['Velocity',+42,'%'],['Cycle time',-38,'%'],['Issues closed',1284,'']];
+stats.forEach((s,i)=>{const p=eo((t-.3-i*.15)/.6),X=140+i*230,Y=170;x.globalAlpha=p;rr(X,Y+(1-p)*30,210,110,14);x.fillStyle='#11111b';x.fill();x.strokeStyle='rgba(255,255,255,.08)';x.stroke();
+txt(s[0],X+20,Y+30+(1-p)*30,14,'rgba(255,255,255,.55)',600,'left',p);const v=Math.round(s[1]*eo((t-.5)/1.5));
+txt((v>0&&s[2]?'+':'')+v+s[2],X+20,Y+72+(1-p)*30,40,i==2?'#fff':(i==0?'#34d399':ACC2),800,'left',p);x.globalAlpha=1});
+// chart
+const X=140,Y=310,w=650,h=320;rr(X,Y,w,h,14);x.fillStyle='#11111b';x.fill();x.strokeStyle='rgba(255,255,255,.08)';x.stroke();
+txt('Throughput',X+24,Y+30,15,'#fff',700,'left');const pr=eio((t-.6)/2);
+const pts=[];for(let i=0;i<=24;i++)pts.push([X+30+i*(w-60)/24,Y+h-40-(60+i*7+Math.sin(i*.9)*25)*1]);
+x.save();x.beginPath();x.rect(X,Y,30+(w-60)*pr,h);x.clip();
+x.beginPath();pts.forEach((p,i)=>i?x.lineTo(...p):x.moveTo(...p));x.lineTo(X+w-30,Y+h-30);x.lineTo(X+30,Y+h-30);const g=x.createLinearGradient(0,Y,0,Y+h);g.addColorStop(0,'rgba(124,108,255,.4)');g.addColorStop(1,'rgba(124,108,255,0)');x.fillStyle=g;x.fill();
+x.beginPath();pts.forEach((p,i)=>i?x.lineTo(...p):x.moveTo(...p));x.strokeStyle=grad(X,0,X+w,0);x.lineWidth=3;x.stroke();x.restore();
+// donut
+const DX=1000,DY=400;rr(820,170,320,460,14);x.fillStyle='#11111b';x.fill();x.strokeStyle='rgba(255,255,255,.08)';x.stroke();txt('Sprint health',844,200,15,'#fff',700,'left');
+const segs=[[.62,'#34d399'],[.24,ACC],[.14,'#fbbf24']];let a0=-Math.PI/2;const dp=eio((t-.8)/1.6);
+segs.forEach(s=>{const a1=a0+s[0]*Math.PI*2*dp;x.beginPath();x.arc(980,DY-10,90,a0,a1);x.strokeStyle=s[1];x.lineWidth=22;x.stroke();a0=a1});
+txt(Math.round(94*dp)+'%',980,DY-10,40,'#fff',800);txt('on track',980,DY+22,13,'rgba(255,255,255,.5)',600);
+['Done','In progress','At risk'].forEach((s,i)=>{x.beginPath();x.arc(860,540+i*28,6,0,7);x.fillStyle=segs[i][1];x.fill();txt(s,876,540+i*28,13,'rgba(255,255,255,.7)',600,'left')})}],
+[27,31,(t,d)=>{ // benefits + integrations
+caption('WHY TEAMS SWITCH','Built for speed. Loved by teams.',t,d);
+const b=[['3×','faster planning'],['50ms','every interaction'],['100+','integrations']];
+b.forEach((s,i)=>{const p=back((t-.3-i*.15)/.7),X=W/2+(i-1)*300;x.save();x.translate(X,330);x.scale(cl(p,0,1.2),cl(p,0,1.2));gtxt(s[0],0,0,72);txt(s[1],0,56,17,'rgba(255,255,255,.7)',600);x.restore()});
+const cols=['#f472b6','#34d399','#fbbf24','#60a5fa','#a78bfa','#fb7185','#22d3ee','#f97316'];
+for(let i=0;i<8;i++){const p=eo((t-.8-i*.07)/.5),X=W/2+(i-3.5)*95,Y=530+Math.sin(t*2+i)*5;x.globalAlpha=p;rr(X-30,Y-30,60,60,16);x.fillStyle='#161622';x.fill();x.strokeStyle='rgba(255,255,255,.1)';x.stroke();
+x.fillStyle=cols[i];if(i%3==0){x.beginPath();x.arc(X,Y,13,0,7);x.fill()}else if(i%3==1){rr(X-13,Y-13,26,26,6);x.fill()}else{x.beginPath();x.moveTo(X,Y-15);x.lineTo(X+14,Y+11);x.lineTo(X-14,Y+11);x.fill()}x.globalAlpha=1}
+txt('Works with the tools you already use',W/2,610,15,'rgba(255,255,255,.5)',600,'center',cl((t-1.5)/.5))}],
+[31,34,(t,d)=>{ // CTA
+const p=back(t/.8);logo(W/2,H/2-110,p);txt('Taskflow 2.0',W/2,H/2-10,64,'#fff',800,'center',cl((t-.3)/.5));
+gtxt('Available today.',W/2,H/2+55,32,cl((t-.6)/.5));const a=eo((t-1)/.5);
+x.save();x.globalAlpha=a;x.shadowColor=ACC;x.shadowBlur=30;rr(W/2-130,H/2+105,260,54,27);x.fillStyle=grad(W/2-130,0,W/2+130,0);x.fill();x.restore();
+txt('Start free → taskflow.app',W/2,H/2+132,17,'#fff',700,'center',a);x.globalAlpha=1}]
+];
+function frame(){let T=((performance.now()-start)/1000+T0)%DUR;
+bg(T);for(const [a,b,f] of S){if(T>=a&&T<b){const t=T-a,d=b-a;const fa=cl(t/.35)*cl((d-t)/.35);
+x.save();x.globalAlpha=1;f(t,d);x.restore();
+if(fa<1){x.fillStyle=`rgba(7,7,13,${1-fa})`;x.fillRect(0,0,W,H)}}}
+// progress bar
+x.fillStyle=grad(0,0,W,0);x.fillRect(0,H-3,W*T/DUR,3);
+requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

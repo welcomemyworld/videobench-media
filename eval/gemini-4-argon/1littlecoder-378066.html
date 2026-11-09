@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Opus 5.5 - 1984</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+  canvas {
+    width: 100vw; height: 56.25vw;
+    max-height: 100vh; max-width: 177.78vh;
+    display: block; background: #000;
+  }
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = 1280, H = 720;
+
+window.DUR = 30;
+const urlParams = new URLSearchParams(window.location.search);
+const tOffset = parseFloat(urlParams.get('t')) || 0;
+
+// Deterministic PRNG
+function hash(n) {
+  let x = Math.sin(n * 12.9898 + 78.233) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+// Precompute dust particles
+const particles = Array.from({length: 140}, (_, i) => ({
+  x: hash(i * 3) * W,
+  y: hash(i * 3 + 1) * H,
+  r: hash(i * 3 + 2) * 2.2 + 0.5,
+  vx: (hash(i * 5) - 0.5) * 35,
+  vy: -hash(i * 7) * 45 - 10,
+  alpha: hash(i * 11) * 0.5 + 0.15
+}));
+
+// Precompute shards for screen explosion
+const shards = Array.from({length: 160}, (_, i) => {
+  const a = hash(i * 13) * Math.PI * 2;
+  const spd = 120 + hash(i * 17) * 950;
+  return {
+    x: (hash(i * 19) - 0.5) * 420,
+    y: (hash(i * 23) - 0.5) * 260,
+    vx: Math.cos(a) * spd,
+    vy: Math.sin(a) * spd - 120,
+    rot: hash(i * 29) * 6,
+    vrot: (hash(i * 31) - 0.5) * 18,
+    size: 8 + hash(i * 37) * 38,
+    warm: hash(i * 41) > 0.72,
+    pts: [
+      [hash(i * 43) * 1.2 - 0.6, hash(i * 47) * 1.2 - 0.6],
+      [hash(i * 53) * 1.2 - 0.6, hash(i * 59) * 1.2 - 0.6],
+      [hash(i * 61) * 1.2 - 0.6, hash(i * 67) * 1.2 - 0.6]
+    ]
+  };
+});
+
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+function lerp(a, b, t) { return a + (b - a) * clamp(t, 0, 1); }
+function easeOutCubic(x) { return 1 - Math.pow(1 - clamp(x, 0, 1), 3); }
+function easeInQuad(x) { const c = clamp(x, 0, 1); return c * c; }
+
+// Atmospheric background + volumetric beams
+function drawColdAtmosphere(t, intensity = 1) {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#040911');
+  g.addColorStop(0.55, '#0c1a28');
+  g.addColorStop(1, '#060c14');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  for (let i = 0; i < 4; i++) {
+    const bx = 220 + i * 280 + Math.sin(t * 0.4 + i) * 40;
+    const grad = ctx.createLinearGradient(bx, 0, bx - 120, H);
+    grad.addColorStop(0, `rgba(110, 175, 225, ${0.14 * intensity})`);
+    grad.addColorStop(1, 'rgba(20, 45, 70, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(bx - 50, 0);
+    ctx.lineTo(bx + 50, 0);
+    ctx.lineTo(bx + 260, H);
+    ctx.lineTo(bx - 300, H);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawParticles(t, warmRatio = 0, boost = 1) {
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
+    const px = ((p.x + p.vx * t) % W + W) % W;
+    const py = ((p.y + p.vy * t * boost) % H + H) % H;
+    const isWarm = (i / particles.length) < warmRatio;
+    ctx.fillStyle = isWarm
+      ? `rgba(255, 165, 85, ${p.alpha * 1.4})`
+      : `rgba(150, 205, 245, ${p.alpha})`;
+    ctx.beginPath();
+    ctx.arc(px, py, p.r * (isWarm ? 1.3 : 1), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// Big Brother Monolith Face
+function drawMonolithFace(t, cx, cy, w, h, talkSpeed = 12, glitch = 0) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(cx - w / 2, cy - h / 2, w, h);
+  ctx.clip();
+
+  // CRT backing
+  const bg = ctx.createRadialGradient(cx, cy, 10, cx, cy, w * 0.65);
+  bg.addColorStop(0, '#1c3b57');
+  bg.addColorStop(0.7, '#0c1c2c');
+  bg.addColorStop(1, '#040a10');
+  ctx.fillStyle = bg;
+  ctx.fillRect(cx - w / 2, cy - h / 2, w, h);
+
+  const jx = glitch ? (Math.sin(t * 95) * 18 * glitch) : 0;
+  const jy = glitch ? (Math.cos(t * 80) * 10 * glitch) : 0;
+
+  ctx.save();
+  ctx.translate(cx + jx, cy + jy);
+  const sc = h / 320;
+  ctx.scale(sc, sc);
+
+  // Geometric Orwellian Head
+  ctx.fillStyle = 'rgba(130, 195, 235, 0.14)';
+  ctx.strokeStyle = 'rgba(170, 225, 255, 0.55)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-75, -130);
+  ctx.lineTo(75, -130);
+  ctx.lineTo(95, -20);
+  ctx.lineTo(65, 115);
+  ctx.lineTo(0, 145);
+  ctx.lineTo(-65, 115);
+  ctx.lineTo(-95, -20);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Brow ridge
+  ctx.fillStyle = '#07131e';
+  ctx.beginPath();
+  ctx.moveTo(-88, -48);
+  ctx.lineTo(0, -30);
+  ctx.lineTo(88, -48);
+  ctx.lineTo(82, -12);
+  ctx.lineTo(-82, -12);
+  ctx.closePath();
+  ctx.fill();
+
+  // Glowing authoritarian spectacles / eyes
+  ctx.strokeStyle = '#9be0ff';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(-72, -45, 54, 32);
+  ctx.strokeRect(18, -45, 54, 32);
+  ctx.beginPath();
+  ctx.moveTo(-18, -30);
+  ctx.lineTo(18, -30);
+  ctx.stroke();
+
+  const eyeGlow = 0.75 + 0.25 * Math.sin(t * 7);
+  ctx.fillStyle = `rgba(210, 245, 255, ${eyeGlow})`;
+  ctx.shadowColor = '#70d0ff';
+  ctx.shadowBlur = 18;
+  ctx.fillRect(-58, -34, 26, 10);
+  ctx.fillRect(32, -34, 26, 10);
+  ctx.shadowBlur = 0;
+
+  // Nose bridge
+  ctx.strokeStyle = 'rgba(160, 215, 245, 0.5)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(0, -30);
+  ctx.lineTo(-14, 32);
+  ctx.lineTo(14, 32);
+  ctx.stroke();
+
+  // Talking mechanical mouth / voice modulator
+  const open = (Math.sin(t * talkSpeed) * 0.5 + 0.5) * (Math.cos(t * talkSpeed * 0.67) * 0.5 + 0.5);
+  const mh = 6 + open * 34;
+  ctx.fillStyle = '#040a10';
+  ctx.fillRect(-52, 74 - mh / 2, 104, mh);
+  ctx.strokeStyle = '#9be0ff';
+  ctx.lineWidth = 2.5;
+  ctx.strokeRect(-52, 74 - mh / 2, 104, mh);
+
+  // Voice bars inside mouth
+  ctx.fillStyle = '#bfeaff';
+  for (let b = -40; b <= 40; b += 10) {
+    const bh = Math.max(3, (mh - 6) * (0.4 + 0.6 * Math.sin(t * 25 + b)));
+    ctx.fillRect(b - 3, 74 - bh / 2, 6, bh);
+  }
+  ctx.restore();
+
+  // CRT Scanlines
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.28)';
+  for (let y = cy - h / 2; y < cy + h / 2; y += 5) {
+    ctx.fillRect(cx - w / 2, y, w, 2);
+  }
+
+  // Rolling sync bar
+  const barY = ((t * 90) % h) + (cy - h / 2);
+  ctx.fillStyle = 'rgba(170, 230, 255, 0.08)';
+  ctx.fillRect(cx - w / 2, barY, w, 28);
+
+  if (glitch > 0) {
+    ctx.fillStyle = `rgba(255, 190, 120, ${glitch * 0.35})`;
+    for (let k = 0; k < 6; k++) {
+      const gy = cy - h / 2 + hash(t * 10 + k) * h;
+      ctx.fillRect(cx - w / 2, gy, w, 6 + hash(k) * 20);
+    }
+  }
+  ctx.restore();
+}
+
+// scene 1: 0 - 4.5s (Marching drones in industrial tunnel)
+function renderScene1(t) {
+  drawColdAtmosphere(t, 1.1);
+
+  const vanishX = W * 0.5, vanishY = H * 0.42;
+
+  // Tunnel ribs
+  ctx.strokeStyle = '#142738';
+  for (let i = 0; i < 9; i++) {
+    const prog = ((i / 9) + (t * 0.12)) % 1;
+    const z = Math.pow(prog, 1.8);
+    const r = 70 + z * 850;
+    ctx.lineWidth = 2 + z * 16;
+    ctx.beginPath();
+    ctx.arc(vanishX, vanishY + z * 80, r, Math.PI * 0.95, Math.PI * 2.05);
+    ctx.stroke();
+  }
+
+  // Overhead industrial lights
+  for (let i = 0; i < 8; i++) {
+    const prog = ((i / 8) + (t * 0.12)) % 1;
+    const z = Math.pow(prog, 1.8);
+    const ly = lerp(vanishY - 60, -20, z);
+    const lw = lerp(8, 120, z);
+    ctx.fillStyle = `rgba(175, 225, 255, ${0.25 + z * 0.6})`;
+    ctx.fillRect(vanishX - lw / 2, ly, lw, 4 + z * 10);
+  }
+
+  // Floor walkway
+  const fg = ctx.createLinearGradient(0, vanishY + 40, 0, H);
+  fg.addColorStop(0, '#071018');
+  fg.addColorStop(1, '#122436');
+  ctx.fillStyle = fg;
+  ctx.fillRect(0, vanishY + 40, W, H - vanishY);
+
+  // Marching drones (back to front)
+  const rows = 11;
+  for (let r = 0; r < rows; r++) {
+    const prog = ((r / rows) + (t * 0.11)) % 1;
+    const z = Math.pow(prog, 1.7);
+    const y = lerp(vanishY + 55, H + 110, z);
+    const sc = lerp(0.16, 1.45, z);
+    const stepPhase = t * 5.5 + r * 0.8;
+    const bob = Math.abs(Math.sin(stepPhase)) * 7 * sc;
+
+    for (let c = -3; c <= 3; c++) {
+      const x = vanishX + c * 155 * sc;
+      ctx.save();
+      ctx.translate(x, y - bob);
+      ctx.scale(sc, sc);
+
+      // Drone silhouette
+      ctx.fillStyle = `rgb(${Math.floor(14 + z * 18)}, ${Math.floor(26 + z * 28)}, ${Math.floor(38 + z * 38)})`;
+      ctx.beginPath();
+      ctx.arc(0, -78, 17, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Uniform torso
+      ctx.beginPath();
+      ctx.moveTo(-30, -56);
+      ctx.lineTo(30, -56);
+      ctx.lineTo(36, 20);
+      ctx.lineTo(-36, 20);
+      ctx.closePath();
+      ctx.fill();
+
+      // Glowing visor slit (conformity)
+      ctx.fillStyle = 'rgba(130, 200, 240, 0.45)';
+      ctx.fillRect(-10, -81, 20, 4);
+
+      ctx.restore();
+    }
+  }
+
+  drawParticles(t, 0, 1);
+}
+
+// Helper to draw the Heroine runner + sledgehammer
+function drawRunner(x, y, sc, t, mode = 'run', spinAngle = 0) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(sc, sc);
+
+  // Warm rebel aura around heroine
+  const aura = ctx.createRadialGradient(0, -45, 5, 0, -45, 130);
+  aura.addColorStop(0, 'rgba(255, 130, 50, 0.32)');
+  aura.addColorStop(1, 'rgba(255, 90, 20, 0)');
+  ctx.fillStyle = aura;
+  ctx.beginPath();
+  ctx.arc(0, -45, 130, 0, Math.PI * 2);
+  ctx.fill();
+
+  const stride = Math.sin(t * 13);
+
+  if (mode === 'run') {
+    // Flowing bright hair
+    ctx.fillStyle = '#f6c56f';
+    ctx.beginPath();
+    ctx.moveTo(-8, -96);
+    ctx.quadraticCurveTo(-45, -95 - stride * 6, -58, -76);
+    ctx.quadraticCurveTo(-30, -72, -4, -80);
+    ctx.fill();
+
+    // Back leg
+    ctx.strokeStyle = '#d99b78';
+    ctx.lineWidth = 11;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, -25);
+    ctx.lineTo(-stride * 28, 12);
+    ctx.lineTo(-stride * 34 - 12, 48);
+    ctx.stroke();
+
+    // Front leg
+    ctx.beginPath();
+    ctx.moveTo(0, -25);
+    ctx.lineTo(stride * 30, 10);
+    ctx.lineTo(stride * 36 - 5, 48);
+    ctx.stroke();
+
+    // Crimson shorts
+    ctx.fillStyle = '#e0281e';
+    ctx.beginPath();
+    ctx.moveTo(-16, -34);
+    ctx.lineTo(16, -34);
+    ctx.lineTo(20, -12);
+    ctx.lineTo(-20, -12);
+    ctx.closePath();
+    ctx.fill();
+
+    // Crisp white tank top (iconic contrast)
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = '#ff8833';
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.moveTo(-14, -74);
+    ctx.lineTo(16, -74);
+    ctx.lineTo(14, -32);
+    ctx.lineTo(-14, -32);
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Minimalist orange glyph on chest
+    ctx.fillStyle = '#ff4510';
+    ctx.beginPath();
+    ctx.arc(3, -55, 6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Head
+    ctx.fillStyle = '#f0b898';
+    ctx.beginPath();
+    ctx.arc(4, -88, 12, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Arms gripping sledgehammer
+    ctx.strokeStyle = '#f0b898';
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.moveTo(4, -68);
+    ctx.lineTo(-18, -46 + stride * 6);
+    ctx.stroke();
+
+    // Sledgehammer carried across body
+    ctx.strokeStyle = '#d8e2ec';
+    ctx.lineWidth = 4.5;
+    ctx.beginPath();
+    ctx.moveTo(-36, -36 + stride * 6);
+    ctx.lineTo(38, -68 - stride * 6);
+    ctx.stroke();
+
+    // Glowing hammer head
+    ctx.fillStyle = '#ff9a3c';
+    ctx.shadowColor = '#ff6a00';
+    ctx.shadowBlur = 18;
+    ctx.fillRect(32, -79 - stride * 6, 18, 22);
+    ctx.shadowBlur = 0;
+  } else if (mode === 'spin') {
+    const hx = Math.cos(spinAngle) * 78;
+    const hy = Math.sin(spinAngle) * 28 - 58;
+
+    // Planted athletic stance
+    ctx.strokeStyle = '#d99b78';
+    ctx.lineWidth = 12;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-10, -25); ctx.lineTo(-26, 48);
+    ctx.moveTo(10, -25);  ctx.lineTo(28, 48);
+    ctx.stroke();
+
+    // Crimson shorts
+    ctx.fillStyle = '#e0281e';
+    ctx.fillRect(-18, -34, 36, 20);
+
+    // White tank
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = '#ff7722';
+    ctx.shadowBlur = 16;
+    ctx.fillRect(-16, -74, 32, 42);
+    ctx.shadowBlur = 0;
+
+    // Hair whipping in spin
+    ctx.fillStyle = '#f6c56f';
+    ctx.beginPath();
+    ctx.arc(0, -88, 13, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(0, -94);
+    ctx.lineTo(-Math.cos(spinAngle) * 38, -86);
+    ctx.lineTo(0, -80);
+    ctx.fill();
+
+    // Motion arc of hammer
+    ctx.strokeStyle = 'rgba(255, 145, 50, 0.45)';
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    ctx.ellipse(0, -58, 78, 28, 0, spinAngle - 1.6, spinAngle);
+    ctx.stroke();
+
+    // Arms + Hammer shaft
+    ctx.strokeStyle = '#f0b898';
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.moveTo(-10, -64); ctx.lineTo(hx * 0.38, hy);
+    ctx.moveTo(10, -64);  ctx.lineTo(hx * 0.38, hy);
+    ctx.stroke();
+
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 4.5;
+    ctx.beginPath();
+    ctx.moveTo(hx * 0.3, hy);
+    ctx.lineTo(hx, hy);
+    ctx.stroke();
+
+    // Glowing Hammer Head
+    ctx.fillStyle = '#ffae42';
+    ctx.shadowColor = '#ff5500';
+    ctx.shadowBlur = 25;
+    ctx.beginPath();
+    ctx.arc(hx, hy, 13, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  ctx.restore();
+}
+
+// Scene 2: 4.5 - 9.0s (The Auditorium & The Rebel Runner)
+function renderScene2(t) {
+  const lt = t - 4.5;
+  drawColdAtmosphere(t, 1.0);
+
+  // Giant Telescreen at center back
+  const sw = 440, sh = 275, sx = W / 2, sy = 195;
+
+  // Screen projection cone
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  const cone = ctx.createLinearGradient(sx, sy, sx, H);
+  cone.addColorStop(0, 'rgba(110, 190, 245, 0.25)');
+  cone.addColorStop(1, 'rgba(20, 50, 80, 0)');
+  ctx.fillStyle = cone;
+  ctx.beginPath();
+  ctx.moveTo(sx - sw / 2, sy + sh / 2);
+  ctx.lineTo(sx + sw / 2, sy + sh / 2);
+  ctx.lineTo(W + 100, H);
+  ctx.lineTo(-100, H);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  drawMonolithFace(t, sx, sy, sw, sh, 13, 0);
+
+  // Auditorium seated rows (left and right of center aisle)
+  for (let r = 0; r < 7; r++) {
+    const z = r / 6;
+    const ry = lerp(375, 690, z);
+    const sc = lerp(0.45, 1.15, z);
+    const aisleHalf = lerp(55, 175, z);
+
+    ctx.fillStyle = '#08121c';
+    for (let side of [-1, 1]) {
+      for (let c = 0; c < 6; c++) {
+        const dx = W / 2 + side * (aisleHalf + c * 68 * sc);
+        ctx.beginPath();
+        ctx.arc(dx, ry - 26 * sc, 13 * sc, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.roundRect(dx - 22 * sc, ry - 12 * sc, 44 * sc, 45 * sc, 6 * sc);
+        ctx.fill();
+      }
+    }
+  }
+
+  // Center aisle floor with warm reflection from runner
+  const runProg = clamp(lt / 4.5, 0, 1);
+  const runnerY = lerp(690, 445, easeOutCubic(runProg));
+  const runnerSc = lerp(1.18, 0.62, easeOutCubic(runProg));
+
+  drawRunner(W / 2, runnerY, runnerSc, t, 'run');
+  drawParticles(t, 0.2, 1.1);
+}
+
+// Scene 3: 9.0 - 13.5s (Close-up of Monolith Propaganda vs Rebel Spin-up)
+function renderScene3(t) {
+  const lt = t - 9.0;
+  if (lt < 2.2) {
+    // Extreme imposing close-up of the Monolith screen
+    drawColdAtmosphere(t, 0.6);
+    const zoom = 1 + lt * 0.08;
+    ctx.save();
+    ctx.translate(W / 2, H / 2);
+    ctx.scale(zoom, zoom);
+    drawMonolithFace(t, 0, 0, 960, 600, 18, lt > 1.6 ? (lt - 1.6) * 0.6 : 0);
+    ctx.restore();
+  } else {
+    // Low-angle heroic close-up of the Rebel spinning the sledgehammer
+    drawColdAtmosphere(t, 1.2);
+    const spinT = lt - 2.2;
+    const angle = spinT * spinT * 5.2 + spinT * 4;
+
+    // Warm floor glow building up
+    const glow = ctx.createRadialGradient(W / 2, H * 0.72, 10, W / 2, H * 0.72, 420);
+    glow.addColorStop(0, `rgba(255, 120, 40, ${clamp(spinT * 0.25, 0, 0.55)})`);
+    glow.addColorStop(1, 'rgba(255, 80, 10, 0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, W, H);
+
+    // Silhouette heads of seated drones in foreground corners
+    ctx.fillStyle = '#04080e';
+    for (let i = 0; i < 4; i++) {
+      ctx.beginPath();
+      ctx.arc(110 + i * 110, H - 25, 42, 0, Math.PI * 2);
+      ctx.arc(W - 110 - i * 110, H - 25, 42, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    drawRunner(W / 2, 540, 1.75, t, 'spin', angle);
+    drawParticles(t, 0.45, 1.5);
+  }
+}
+
+// Scene 4: 13.5 - 16.5s (The Release & Flying Sledgehammer of Light)
+function renderScene4(t) {
+  const lt = t - 13.5;
+  drawColdAtmosphere(t, 1.0);
+
+  const sx = W / 2, sy = 215, sw = 540, sh = 330;
+  const flyProg = clamp((lt - 0.35) / 2.65, 0, 1);
+
+  // Monolith starts glitching violently as the hammer nears
+  drawMonolithFace(t, sx, sy, sw, sh, 22, Math.pow(flyProg, 2) * 1.4);
+
+  // Auditorium perspective lines
+  ctx.strokeStyle = 'rgba(130, 195, 240, 0.2)';
+  ctx.lineWidth = 2;
+  for (let i = -3; i <= 3; i++) {
+    ctx.beginPath();
+    ctx.moveTo(sx + i * 80, sy + sh / 2);
+    ctx.lineTo(sx + i * 320, H);
+    ctx.stroke();
+  }
+
+  if (lt < 0.35) {
+    // Final release whip
+    drawRunner(W / 2, 590, 1.25, t, 'spin', lt * 18);
+  } else {
+    // Hammer hurtling toward the screen
+    const easeP = easeInQuad(flyProg);
+    const hx = W / 2;
+    const hy = lerp(520, sy, easeP);
+    const hsc = lerp(1.35, 0.55, easeP);
+    const hrot = lt * 22;
+
+    // Fiery trail
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    const trail = ctx.createRadialGradient(hx, hy, 4, hx, hy, 180 * hsc);
+    trail.addColorStop(0, 'rgba(255, 240, 190, 0.95)');
+    trail.addColorStop(0.35, 'rgba(255, 130, 35, 0.65)');
+    trail.addColorStop(1, 'rgba(255, 60, 0, 0)');
+    ctx.fillStyle = trail;
+    ctx.beginPath();
+    ctx.arc(hx, hy, 180 * hsc, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Spinning hammer geometry
+    ctx.translate(hx, hy);
+    ctx.scale(hsc, hsc);
+    ctx.rotate(hrot);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.moveTo(-55, 0);
+    ctx.lineTo(45, 0);
+    ctx.stroke();
+
+    ctx.fillStyle = '#fff3d6';
+    ctx.shadowColor = '#ff7700';
+    ctx.shadowBlur = 30;
+    ctx.fillRect(32, -26, 26, 52);
+    ctx.restore();
+  }
+
+  drawParticles(t, 0.6, 2.0);
+}
+
+// Scene 5: 16.5 - 22.0s (Cataclysmic Shatter & Golden Shockwave over the Crowd)
+function renderScene5(t) {
+  const lt = t - 16.5;
+
+  // Warm-to-dark dramatic backdrop
+  const bg = ctx.createRadialGradient(W / 2, 220, 20, W / 2, 360, 900);
+  bg.addColorStop(0, '#ffcf87');
+  bg.addColorStop(0.35, '#993d14');
+  bg.addColorStop(0.75, '#1f1216');
+  bg.addColorStop(1, '#050508');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Expanding golden shockwave rings
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  for (let k = 0; k < 3; k++) {
+    const rt = Math.max(0, lt - k * 0.25);
+    const rad = easeOutCubic(rt / 3.8) * 1250;
+    const alpha = clamp(1 - rt / 3.8, 0, 1);
+    ctx.strokeStyle = `rgba(255, 200, 120, ${alpha * 0.75})`;
+    ctx.lineWidth = 18 * alpha + 2;
+    ctx.beginPath();
+    ctx.arc(W / 2, 220, rad, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // God rays pouring from the shattered screen
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2 + lt * 0.15;
+    const grad = ctx.createLinearGradient(W / 2, 220, W / 2 + Math.cos(a) * 900, 220 + Math.sin(a) * 900);
+    grad.addColorStop(0, `rgba(255, 220, 150, ${clamp(0.45 - lt * 0.06, 0, 0.45)})`);
+    grad.addColorStop(1, 'rgba(255, 120, 30, 0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(W / 2, 220);
+    ctx.arc(W / 2, 220, 950, a - 0.09, a + 0.09);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Flying screen shards
+  ctx.save();
+  ctx.translate(W / 2, 220);
+  for (let i = 0; i < shards.length; i++) {
+    const s = shards[i];
+    const sx = s.x + s.vx * lt;
+    const sy = s.y + s.vy * lt + 0.5 * 340 * lt * lt;
+    const rot = s.rot + s.vrot * lt;
+    const fade = clamp(1 - lt / 5.2, 0, 1);
+    if (fade <= 0) continue;
+
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(rot);
+    ctx.fillStyle = s.warm
+      ? `rgba(255, 200, 110, ${fade * 0.9})`
+      : `rgba(120, 195, 235, ${fade * 0.75})`;
+    ctx.beginPath();
+    ctx.moveTo(s.pts[0][0] * s.size, s.pts[0][1] * s.size);
+    ctx.lineTo(s.pts[1][0] * s.size, s.pts[1][1] * s.size);
+    ctx.lineTo(s.pts[2][0] * s.size, s.pts[2][1] * s.size);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.restore();
+
+  // Crowd in foreground bathed in warm liberating wind, looking up in awe
+  const wind = Math.sin(lt * 6) * Math.exp(-lt * 0.3) * 14;
+  for (let r = 0; r < 4; r++) {
+    const z = r / 3;
+    const ry = lerp(470, 695, z);
+    const sc = lerp(0.55, 1.15, z);
+    for (let c = -6; c <= 6; c++) {
+      const dx = W / 2 + c * 92 * sc + wind * sc;
+      // Golden rim light
+      ctx.fillStyle = `rgba(255, 185, 100, ${clamp(0.85 - lt * 0.1, 0.2, 0.85)})`;
+      ctx.beginPath();
+      ctx.arc(dx, ry - 30 * sc - 3, 16 * sc, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Dark silhouette body
+      ctx.fillStyle = '#0c080a';
+      ctx.beginPath();
+      ctx.arc(dx, ry - 28 * sc, 15 * sc, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.roundRect(dx - 26 * sc, ry - 12 * sc, 52 * sc, 55 * sc, 8 * sc);
+      ctx.fill();
+    }
+  }
+
+  // Initial white-hot flash at impact
+  if (lt < 0.75) {
+    const f = 1 - lt / 0.75;
+    ctx.fillStyle = `rgba(255, 250, 235, ${f * f})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  drawParticles(t, 1.0, 2.8);
+}
+
+// Scene 6: 22.0 - 30.0s (The Manifesto & OPUS 5.5 Reveal)
+function renderScene6(t) {
+  const lt = t - 22.0;
+
+  // Deep cinematic warm-black void
+  const bg = ctx.createRadialGradient(W / 2, H * 0.45, 10, W / 2, H * 0.45, 700);
+  bg.addColorStop(0, '#1f120b');
+  bg.addColorStop(0.6, '#090605');
+  bg.addColorStop(1, '#000000');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  drawParticles(t, 1.0, 1.2);
+
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  if (lt < 3.6) {
+    // Part A: Iconic 1984-style declaration
+    const a1 = clamp(lt / 0.7, 0, 1) * clamp((3.5 - lt) / 0.5, 0, 1);
+    const a2 = clamp((lt - 0.8) / 0.7, 0, 1) * clamp((3.5 - lt) / 0.5, 0, 1);
+
+    ctx.fillStyle = `rgba(245, 238, 228, ${a1})`;
+    ctx.font = '300 38px "Georgia", "Times New Roman", serif';
+    ctx.fillText('Today, we introduce Opus 5.5.', W / 2, H * 0.42);
+
+    ctx.fillStyle = `rgba(255, 185, 115, ${a2})`;
+    ctx.font = 'italic 300 34px "Georgia", "Times New Roman", serif';
+    ctx.fillText('And you’ll see why every other model', W / 2, H * 0.53);
+    ctx.fillText('won’t be like “1984.”', W / 2, H * 0.61);
+  } else {
+    // Part B: Monumental OPUS 5.5 Hero Reveal
+    const rt = lt - 3.6;
+    const fade = easeOutCubic(clamp(rt / 1.1, 0, 1));
+    const scale = lerp(0.92, 1.04, clamp(rt / 4.4, 0, 1));
+
+    ctx.translate(W / 2, H * 0.46);
+    ctx.scale(scale, scale);
+
+    // Radiant eclipse ring behind logo
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    const ringGlow = ctx.createRadialGradient(0, -10, 20, 0, -10, 240);
+    ringGlow.addColorStop(0, `rgba(255, 150, 60, ${0.42 * fade})`);
+    ringGlow.addColorStop(0.5, `rgba(255, 90, 20, ${0.15 * fade})`);
+    ringGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = ringGlow;
+    ctx.beginPath();
+    ctx.arc(0, -10, 240, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = `rgba(255, 195, 130, ${0.55 * fade})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, -10, 108, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    // Main Title: OPUS 5.5
+    ctx.shadowColor = 'rgba(255, 120, 30, 0.75)';
+    ctx.shadowBlur = 32 * fade;
+    ctx.fillStyle = `rgba(255, 250, 242, ${fade})`;
+    ctx.font = '600 104px "Georgia", "Times New Roman", serif';
+    ctx.letterSpacing = '10px';
+    ctx.fillText('OPUS 5.5', 0, -4);
+    ctx.shadowBlur = 0;
+
+    // Subtitle
+    const subFade = clamp((rt - 0.6) / 0.9, 0, 1);
+    ctx.fillStyle = `rgba(255, 175, 100, ${subFade * 0.9})`;
+    ctx.font = '500 20px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+    ctx.letterSpacing = '14px';
+    ctx.fillText('BREAK THE MONOLITH', 0, 78);
+
+    // Fade to black at very end for seamless loop
+    if (lt > 7.3) {
+      const out = clamp((lt - 7.3) / 0.7, 0, 1);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = `rgba(0, 0, 0, ${out})`;
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
+  ctx.restore();
+}
+
+// Subtle full-bleed film grain & soft optical falloff (no borders/frames)
+function drawFilmPolish(t) {
+  ctx.save();
+  const vig = ctx.createRadialGradient(W / 2, H / 2, W * 0.32, W / 2, H / 2, W * 0.75);
+  vig.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  vig.addColorStop(1, 'rgba(0, 0, 0, 0.42)');
+  ctx.fillStyle = vig;
+  ctx.fillRect(0, 0, W, H);
+
+  // Procedural analog film grain specs
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.035)';
+  const seed = Math.floor(t * 24);
+  for (let i = 0; i < 90; i++) {
+    const gx = hash(seed + i * 1.3) * W;
+    const gy = hash(seed + i * 2.7) * H;
+    ctx.fillRect(gx, gy, 2, 2);
+  }
+  ctx.restore();
+}
+
+function frame(now) {
+  const t = ((now / 1000) + tOffset) % window.DUR;
+  ctx.clearRect(0, 0, W, H);
+
+  if (t < 4.5) {
+    renderScene1(t);
+  } else if (t < 9.0) {
+    renderScene2(t);
+  } else if (t < 13.5) {
+    renderScene3(t);
+  } else if (t < 16.5) {
+    renderScene4(t);
+  } else if (t < 22.0) {
+    renderScene5(t);
+  } else {
+    renderScene6(t);
+  }
+
+  drawFilmPolish(t);
+  requestAnimationFrame(frame);
+}
+
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

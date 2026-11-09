@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Point Nemo — Earth's Most Isolated Location</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; background: #000; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+  canvas { width: min(1280px, 100vw); height: min(720px, 100vh); aspect-ratio: 16/9; display: block; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR = 50;
+const W = 1280, H = 720;
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const urlParams = new URLSearchParams(window.location.search);
+const START_OFFSET = parseFloat(urlParams.get('t')) || 0;
+
+// Stars
+const stars = [];
+for (let i = 0; i < 220; i++) {
+  stars.push({
+    x: Math.random() * W, y: Math.random() * H,
+    r: Math.random() * 1.4 + 0.3,
+    phase: Math.random() * Math.PI * 2,
+    speed: Math.random() * 0.8 + 0.2,
+    baseAlpha: Math.random() * 0.5 + 0.3
+  });
+}
+
+// Helper
+function lerp(a, b, t) { return a + (b - a) * t; }
+function clamp(v, mn, mx) { return Math.max(mn, Math.min(mx, v)); }
+function smooth(t) { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); }
+function easeInOut(t) { t = clamp(t, 0, 1); return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
+function easeOut(t) { t = clamp(t, 0, 1); return 1 - Math.pow(1 - t, 3); }
+function phaseProgress(elapsed, start, end) { return clamp((elapsed - start) / (end - start), 0, 1); }
+
+// Earth drawing
+function drawEarth(cx, cy, r, time, grace) {
+  // Atmosphere glow
+  const glowGrad = ctx.createRadialGradient(cx, cy, r * 0.92, cx, cy, r * 1.22);
+  glowGrad.addColorStop(0, 'rgba(80, 160, 255, 0.22)');
+  glowGrad.addColorStop(0.5, 'rgba(60, 120, 220, 0.10)');
+  glowGrad.addColorStop(1, 'rgba(40, 80, 180, 0)');
+  ctx.fillStyle = glowGrad;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r * 1.22, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Ocean
+  const oceanGrad = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.35, r * 0.1, cx, cy, r);
+  oceanGrad.addColorStop(0, '#1a6baa');
+  oceanGrad.addColorStop(0.45, '#125c96');
+  oceanGrad.addColorStop(0.75, '#0b3d6b');
+  oceanGrad.addColorStop(1, '#061e38');
+  ctx.fillStyle = oceanGrad;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Grid lines (longitude)
+  ctx.strokeStyle = 'rgba(180, 210, 240, 0.15)';
+  ctx.lineWidth = 1;
+  for (let i = -3; i <= 3; i++) {
+    const lonAngle = i * Math.PI / 7;
+    const xc = cx + Math.cos(lonAngle) * r;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, r * Math.abs(Math.cos(lonAngle)) * 0.85, r * 0.85, 0, -Math.PI/2.2, Math.PI/2.2);
+    ctx.stroke();
+  }
+  // Latitude lines
+  for (let i = -2; i <= 2; i++) {
+    const latFrac = i / 2.8;
+    const yPos = cy + latFrac * r * 0.9;
+    const widthFactor = Math.sqrt(Math.max(0, 1 - latFrac * latFrac));
+    ctx.beginPath();
+    ctx.ellipse(cx, yPos, r * 0.88 * widthFactor, r * 0.16, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // Antarctica (bottom band)
+  const antY = cy + r * 0.68;
+  const antH = r * 0.28;
+  const antGrad = ctx.createLinearGradient(cx, antY - antH * 0.3, cx, antY + antH);
+  antGrad.addColorStop(0, 'rgba(220, 235, 245, 0.55)');
+  antGrad.addColorStop(1, 'rgba(190, 215, 230, 0.75)');
+  ctx.fillStyle = antGrad;
+  ctx.beginPath();
+  ctx.moveTo(cx - r * 0.92, cy + r * 0.62);
+  ctx.quadraticCurveTo(cx - r * 0.7, cy + r * 0.78, cx - r * 0.3, cy + r * 0.69);
+  ctx.quadraticCurveTo(cx, cy + r * 0.65, cx + r * 0.3, cy + r * 0.69);
+  ctx.quadraticCurveTo(cx + r * 0.7, cy + r * 0.78, cx + r * 0.92, cy + r * 0.62);
+  ctx.quadraticCurveTo(cx + r * 0.8, cy + r * 0.9, cx, cy + r * 0.92);
+  ctx.quadraticCurveTo(cx - r * 0.8, cy + r * 0.9, cx - r * 0.92, cy + r * 0.62);
+  ctx.closePath();
+  ctx.fill();
+
+  // South America (right side)
+  const saX = cx + r * 0.56;
+  const saBaseY = cy - r * 0.25;
+  ctx.fillStyle = 'rgba(45, 110, 65, 0.7)';
+  ctx.beginPath();
+  ctx.moveTo(cx + r * 0.38, cy - r * 0.55);
+  ctx.quadraticCurveTo(cx + r * 0.62, cy - r * 0.52, cx + r * 0.68, cy - r * 0.25);
+  ctx.quadraticCurveTo(cx + r * 0.70, cy - r * 0.02, cx + r * 0.60, cy + r * 0.18);
+  ctx.quadraticCurveTo(cx + r * 0.52, cy + r * 0.30, cx + r * 0.42, cy + r * 0.24);
+  ctx.quadraticCurveTo(cx + r * 0.38, cy + r * 0.10, cx + r * 0.36, cy - r * 0.18);
+  ctx.quadraticCurveTo(cx + r * 0.34, cy - r * 0.40, cx + r * 0.38, cy - r * 0.55);
+  ctx.closePath();
+  ctx.fill();
+
+  // New Zealand (left side)
+  ctx.fillStyle = 'rgba(50, 115, 60, 0.6)';
+  ctx.beginPath();
+  ctx.ellipse(cx - r * 0.56, cy - r * 0.18, r * 0.09, r * 0.22, -0.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(cx - r * 0.50, cy + r * 0.05, r * 0.06, r * 0.15, 0.15, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Ocean texture
+  ctx.strokeStyle = 'rgba(100, 170, 220, 0.08)';
+  ctx.lineWidth = 0.8;
+  for (let i = 0; i < 16; i++) {
+    const ox = cx + (Math.sin(i * 2.7 + time * 0.05) * 0.6) * r;
+    const oy = cy + (Math.cos(i * 1.9 + time * 0.04) * 0.6) * r;
+    const orad = r * (0.1 + (i % 5) * 0.12);
+    if (orad < r * 0.75) {
+      ctx.beginPath();
+      ctx.arc(ox, oy, orad, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  // Clip for future elements
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.clip();
+}
+
+function drawPointNemo(cx, cy, time, alpha) {
+  const pulse = Math.sin(time * 2.5) * 0.5 + 0.5;
+  const pr = 6 + pulse * 5;
+  const ringR = 12 + pulse * 12;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  // Glow
+  const glowGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, pr * 3);
+  glowGrad.addColorStop(0, 'rgba(255, 80, 40, 0.8)');
+  glowGrad.addColorStop(0.4, 'rgba(255, 120, 60, 0.35)');
+  glowGrad.addColorStop(1, 'rgba(255, 120, 60, 0)');
+  ctx.fillStyle = glowGrad;
+  ctx.beginPath();
+  ctx.arc(cx, cy, pr * 3, 0, Math.PI * 2);
+  ctx.fill();
+  // Core dot
+  ctx.fillStyle = '#ff5a2a';
+  ctx.beginPath();
+  ctx.arc(cx, cy, pr * 0.7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#ffae8a';
+  ctx.beginPath();
+  ctx.arc(cx, cy, pr * 0.35, 0, Math.PI * 2);
+  ctx.fill();
+  // Ring
+  ctx.strokeStyle = `rgba(255, 100, 50, ${0.7 - pulse * 0.5})`;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawDistanceRings(cx, cy, time, progress, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha * progress;
+  for (let i = 0; i < 3; i++) {
+    const baseR = 25 + i * 30 + (time * 18) % 35;
+    const ringAlpha = 0.4 - (i * 0.1) - ((time * 0.6) % 1) * 0.3;
+    ctx.strokeStyle = `rgba(255, 180, 100, ${Math.max(0, ringAlpha)})`;
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([4, 6]);
+    ctx.beginPath();
+    ctx.arc(cx, cy, baseR, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  ctx.restore();
+}
+
+function drawBarChart(x, y, w, h, data, progress, highlightIdx) {
+  const alpha = smooth(progress);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const n = data.length;
+  const gap = 12;
+  const barW = (w - gap * (n + 1)) / n;
+  const maxLog = Math.log10(40000);
+  const minLog = Math.log10(180);
+  const range = maxLog - minLog;
+
+  // Chart background
+  ctx.fillStyle = 'rgba(20, 30, 50, 0.55)';
+  ctx.beginPath();
+  ctx.roundRect(x - 16, y - 40, w + 32, h + 70, 10);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(120, 160, 200, 0.25)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(x - 16, y - 40, w + 32, h + 70, 10);
+  ctx.stroke();
+
+  // Gridlines
+  ctx.strokeStyle = 'rgba(120, 160, 200, 0.15)';
+  ctx.lineWidth = 0.6;
+  for (let i = 0; i <= 4; i++) {
+    const gy = y + h - (i / 4) * h;
+    ctx.beginPath();
+    ctx.moveTo(x - 8, gy);
+    ctx.lineTo(x + w + 8, gy);
+    ctx.stroke();
+    const val = Math.pow(10, minLog + (i / 4) * range);
+    ctx.fillStyle = 'rgba(180, 200, 220, 0.5)';
+    ctx.font = '9px Arial, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(formatKm(val), x - 12, gy + 3);
+  }
+
+  // Bars
+  for (let i = 0; i < n; i++) {
+    const d = data[i];
+    const logVal = Math.log10(d.value);
+    const frac = (logVal - minLog) / range;
+    const barH = frac * h * easeOut(progress) * (i === highlightIdx ? 1 : 0.92);
+    const bx = x + gap + i * (barW + gap);
+    const by = y + h - barH;
+    const isHighlight = i === highlightIdx;
+    const isOrbital = d.type === 'orbital';
+    const isTerrestrial = d.type === 'terrestrial';
+    const isHighOrbit = d.type === 'high_orbit';
+
+    let color, borderColor;
+    if (isHighlight) {
+      color = 'rgba(255, 120, 40, 0.85)';
+      borderColor = 'rgba(255, 180, 80, 0.9)';
+    } else if (isTerrestrial) {
+      color = 'rgba(255, 80, 40, 0.65)';
+      borderColor = 'rgba(255, 120, 60, 0.7)';
+    } else if (isHighOrbit) {
+      color = 'rgba(140, 100, 220, 0.65)';
+      borderColor = 'rgba(180, 150, 240, 0.7)';
+    } else {
+      color = 'rgba(60, 150, 220, 0.65)';
+      borderColor = 'rgba(100, 190, 250, 0.7)';
+    }
+
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, barW, barH, 3);
+    ctx.fill();
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, barW, barH, 3);
+    ctx.stroke();
+
+    // Label
+    ctx.fillStyle = isHighlight ? '#ffcc88' : 'rgba(210, 225, 240, 0.85)';
+    ctx.font = isHighlight ? 'bold 12px Arial, sans-serif' : '11px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(d.label, bx + barW / 2, y + h + 18);
+    // Value
+    ctx.fillStyle = 'rgba(200, 215, 235, 0.75)';
+    ctx.font = '10px Arial, sans-serif';
+    ctx.fillText(formatKm(d.value), bx + barW / 2, by - 6);
+  }
+  ctx.restore();
+}
+
+function formatKm(km) {
+  if (km >= 10000) return (km / 1000).toFixed(0) + ',000 km';
+  if (km >= 1000) return (km / 1000).toFixed(1).replace('.0', '') + ',' + String(Math.round(km % 1000)).padStart(3, '0') + ' km';
+  return km.toFixed(0) + ' km';
+}
+
+function drawSpacecraftIcon(cx, cy, scale, angle, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(cx, cy);
+  ctx.rotate(angle);
+  const s = scale || 1;
+  // Body
+  ctx.fillStyle = '#c8d4e0';
+  ctx.fillRect(-5 * s, -3 * s, 10 * s, 6 * s);
+  ctx.fillStyle = '#9aa8b8';
+  ctx.fillRect(-3 * s, -2 * s, 6 * s, 4 * s);
+  // Solar panels
+  ctx.fillStyle = 'rgba(80, 130, 190, 0.8)';
+  ctx.fillRect(5 * s, -8 * s, 8 * s, 16 * s);
+  ctx.fillRect(-13 * s, -8 * s, 8 * s, 16 * s);
+  ctx.strokeStyle = 'rgba(180, 200, 220, 0.6)';
+  ctx.lineWidth = 0.8;
+  ctx.strokeRect(5 * s, -8 * s, 8 * s, 16 * s);
+  ctx.strokeRect(-13 * s, -8 * s, 8 * s, 16 * s);
+  // Grid lines on panels
+  ctx.strokeStyle = 'rgba(200, 220, 240, 0.35)';
+  ctx.lineWidth = 0.4;
+  for (let px = -12; px <= 12; px += 4) {
+    ctx.beginPath();
+    ctx.moveTo(px * s, -8 * s);
+    ctx.lineTo(px * s, 8 * s);
+    ctx.stroke();
+  }
+  // Antenna
+  ctx.strokeStyle = '#d0d8e0';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, -3 * s);
+  ctx.lineTo(0, -6 * s);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawLabel(cx, cy, text, color, fontSize, align, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha || 1;
+  ctx.fillStyle = color || '#ffffff';
+  ctx.font = fontSize || '14px Arial, sans-serif';
+  ctx.textAlign = align || 'center';
+  ctx.fillText(text, cx, cy);
+  ctx.restore();
+}
+
+// Main animation
+function draw(timestamp) {
+  const rawElapsed = (timestamp / 1000 + START_OFFSET) % DUR;
+  const elapsed = rawElapsed;
+  const time = elapsed;
+
+  // Clear
+  ctx.fillStyle = '#020810';
+  ctx.fillRect(0, 0, W, H);
+
+  // Stars
+  for (const s of stars) {
+    const twinkle = Math.sin(time * s.speed + s.phase) * 0.3 + 0.7;
+    const alpha = s.baseAlpha * twinkle;
+    ctx.fillStyle = `rgba(200, 220, 255, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Phase calculation
+  const pIntro = phaseProgress(elapsed, 0, 3);
+  const pEarth = phaseProgress(elapsed, 3, 15);
+  const pAlt = phaseProgress(elapsed, 15, 28);
+  const pCemetery = phaseProgress(elapsed, 28, 40);
+  const pSummary = phaseProgress(elapsed, 40, 48);
+  const pFadeOut = phaseProgress(elapsed, 48, 50);
+
+  // Earth position: center at intro/earth, shift left for alt/cemetery, back for summary
+  const earthCx = lerp(lerp(640, 640, smooth(pEarth)), lerp(400, 400, 1), smooth(pAlt) * 0 + smooth(pCemetery) * 0 + (pAlt > 0 ? 1 : 0) * 0);
+  // Simpler: use a smooth curve
+  const shiftAmount = smooth(pAlt) * (1 - smooth(pSummary)) + smooth(pSummary) * 0;
+  const cx = lerp(640, 400, shiftAmount);
+  const cy = 380;
+  const r = lerp(280, 200, smooth(pAlt) * 1 + smooth(pCemetery) * 0 + smooth(pSummary) * 0);
+
+  // Earth alpha
+  const earthAlpha = clamp(pIntro * 1.5, 0, 1) * (1 - pFadeOut * 0.5);
+  ctx.save();
+  ctx.globalAlpha = earthAlpha;
+  drawEarth(cx, cy, r, time, 0);
+  ctx.restore();
+
+  // Point Nemo marker on Earth
+  const nemoAlpha = clamp(pIntro * 1.2, 0, 1) * (1 - pFadeOut * 0.6);
+  drawPointNemo(cx, cy, time, nemoAlpha);
+
+  // Distance rings
+  if (pEarth > 0 && pEarth < 1) {
+    drawDistanceRings(cx, cy, time, pEarth, 0.7);
+  }
+  if (pAlt < 0.3 && pEarth > 0) {
+    drawDistanceRings(cx, cy, time, 1 - pAlt * 3, 0.5 * (1 - pAlt));
+  }
+
+  // Title
+  if (pIntro > 0) {
+    const titleAlpha = smooth(pIntro) * (1 - pFadeOut);
+    const titleY = lerp(120, 60, smooth(pIntro));
+    ctx.save();
+    ctx.globalAlpha = titleAlpha;
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 52px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('POINT NEMO', W / 2, titleY);
+    ctx.font = '18px Arial, sans-serif';
+    ctx.fillStyle = 'rgba(180, 210, 240, 0.9)';
+    ctx.fillText('The Oceanic Pole of Inaccessibility', W / 2, titleY + 34);
+    ctx.fillStyle = 'rgba(140, 180, 220, 0.65)';
+    ctx.font = '13px Arial, sans-serif';
+    ctx.fillText('48°52.6′S  123°23.6′W', W / 2, titleY + 58);
+    ctx.restore();
+  }
+
+  // Distance to land info (phase 1)
+  if (pEarth > 0.3) {
+    const infoAlpha = smooth(phaseProgress(elapsed, 5, 12)) * (1 - smooth(phaseProgress(elapsed, 20, 28)) * 0.85);
+    if (infoAlpha > 0.01) {
+      ctx.save();
+      ctx.globalAlpha = infoAlpha * (1 - pFadeOut);
+      // Draw lines to landmasses
+      const landTargets = [
+        { angle: -0.45, dist: 0.62, label: 'Ducie Island', distKm: '2,688 km' },
+        { angle: 0.55, dist: 0.68, label: 'Motu Nui', distKm: '2,705 km' },
+        { angle: 1.6, dist: 0.55, label: 'Maher Island', distKm: '2,689 km' }
+      ];
+      for (const lt of landTargets) {
+        const lx = cx + Math.cos(lt.angle) * r * lt.dist;
+        const ly = cy + Math.sin(lt.angle) * r * lt.dist;
+        ctx.strokeStyle = 'rgba(255, 180, 100, 0.6)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([3, 4]);
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(lx, ly);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // Dot at landmass
+        ctx.fillStyle = 'rgba(255, 200, 120, 0.8)';
+        ctx.beginPath();
+        ctx.arc(lx, ly, 4, 0, Math.PI * 2);
+        ctx.fill();
+        // Label
+        ctx.fillStyle = 'rgba(230, 240, 255, 0.85)';
+        ctx.font = '11px Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(lt.label, lx, ly - 14);
+      }
+      // Distance callout
+      ctx.fillStyle = 'rgba(255, 220, 170, 0.95)';
+      ctx.font = 'bold 16px Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('≈ 2,688 km to nearest land', cx, cy + r + 40);
+      ctx.fillStyle = 'rgba(200, 220, 240, 0.7)';
+      ctx.font = '12px Arial, sans-serif';
+      ctx.fillText('(Ducie Island · Motu Nui · Maher Island)', cx, cy + r + 60);
+      // Small annotation
+      ctx.fillStyle = 'rgba(240, 200, 160, 0.55)';
+      ctx.font = '11px Arial, sans-serif';
+      ctx.fillText('No land within 2,688 km in every direction', cx, cy + r + 80);
+      ctx.restore();
+    }
+  }
+
+  // Altitude comparison (phase 2)
+  if (pAlt > 0) {
+    const altAlpha = smooth(pAlt) * (1 - smooth(phaseProgress(elapsed, 26, 34)) * 0.9);
+    if (altAlpha > 0.01) {
+      ctx.save();
+      ctx.globalAlpha = altAlpha * (1 - pFadeOut);
+      const chartData = [
+        { label: 'ISS', value: 408, type: 'orbital' },
+        { label: 'Hubble', value: 540, type: 'orbital' },
+        { label: 'Pt. Nemo → Land', value: 2688, type: 'terrestrial' },
+        { label: 'GPS', value: 20200, type: 'high_orbit' },
+        { label: 'Geostationary', value: 35786, type: 'high_orbit' }
+      ];
+      drawBarChart(680, 120, 560, 420, chartData, pAlt, 2);
+
+      // Header
+      ctx.fillStyle = 'rgba(220, 235, 250, 0.9)';
+      ctx.font = 'bold 17px Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Orbital Altitude vs. Terrestrial Distance', 960, 88);
+      ctx.fillStyle = 'rgba(180, 200, 220, 0.6)';
+      ctx.font = '12px Arial, sans-serif';
+      ctx.fillText('The ISS orbits closer to Point Nemo than Point Nemo is to any land', 960, 108);
+
+      // Highlight note
+      const noteAlpha = smooth(phaseProgress(elapsed, 19, 24)) * (1 - smooth(phaseProgress(elapsed, 30, 36)) * 0.8);
+      if (noteAlpha > 0.01) {
+        ctx.globalAlpha = noteAlpha;
+        ctx.fillStyle = 'rgba(255, 200, 130, 0.85)';
+        ctx.font = 'bold 14px Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('▲ Point Nemo is 6.6× farther from land than the ISS altitude', 960, 548);
+      }
+      ctx.restore();
+    }
+  }
+
+  // Spacecraft cemetery (phase 3)
+  if (pCemetery > 0) {
+    const cemAlpha = smooth(pCemetery) * (1 - pFadeOut * 0.8);
+    if (cemAlpha > 0.01) {
+      ctx.save();
+      ctx.globalAlpha = cemAlpha;
+
+      // Orbital paths around Earth
+      for (let i = 0; i < 3; i++) {
+        const orbitR = r + 25 + i * 35;
+        ctx.strokeStyle = `rgba(100, 170, 230, ${0.3 - i * 0.06})`;
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.arc(cx, cy, orbitR, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Spacecraft on orbital paths
+      const scCount = 8;
+      for (let i = 0; i < scCount; i++) {
+        const orbitIdx = i % 3;
+        const orbitR = r + 25 + orbitIdx * 35;
+        const scAngle = time * (0.25 + orbitIdx * 0.08) + i * 2.4;
+        const scx = cx + Math.cos(scAngle) * orbitR;
+        const scy = cy + Math.sin(scAngle) * orbitR;
+        const scAlpha = cemAlpha * (0.7 + 0.3 * Math.sin(time * 0.8 + i));
+        drawSpacecraftIcon(scx, scy, 0.9 + orbitIdx * 0.12, scAngle + Math.PI / 2, scAlpha);
+      }
+
+      // De-orbiting spacecraft (periodically)
+      const deorbitPhase = ((time * 0.6) % 1);
+      if (deorbitPhase < 0.7 && pCemetery > 0.3) {
+        const doAngle = -0.5 + deorbitPhase * 1.8;
+        const startR = r + 100;
+        const endR = r * 0.45;
+        const tDO = deorbitPhase / 0.7;
+        const doR = lerp(startR, endR, easeInOut(tDO));
+        const dox = cx + Math.cos(doAngle) * doR;
+        const doy = cy + Math.sin(doAngle) * doR;
+        // Trajectory line
+        ctx.strokeStyle = `rgba(255, 150, 80, ${0.5 * (1 - tDO * 0.7)})`;
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([2, 3]);
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(doAngle) * (r + 100), cy + Math.sin(doAngle) * (r + 100));
+        ctx.quadraticCurveTo(
+          cx + Math.cos(doAngle) * (r + 50) + 20, cy + Math.sin(doAngle) * (r + 50) + 30,
+          dox, doy
+        );
+        ctx.stroke();
+        ctx.setLineDash([]);
+        // Spacecraft
+        drawSpacecraftIcon(dox, doy, 0.7, doAngle + Math.PI / 2, 0.9);
+      }
+
+      // Debris field in ocean near Point Nemo
+      const debrisCount = 22;
+      for (let i = 0; i < debrisCount; i++) {
+        const dAngle = (i * 2.4 + time * 0.08) % (Math.PI * 2);
+        const dDist = r * 0.06 + (i % 7) * r * 0.07;
+        const dR = 1.5 + (i % 4) * 0.8;
+        const dx = cx + Math.cos(dAngle) * dDist;
+        const dy = cy + Math.sin(dAngle) * dDist * 0.7 + r * 0.03;
+        const dAlpha = 0.4 + 0.5 * Math.sin(time * 1.5 + i * 0.7);
+        ctx.fillStyle = `rgba(220, 180, 120, ${dAlpha})`;
+        ctx.beginPath();
+        ctx.arc(dx, dy, dR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Right panel - cemetery stats
+      const statsAlpha = smooth(phaseProgress(elapsed, 30, 35)) * (1 - smooth(phaseProgress(elapsed, 40, 45)) * 0.8);
+      if (statsAlpha > 0.01) {
+        ctx.globalAlpha = statsAlpha;
+        // Panel
+        ctx.fillStyle = 'rgba(15, 25, 40, 0.7)';
+        ctx.beginPath();
+        ctx.roundRect(700, 150, 540, 290, 12);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(120, 160, 200, 0.3)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(700, 150, 540, 290, 12);
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(230, 240, 250, 0.92)';
+        ctx.font = 'bold 19px Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Spacecraft Cemetery', 970, 184);
+        ctx.fillStyle = 'rgba(180, 200, 220, 0.7)';
+        ctx.font = '13px Arial, sans-serif';
+        ctx.fillText('South Pacific Ocean Uninhabited Area', 970, 206);
+
+        const stats = [
+          ['260+', 'spacecraft disposed'],
+          ['1971', 'first de-orbit'],
+          ['120+', 'Russian spacecraft'],
+          ['Mir', 'largest object (120 t, 2001)']
+        ];
+        const statY = 238;
+        const statH = 44;
+        stats.forEach((s, i) => {
+          const sy = statY + i * statH;
+          ctx.fillStyle = 'rgba(255, 200, 120, 0.9)';
+          ctx.font = 'bold 24px Arial, sans-serif';
+          ctx.textAlign = 'right';
+          ctx.fillText(s[0], 920, sy);
+          ctx.fillStyle = 'rgba(190, 210, 230, 0.7)';
+          ctx.font = '13px Arial, sans-serif';
+          ctx.textAlign = 'left';
+          ctx.fillText(s[1], 940, sy - 3);
+        });
+
+        // Agency note
+        ctx.fillStyle = 'rgba(160, 190, 220, 0.55)';
+        ctx.font = '11px Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Used by Russia · ESA · Japan · NASA · SpaceX', 970, 414);
+      }
+      ctx.restore();
+    }
+  }
+
+  // Summary phase
+  if (pSummary > 0) {
+    const sumAlpha = smooth(pSummary) * (1 - pFadeOut * 0.7);
+    if (sumAlpha > 0.01) {
+      ctx.save();
+      ctx.globalAlpha = sumAlpha;
+      // Dark overlay
+      ctx.fillStyle = 'rgba(2, 8, 16, 0.55)';
+      ctx.fillRect(0, 0, W, H);
+      // Panel
+      ctx.fillStyle = 'rgba(15, 25, 40, 0.65)';
+      ctx.beginPath();
+      ctx.roundRect(240, 140, 800, 400, 18);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(120, 160, 200, 0.3)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.roundRect(240, 140, 800, 400, 18);
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 30px Arial, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Point Nemo', 640, 190);
+
+      const facts = [
+        ['2,688 km', 'to nearest land (Ducie Island, Motu Nui, Maher Island)'],
+        ['400 km', 'ISS orbital altitude — closer than any land'],
+        ['6.6×', 'distance to land vs. ISS altitude'],
+        ['260+', 'spacecraft in the oceanic cemetery'],
+        ['48°52.6′S 123°23.6′W', 'the most isolated point on Earth']
+      ];
+      const factY = 230;
+      const factH = 48;
+      facts.forEach((f, i) => {
+        const fy = factY + i * factH;
+        ctx.fillStyle = 'rgba(255, 200, 120, 0.9)';
+        ctx.font = 'bold 20px Arial, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(f[0], 580, fy);
+        ctx.fillStyle = 'rgba(200, 215, 235, 0.7)';
+        ctx.font = '14px Arial, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(f[1], 600, fy - 2);
+      });
+      ctx.restore();
+    }
+  }
+
+  // Fade transition at end
+  if (pFadeOut > 0) {
+    ctx.fillStyle = `rgba(2, 8, 16, ${smooth(pFadeOut) * 0.7})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // Subtle time indicator
+  const progressFrac = elapsed / DUR;
+  ctx.fillStyle = 'rgba(150, 180, 210, 0.35)';
+  ctx.fillRect(20, H - 14, (W - 40) * progressFrac, 3);
+  ctx.fillStyle = 'rgba(180, 200, 220, 0.5)';
+  ctx.font = '9px Arial, sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText(elapsed.toFixed(1) + 's / ' + DUR + 's', W - 24, H - 20);
+
+  requestAnimationFrame(draw);
+}
+
+// Start
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>

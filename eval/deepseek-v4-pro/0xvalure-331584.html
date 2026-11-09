@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PayBox Reel</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; background: #000; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+(function() {
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const W = 1280, H = 720;
+  canvas.width = W; canvas.height = H;
+
+  // CSS scaling to fit window while maintaining aspect ratio
+  function fitCanvas() {
+    const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+    canvas.style.width = (W * scale) + 'px';
+    canvas.style.height = (H * scale) + 'px';
+  }
+  fitCanvas();
+  window.addEventListener('resize', fitCanvas);
+
+  // Duration
+  const DUR = 10;
+  window.DUR = DUR;
+
+  // Parse ?t=SECONDS
+  const params = new URLSearchParams(window.location.search);
+  const tParam = parseFloat(params.get('t') || '0');
+  const startOffset = isNaN(tParam) ? 0 : tParam;
+
+  // Easing functions
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+  function easeOutCubic(t) { t = clamp(t, 0, 1); return 1 - Math.pow(1 - t, 3); }
+  function easeInCubic(t) { t = clamp(t, 0, 1); return t * t * t; }
+  function easeInOutCubic(t) { t = clamp(t, 0, 1); return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+  function easeOutBack(t) { t = clamp(t, 0, 1); const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2); }
+  function easeOutElastic(t) { t = clamp(t, 0, 1); if (t === 0 || t === 1) return t; const c4 = (2 * Math.PI) / 3; return Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * c4) + 1; }
+  function easeInOutQuad(t) { t = clamp(t, 0, 1); return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
+  function smoothstep(a, b, t) { const x = clamp((t - a) / (b - a), 0, 1); return x * x * (3 - 2 * x); }
+
+  // Helper: rounded rectangle path
+  function roundRectPath(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
+  // Particles
+  class Particle {
+    constructor() { this.reset(); }
+    reset() {
+      this.x = Math.random() * W;
+      this.y = Math.random() * H;
+      this.size = Math.random() * 2.5 + 0.5;
+      this.baseAlpha = Math.random() * 0.5 + 0.2;
+      this.twinkleSpeed = Math.random() * 2 + 0.5;
+      this.twinklePhase = Math.random() * Math.PI * 2;
+      this.vx = (Math.random() - 0.5) * 8;
+      this.vy = (Math.random() - 0.5) * 8;
+      this.driftPhase = Math.random() * Math.PI * 2;
+    }
+    update(t, dt) {
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+      if (this.x < -10) this.x = W + 10;
+      if (this.x > W + 10) this.x = -10;
+      if (this.y < -10) this.y = H + 10;
+      if (this.y > H + 10) this.y = -10;
+      this.twinklePhase += this.twinkleSpeed * dt;
+      this.driftPhase += 0.3 * dt;
+    }
+    draw(ctx, t) {
+      const alpha = this.baseAlpha * (0.6 + 0.4 * Math.sin(this.twinklePhase));
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(120, 200, 255, ${alpha})`;
+      ctx.fill();
+    }
+  }
+
+  // Converging particles for intro
+  class ConvergeParticle {
+    constructor() {
+      this.reset();
+    }
+    reset() {
+      const edge = Math.floor(Math.random() * 4);
+      if (edge === 0) { this.startX = Math.random() * W; this.startY = -20; }
+      else if (edge === 1) { this.startX = Math.random() * W; this.startY = H + 20; }
+      else if (edge === 2) { this.startX = -20; this.startY = Math.random() * H; }
+      else { this.startX = W + 20; this.startY = Math.random() * H; }
+      this.x = this.startX;
+      this.y = this.startY;
+      this.targetX = 590 + (Math.random() - 0.5) * 30;
+      this.targetY = 360 + (Math.random() - 0.5) * 30;
+      this.size = Math.random() * 3.5 + 1.5;
+      this.speed = Math.random() * 0.4 + 0.6;
+      this.color = Math.random() < 0.5 ? '#00D4FF' : '#7B61FF';
+      this.finished = false;
+      this.delay = Math.random() * 0.6;
+      this.elapsed = 0;
+    }
+    update(dt) {
+      if (this.finished) return;
+      this.elapsed += dt;
+      if (this.elapsed < this.delay) return;
+      const progress = (this.elapsed - this.delay) / this.speed;
+      if (progress >= 1) {
+        this.x = this.targetX;
+        this.y = this.targetY;
+        this.finished = true;
+        return;
+      }
+      const eased = easeOutCubic(progress);
+      this.x = lerp(this.startX, this.targetX, eased);
+      this.y = lerp(this.startY, this.targetY, eased);
+    }
+    draw(ctx) {
+      if (this.finished) return;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+      ctx.fillStyle = this.color;
+      ctx.shadowColor = this.color;
+      ctx.shadowBlur = 15;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  // Orbiting particles around logo
+  class OrbitParticle {
+    constructor() {
+      this.angle = Math.random() * Math.PI * 2;
+      this.radius = 80 + Math.random() * 40;
+      this.speed = (Math.random() * 0.5 + 0.3) * (Math.random() < 0.5 ? 1 : -1);
+      this.size = Math.random() * 2 + 0.8;
+      this.alpha = Math.random() * 0.4 + 0.25;
+      this.color = Math.random() < 0.4 ? '#00D4FF' : (Math.random() < 0.5 ? '#7B61FF' : '#00FFB3');
+      this.yOffset = (Math.random() - 0.5) * 20;
+    }
+    update(dt) {
+      this.angle += this.speed * dt;
+    }
+    draw(ctx, cx, cy, t) {
+      const x = cx + Math.cos(this.angle) * this.radius;
+      const y = cy + Math.sin(this.angle) * this.radius * 0.5 + this.yOffset;
+      const twinkle = 0.7 + 0.3 * Math.sin(t * 3 + this.angle * 5);
+      ctx.beginPath();
+      ctx.arc(x, y, this.size * twinkle, 0, Math.PI * 2);
+      ctx.fillStyle = this.color;
+      ctx.globalAlpha = this.alpha * twinkle;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // Particle systems
+  const bgParticles = [];
+  for (let i = 0; i < 55; i++) bgParticles.push(new Particle());
+
+  const convergeParticles = [];
+  for (let i = 0; i < 70; i++) convergeParticles.push(new ConvergeParticle());
+
+  const orbitParticles = [];
+  for (let i = 0; i < 18; i++) orbitParticles.push(new OrbitParticle());
+
+  // Box logo position
+  const boxCX = 590;
+  const boxCY = 360;
+  const boxSize = 110;
+
+  // Draw the box logo (rounded square with Pay text inside)
+  function drawBoxLogo(progress, rotAngle, glowIntensity, scale) {
+    if (scale <= 0.01) return;
+    ctx.save();
+    ctx.translate(boxCX, boxCY);
+    ctx.rotate(rotAngle);
+    ctx.scale(scale, scale);
+    
+    const s = boxSize;
+    const half = s / 2;
+    
+    // Drop shadow
+    ctx.shadowColor = 'rgba(0, 212, 255, 0.6)';
+    ctx.shadowBlur = 30 * glowIntensity + 10 * glowIntensity;
+    ctx.shadowOffsetX = 4;
+    ctx.shadowOffsetY = 6;
+    
+    // Box background - glass-like
+    const bgGrad = ctx.createLinearGradient(-half, -half, half, half);
+    bgGrad.addColorStop(0, 'rgba(20, 40, 80, 0.85)');
+    bgGrad.addColorStop(0.5, 'rgba(30, 20, 70, 0.9)');
+    bgGrad.addColorStop(1, 'rgba(10, 30, 60, 0.85)');
+    roundRectPath(ctx, -half, -half, s, s, 22);
+    ctx.fillStyle = bgGrad;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+    
+    // Border gradient
+    const borderGrad = ctx.createLinearGradient(-half, 0, half, 0);
+    borderGrad.addColorStop(0, '#00D4FF');
+    borderGrad.addColorStop(0.5, '#7B61FF');
+    borderGrad.addColorStop(1, '#00FFB3');
+    roundRectPath(ctx, -half, -half, s, s, 22);
+    ctx.strokeStyle = borderGrad;
+    ctx.lineWidth = 3.5;
+    ctx.globalAlpha = 0.6 + 0.4 * glowIntensity;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    
+    // Inner subtle border
+    roundRectPath(ctx, -half + 7, -half + 7, s - 14, s - 14, 16);
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    
+    // Draw "Pay" text inside box
+    ctx.rotate(0);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.shadowColor = 'rgba(255,255,255,0.7)';
+    ctx.shadowBlur = 12 * glowIntensity;
+    ctx.font = 'bold 44px system-ui, -apple-system, "Segoe UI", Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Pay', 0, 2);
+    ctx.shadowBlur = 0;
+    
+    ctx.restore();
+  }
+
+  // Draw "Box" text next to the logo
+  function drawBoxText(progress, glowIntensity, letterSpacing) {
+    if (progress <= 0) return;
+    const text = 'Box';
+    const fontSize = 62;
+    const startX = boxCX + boxSize / 2 + 28;
+    const centerY = boxCY + 2;
+    const totalLetters = text.length;
+    const letterGap = 8 + letterSpacing * 20;
+    
+    ctx.save();
+    ctx.textBaseline = 'middle';
+    
+    for (let i = 0; i < totalLetters; i++) {
+      const charProgress = clamp((progress * totalLetters) - i, 0, 1);
+      if (charProgress <= 0) continue;
+      const charAlpha = easeOutCubic(charProgress);
+      const charY = centerY + (1 - charProgress) * 30;
+      const charScale = 0.5 + 0.5 * easeOutCubic(charProgress);
+      
+      ctx.save();
+      ctx.translate(startX + i * (fontSize * 0.6 + letterGap), charY);
+      ctx.scale(charScale, charScale);
+      ctx.globalAlpha = charAlpha;
+      
+      // Gradient text fill
+      const textGrad = ctx.createLinearGradient(-20, 0, 20, 0);
+      textGrad.addColorStop(0, '#FFFFFF');
+      textGrad.addColorStop(1, '#AADDFF');
+      ctx.fillStyle = textGrad;
+      ctx.shadowColor = 'rgba(0, 212, 255, 0.5)';
+      ctx.shadowBlur = 18 * glowIntensity;
+      ctx.font = 'bold ' + fontSize + 'px system-ui, -apple-system, "Segoe UI", Arial, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(text[i], 0, 0);
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  // Draw checkmark
+  function drawCheckmark(cx, cy, size, progress, color) {
+    if (progress <= 0) return;
+    const p = easeOutCubic(progress);
+    ctx.save();
+    ctx.strokeStyle = color || '#00FFB3';
+    ctx.lineWidth = 6;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.shadowColor = color || '#00FFB3';
+    ctx.shadowBlur = 18;
+    
+    // First stroke (short diagonal)
+    const sx1 = cx - size * 0.33;
+    const sy1 = cy + size * 0.05;
+    const midX = cx - size * 0.05;
+    const midY = cy - size * 0.25;
+    const ex1 = lerp(sx1, midX, p);
+    const ey1 = lerp(sy1, midY, p);
+    
+    ctx.beginPath();
+    ctx.moveTo(sx1, sy1);
+    ctx.lineTo(ex1, ey1);
+    ctx.stroke();
+    
+    // Second stroke (long diagonal)
+    if (p > 0.35) {
+      const p2 = clamp((p - 0.35) / 0.65, 0, 1);
+      const e2 = easeOutCubic(p2);
+      const sx2 = midX;
+      const sy2 = midY;
+      const ex2 = cx + size * 0.42;
+      const ey2 = cy - size * 0.42;
+      ctx.beginPath();
+      ctx.moveTo(sx2, sy2);
+      ctx.lineTo(lerp(sx2, ex2, e2), lerp(sy2, ey2, e2));
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+
+  // Draw payment card
+  function drawCard(x, y, width, height, tilt, progress, alpha) {
+    if (progress <= 0 || alpha <= 0) return;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(tilt);
+    ctx.globalAlpha = alpha;
+    
+    // Card shadow
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    ctx.shadowBlur = 20;
+    ctx.shadowOffsetX = 3;
+    ctx.shadowOffsetY = 5;
+    
+    // Card body
+    const grad = ctx.createLinearGradient(0, 0, width, height);
+    grad.addColorStop(0, '#1A2A5E');
+    grad.addColorStop(0.4, '#0D1B3E');
+    grad.addColorStop(1, '#182852');
+    roundRectPath(ctx, 0, 0, width, height, 12);
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+    
+    // Card border
+    roundRectPath(ctx, 0, 0, width, height, 12);
+    ctx.strokeStyle = 'rgba(0, 212, 255, 0.4)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    
+    // Magnetic stripe
+    ctx.fillStyle = 'rgba(20, 25, 50, 0.8)';
+    ctx.fillRect(0, height * 0.2, width, height * 0.12);
+    
+    // Chip
+    roundRectPath(ctx, width * 0.12, height * 0.4, width * 0.18, height * 0.2, 4);
+    ctx.fillStyle = '#C9A84C';
+    ctx.fill();
+    ctx.strokeStyle = '#8B7330';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    
+    // Contactless icon
+    ctx.beginPath();
+    const cx = width * 0.62;
+    const cy = height * 0.42;
+    for (let i = 0; i < 3; i++) {
+      const r = 8 + i * 5;
+      ctx.arc(cx, cy, r, Math.PI * 0.75, Math.PI * 2.25);
+    }
+    ctx.strokeStyle = 'rgba(0, 212, 255, 0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    
+    // Card number dots
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    for (let i = 0; i < 4; i++) {
+      const dotX = width * 0.25 + i * width * 0.14;
+      ctx.beginPath();
+      ctx.arc(dotX, height * 0.65, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    for (let i = 0; i < 3; i++) {
+      const dotX = width * 0.25 + i * width * 0.14;
+      ctx.beginPath();
+      ctx.arc(dotX, height * 0.75, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    
+    ctx.restore();
+  }
+
+  // Draw light streak
+  function drawLightStreak(cx, cy, angle, length, thickness, color, alpha) {
+    if (alpha <= 0) return;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(angle);
+    const grad = ctx.createLinearGradient(-length / 2, 0, length / 2, 0);
+    grad.addColorStop(0, 'rgba(255,255,255,0)');
+    grad.addColorStop(0.4, color);
+    grad.addColorStop(0.6, color);
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = grad;
+    ctx.globalAlpha = alpha;
+    ctx.fillRect(-length / 2, -thickness / 2, length, thickness);
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
+  // Draw background grid
+  function drawGrid(t) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(30, 50, 90, 0.3)';
+    ctx.lineWidth = 0.5;
+    const spacing = 70;
+    const offset = (t * 15) % spacing;
+    for (let x = -spacing + offset; x < W + spacing; x += spacing) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, H);
+      ctx.stroke();
+    }
+    for (let y = -spacing + offset; y < H + spacing; y += spacing) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Draw glow radial
+  function drawBackgroundGlow(t) {
+    const pulse = 0.85 + 0.15 * Math.sin(t * 1.5);
+    const g1 = ctx.createRadialGradient(W * 0.5, H * 0.5, 0, W * 0.5, H * 0.5, W * 0.6);
+    g1.addColorStop(0, `rgba(20, 30, 70, ${0.4 * pulse})`);
+    g1.addColorStop(0.5, `rgba(10, 15, 40, ${0.25 * pulse})`);
+    g1.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = g1;
+    ctx.fillRect(0, 0, W, H);
+    
+    // Cyan glow near logo
+    const cx = boxCX, cy = boxCY;
+    const glowR = 160 + 30 * Math.sin(t * 2);
+    const g2 = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
+    g2.addColorStop(0, 'rgba(0, 212, 255, 0.12)');
+    g2.addColorStop(0.5, 'rgba(0, 100, 200, 0.06)');
+    g2.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = g2;
+    ctx.fillRect(cx - glowR, cy - glowR, glowR * 2, glowR * 2);
+    
+    // Purple glow
+    const g3 = ctx.createRadialGradient(cx + 80, cy - 40, 0, cx + 80, cy - 40, 200);
+    g3.addColorStop(0, 'rgba(123, 97, 255, 0.08)');
+    g3.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g3;
+    ctx.fillRect(cx - 150, cy - 300, 500, 500);
+  }
+
+  // Main render
+  let prevTime = null;
+  let lastLogoT = 0;
+
+  function render(now) {
+    if (prevTime === null) prevTime = now;
+    const dt = Math.min((now - prevTime) / 1000, 0.1);
+    prevTime = now;
+    
+    // Time with offset and loop
+    const rawT = (now / 1000 + startOffset) % DUR;
+    const t = rawT;
+    
+    // Clear
+    ctx.clearRect(0, 0, W, H);
+    
+    // Background fill
+    const bgGrad = ctx.createLinearGradient(0, 0, W, H);
+    bgGrad.addColorStop(0, '#070A16');
+    bgGrad.addColorStop(0.5, '#0A0E1E');
+    bgGrad.addColorStop(1, '#060810');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, W, H);
+    
+    // Background glow
+    drawBackgroundGlow(t);
+    
+    // Grid
+    drawGrid(t);
+    
+    // Background particles
+    for (const p of bgParticles) {
+      p.update(t, dt);
+      p.draw(ctx, t);
+    }
+    
+    // Phase calculations
+    // Phase 1: 0-1.2s particle convergence
+    // Phase 2: 1.2-2.5s box forms
+    // Phase 3: 2.5-4.0s text appears
+    // Phase 4: 4.0-5.5s card + checkmark
+    // Phase 5: 5.5-8.0s full composition with orbit
+    // Phase 6: 8.0-9.2s hold
+    // Phase 7: 9.2-10s disassemble
+    
+    const p1Start = 0, p1End = 1.4;
+    const p2Start = 1.0, p2End = 2.4;
+    const p3Start = 2.2, p3End = 3.6;
+    const p4Start = 3.5, p4End = 5.3;
+    const p5Start = 5.0, p5End = 8.0;
+    const p6Start = 7.5, p6End = 9.0;
+    const p7Start = 8.8, p7End = 10.0;
+    
+    // Converge particles (phase 1)
+    if (t < p1End + 0.5) {
+      for (const cp of convergeParticles) {
+        cp.update(dt);
+        cp.draw(ctx);
+      }
+    }
+    
+    // Box scale with elastic ease
+    const boxFormProgress = smoothstep(p2Start, p2End, t);
+    const boxScale = easeOutElastic(boxFormProgress);
+    const boxGlow = easeOutCubic(smoothstep(p2Start, p2End, t));
+    
+    // Box rotation
+    const rotBase = Math.sin(t * 0.8) * 0.06;
+    const rotIntro = (1 - easeOutCubic(smoothstep(p2Start, p2End, t))) * 0.15;
+    const rotAngle = rotBase + rotIntro * Math.sin(t * 2);
+    
+    // Draw box logo
+    drawBoxLogo(1, rotAngle, boxGlow, boxScale);
+    
+    // Text "Box" animation
+    const textProgress = smoothstep(p3Start, p3End, t);
+    const letterSpacingEase = easeOutCubic(textProgress);
+    drawBoxText(textProgress, boxGlow, letterSpacingEase);
+    
+    // Card animation (phase 4)
+    const cardProgress = smoothstep(p4Start, p4End, t);
+    const cardX = lerp(W + 200, W * 0.28, easeInOutCubic(cardProgress));
+    const cardY = 520;
+    const cardW = 260;
+    const cardH = 150;
+    const cardTilt = lerp(0.15, -0.05, easeInOutCubic(cardProgress));
+    const cardAlpha = clamp(Math.sin(cardProgress * Math.PI), 0, 1);
+    drawCard(cardX, cardY, cardW, cardH, cardTilt, cardProgress, cardAlpha);
+    
+    // Checkmark animation (phase 4)
+    const checkProgress = smoothstep(p4Start + 0.6, p4Start + 1.8, t);
+    drawCheckmark(W * 0.55, 520, 42, checkProgress, '#00FFB3');
+    
+    // Orbiting particles (phase 5+)
+    const orbitActive = smoothstep(p5Start, p5Start + 0.8, t) * (1 - smoothstep(p6Start + 0.7, p7Start, t));
+    if (orbitActive > 0) {
+      for (const op of orbitParticles) {
+        op.update(dt);
+        op.draw(ctx, boxCX, boxCY, t);
+      }
+    }
+    
+    // Light streaks during phase 5
+    if (t >= p5Start && t < p6Start) {
+      const streakTime = (t - p5Start) / (p6Start - p5Start);
+      // Main sweep
+      const sweepX = lerp(-200, W + 200, easeInOutQuad(streakTime));
+      drawLightStreak(sweepX, boxCY, -0.35, 500, 3, 'rgba(0, 212, 255, 0.5)', 0.7 * Math.sin(streakTime * Math.PI));
+      // Secondary sweep
+      const sweepX2 = lerp(W + 300, -300, easeInOutQuad((streakTime + 0.3) % 1));
+      drawLightStreak(sweepX2, boxCY - 30, 0.5, 400, 2, 'rgba(123, 97, 255, 0.4)', 0.5 * Math.sin((streakTime + 0.3) * Math.PI));
+    }
+    
+    // Disassemble particles (phase 7)
+    if (t >= p7Start) {
+      const disassembleProgress = smoothstep(p7Start, p7End, t);
+      const disAlpha = easeInCubic(disassembleProgress);
+      // Draw flying outward particles
+      for (let i = 0; i < 30; i++) {
+        const angle = (i / 30) * Math.PI * 2 + t * 0.5;
+        const speed = 200 + i * 5;
+        const dist = disassembleProgress * speed;
+        const px = boxCX + Math.cos(angle) * dist;
+        const py = boxCY + Math.sin(angle) * dist;
+        const size = 2 + Math.sin(i * 1.5) * 1.5;
+        const alpha = (1 - disassembleProgress) * 0.8;
+        ctx.beginPath();
+        ctx.arc(px, py, size, 0, Math.PI * 2);
+        ctx.fillStyle = i % 3 === 0 ? '#00D4FF' : (i % 3 === 1 ? '#7B61FF' : '#00FFB3');
+        ctx.globalAlpha = alpha;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      // Fade out logo as disassembling
+      if (disassembleProgress > 0.3) {
+        const fadeProgress = smoothstep(0.3, 1, disassembleProgress);
+        ctx.fillStyle = `rgba(7, 10, 22, ${fadeProgress * 0.7})`;
+        ctx.fillRect(0, 0, W, H);
+      }
+    }
+    
+    // Subtle vignette
+    const vignette = ctx.createRadialGradient(W/2, H/2, H*0.3, W/2, H/2, H*0.75);
+    vignette.addColorStop(0, 'rgba(0,0,0,0)');
+    vignette.addColorStop(1, 'rgba(0,0,0,0.5)');
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, W, H);
+    
+    requestAnimationFrame(render);
+  }
+
+  requestAnimationFrame(render);
+})();
+</script>
+</body>
+</html>

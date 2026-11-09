@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>A Little About You</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000}body{display:grid;place-items:center}canvas{display:block;width:min(100vw,177.7778vh);height:min(56.25vw,100vh)}
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+window.DUR=15;
+const c=document.getElementById('stage'),g=c.getContext('2d');
+const offset=Number(new URLSearchParams(location.search).get('t'))||0;
+const start=performance.now();
+const TAU=Math.PI*2;
+const clamp=x=>Math.max(0,Math.min(1,x));
+const ease=x=>1-Math.pow(1-clamp(x),3);
+const scenes=[
+ {start:0,end:2.5,kicker:'A LITTLE ABOUT YOU',lines:['One message.','A first impression.'],sub:'Based only on what you shared here.',tag:'01 / THE START'},
+ {start:2.5,end:5,kicker:'YOUR REQUEST',lines:['You asked for','something short.'],sub:'A video. A few seconds. Straight to the point.',tag:'02 / THE FORMAT'},
+ {start:5,end:7.5,kicker:'YOUR CREATIVE DIRECTION',lines:['You left room','for imagination.'],sub:'“Whatever you know about me.”',tag:'03 / THE OPEN DOOR'},
+ {start:7.5,end:10,kicker:'THE HONEST ANSWER',lines:['I know your prompt.','Not your whole story.'],sub:'No invented biography. No guessed personal details.',tag:'04 / THE TRUTH'},
+ {start:10,end:15,kicker:'AND THAT LEAVES',lines:['A world of','possibilities.'],sub:'The rest is yours to define.',tag:'05 / WHAT COMES NEXT'}
+];
+function text(s,x,y,size,color='#f6f1e9',weight=600){
+ g.fillStyle=color;g.font=`${weight} ${size}px Arial, sans-serif`;g.fillText(s,x,y);
+}
+function tracking(s,x,y,size,gap,color){
+ g.font=`600 ${size}px Arial, sans-serif`;g.fillStyle=color;
+ for(const ch of s){g.fillText(ch,x,y);x+=g.measureText(ch).width+gap;}
+}
+function line(x1,y1,x2,y2,col,w=1){g.strokeStyle=col;g.lineWidth=w;g.beginPath();g.moveTo(x1,y1);g.lineTo(x2,y2);g.stroke();}
+function orb(t,scene){
+ const cx=1015,cy=345,scale=scene===4?1.12:1;
+ g.save();g.translate(cx,cy);g.scale(scale,scale);
+ const halo=g.createRadialGradient(0,0,10,0,0,285);
+ halo.addColorStop(0,'rgba(251,119,68,.16)');halo.addColorStop(.56,'rgba(128,77,151,.08)');halo.addColorStop(1,'rgba(10,12,18,0)');
+ g.fillStyle=halo;g.fillRect(-300,-300,600,600);
+ g.save();g.rotate(t*.08);
+ for(let k=0;k<3;k++){
+  g.save();g.rotate(k*1.04);
+  g.strokeStyle=k===0?'rgba(238,222,207,.26)':'rgba(238,222,207,.12)';
+  g.lineWidth=1;g.beginPath();g.ellipse(0,0,218,88+k*19,0,0,TAU);g.stroke();
+  const a=t*(.31+k*.07)+k*2;
+  const x=Math.cos(a)*218,y=Math.sin(a)*(88+k*19);
+  g.fillStyle=k===0?'#ffb484':'#b5bdf9';g.beginPath();g.arc(x,y,k===0?4:2.5,0,TAU);g.fill();
+  g.restore();
+ }
+ g.restore();
+ const sphere=g.createRadialGradient(-48,-65,6,10,10,132);
+ sphere.addColorStop(0,'#ffe1b4');sphere.addColorStop(.25,'#ffa671');sphere.addColorStop(.58,'#e46a57');sphere.addColorStop(.85,'#764154');sphere.addColorStop(1,'#222338');
+ g.shadowColor='rgba(255,137,91,.2)';g.shadowBlur=35;
+ g.fillStyle=sphere;g.beginPath();g.arc(0,0,123,0,TAU);g.fill();g.shadowBlur=0;
+ g.save();g.beginPath();g.arc(0,0,123,0,TAU);g.clip();
+ for(let i=0;i<23;i++){
+  const y=-127+i*12;
+  g.strokeStyle='rgba(255,221,183,.12)';g.lineWidth=.8;
+  g.beginPath();
+  for(let x=-140;x<=140;x+=4){
+   const yy=y+Math.sin(x*.022+t*.7+i*.21)*10;
+   x===-140?g.moveTo(x,yy):g.lineTo(x,yy);
+  }g.stroke();
+ }
+ g.restore();
+ g.strokeStyle='rgba(255,219,185,.4)';g.lineWidth=.8;g.beginPath();g.arc(0,0,123,Math.PI*.88,Math.PI*1.75);g.stroke();
+ for(let i=0;i<30;i++){
+  const a=i*2.39996+t*.018,r=165+(i%5)*17;
+  g.globalAlpha=.2+.25*Math.sin(i+t*.7)**2;
+  g.fillStyle='#e8d4c6';g.beginPath();g.arc(Math.cos(a)*r,Math.sin(a)*r,1,0,TAU);g.fill();
+ }
+ g.globalAlpha=1;g.restore();
+}
+function draw(t){
+ g.fillStyle='#0c1018';g.fillRect(0,0,1280,720);
+ const wash=g.createLinearGradient(0,0,1280,720);
+ wash.addColorStop(0,'rgba(30,44,61,.42)');wash.addColorStop(.5,'rgba(12,16,24,0)');wash.addColorStop(1,'rgba(72,36,40,.35)');
+ g.fillStyle=wash;g.fillRect(0,0,1280,720);
+ for(let x=80;x<1280;x+=80)line(x,0,x,720,'rgba(179,196,218,.025)');
+ for(let y=40;y<720;y+=80)line(0,y,1280,y,'rgba(179,196,218,.025)');
+ let n=scenes.findIndex(s=>t>=s.start&&t<s.end);if(n<0)n=0;
+ const s=scenes[n],local=t-s.start,remaining=s.end-t;
+ orb(t,n);
+ tracking('A PORTRAIT, NOT A PROFILE',72,65,11,2,'#929da9');
+ g.fillStyle='#f4b28a';g.beginPath();g.arc(1196,60,4,0,TAU);g.fill();
+ line(72,91,1208,91,'rgba(237,227,212,.17)');
+ g.save();
+ const fade=clamp(local/.22)*clamp(remaining/.2);
+ g.globalAlpha=fade;
+ const shift=(1-ease(local/.7))*24;
+ g.translate(0,shift);
+ tracking(s.kicker,76,205,12,2.4,'#f5b28b');
+ const font=n===3?57:66;
+ s.lines.forEach((str,i)=>{
+  const reveal=ease((local-i*.14)/.65);
+  g.save();g.globalAlpha=fade*reveal;g.translate((1-reveal)*20,0);
+  text(str,72,300+i*78,font,'#f5f0e8',600);g.restore();
+ });
+ const subAlpha=ease((local-.4)/.5);
+ g.globalAlpha=fade*subAlpha;
+ line(76,431,113,431,'#f6b48e',2);
+ text(s.sub,76,470,19,'#aeb5c0',400);
+ g.globalAlpha=fade;
+ tracking(s.tag,76,571,11,1.6,'#838e9e');
+ g.restore();
+ line(72,624,1208,624,'rgba(237,227,212,.16)');
+ text('YOU',72,665,16,'#f3eee6',700);
+ text('Seen through a single sentence.',126,665,13,'#818d9c',400);
+ for(let i=0;i<5;i++){
+  const x=1050+i*34;
+  g.fillStyle=i===n?'#f4b28a':'#36404e';
+  g.beginPath();g.arc(x,660,i===n?4:2.5,0,TAU);g.fill();
+ }
+ g.fillStyle='rgba(245,178,139,.8)';g.fillRect(72,623,1136*(t/window.DUR),2);
+ // Very fine, deterministic film texture.
+ for(let i=0;i<1100;i++){
+  let x=(i*137.71)%1280,y=(i*81.317+Math.floor(t*12)*3)%720;
+  g.fillStyle=i%2?'rgba(255,255,255,.018)':'rgba(0,0,0,.035)';
+  g.fillRect(x,y,1,1);
+ }
+ const vignette=g.createRadialGradient(640,350,240,640,350,780);
+ vignette.addColorStop(0,'rgba(0,0,0,0)');vignette.addColorStop(1,'rgba(0,0,0,.3)');
+ g.fillStyle=vignette;g.fillRect(0,0,1280,720);
+}
+function frame(){
+ const t=((performance.now()-start)/1000+offset)%window.DUR;
+ draw((t+window.DUR)%window.DUR);requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

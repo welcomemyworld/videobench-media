@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Vektor — Motion Design Product Demo</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  #stage {
+    width: 1280px; height: 720px;
+    background: #07080c;
+    box-shadow: 0 0 60px rgba(0,0,0,0.9);
+    transform-origin: center center;
+  }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+(() => {
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const W = 1280, H = 720;
+  window.DUR = 28;
+
+  const params = new URLSearchParams(location.search);
+  const tOffset = parseFloat(params.get('t')) || 0;
+
+  function resize() {
+    const s = Math.min(window.innerWidth / W, window.innerHeight / H);
+    canvas.style.transform = `scale(${s})`;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // Easing & math helpers
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const norm = (t, a, b) => clamp((t - a) / (b - a), 0, 1);
+  const easeOutCubic = x => 1 - Math.pow(1 - x, 3);
+  const easeInOutCubic = x => x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+  const easeOutBack = x => {
+    const c1 = 1.70158, c3 = c1 + 1;
+    return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
+  };
+  const spring = (x) => 1 - Math.cos(x * Math.PI * 2.5) * Math.exp(-x * 5);
+
+  function rrect(x, y, w, h, r) {
+    const rr = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + rr, y);
+    ctx.arcTo(x + w, y, x + w, y + h, rr);
+    ctx.arcTo(x + w, y + h, x, y + h, rr);
+    ctx.arcTo(x, y + h, x, y, rr);
+    ctx.arcTo(x, y, x + w, y, rr);
+    ctx.closePath();
+  }
+
+  function fillRRect(x, y, w, h, r, fill, stroke, lw = 1) {
+    rrect(x, y, w, h, r);
+    if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+    if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+  }
+
+  function drawText(txt, x, y, size, color, weight = '500', align = 'left', mono = false) {
+    ctx.font = `${weight} ${size}px ${mono ? 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace' : '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'}`;
+    ctx.fillStyle = color;
+    ctx.textAlign = align;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(txt, x, y);
+  }
+
+  function drawLogo(x, y, size, t) {
+    ctx.save();
+    ctx.translate(x, y);
+    const grad = ctx.createLinearGradient(-size, -size, size, size);
+    grad.addColorStop(0, '#6366f1');
+    grad.addColorStop(0.5, '#a855f7');
+    grad.addColorStop(1, '#22d3ee');
+    rrect(-size, -size, size * 2, size * 2, size * 0.48);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = size * 0.22;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.45, -size * 0.35);
+    ctx.lineTo(0, size * 0.42);
+    ctx.lineTo(size * 0.45, -size * 0.35);
+    ctx.stroke();
+
+    // Orbiting spark
+    const ang = t * 2.5;
+    ctx.fillStyle = '#22d3ee';
+    ctx.beginPath();
+    ctx.arc(Math.cos(ang) * size * 0.65, Math.sin(ang) * size * 0.65, size * 0.12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawCursor(x, y, clickProg = 0, scale = 1) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+    if (clickProg > 0 && clickProg < 1) {
+      ctx.strokeStyle = `rgba(34, 211, 238, ${1 - clickProg})`;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, 6 + clickProg * 28, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    const cScale = 1 - Math.sin(clickProg * Math.PI) * 0.2;
+    ctx.scale(cScale, cScale);
+    ctx.shadowColor = 'rgba(0,0,0,0.6)';
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetY = 3;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, 20);
+    ctx.lineTo(5.5, 15.5);
+    ctx.lineTo(9.5, 24);
+    ctx.lineTo(13, 22.5);
+    ctx.lineTo(9, 14);
+    ctx.lineTo(16, 14);
+    ctx.closePath();
+    ctx.fillStyle = '#ffffff';
+    ctx.fill();
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawBackground(t) {
+    ctx.fillStyle = '#06080f';
+    ctx.fillRect(0, 0, W, H);
+
+    // Ambient animated glows
+    const g1x = W * 0.5 + Math.cos(t * 0.4) * 220;
+    const g1y = H * 0.4 + Math.sin(t * 0.3) * 120;
+    const rg1 = ctx.createRadialGradient(g1x, g1y, 10, g1x, g1y, 520);
+    rg1.addColorStop(0, 'rgba(99, 102, 241, 0.18)');
+    rg1.addColorStop(0.5, 'rgba(168, 85, 247, 0.07)');
+    rg1.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = rg1;
+    ctx.fillRect(0, 0, W, H);
+
+    const g2x = W * 0.5 - Math.cos(t * 0.35) * 260;
+    const g2y = H * 0.65 + Math.sin(t * 0.5) * 90;
+    const rg2 = ctx.createRadialGradient(g2x, g2y, 10, g2x, g2y, 450);
+    rg2.addColorStop(0, 'rgba(34, 211, 238, 0.12)');
+    rg2.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = rg2;
+    ctx.fillRect(0, 0, W, H);
+
+    // Subtle dot matrix
+    ctx.fillStyle = 'rgba(255,255,255,0.04)';
+    const step = 32;
+    const ox = (t * 8) % step;
+    for (let x = ox; x < W; x += step) {
+      for (let y = 20; y < H; y += step) {
+        ctx.fillRect(x, y, 1.5, 1.5);
+      }
+    }
+  }
+
+  // Data for actual repo screens
+  const files = [
+    { name: 'src/', indent: 0, folder: true },
+    { name: 'engine/', indent: 1, folder: true },
+    { name: 'timeline.ts', indent: 2, active: false },
+    { name: 'springSolver.ts', indent: 2, active: true },
+    { name: 'webglStage.ts', indent: 2, active: false },
+    { name: 'components/', indent: 1, folder: true },
+    { name: 'CommandBar.tsx', indent: 2, active: false },
+    { name: 'KeyframeTrack.tsx', indent: 2, active: false },
+    { name: 'ExportModal.tsx', indent: 2, active: false },
+    { name: 'package.json', indent: 0, active: false }
+  ];
+
+  const codeLines = [
+    ['export function ', 'solveSpring', '(stiffness = 180, damping = 14) {'],
+    ['  const ', 'omega0', ' = Math.sqrt(stiffness);'],
+    ['  const ', 'zeta', '   = damping / (2 * omega0);'],
+    ['  return (t: number): ', 'FrameTransform', ' => {'],
+    ['    const ', 'env', ' = Math.exp(-zeta * omega0 * t);'],
+    ['    const ', 'osc', ' = Math.cos(omega0 * t * Math.sqrt(1 - zeta * zeta));'],
+    ['    return { scale: 1 - env * osc, glow: env * 0.85 };'],
+    ['  };'],
+    ['}']
+  ];
+
+  // App Window Frame + Chrome
+  function drawAppShell(t, activeTabIndex, cmdText, cmdProgress, stageSubscene, deployState) {
+    const wx = 80, wy = 48, ww = 1120, wh = 624;
+
+    // Outer glow & shadow
+    ctx.save();
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.75)';
+    ctx.shadowBlur = 50;
+    ctx.shadowOffsetY = 24;
+    fillRRect(wx, wy, ww, wh, 14, '#0b0e17', 'rgba(255,255,255,0.12)', 1.5);
+    ctx.restore();
+
+    // Clip interior
+    ctx.save();
+    rrect(wx, wy, ww, wh, 14);
+    ctx.clip();
+
+    // Top Titlebar
+    fillRRect(wx, wy, ww, 42, 0, '#0f1320');
+    ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+    ctx.beginPath(); ctx.moveTo(wx, wy + 42); ctx.lineTo(wx + ww, wy + 42); ctx.stroke();
+
+    // Traffic lights
+    const dots = ['#ef4444', '#f59e0b', '#10b981'];
+    dots.forEach((c, i) => {
+      ctx.fillStyle = c;
+      ctx.beginPath(); ctx.arc(wx + 22 + i * 18, wy + 21, 5.5, 0, Math.PI * 2); ctx.fill();
+    });
+
+    // Repo badge
+    drawLogo(wx + 86, wy + 21, 9, t);
+    drawText('vektor-studio / main', wx + 104, wy + 21, 12.5, '#e2e8f0', '600');
+    fillRRect(wx + 245, wy + 12, 58, 18, 9, 'rgba(34,211,238,0.12)', 'rgba(34,211,238,0.35)', 1);
+    drawText('v2.4.0', wx + 274, wy + 21, 10.5, '#22d3ee', '600', 'center', true);
+
+    // Top Navigation Tabs (Real user workflow order)
+    const tabs = ['1. Repo Inspector', '2. Motion Graph', '3. Timeline Studio', '4. Live Ship'];
+    tabs.forEach((tab, i) => {
+      const tx = wx + 345 + i * 142;
+      const isAct = i === activeTabIndex;
+      fillRRect(tx, wy + 7, 134, 28, 7, isAct ? 'rgba(99,102,241,0.22)' : 'transparent', isAct ? '#6366f1' : 'transparent', 1);
+      drawText(tab, tx + 67, wy + 21, 11.5, isAct ? '#ffffff' : '#64748b', isAct ? '600' : '500', 'center');
+    });
+
+    // Right status pill
+    fillRRect(wx + ww - 138, wy + 9, 122, 24, 12, 'rgba(16,185,129,0.12)', 'rgba(16,185,129,0.3)', 1);
+    ctx.fillStyle = '#10b981';
+    ctx.beginPath(); ctx.arc(wx + ww - 122, wy + 21, 4, 0, Math.PI * 2); ctx.fill();
+    drawText('60 FPS WebGL', wx + ww - 110, wy + 21, 11, '#34d399', '600');
+
+    // Left Sidebar: File Tree
+    const sbx = wx, sby = wy + 42, sbw = 215, sbh = wh - 42;
+    fillRRect(sbx, sby, sbw, sbh, 0, '#0a0d16');
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.beginPath(); ctx.moveTo(sbx + sbw, sby); ctx.lineTo(sbx + sbw, sby + sbh); ctx.stroke();
+
+    drawText('WORKSPACE REPO', sbx + 16, sby + 22, 10, '#475569', '700');
+    files.forEach((f, i) => {
+      const fy = sby + 44 + i * 26;
+      const isSelected = (activeTabIndex === 0 && f.name === 'springSolver.ts') ||
+                         (activeTabIndex === 1 && f.name === 'CommandBar.tsx') ||
+                         (activeTabIndex === 2 && f.name === 'KeyframeTrack.tsx') ||
+                         (activeTabIndex === 3 && f.name === 'ExportModal.tsx');
+      if (isSelected) {
+        fillRRect(sbx + 8, fy - 11, sbw - 16, 22, 5, 'rgba(99,102,241,0.18)', 'rgba(99,102,241,0.4)', 1);
+      }
+      const ix = sbx + 18 + f.indent * 14;
+      drawText(f.folder ? '▾' : '●', ix, fy, 10, f.folder ? '#64748b' : (isSelected ? '#22d3ee' : '#6366f1'));
+      drawText(f.name, ix + 14, fy, 12, isSelected ? '#ffffff' : (f.folder ? '#94a3b8' : '#cbd5e1'), isSelected ? '600' : '400', 'left', !f.folder);
+    });
+
+    // Bottom Left Telemetry Box
+    fillRRect(sbx + 12, sby + sbh - 118, sbw - 24, 104, 8, '#0f1422', 'rgba(255,255,255,0.06)', 1);
+    drawText('AST SYNC ENGINE', sbx + 24, sby + sbh - 98, 10, '#6366f1', '700');
+    drawText('Bindings: 42 reactive', sbx + 24, sby + sbh - 76, 11, '#94a3b8', '400', 'left', true);
+    drawText('Shader cache: Warm', sbx + 24, sby + sbh - 58, 11, '#94a3b8', '400', 'left', true);
+    // Mini sparkline
+    ctx.strokeStyle = '#22d3ee';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let k = 0; k < 160; k += 6) {
+      const sy = sby + sbh - 28 + Math.sin(t * 6 + k * 0.12) * 7;
+      if (k === 0) ctx.moveTo(sbx + 24 + k, sy);
+      else ctx.lineTo(sbx + 24 + k, sy);
+    }
+    ctx.stroke();
+
+    // Main Center Stage + Right Inspector + Bottom Timeline
+    const cx = sbx + sbw, cy = sby, cw = ww - sbw - 240, ch = 350;
+    const rx = cx + cw, ry = sby, rw = 240, rh = sbh;
+
+    // Center Workspace Background
+    fillRRect(cx, cy, cw, ch, 0, '#070910');
+
+    // Grid inside Center Stage
+    ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+    ctx.lineWidth = 1;
+    for (let gx = cx; gx < cx + cw; gx += 35) {
+      ctx.beginPath(); ctx.moveTo(gx, cy); ctx.lineTo(gx, cy + ch); ctx.stroke();
+    }
+    for (let gy = cy; gy < cy + ch; gy += 35) {
+      ctx.beginPath(); ctx.moveTo(cx, gy); ctx.lineTo(cx + cw, gy); ctx.stroke();
+    }
+
+    // Scene-specific Center Viewport Content
+    if (stageSubscene === 0) {
+      // Code + Split Live Interactive Card Preview
+      const codeW = cw * 0.56;
+      fillRRect(cx + 14, cy + 14, codeW - 20, ch - 28, 10, '#0c101d', 'rgba(255,255,255,0.08)', 1);
+      drawText('src/engine/springSolver.ts', cx + 28, cy + 34, 11, '#64748b', '600', 'left', true);
+
+      codeLines.forEach((parts, idx) => {
+        const ly = cy + 66 + idx * 26;
+        if (idx === 6) {
+          fillRRect(cx + 18, ly - 11, codeW - 28, 22, 4, 'rgba(34,211,238,0.1)');
+        }
+        drawText(String(idx + 1), cx + 28, ly, 11, '#475569', '400', 'left', true);
+        drawText(parts[0], cx + 50, ly, 11.5, '#c084fc', '500', 'left', true);
+        drawText(parts[1] || '', cx + 50 + ctx.measureText(parts[0]).width, ly, 11.5, '#38bdf8', '600', 'left', true);
+        const w01 = ctx.measureText((parts[0] || '') + (parts[1] || '')).width;
+        drawText(parts[2] || '', cx + 50 + w01, ly, 11.5, '#e2e8f0', '400', 'left', true);
+      });
+
+      // Live Reactive Preview Card on right half of center viewport
+      const pvX = cx + codeW + 8, pvW = cw - codeW - 22;
+      fillRRect(pvX, cy + 14, pvW, ch - 28, 10, '#0c101d', 'rgba(255,255,255,0.08)', 1);
+      drawText('LIVE DOM + WEBGL MIRROR', pvX + 16, cy + 34, 10, '#22d3ee', '700');
+
+      const pulse = 1 + Math.sin(t * 4.5) * 0.06;
+      ctx.save();
+      ctx.translate(pvX + pvW / 2, cy + ch / 2 + 12);
+      ctx.scale(pulse, pulse);
+      const cardGrad = ctx.createLinearGradient(-95, -75, 95, 75);
+      cardGrad.addColorStop(0, '#1e1b4b');
+      cardGrad.addColorStop(1, '#0f172a');
+      fillRRect(-100, -78, 200, 156, 16, cardGrad, '#6366f1', 2);
+      drawLogo(-65, -36, 14, t);
+      drawText('Checkout Pro', -38, -42, 14, '#ffffff', '700');
+      drawText('$49 / seat / mo', -38, -24, 11, '#22d3ee', '600', 'left', true);
+      fillRRect(-80, 4, 160, 22, 6, 'rgba(255,255,255,0.06)');
+      fillRRect(-80, 4, 110 + Math.sin(t * 3) * 30, 22, 6, 'rgba(99,102,241,0.45)');
+      fillRRect(-80, 38, 160, 28, 8, '#6366f1');
+      drawText('Subscribe Instant →', 0, 52, 11.5, '#ffffff', '600', 'center');
+      ctx.restore();
+    } else {
+      // Full Node & Motion Rig Canvas
+      const centerCardX = cx + cw * 0.5, centerCardY = cy + ch * 0.52;
+
+      // Animated bezier node connectors
+      const nodes = [
+        { x: cx + 105, y: cy + 95, title: 'Repo AST State', sub: 'props.cartTotal', col: '#a855f7' },
+        { x: cx + 105, y: cy + 245, title: 'Spring Physics', sub: 'ζ = 0.52, ω = 13.4', col: '#22d3ee' },
+        { x: cx + cw - 115, y: cy + 170, title: 'GPU Composite', sub: '1080p60 Shader', col: '#10b981' }
+      ];
+
+      nodes.forEach((n, idx) => {
+        ctx.strokeStyle = n.col;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        const sx = idx < 2 ? n.x + 70 : centerCardX + 105;
+        const sy = idx < 2 ? n.y : centerCardY;
+        const ex = idx < 2 ? centerCardX - 105 : n.x - 70;
+        const ey = idx < 2 ? centerCardY + (idx === 0 ? -25 : 25) : n.y;
+        ctx.moveTo(sx, sy);
+        ctx.bezierCurveTo((sx + ex) / 2, sy, (sx + ex) / 2, ey, ex, ey);
+        ctx.stroke();
+
+        // Flowing signal packet
+        const p = (t * 0.9 + idx * 0.33) % 1;
+        const px = lerp(sx, ex, p);
+        const py = lerp(sy, ey, easeInOutCubic(p));
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath(); ctx.arc(px, py, 4, 0, Math.PI * 2); ctx.fill();
+
+        fillRRect(n.x - 75, n.y - 28, 150, 56, 10, '#111627', n.col, 1.5);
+        drawText(n.title, n.x - 62, n.y - 9, 11.5, '#ffffff', '700');
+        drawText(n.sub, n.x - 62, n.y + 11, 10.5, '#94a3b8', '500', 'left', true);
+      });
+
+      // Central interactive hero component being animated
+      const animScale = 1 + Math.sin(t * 5) * 0.04;
+      ctx.save();
+      ctx.translate(centerCardX, centerCardY);
+      ctx.scale(animScale, animScale);
+      fillRRect(-105, -82, 210, 164, 16, '#13182b', '#6366f1', 2);
+      // Bounding box handles
+      const corners = [[-105, -82], [105, -82], [-105, 82], [105, 82]];
+      corners.forEach(([bx, by]) => {
+        fillRRect(bx - 4, by - 4, 8, 8, 2, '#22d3ee');
+      });
+      drawLogo(-68, -42, 13, t);
+      drawText('Vektor Pay Card', -42, -48, 13.5, '#ffffff', '700');
+      drawText('STATE: VERIFIED', -42, -30, 10, '#34d399', '700', 'left', true);
+
+      // Animated waveform bars inside card
+      for (let b = 0; b < 12; b++) {
+        const bh = 16 + Math.sin(t * 7 + b * 0.6) * 12;
+        fillRRect(-82 + b * 14, 24 - bh, 9, bh, 3, b % 2 === 0 ? '#6366f1' : '#22d3ee');
+      }
+      fillRRect(-82, 36, 164, 30, 8, '#6366f1');
+      drawText('One-Click Apple Pay', 0, 51, 11.5, '#ffffff', '600', 'center');
+      ctx.restore();
+    }
+
+    // Command Bar Overlay (⌘K Prompt Scene)
+    if (cmdProgress > 0) {
+      const cp = easeOutBack(clamp(cmdProgress, 0, 1));
+      ctx.save();
+      ctx.translate(cx + cw / 2, cy + 72);
+      ctx.scale(cp, cp);
+      ctx.shadowColor = 'rgba(0,0,0,0.85)';
+      ctx.shadowBlur = 35;
+      fillRRect(-250, -28, 500, 56, 12, '#161c30', '#22d3ee', 1.8);
+      fillRRect(-236, -14, 36, 28, 6, 'rgba(34,211,238,0.18)');
+      drawText('⌘K', -218, 0, 12, '#22d3ee', '700', 'center', true);
+      drawText(cmdText, -188, 0, 13.5, '#ffffff', '500', 'left', true);
+      // Blinking caret
+      const tw = ctx.measureText(cmdText).width;
+      if (Math.floor(t * 4) % 2 === 0) {
+        fillRRect(-185 + tw, -10, 2, 20, 1, '#22d3ee');
+      }
+      fillRRect(168, -14, 68, 28, 6, '#6366f1');
+      drawText('Apply ↵', 202, 0, 11, '#ffffff', '600', 'center');
+      ctx.restore();
+    }
+
+    // Right Inspector Panel
+    fillRRect(rx, ry, rw, rh, 0, '#0a0d16');
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(rx, ry + rh); ctx.stroke();
+
+    drawText('SPRING & SHADER PROPS', rx + 16, ry + 24, 10, '#475569', '700');
+
+    const sliders = [
+      { label: 'Stiffness', val: Math.round(180 + Math.sin(t * 2) * 40), norm: 0.72 + Math.sin(t * 2) * 0.15, col: '#6366f1' },
+      { label: 'Damping Ratio', val: (14 + Math.cos(t * 2.5) * 3).toFixed(1), norm: 0.48 + Math.cos(t * 2.5) * 0.12, col: '#22d3ee' },
+      { label: 'Mass', val: '1.0 kg', norm: 0.35, col: '#a855f7' },
+      { label: 'Motion Blur', val: '180° Shutter', norm: 0.68, col: '#10b981' }
+    ];
+
+    sliders.forEach((s, i) => {
+      const sy = ry + 54 + i * 54;
+      drawText(s.label, rx + 16, sy, 11.5, '#cbd5e1', '500');
+      drawText(String(s.val), rx + rw - 16, sy, 11.5, '#22d3ee', '600', 'right', true);
+      fillRRect(rx + 16, sy + 14, rw - 32, 6, 3, '#1e293b');
+      fillRRect(rx + 16, sy + 14, (rw - 32) * s.norm, 6, 3, s.col);
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath(); ctx.arc(rx + 16 + (rw - 32) * s.norm, sy + 17, 6, 0, Math.PI * 2); ctx.fill();
+    });
+
+    // Live Response Curve Box in Right Inspector
+    const bx = rx + 16, by = ry + 280, bw = rw - 32, bh = 135;
+    fillRRect(bx, by, bw, bh, 10, '#0f1422', 'rgba(255,255,255,0.07)', 1);
+    drawText('SPRING SOLVER CURVE', bx + 12, by + 18, 9.5, '#64748b', '700');
+    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+    ctx.beginPath(); ctx.moveTo(bx + 10, by + 75); ctx.lineTo(bx + bw - 10, by + 75); ctx.stroke();
+
+    ctx.strokeStyle = '#22d3ee';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let px = 0; px <= bw - 24; px += 3) {
+      const st = px / (bw - 24);
+      const yVal = spring(st);
+      const py = by + 112 - yVal * 55;
+      if (px === 0) ctx.moveTo(bx + 12 + px, py);
+      else ctx.lineTo(bx + 12 + px, py);
+    }
+    ctx.stroke();
+
+    // Export / Ship Card at Bottom of Inspector
+    const exY = ry + 432;
+    fillRRect(bx, exY, bw, 134, 10, deployState > 0 ? 'rgba(16,185,129,0.12)' : '#111729', deployState > 0 ? '#10b981' : 'rgba(99,102,241,0.4)', 1.5);
+    drawText('PRODUCTION EXPORT', bx + 12, exY + 20, 10, deployState > 0 ? '#34d399' : '#a855f7', '700');
+    drawText('Target: 1080p60 MP4 + React SDK', bx + 12, exY + 42, 10.5, '#cbd5e1', '400');
+
+    fillRRect(bx + 12, exY + 62, bw - 24, 10, 5, '#090d16');
+    const progW = (bw - 24) * clamp(deployState, 0.15, 1);
+    fillRRect(bx + 12, exY + 62, progW, 10, 5, deployState >= 0.99 ? '#10b981' : '#6366f1');
+
+    fillRRect(bx + 12, exY + 86, bw - 24, 34, 8, deployState >= 0.99 ? '#10b981' : '#6366f1');
+    drawText(deployState >= 0.99 ? '✓ Shipped to CDN & MP4' : (deployState > 0 ? `Rendering ${Math.round(deployState * 100)}%...` : 'Ship Production Asset →'), bx + bw / 2, exY + 103, 11.5, '#ffffff', '700', 'center');
+
+    // Bottom Keyframe Timeline Panel
+    const tx = cx, ty = cy + ch, tw = cw, th = sbh - ch;
+    fillRRect(tx, ty, tw, th, 0, '#0b0f1c');
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.beginPath(); ctx.moveTo(tx, ty); ctx.lineTo(tx + tw, ty); ctx.stroke();
+
+    drawText('MULTI-TRACK TIMELINE (60 FPS LOCK)', tx + 16, ty + 20, 10, '#64748b', '700');
+    const timecode = `00:00:0${Math.floor(t % 9)}:${String(Math.floor((t * 60) % 60)).padStart(2, '0')}`;
+    drawText(timecode, tx + tw - 18, ty + 20, 11.5, '#22d3ee', '700', 'right', true);
+
+    const tracks = [
+      { name: 'Card.scale', col: '#6366f1', kfs: [0.12, 0.36, 0.62, 0.85] },
+      { name: 'Spring.velocity', col: '#22d3ee', kfs: [0.18, 0.48, 0.74] },
+      { name: 'Shader.bloom', col: '#a855f7', kfs: [0.10, 0.52, 0.88] },
+      { name: 'Audio.sync', col: '#10b981', kfs: [0.25, 0.55, 0.78] }
+    ];
+
+    const trackStartX = tx + 135, trackW = tw - 155;
+    tracks.forEach((tr, idx) => {
+      const tryPos = ty + 48 + idx * 42;
+      drawText(tr.name, tx + 16, tryPos, 11, '#cbd5e1', '500', 'left', true);
+      fillRRect(trackStartX, tryPos - 10, trackW, 20, 5, '#111728');
+      fillRRect(trackStartX + trackW * tr.kfs[0], tryPos - 10, trackW * (tr.kfs[tr.kfs.length - 1] - tr.kfs[0]), 20, 5, tr.col + '33', tr.col, 1);
+
+      tr.kfs.forEach(k => {
+        const kx = trackStartX + trackW * k;
+        ctx.save();
+        ctx.translate(kx, tryPos);
+        ctx.rotate(Math.PI / 4);
+        fillRRect(-4.5, -4.5, 9, 9, 1.5, '#ffffff', tr.col, 2);
+        ctx.restore();
+      });
+    });
+
+    // Scrubbing Playhead
+    const playheadNorm = (t * 0.22) % 1;
+    const phX = trackStartX + trackW * playheadNorm;
+    ctx.strokeStyle = '#f43f5e';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(phX, ty + 30); ctx.lineTo(phX, ty + th - 8); ctx.stroke();
+    fillRRect(phX - 7, ty + 24, 14, 12, 3, '#f43f5e');
+
+    ctx.restore();
+  }
+
+  // Top Floating Story Banner for Context
+  function drawStoryPill(stepText, descText, alpha) {
+    if (alpha <= 0.01) return;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    fillRRect(W / 2 - 290, 680 - 26, 580, 38, 19, 'rgba(15, 23, 42, 0.92)', 'rgba(99, 102, 241, 0.5)', 1.5);
+    fillRRect(W / 2 - 282, 680 - 20, 110, 26, 13, '#6366f1');
+    drawText(stepText, W / 2 - 227, 680 - 7, 11, '#ffffff', '700', 'center');
+    drawText(descText, W / 2 - 156, 680 - 7, 12.5, '#e2e8f0', '500', 'left');
+    ctx.restore();
+  }
+
+  function render(now) {
+    const rawT = (now / 1000 + tOffset) % window.DUR;
+    const t = rawT;
+
+    drawBackground(t);
+
+    // SCENE 1: 0s -> 4.2s (Hero Intro: Product Name & One-Line Value Prop)
+    if (t < 4.2) {
+      const introIn = easeOutCubic(norm(t, 0, 0.9));
+      const introOut = 1 - easeInOutCubic(norm(t, 3.4, 4.2));
+      const vis = introIn * introOut;
+
+      ctx.save();
+      ctx.globalAlpha = vis;
+      ctx.translate(W / 2, H / 2 - (1 - introIn) * 30);
+
+      // Pill tag
+      fillRRect(-195, -150, 390, 32, 16, 'rgba(99,102,241,0.14)', 'rgba(99,102,241,0.45)', 1);
+      drawText('INTRODUCING VEKTOR STUDIO 2.4  •  REPO-FIRST MOTION IDE', 0, -134, 11.5, '#a5b4fc', '700', 'center');
+
+      drawLogo(0, -56, 36, t);
+
+      drawText('Vektor', 0, 28, 68, '#ffffff', '800', 'center');
+      drawText('The realtime motion engine that reads your production React repo', 0, 88, 22, '#cbd5e1', '500', 'center');
+      drawText('Built for design engineers & product teams shipping 60fps UI and launch videos.', 0, 122, 16, '#64748b', '500', 'center');
+
+      ctx.restore();
+    }
+
+    // SCENE 2..5: 3.6s -> 24.2s (Real Product Walkthrough in Exact User Order)
+    if (t >= 3.6 && t < 24.5) {
+      const enterProg = easeOutCubic(norm(t, 3.6, 4.6));
+      const exitProg = easeInOutCubic(norm(t, 23.4, 24.4));
+
+      // Camera choreography across real screens
+      let camScale = 1;
+      let camX = W / 2;
+      let camY = H / 2;
+
+      // Determine active user workflow step
+      let activeTab = 0;
+      let subscene = 0;
+      let cmdProg = 0;
+      let deployProg = 0;
+      let stepLabel = 'STEP 1 • READ REPO';
+      let stepDesc = 'Vektor indexes src/engine/springSolver.ts and mirrors live DOM state.';
+
+      if (t >= 8.5 && t < 14.0) {
+        activeTab = 1;
+        subscene = 1;
+        stepLabel = 'STEP 2 • PROMPT RIG';
+        stepDesc = 'Press ⌘K to wire spring physics & GPU shaders directly to repo props.';
+        cmdProg = norm(t, 9.0, 9.6) * (1 - norm(t, 13.2, 13.8));
+      } else if (t >= 14.0 && t < 19.2) {
+        activeTab = 2;
+        subscene = 1;
+        stepLabel = 'STEP 3 • FINE-TUNE';
+        stepDesc = 'Scrub multi-track keyframes & live-tune damping curves at 60 FPS.';
+        // Subtle zoom into timeline & inspector
+        const z = Math.sin(norm(t, 14.2, 19.0) * Math.PI);
+        camScale = 1 + z * 0.16;
+        camX = lerp(W / 2, W * 0.62, z);
+        camY = lerp(H / 2, H * 0.60, z);
+      } else if (t >= 19.2) {
+        activeTab = 3;
+        subscene = 1;
+        stepLabel = 'STEP 4 • ONE-CLICK SHIP';
+        stepDesc = 'Export 1080p60 MP4 launch video + commit deterministic React hooks.';
+        deployProg = clamp((t - 20.2) / 2.2, 0, 1);
+      }
+
+      const fullPrompt = 'bind checkout.scale to spring(180, 14) + bloom';
+      const typedLen = Math.floor(clamp((t - 9.5) / 2.4, 0, 1) * fullPrompt.length);
+      const currentCmd = fullPrompt.slice(0, typedLen);
+
+      ctx.save();
+      const totalAlpha = enterProg * (1 - exitProg);
+      ctx.globalAlpha = totalAlpha;
+
+      // Camera transform
+      ctx.translate(W / 2, H / 2);
+      const s = lerp(0.92, camScale, enterProg) * (1 - exitProg * 0.08);
+      ctx.scale(s, s);
+      ctx.translate(-camX, -camY);
+
+      drawAppShell(t, activeTab, currentCmd, cmdProg, subscene, deployProg);
+
+      // Autonomous AI User Cursor Choreography
+      let curX = 640, curY = 360, clickP = 0;
+      if (t < 8.5) {
+        // Move from file tree to code line to live card
+        const p1 = easeInOutCubic(norm(t, 4.5, 6.0));
+        const p2 = easeInOutCubic(norm(t, 6.3, 7.8));
+        curX = lerp(180, 420, p1);
+        curY = lerp(175, 255, p1);
+        curX = lerp(curX, 820, p2);
+        curY = lerp(curY, 310, p2);
+        clickP = norm(t, 6.0, 6.5);
+      } else if (t < 14.0) {
+        // Click ⌘K apply button
+        const p1 = easeInOutCubic(norm(t, 8.6, 10.2));
+        const p2 = easeInOutCubic(norm(t, 11.8, 12.6));
+        curX = lerp(820, 610, p1);
+        curY = lerp(310, 165, p1);
+        curX = lerp(curX, 825, p2);
+        curY = lerp(curY, 162, p2);
+        clickP = norm(t, 12.6, 13.2);
+      } else if (t < 19.2) {
+        // Drag stiffness slider then scrub timeline
+        const p1 = easeInOutCubic(norm(t, 14.2, 15.6));
+        const p2 = easeInOutCubic(norm(t, 16.2, 18.2));
+        curX = lerp(825, 1110, p1);
+        curY = lerp(162, 160, p1);
+        curX = lerp(curX, 680, p2);
+        curY = lerp(curY, 525, p2);
+        clickP = norm(t, 15.6, 16.2);
+      } else {
+        // Click Ship Production Asset button
+        const p1 = easeInOutCubic(norm(t, 19.3, 20.1));
+        curX = lerp(680, 1080, p1);
+        curY = lerp(525, 625, p1);
+        clickP = norm(t, 20.1, 20.7);
+      }
+
+      drawCursor(curX, curY, clickP);
+      ctx.restore();
+
+      drawStoryPill(stepLabel, stepDesc, totalAlpha);
+    }
+
+    // SCENE 6: 23.8s -> 28.0s (Outro Call-To-Action & Metric Proof)
+    if (t >= 23.8) {
+      const outIn = easeOutCubic(norm(t, 23.8, 24.8));
+      const loopFade = 1 - easeInOutCubic(norm(t, 27.3, 28.0));
+      const vis = outIn * loopFade;
+
+      ctx.save();
+      ctx.globalAlpha = vis;
+      ctx.translate(W / 2, H / 2 - (1 - outIn) * 25);
+
+      drawLogo(0, -115, 34, t);
+      drawText('Ship motion directly from your codebase.', 0, -35, 44, '#ffffff', '800', 'center');
+      drawText('Zero handoff drift. Real components. Frame-accurate 1080p60 video + React SDK.', 0, 12, 18, '#94a3b8', '500', 'center');
+
+      // 3 Metric Cards
+      const stats = [
+        { k: '0 ms', v: 'Design-to-Code Drift' },
+        { k: '60 FPS', v: 'Deterministic WebGL' },
+        { k: '1 Command', v: 'npx vektor studio' }
+      ];
+      stats.forEach((st, i) => {
+        const sx = -330 + i * 230;
+        fillRRect(sx, 50, 200, 74, 12, 'rgba(15,23,42,0.85)', 'rgba(99,102,241,0.35)', 1.5);
+        drawText(st.k, sx + 100, 76, 20, '#22d3ee', '800', 'center', true);
+        drawText(st.v, sx + 100, 102, 12, '#cbd5e1', '500', 'center');
+      });
+
+      // CTA Command Pill
+      fillRRect(-190, 152, 380, 48, 24, '#6366f1', '#22d3ee', 1.5);
+      drawText('$ npx vektor init   →   vektor.dev', 0, 176, 15, '#ffffff', '700', 'center', true);
+
+      ctx.restore();
+    }
+
+    requestAnimationFrame(render);
+  }
+
+  requestAnimationFrame(render);
+})();
+</script>
+</body>
+</html>

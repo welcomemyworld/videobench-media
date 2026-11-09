@@ -1,0 +1,1053 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>t.co/wQXZTaqf1b — ULTRACODE MASTERPIECE INTRO</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #000;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    user-select: none;
+  }
+  #stage {
+    width: 1280px;
+    height: 720px;
+    display: block;
+    box-shadow: 0 0 80px rgba(0, 240, 255, 0.18);
+    background: #04060c;
+  }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+(() => {
+  const W = 1280, H = 720;
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d', { alpha: false });
+
+  // Fit 1280x720 stage nicely in any window
+  function resize() {
+    const scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+    canvas.style.transform = `scale(${scale})`;
+    canvas.style.transformOrigin = 'center center';
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // Timeline constants: 128 BPM -> 1 bar = 1.875s, 16 bars = 30.0s
+  const BPM = 128;
+  const BEAT_DUR = 60 / BPM;       // 0.46875s
+  const STEP_DUR = BEAT_DUR / 4;   // 0.1171875s (16th note)
+  window.DUR = 30.0;               // 64 beats / 256 steps
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const startOffset = parseFloat(urlParams.get('t')) || 0;
+
+  // ============================================================================
+  // PROCEDURAL WEB AUDIO SYNTHESIZER (128 BPM Cyberpunk Synthwave / French Touch)
+  // ============================================================================
+  let actx = null;
+  let masterGain = null;
+  let analyser = null;
+  let freqData = new Uint8Array(64);
+  let noiseBuf = null;
+  let lastStep = -1;
+
+  function mtof(m) {
+    return 440 * Math.pow(2, (m - 69) / 12);
+  }
+
+  function initAudio() {
+    if (actx) {
+      if (actx.state === 'suspended') actx.resume();
+      return;
+    }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    actx = new AC();
+
+    const comp = actx.createDynamicsCompressor();
+    comp.threshold.value = -14;
+    comp.knee.value = 12;
+    comp.ratio.value = 6;
+    comp.attack.value = 0.003;
+    comp.release.value = 0.18;
+
+    masterGain = actx.createGain();
+    masterGain.gain.value = 0.78;
+
+    analyser = actx.createAnalyser();
+    analyser.fftSize = 128;
+    analyser.smoothingTimeConstant = 0.72;
+    freqData = new Uint8Array(analyser.frequencyBinCount);
+
+    masterGain.connect(comp);
+    comp.connect(analyser);
+    analyser.connect(actx.destination);
+
+    // Pre-generate white noise buffer for snares & hi-hats
+    noiseBuf = actx.createBuffer(1, actx.sampleRate * 1.0, actx.sampleRate);
+    const data = noiseBuf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  }
+
+  // Unlock audio on any user gesture + try immediately for headless/recording browsers
+  window.addEventListener('pointerdown', initAudio);
+  window.addEventListener('keydown', initAudio);
+  try { initAudio(); } catch (e) {}
+
+  function playKick(now, punch = 1) {
+    const osc = actx.createOscillator();
+    const g = actx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(145 * punch, now);
+    osc.frequency.exponentialRampToValueAtTime(34, now + 0.11);
+    g.gain.setValueAtTime(0.95 * punch, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
+    osc.connect(g);
+    g.connect(masterGain);
+    osc.start(now);
+    osc.stop(now + 0.33);
+  }
+
+  function playSnare(now, vol = 0.55) {
+    const src = actx.createBufferSource();
+    src.buffer = noiseBuf;
+    const flt = actx.createBiquadFilter();
+    flt.type = 'bandpass';
+    flt.frequency.setValueAtTime(1900, now);
+    flt.Q.value = 0.9;
+    const g = actx.createGain();
+    g.gain.setValueAtTime(vol, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.19);
+    src.connect(flt);
+    flt.connect(g);
+    g.connect(masterGain);
+    src.start(now);
+    src.stop(now + 0.2);
+
+    const body = actx.createOscillator();
+    const bg = actx.createGain();
+    body.type = 'triangle';
+    body.frequency.setValueAtTime(210, now);
+    body.frequency.exponentialRampToValueAtTime(95, now + 0.08);
+    bg.gain.setValueAtTime(vol * 0.6, now);
+    bg.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+    body.connect(bg);
+    bg.connect(masterGain);
+    body.start(now);
+    body.stop(now + 0.11);
+  }
+
+  function playHat(now, open = false) {
+    const dur = open ? 0.22 : 0.045;
+    const src = actx.createBufferSource();
+    src.buffer = noiseBuf;
+    const flt = actx.createBiquadFilter();
+    flt.type = 'highpass';
+    flt.frequency.setValueAtTime(7500, now);
+    const g = actx.createGain();
+    g.gain.setValueAtTime(open ? 0.22 : 0.13, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + dur);
+    src.connect(flt);
+    flt.connect(g);
+    g.connect(masterGain);
+    src.start(now);
+    src.stop(now + dur + 0.01);
+  }
+
+  function playBass(now, midi, cutoff = 900) {
+    const osc1 = actx.createOscillator();
+    const osc2 = actx.createOscillator();
+    const flt = actx.createBiquadFilter();
+    const g = actx.createGain();
+    const f = mtof(midi);
+    osc1.type = 'sawtooth';
+    osc2.type = 'square';
+    osc1.frequency.setValueAtTime(f, now);
+    osc2.frequency.setValueAtTime(f * 0.5, now);
+    flt.type = 'lowpass';
+    flt.Q.value = 4.5;
+    flt.frequency.setValueAtTime(cutoff, now);
+    flt.frequency.exponentialRampToValueAtTime(110, now + 0.11);
+    g.gain.setValueAtTime(0.32, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+    osc1.connect(flt);
+    osc2.connect(flt);
+    flt.connect(g);
+    g.connect(masterGain);
+    osc1.start(now);
+    osc2.start(now);
+    osc1.stop(now + 0.13);
+    osc2.stop(now + 0.13);
+  }
+
+  function playArp(now, midi, bright = 1) {
+    const osc1 = actx.createOscillator();
+    const osc2 = actx.createOscillator();
+    const flt = actx.createBiquadFilter();
+    const g = actx.createGain();
+    const f = mtof(midi);
+    osc1.type = 'sawtooth';
+    osc2.type = 'sawtooth';
+    osc1.frequency.setValueAtTime(f, now);
+    osc2.frequency.setValueAtTime(f * 1.007, now); // lush detune
+    flt.type = 'lowpass';
+    flt.Q.value = 3.0;
+    flt.frequency.setValueAtTime(2200 * bright, now);
+    flt.frequency.exponentialRampToValueAtTime(380, now + 0.16);
+    g.gain.setValueAtTime(0.16, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+    osc1.connect(flt);
+    osc2.connect(flt);
+    flt.connect(g);
+    g.connect(masterGain);
+    osc1.start(now);
+    osc2.start(now);
+    osc1.stop(now + 0.19);
+    osc2.stop(now + 0.19);
+  }
+
+  function playChordPad(now, notes, dur = 1.8) {
+    notes.forEach((m) => {
+      const osc = actx.createOscillator();
+      const flt = actx.createBiquadFilter();
+      const g = actx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(mtof(m), now);
+      flt.type = 'lowpass';
+      flt.frequency.setValueAtTime(1400, now);
+      g.gain.setValueAtTime(0.001, now);
+      g.gain.linearRampToValueAtTime(0.065, now + 0.18);
+      g.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      osc.connect(flt);
+      flt.connect(g);
+      g.connect(masterGain);
+      osc.start(now);
+      osc.stop(now + dur + 0.05);
+    });
+  }
+
+  const CHORDS = [
+    { root: 41, arp: [65, 68, 72, 77, 72, 68, 65, 72], pad: [53, 60, 65, 68] }, // F minor
+    { root: 37, arp: [61, 65, 68, 73, 68, 65, 61, 68], pad: [49, 56, 61, 65] }, // Db major
+    { root: 32, arp: [63, 68, 72, 75, 72, 68, 63, 72], pad: [44, 56, 60, 63] }, // Ab major
+    { root: 39, arp: [63, 67, 70, 75, 70, 67, 63, 70], pad: [51, 58, 63, 67] }  // Eb major
+  ];
+
+  // Visual reactive envelopes triggered by music
+  let kickPulse = 0;
+  let snarePulse = 0;
+  let arpPulse = 0;
+
+  function triggerMusicStep(step) {
+    const bar = Math.floor(step / 16);
+    const stepInBar = step % 16;
+    const chord = CHORDS[bar % 4];
+
+    // Visual pulses always fire even if browser muted audio
+    if (stepInBar % 4 === 0 && (bar >= 1 || stepInBar === 0)) kickPulse = 1.0;
+    if ((stepInBar === 4 || stepInBar === 12) && bar >= 2) snarePulse = 1.0;
+    if (bar >= 1 && step % 2 === 0) arpPulse = 0.85;
+
+    if (!actx || actx.state !== 'running') return;
+    const now = actx.currentTime + 0.005;
+
+    // Pad trigger at start of every bar
+    if (stepInBar === 0) {
+      playChordPad(now, chord.pad, 1.85);
+    }
+
+    // Intro (bars 0..1): atmospheric pulse + rising arps
+    if (bar < 2) {
+      if (stepInBar === 0 || stepInBar === 8) playKick(now, 0.75);
+      if (stepInBar % 2 === 0) {
+        playArp(now, chord.arp[(stepInBar / 2) % 8], 0.6 + bar * 0.3);
+      }
+      return;
+    }
+
+    // Main Cyberpunk Groove (bars 2..14) & Outro (bar 15)
+    const isOutro = bar === 15;
+    if (stepInBar % 4 === 0) {
+      playKick(now, isOutro ? 0.8 : 1.05);
+    }
+    if (!isOutro && (stepInBar === 4 || stepInBar === 12)) {
+      playSnare(now, 0.58);
+    }
+    // Riser snare fill at the end of every 4-bar phrase
+    if (bar % 4 === 3 && stepInBar >= 12) {
+      playSnare(now, 0.28 + (stepInBar - 12) * 0.1);
+    }
+    // Hi-hats
+    if (!isOutro) {
+      playHat(now, stepInBar % 4 === 2);
+    }
+    // Off-beat driving rolling bassline
+    if (stepInBar % 4 !== 0) {
+      const oct = (stepInBar === 7 || stepInBar === 15) ? 12 : 0;
+      playBass(now, chord.root + oct, bar >= 6 ? 1350 : 850);
+    }
+    // Lead 16th-note melodic arpeggio
+    const note = chord.arp[stepInBar % 8] + (bar >= 8 && stepInBar % 4 === 2 ? 12 : 0);
+    playArp(now, note, bar >= 6 ? 1.35 : 0.95);
+  }
+
+  // ============================================================================
+  // VISUAL SCENE ASSETS & PROCEDURAL GEOMETRY
+  // ============================================================================
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function easeOutCubic(x) { return 1 - Math.pow(1 - clamp(x, 0, 1), 3); }
+  function easeInOutCubic(x) {
+    x = clamp(x, 0, 1);
+    return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+  }
+
+  // Starfield / Data Particles
+  const stars = Array.from({ length: 140 }, (_, i) => ({
+    x: ((i * 73.13) % 1) * 2 - 1,
+    y: ((i * 39.71) % 1) * 2 - 1,
+    z: ((i * 19.37) % 1),
+    c: i % 3 === 0 ? '#00f0ff' : (i % 3 === 1 ? '#ff2a85' : '#8a64ff')
+  }));
+
+  // 3D Globe Nodes for Act 2 (Global Edge Redirect Routing)
+  const globeNodes = [];
+  for (let i = 0; i < 48; i++) {
+    const phi = Math.acos(1 - 2 * (i + 0.5) / 48);
+    const theta = Math.PI * (1 + Math.sqrt(5)) * i;
+    globeNodes.push({
+      x: Math.cos(theta) * Math.sin(phi),
+      y: Math.cos(phi),
+      z: Math.sin(theta) * Math.sin(phi),
+      hub: i % 6 === 0
+    });
+  }
+
+  // Chaos URL fragments that get compressed into t.co/wQXZTaqf1b in Act 1
+  const chaosFragments = [
+    "https://platform.cloud-cluster.dev/v4/deploy/production?",
+    "utm_source=twitter_timeline&utm_medium=social_card_sync&",
+    "session_token=9f8a7d6c5b4e3f2a1098c7d6e5f4&",
+    "redirect_uri=https%3A%2F%2Fapp.ultracode.io%2Flaunch%2F",
+    "signature=SHA256_wQXZTaqf1b_8849201948273645&",
+    "edge_node=fra-01&telemetry=realtime_stream_active",
+    "card_meta=og%3Aimage%2Btwitter%3Aplayer%2Bverified_ssl",
+    "payload_hash=0x7F9A2C4E8B1D5F3A6C9E0B2D4F"
+  ];
+
+  // ============================================================================
+  // DRAWING HELPERS
+  // ============================================================================
+  function drawRoundedRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function drawGlowText(text, x, y, size, color, glowColor, align = 'center', weight = '800') {
+    ctx.save();
+    ctx.font = `${weight} ${size}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    ctx.textAlign = align;
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = glowColor || color;
+    ctx.shadowBlur = 22;
+    ctx.fillStyle = color;
+    ctx.fillText(text, x, y);
+    ctx.shadowBlur = 0;
+    ctx.fillText(text, x, y);
+    ctx.restore();
+  }
+
+  function drawMonoText(text, x, y, size, color, align = 'center', weight = '700') {
+    ctx.save();
+    ctx.font = `${weight} ${size}px "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace`;
+    ctx.textAlign = align;
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = color;
+    ctx.fillText(text, x, y);
+    ctx.restore();
+  }
+
+  // Background Cyber-Grid + Warp Particles + Audio Spectrum Horizon
+  function drawBackground(t, beatFrac) {
+    // Deep space gradient
+    const bgGrad = ctx.createRadialGradient(W / 2, H * 0.42, 40, W / 2, H / 2, W * 0.85);
+    const pulseTint = Math.floor(kickPulse * 18);
+    bgGrad.addColorStop(0, `rgb(${10 + pulseTint}, ${16 + pulseTint}, ${38 + pulseTint * 2})`);
+    bgGrad.addColorStop(0.6, '#060914');
+    bgGrad.addColorStop(1, '#020308');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, W, H);
+
+    // Perspective floor & ceiling synthwave grid
+    ctx.save();
+    const horizon = H * 0.52;
+    ctx.strokeStyle = `rgba(0, 240, 255, ${0.11 + kickPulse * 0.12})`;
+    ctx.lineWidth = 1;
+
+    // Radial perspective lines
+    for (let i = -14; i <= 14; i++) {
+      const xBot = W / 2 + i * 130;
+      const xTop = W / 2 + i * 18;
+      ctx.beginPath();
+      ctx.moveTo(xTop, horizon + 20);
+      ctx.lineTo(xBot, H);
+      ctx.stroke();
+    }
+
+    // Scrolling horizontal grid lines
+    const scroll = (t * 2.2) % 1;
+    for (let i = 1; i <= 12; i++) {
+      const p = Math.pow((i + scroll) / 13, 2.3);
+      const y = horizon + 20 + p * (H - horizon - 20);
+      ctx.strokeStyle = `rgba(0, 240, 255, ${p * (0.28 + kickPulse * 0.2)})`;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(W, y);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // 3D Warp Stars
+    ctx.save();
+    const speed = 0.42 + kickPulse * 0.35;
+    for (let i = 0; i < stars.length; i++) {
+      const s = stars[i];
+      let z = (s.z - t * speed) % 1;
+      if (z <= 0.02) z += 1;
+      const sx = W / 2 + (s.x / z) * 420;
+      const sy = H / 2 + (s.y / z) * 260;
+      if (sx < 0 || sx > W || sy < 0 || sy > H) continue;
+      const r = clamp((1 - z) * 3.2, 0.5, 3.5);
+      ctx.fillStyle = s.c;
+      ctx.globalAlpha = clamp((1 - z) * 0.85, 0, 1);
+      ctx.beginPath();
+      ctx.arc(sx, sy, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // Bottom Audio-Synced Spectrum Bars
+    if (analyser && actx && actx.state === 'running') {
+      analyser.getByteFrequencyData(freqData);
+    }
+    ctx.save();
+    const bars = 48;
+    const barW = 14;
+    const totalW = bars * (barW + 6);
+    const startX = (W - totalW) / 2;
+    for (let i = 0; i < bars; i++) {
+      const mirrorIdx = Math.abs(i - bars / 2);
+      let val = 0;
+      if (actx && actx.state === 'running' && freqData[mirrorIdx] > 0) {
+        val = freqData[mirrorIdx] / 255;
+      } else {
+        // Deterministic procedural fallback so headless MP4 recording is 100% beat-synced!
+        const wave = Math.sin(t * 14 + mirrorIdx * 0.45) * 0.5 + 0.5;
+        val = clamp(
+          (1 - mirrorIdx / 28) * (0.25 + kickPulse * 0.55 + arpPulse * 0.3 * wave) + snarePulse * 0.25,
+          0.06,
+          1.0
+        );
+      }
+      const bh = val * 58;
+      const bx = startX + i * (barW + 6);
+      const by = H - 24 - bh;
+      ctx.fillStyle = i % 2 === 0 ? 'rgba(0, 240, 255, 0.45)' : 'rgba(255, 42, 133, 0.45)';
+      ctx.fillRect(bx, by, barW, bh);
+    }
+    ctx.restore();
+  }
+
+  // Top & Bottom Cyberpunk HUD Frame
+  function drawHUD(t, step) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0, 240, 255, 0.32)';
+    ctx.lineWidth = 1.5;
+
+    // Top bar brackets
+    ctx.beginPath();
+    ctx.moveTo(36, 52); ctx.lineTo(36, 28); ctx.lineTo(320, 28);
+    ctx.moveTo(W - 36, 52); ctx.lineTo(W - 36, 28); ctx.lineTo(W - 320, 28);
+    ctx.stroke();
+
+    // Live beat indicator dots
+    const beatInBar = Math.floor(step / 4) % 4;
+    for (let b = 0; b < 4; b++) {
+      ctx.fillStyle = b === beatInBar ? '#00f0ff' : 'rgba(0, 240, 255, 0.22)';
+      ctx.beginPath();
+      ctx.arc(54 + b * 16, 44, b === beatInBar ? 4.5 : 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    drawMonoText('SYS://T.CO/wQXZTaqf1b', 195, 44, 12, 'rgba(0, 240, 255, 0.85)', 'left');
+    drawMonoText(`SYNC 128.0 BPM  |  STEP ${String(step).padStart(3, '0')}/256`, W - 54, 44, 12, 'rgba(0, 240, 255, 0.8)', 'right');
+    ctx.restore();
+  }
+
+  // ============================================================================
+  // ACT 1 (0.0s - 6.0s): THE QUANTUM URL COMPRESSION ENGINE
+  // Shows bloated URLs collapsing into the clean, cryptographic t.co/wQXZTaqf1b
+  // ============================================================================
+  function drawScene1(t) {
+    const p = clamp(t / 6.0, 0, 1);
+    const compressP = easeInOutCubic(clamp((t - 1.1) / 2.2, 0, 1));
+    const revealP = easeOutCubic(clamp((t - 2.6) / 1.0, 0, 1));
+
+    ctx.save();
+    // Title header
+    drawMonoText('PHASE 01 // HIGH-ENTROPY URL COMPRESSION', W / 2, 108, 15, '#ff2a85');
+    drawGlowText(
+      compressP < 0.75 ? 'TAMING THE BLOATED WEB' : 'ONE COMPACT GATEWAY LINK',
+      W / 2, 148, 38, '#ffffff', '#00f0ff'
+    );
+
+    // Orbiting / collapsing raw URL fragments
+    if (compressP < 0.99) {
+      for (let i = 0; i < chaosFragments.length; i++) {
+        const angle = (i / chaosFragments.length) * Math.PI * 2 + t * 1.4;
+        const radiusX = lerp(390, 0, compressP);
+        const radiusY = lerp(155, 0, compressP);
+        const fx = W / 2 + Math.cos(angle) * radiusX;
+        const fy = H / 2 + 15 + Math.sin(angle) * radiusY;
+
+        ctx.save();
+        ctx.globalAlpha = (1 - compressP) * 0.88;
+        ctx.strokeStyle = i % 2 === 0 ? 'rgba(0,240,255,0.35)' : 'rgba(255,42,133,0.35)';
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        ctx.lineTo(W / 2, H / 2 + 15);
+        ctx.stroke();
+
+        ctx.fillStyle = 'rgba(8, 14, 30, 0.85)';
+        drawRoundedRect(fx - 185, fy - 16, 370, 32, 6);
+        ctx.fill();
+        ctx.stroke();
+        drawMonoText(chaosFragments[i], fx, fy, 12, i % 2 === 0 ? '#8be9fd' : '#ff79c6');
+        ctx.restore();
+      }
+    }
+
+    // Central Singularity Core / Capsule
+    const coreRadius = lerp(34, 0, revealP) + kickPulse * 8;
+    if (coreRadius > 2) {
+      const g = ctx.createRadialGradient(W / 2, H / 2 + 15, 2, W / 2, H / 2 + 15, coreRadius * 2.8);
+      g.addColorStop(0, '#ffffff');
+      g.addColorStop(0.4, '#00f0ff');
+      g.addColorStop(1, 'rgba(0,240,255,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(W / 2, H / 2 + 15, coreRadius * 2.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Revealed Hero Shortlink Capsule
+    if (revealP > 0.01) {
+      ctx.save();
+      ctx.translate(W / 2, H / 2 + 15);
+      const s = lerp(0.6, 1.0, revealP) + kickPulse * 0.035;
+      ctx.scale(s, s);
+      ctx.globalAlpha = revealP;
+
+      // Shockwave ring
+      const ringR = revealP * 340;
+      ctx.strokeStyle = `rgba(0, 240, 255, ${(1 - revealP) * 0.8})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(0, 0, ringR, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Main glass capsule
+      const cw = 680, ch = 116;
+      ctx.shadowColor = '#00f0ff';
+      ctx.shadowBlur = 32 + kickPulse * 20;
+      ctx.fillStyle = 'rgba(6, 14, 32, 0.92)';
+      ctx.strokeStyle = '#00f0ff';
+      ctx.lineWidth = 2.5;
+      drawRoundedRect(-cw / 2, -ch / 2, cw, ch, 22);
+      ctx.fill();
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Highlighted domain + 10-char Base62 token
+      drawMonoText('https://', -215, 0, 28, 'rgba(160, 195, 235, 0.75)', 'center', '600');
+      drawGlowText('t.co/', -88, 0, 44, '#00f0ff', '#00f0ff', 'center', '800');
+      drawGlowText('wQXZTaqf1b', 135, 0, 44, '#ffffff', '#ff2a85', 'center', '800');
+
+      // Sub-caption badges below capsule
+      drawMonoText('23 CHARACTERS TOTAL   •   BASE-62 TOKEN [wQXZTaqf1b]   •   91% PAYLOAD REDUCTION', 0, 96, 14, '#00f0ff');
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  // ============================================================================
+  // ACT 2 (6.0s - 13.5s): WHAT IT DOES — CORE CAPABILITIES & SECURITY SHIELD
+  // 1) Threat & Malware Shield  2) Sub-15ms Edge Redirect  3) Rich Card Unfurling
+  // ============================================================================
+  function drawScene2(t) {
+    const localT = t - 6.0;
+    const enterP = easeOutCubic(clamp(localT / 0.8, 0, 1));
+
+    ctx.save();
+    // Top pinned link pill
+    ctx.fillStyle = 'rgba(8, 18, 38, 0.9)';
+    ctx.strokeStyle = '#00f0ff';
+    ctx.lineWidth = 2;
+    drawRoundedRect(W / 2 - 210, 74, 420, 46, 23);
+    ctx.fill();
+    ctx.stroke();
+    drawMonoText('https://t.co/wQXZTaqf1b', W / 2, 97, 20, '#ffffff');
+
+    drawGlowText('WHAT HAPPENS IN 12 MILLISECONDS', W / 2, 152, 32, '#00f0ff', '#00f0ff');
+
+    const cards = [
+      {
+        tag: '01 // REAL-TIME THREAT SHIELD',
+        title: 'ANTI-PHISHING & SSL GUARD',
+        desc1: 'Every click on wQXZTaqf1b is verified',
+        desc2: 'against live malware & spam blocklists',
+        metric: '100% TLS 1.3 VERIFIED',
+        color: '#00ffaa',
+        delay: 0.2
+      },
+      {
+        tag: '02 // HTTP 301 EDGE ROUTING',
+        title: 'INSTANT GLOBAL REDIRECT',
+        desc1: 'Anycast DNS resolves the target URI',
+        desc2: 'from the nearest POP in < 12ms',
+        metric: 'LATENCY: 11.4 ms',
+        color: '#00f0ff',
+        delay: 1.8
+      },
+      {
+        tag: '03 // SOCIAL GRAPH ENGINE',
+        title: 'RICH MEDIA CARD UNFURL',
+        desc1: 'Auto-hydrates OpenGraph previews,',
+        desc2: 'video players & verified domain tags',
+        metric: 'ZERO-DROP ATTRIBUTION',
+        color: '#ff2a85',
+        delay: 3.4
+      }
+    ];
+
+    const cardW = 364, cardH = 365, gap = 34;
+    const totalW = cardW * 3 + gap * 2;
+    const startX = (W - totalW) / 2;
+
+    cards.forEach((c, idx) => {
+      const cp = easeOutCubic(clamp((localT - c.delay) / 0.85, 0, 1));
+      if (cp <= 0) return;
+
+      const cx = startX + idx * (cardW + gap);
+      const cy = 205 + (1 - cp) * 55;
+      const isFocused = localT >= c.delay && localT < c.delay + 1.8;
+
+      ctx.save();
+      ctx.globalAlpha = cp * enterP;
+
+      // Connector beam from top link pill to card
+      ctx.strokeStyle = c.color;
+      ctx.lineWidth = isFocused ? 2.5 : 1.2;
+      ctx.beginPath();
+      ctx.moveTo(W / 2, 120);
+      ctx.lineTo(cx + cardW / 2, cy);
+      ctx.stroke();
+
+      // Animated data packet traveling down the beam
+      const pkt = (localT * 1.6 + idx * 0.33) % 1;
+      const px = lerp(W / 2, cx + cardW / 2, pkt);
+      const py = lerp(120, cy, pkt);
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(px, py, 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Card body
+      ctx.shadowColor = c.color;
+      ctx.shadowBlur = isFocused ? 26 + kickPulse * 14 : 10;
+      ctx.fillStyle = 'rgba(7, 13, 28, 0.9)';
+      ctx.strokeStyle = c.color;
+      ctx.lineWidth = isFocused ? 2.5 : 1.5;
+      drawRoundedRect(cx, cy, cardW, cardH, 16);
+      ctx.fill();
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Top tag
+      drawMonoText(c.tag, cx + cardW / 2, cy + 32, 12, c.color);
+
+      // Procedural Vector Icon Illustration inside each card
+      const ix = cx + cardW / 2;
+      const iy = cy + 128;
+      ctx.save();
+      ctx.translate(ix, iy);
+      if (idx === 0) {
+        // Hexagonal Security Shield + Radar Sweep
+        ctx.strokeStyle = c.color;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        for (let s = 0; s < 6; s++) {
+          const a = (s / 6) * Math.PI * 2 - Math.PI / 2;
+          const r = 48 + kickPulse * 5;
+          if (s === 0) ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+          else ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+        }
+        ctx.closePath();
+        ctx.stroke();
+
+        // Checkmark inside shield
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(-16, 2);
+        ctx.lineTo(-4, 15);
+        ctx.lineTo(20, -12);
+        ctx.stroke();
+      } else if (idx === 1) {
+        // Rotating 3D Wireframe Anycast Globe
+        const rot = t * 1.4;
+        for (let n = 0; n < globeNodes.length; n++) {
+          const p = globeNodes[n];
+          const rx = p.x * Math.cos(rot) - p.z * Math.sin(rot);
+          const rz = p.x * Math.sin(rot) + p.z * Math.cos(rot);
+          if (rz < -0.2) continue;
+          const sx = rx * 52;
+          const sy = p.y * 52;
+          ctx.fillStyle = p.hub ? '#ffffff' : c.color;
+          ctx.beginPath();
+          ctx.arc(sx, sy, p.hub ? 3.5 : 1.8, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.strokeStyle = 'rgba(0, 240, 255, 0.45)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, 54 + kickPulse * 4, 0, Math.PI * 2);
+        ctx.stroke();
+      } else {
+        // Rich Social Card Unfurl Mockup
+        ctx.strokeStyle = c.color;
+        ctx.fillStyle = 'rgba(255, 42, 133, 0.14)';
+        ctx.lineWidth = 2;
+        drawRoundedRect(-68, -42, 136, 84, 10);
+        ctx.fill();
+        ctx.stroke();
+        // Play triangle & waveform bars inside preview card
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.moveTo(-10, -14);
+        ctx.lineTo(-10, 14);
+        ctx.lineTo(16, 0);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+
+      // Card Typography
+      drawGlowText(c.title, cx + cardW / 2, cy + 222, 21, '#ffffff', c.color);
+      drawMonoText(c.desc1, cx + cardW / 2, cy + 258, 13, 'rgba(200, 220, 245, 0.85)', 'center', '500');
+      drawMonoText(c.desc2, cx + cardW / 2, cy + 280, 13, 'rgba(200, 220, 245, 0.85)', 'center', '500');
+
+      // Bottom metric badge
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+      drawRoundedRect(cx + 32, cy + 308, cardW - 64, 34, 8);
+      ctx.fill();
+      drawMonoText(c.metric, cx + cardW / 2, cy + 325, 13, c.color);
+
+      ctx.restore();
+    });
+
+    ctx.restore();
+  }
+
+  // ============================================================================
+  // ACT 3 (13.5s - 21.0s): LIVE END-TO-END PACKET JOURNEY & UNFURL SIMULATION
+  // Shows a user clicking https://t.co/wQXZTaqf1b -> DNS Edge -> Destination App
+  // ============================================================================
+  function drawScene3(t) {
+    const localT = t - 13.5;
+    const progress = clamp(localT / 6.2, 0, 1);
+
+    ctx.save();
+    drawMonoText('PHASE 03 // LIVE EXECUTION PIPELINE', W / 2, 96, 14, '#00ffaa');
+    drawGlowText('FROM CLICK TO DESTINATION IN REAL TIME', W / 2, 134, 34, '#ffffff', '#00f0ff');
+
+    // 4 Pipeline Stages across the screen
+    const stages = [
+      { x: 190, y: 270, label: 'USER CLICK', sub: 't.co/wQXZTaqf1b', col: '#00f0ff' },
+      { x: 490, y: 270, label: 'EDGE POP', sub: 'TOKEN LOOKUP 3.1ms', col: '#8a64ff' },
+      { x: 790, y: 270, label: 'SAFETY ENGINE', sub: 'CLEAN • HTTP 301', col: '#00ffaa' },
+      { x: 1090, y: 270, label: 'DESTINATION', sub: 'APP STREAM READY', col: '#ff2a85' }
+    ];
+
+    // Connecting high-speed fiber rails
+    ctx.strokeStyle = 'rgba(0, 240, 255, 0.22)';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(stages[0].x, stages[0].y);
+    ctx.lineTo(stages[3].x, stages[3].y);
+    ctx.stroke();
+
+    // Active laser progress beam
+    const activeX = lerp(stages[0].x, stages[3].x, easeInOutCubic(clamp(localT / 3.5, 0, 1)));
+    const beamGrad = ctx.createLinearGradient(stages[0].x, 0, stages[3].x, 0);
+    beamGrad.addColorStop(0, '#00f0ff');
+    beamGrad.addColorStop(0.5, '#00ffaa');
+    beamGrad.addColorStop(1, '#ff2a85');
+    ctx.strokeStyle = beamGrad;
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 18;
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(stages[0].x, stages[0].y);
+    ctx.lineTo(activeX, stages[0].y);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Draw each pipeline node
+    stages.forEach((st, i) => {
+      const reached = activeX >= st.x - 10;
+      const r = (reached ? 36 : 28) + (reached ? kickPulse * 6 : 0);
+
+      ctx.save();
+      ctx.fillStyle = '#070e20';
+      ctx.strokeStyle = reached ? st.col : 'rgba(255,255,255,0.25)';
+      ctx.lineWidth = reached ? 3.5 : 1.5;
+      ctx.shadowColor = st.col;
+      ctx.shadowBlur = reached ? 24 : 0;
+      ctx.beginPath();
+      ctx.arc(st.x, st.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      drawMonoText(`0${i + 1}`, st.x, st.y, 18, reached ? '#ffffff' : 'rgba(255,255,255,0.4)');
+      drawGlowText(st.label, st.x, st.y + 62, 17, reached ? '#ffffff' : 'rgba(255,255,255,0.4)', st.col);
+      drawMonoText(st.sub, st.x, st.y + 86, 12, reached ? st.col : 'rgba(255,255,255,0.3)');
+      ctx.restore();
+    });
+
+    // Bottom Live Terminal + Telemetry Inspector Window
+    const termW = 980, termH = 230;
+    const tx = (W - termW) / 2, ty = 398;
+    ctx.save();
+    ctx.fillStyle = 'rgba(5, 10, 22, 0.92)';
+    ctx.strokeStyle = 'rgba(0, 240, 255, 0.55)';
+    ctx.lineWidth = 2;
+    drawRoundedRect(tx, ty, termW, termH, 14);
+    ctx.fill();
+    ctx.stroke();
+
+    // Terminal header bar
+    ctx.fillStyle = 'rgba(0, 240, 255, 0.12)';
+    drawRoundedRect(tx, ty, termW, 36, 14);
+    ctx.fill();
+    drawMonoText('LIVE HTTP/3 TRACE  —  GET https://t.co/wQXZTaqf1b', tx + 24, ty + 18, 13, '#00f0ff', 'left');
+    drawMonoText('STATUS: 301 MOVED PERMANENTLY', tx + termW - 24, ty + 18, 13, '#00ffaa', 'right');
+
+    // Animated trace lines
+    const logs = [
+      { t: 0.2, col: '#8be9fd', txt: '> RESOLVING SHORT TOKEN "wQXZTaqf1b" VIA GLOBAL EDGE KV...' },
+      { t: 1.0, col: '#00ffaa', txt: '> THREAT CHECK PASSED: SAFE DESTINATION • ZERO PHISHING SIGNATURES' },
+      { t: 1.9, col: '#ffb86c', txt: '> TELEMETRY RECORDED: ANONYMIZED CLICK + DEVICE + REFERRER GRAPH' },
+      { t: 2.8, col: '#ff79c6', txt: '> UNFURLING OPENGRAPH CARD & DISPATCHING INSTANT 301 REDIRECT (11.4ms)' }
+    ];
+
+    logs.forEach((l, idx) => {
+      if (localT > l.t) {
+        const chars = Math.floor((localT - l.t) * 85);
+        const str = l.txt.slice(0, chars);
+        drawMonoText(str, tx + 28, ty + 68 + idx * 34, 14, l.col, 'left', '600');
+      }
+    });
+
+    // Right-side Live Throughput Counter inside terminal
+    const clicks = Math.floor(14820 + localT * 1340 + kickPulse * 95);
+    ctx.fillStyle = 'rgba(0, 240, 255, 0.08)';
+    ctx.strokeStyle = '#00f0ff';
+    drawRoundedRect(tx + termW - 255, ty + 56, 230, 150, 10);
+    ctx.fill();
+    ctx.stroke();
+    drawMonoText('REAL-TIME THROUGHPUT', tx + termW - 140, ty + 84, 11, '#00f0ff');
+    drawGlowText(clicks.toLocaleString(), tx + termW - 140, ty + 128, 34, '#ffffff', '#00f0ff');
+    drawMonoText('VERIFIED CLICKS / SEC', tx + termW - 140, ty + 172, 11, '#00ffaa');
+
+    ctx.restore();
+    ctx.restore();
+  }
+
+  // ============================================================================
+  // ACT 4 (21.0s - 30.0s): GRAND FINALE MASTERPIECE REVEAL
+  // Audio-reactive mandala halo + feature summary + seamless loop fade
+  // ============================================================================
+  function drawScene4(t) {
+    const localT = t - 21.0;
+    const enterP = easeOutCubic(clamp(localT / 1.2, 0, 1));
+    const outroFade = clamp((30.0 - t) / 0.9, 0, 1);
+
+    ctx.save();
+    ctx.globalAlpha = enterP * outroFade;
+
+    // Rotating Cybernetic Halo Mandala behind Hero Card
+    ctx.save();
+    ctx.translate(W / 2, H / 2 - 20);
+    const segments = 24;
+    for (let i = 0; i < segments; i++) {
+      const a = (i / segments) * Math.PI * 2 + t * 0.45;
+      const r1 = 165 + kickPulse * 22;
+      const r2 = 225 + (i % 2 === 0 ? arpPulse * 38 : snarePulse * 28);
+      ctx.strokeStyle = i % 2 === 0 ? 'rgba(0, 240, 255, 0.45)' : 'rgba(255, 42, 133, 0.45)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * r1, Math.sin(a) * r1);
+      ctx.lineTo(Math.cos(a) * r2, Math.sin(a) * r2);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Top Kicker
+    drawMonoText('INSTANT REDIRECT   •   THREAT SHIELD   •   REAL-TIME ANALYTICS   •   RICH CARDS', W / 2, 138, 14, '#00ffaa');
+    drawGlowText('THE SMART GATEWAY BEHIND EVERY SHARE', W / 2, 182, 32, '#ffffff', '#00f0ff');
+
+    // Centerpiece Hero Portal Badge
+    ctx.save();
+    ctx.translate(W / 2, H / 2 - 20);
+    const scale = 1 + kickPulse * 0.045;
+    ctx.scale(scale, scale);
+
+    const bw = 780, bh = 138;
+    ctx.shadowColor = '#00f0ff';
+    ctx.shadowBlur = 40 + kickPulse * 25;
+    ctx.fillStyle = 'rgba(5, 12, 28, 0.94)';
+    ctx.strokeStyle = '#00f0ff';
+    ctx.lineWidth = 3;
+    drawRoundedRect(-bw / 2, -bh / 2, bw, bh, 26);
+    ctx.fill();
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Inner neon trim
+    ctx.strokeStyle = 'rgba(255, 42, 133, 0.65)';
+    ctx.lineWidth = 1.5;
+    drawRoundedRect(-bw / 2 + 10, -bh / 2 + 10, bw - 20, bh - 20, 20);
+    ctx.stroke();
+
+    // Full URL in crisp glowing typography
+    drawGlowText('https://t.co/wQXZTaqf1b', 0, 0, 50, '#ffffff', '#00f0ff', 'center', '800');
+    ctx.restore();
+
+    // 4 Feature Pills below Hero Badge
+    const pills = [
+      { label: 'COMPACT 23-CHAR URI', col: '#00f0ff' },
+      { label: 'MALWARE & PHISHING GUARD', col: '#00ffaa' },
+      { label: '<12ms GLOBAL EDGE HOP', col: '#8a64ff' },
+      { label: 'INSTANT SOCIAL UNFURL', col: '#ff2a85' }
+    ];
+    const pw = 255, ph = 44, pgap = 20;
+    const pStart = (W - (pw * 4 + pgap * 3)) / 2;
+    pills.forEach((pl, i) => {
+      const px = pStart + i * (pw + pgap);
+      const py = 505;
+      ctx.fillStyle = 'rgba(8, 16, 34, 0.9)';
+      ctx.strokeStyle = pl.col;
+      ctx.lineWidth = 1.8;
+      drawRoundedRect(px, py, pw, ph, 10);
+      ctx.fill();
+      ctx.stroke();
+      drawMonoText(pl.label, px + pw / 2, py + ph / 2, 12, '#ffffff');
+    });
+
+    // Pulsing CTA footer
+    const ctaAlpha = 0.65 + Math.sin(t * 8) * 0.35;
+    ctx.globalAlpha = enterP * outroFade * ctaAlpha;
+    drawMonoText('>>> FAST. SECURE. CONNECTED. CLICK TO LAUNCH <<<', W / 2, 598, 15, '#00f0ff');
+
+    ctx.restore();
+  }
+
+  // Subtle CRT Scanlines & Cinematic Vignette Post-Processing
+  function drawPostProcess() {
+    ctx.save();
+    // Scanlines
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.14)';
+    for (let y = 0; y < H; y += 4) {
+      ctx.fillRect(0, y, W, 1.5);
+    }
+    // Vignette
+    const vig = ctx.createRadialGradient(W / 2, H / 2, W * 0.35, W / 2, H / 2, W * 0.78);
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(1, 'rgba(0,0,0,0.58)');
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+
+  // ============================================================================
+  // MAIN ANIMATION LOOP (Driven strictly by performance.now())
+  // ============================================================================
+  let t0 = null;
+  let prevElapsed = 0;
+
+  function frame(now) {
+    if (t0 === null) t0 = now;
+    const rawElapsed = (now - t0) / 1000 + startOffset;
+    const dt = Math.min(0.1, Math.max(0.001, rawElapsed - prevElapsed));
+    prevElapsed = rawElapsed;
+
+    const t = ((rawElapsed % window.DUR) + window.DUR) % window.DUR;
+
+    // Decay visual reactive envelopes smoothly
+    kickPulse = Math.max(0, kickPulse - dt * 4.8);
+    snarePulse = Math.max(0, snarePulse - dt * 6.0);
+    arpPulse = Math.max(0, arpPulse - dt * 7.5);
+
+    // Exact 16th-note step sequencer locked to visual timeline `t`
+    const currentStep = Math.floor(t / STEP_DUR);
+    if (currentStep !== lastStep) {
+      lastStep = currentStep;
+      triggerMusicStep(currentStep);
+    }
+
+    const beatFrac = (t % BEAT_DUR) / BEAT_DUR;
+
+    // 1. Background & Audio Spectrum
+    drawBackground(t, beatFrac);
+
+    // 2. Act Dispatcher
+    if (t < 6.0) {
+      drawScene1(t);
+    } else if (t < 13.5) {
+      drawScene2(t);
+    } else if (t < 21.0) {
+      drawScene3(t);
+    } else {
+      drawScene4(t);
+    }
+
+    // 3. HUD & Post-processing
+    drawHUD(t, currentStep);
+    drawPostProcess();
+
+    requestAnimationFrame(frame);
+  }
+
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

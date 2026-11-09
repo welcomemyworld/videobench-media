@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Morph — 30s motion design</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}
+</style></head><body>
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+// Audio cannot be loaded or analyzed here, because the file must stay self-contained.
+// The timing grid assumes 120 BPM, a first downbeat at t=0, and a drop at 15s.
+window.DUR=30;
+const BPM=120,BEAT=60/BPM,DROP=15,STEP=3,N=180;
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+const off=document.createElement('canvas');off.width=1280;off.height=720;const o=off.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);cv.style.width=1280*s+'px';cv.style.height=720*s+'px';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search);const T0=parseFloat(q.get('t')||0)||0;
+const spring=x=>x<=0?0:x>=1.2?1:1-Math.exp(-7*x)*Math.cos(10.5*x);
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+// Shape generators: return radius-ish point for parameter u in [0,1)
+function polyPt(k,u,rot=0){const a=u*k,i=Math.floor(a),f=a-i;const p=j=>{const t=j/k*Math.PI*2+rot-Math.PI/2;return[Math.cos(t),Math.sin(t)]};const A=p(i),B=p(i+1);return[A[0]+(B[0]-A[0])*f,A[1]+(B[1]-A[1])*f];}
+function starPt(u,k,inner){const a=u*k*2,i=Math.floor(a),f=a-i;const p=j=>{const r=j%2?inner:1,t=j/(2*k)*Math.PI*2-Math.PI/2;return[Math.cos(t)*r,Math.sin(t)*r]};const A=p(i),B=p(i+1);return[A[0]+(B[0]-A[0])*f,A[1]+(B[1]-A[1])*f];}
+const SHAPES=[
+ ['CERCLE',u=>{const t=u*Math.PI*2;return[Math.cos(t),Math.sin(t)]}],
+ ['CARRÉ',u=>polyPt(4,u,Math.PI/4).map(v=>v*1.2)],
+ ['TRIANGLE',u=>polyPt(3,u).map(v=>v*1.15)],
+ ['ÉTOILE',u=>starPt(u,5,.45).map(v=>v*1.1)],
+ ['CŒUR',u=>{const t=u*Math.PI*2;return[16*Math.pow(Math.sin(t),3)/16,-(13*Math.cos(t)-5*Math.cos(2*t)-2*Math.cos(3*t)-Math.cos(4*t))/16]}],
+ ['HEXAGONE',u=>polyPt(6,u)],
+ ['FLEUR',u=>{const t=u*Math.PI*2,r=.75+.3*Math.cos(6*t);return[Math.cos(t)*r,Math.sin(t)*r]}],
+ ['CROIX',u=>{const P=[[-.35,-1],[.35,-1],[.35,-.35],[1,-.35],[1,.35],[.35,.35],[.35,1],[-.35,1],[-.35,.35],[-1,.35],[-1,-.35],[-.35,-.35]];const a=u*12,i=Math.floor(a)%12,f=a-Math.floor(a),A=P[i],B=P[(i+1)%12];return[A[0]+(B[0]-A[0])*f,A[1]+(B[1]-A[1])*f]}],
+ ['SPIRO',u=>{const t=u*Math.PI*2,r=.7+.3*Math.sin(9*t)*Math.cos(2*t);return[Math.cos(t)*r,Math.sin(t)*r]}],
+ ['GOUTTE',u=>{const t=u*Math.PI*2;return[Math.sin(t)*Math.pow(Math.sin(t/2),1.2)*.9,-Math.cos(t)]}]
+];
+const PAL=[[255,90,95],[255,170,60],[250,220,80],[120,230,140],[80,200,255],[140,120,255],[230,100,240],[255,110,170],[90,240,220],[255,255,255]];
+const cache=SHAPES.map(s=>{const a=[];for(let i=0;i<N;i++)a.push(s[1](i/N));return a});
+function stateAt(t){const k=Math.floor(t/STEP);const lt=t-k*STEP;return{k:clamp(k,0,9),p:k<1?1:spring(lt/0.9),lt}}
+// UI button positions (inside square stage 720x720 centered at 640)
+const SX=280,SZ=720;
+function btn(i){return[SX+90+i*60,SZ-70]}
+function cursorAt(t){
+ // next change index
+ let n=Math.floor(t/STEP)+1;const tc=n*STEP;const dt=tc-t; // time until change
+ const from=btn((n-1)%10),to=btn(n%10);
+ let x,y,press=0,drag=0;
+ if(dt>1.2){const w=Math.sin(t*1.3)*30;x=from[0]+w;y=from[1]-90+Math.cos(t*1.7)*20;}
+ else{const m=spring(clamp((1.2-dt)/0.8,0,1));const sx=from[0]+Math.sin((tc-1.2)*1.3)*30,sy=from[1]-90+Math.cos((tc-1.2)*1.7)*20;x=sx+(to[0]-sx)*m;y=sy+(to[1]-sy)*m;}
+ if(dt<0.25)press=1-dt/0.25;
+ // after click, drag the shape slightly upward (a short drag gesture)
+ const since=t-(n-1)*STEP;if(n>1&&since<0.5){drag=spring(since/0.5);press=Math.max(press,1-since/0.5)}
+ return{x,y,press,n};
+}
+function scene(c,t){
+ const beat=t/BEAT,bp=1-(beat%1),post=t>=DROP;
+ const bar=Math.floor(beat/4);
+ c.fillStyle='#000';c.fillRect(0,0,1280,720);
+ c.save();c.beginPath();c.rect(SX,0,SZ,SZ);c.clip();
+ const st=stateAt(t),col=PAL[st.k],prev=PAL[Math.max(0,st.k-1)];
+ const mix=(a,b,p)=>a.map((v,i)=>Math.round(b[i]+(v-b[i])*clamp(p,0,1)));
+ const cc=mix(col,prev,st.p);
+ // background
+ const g=c.createRadialGradient(640,340,20,640,340,520);
+ g.addColorStop(0,`rgba(${cc},${post?.35:.18})`);g.addColorStop(1,'#05050a');
+ c.fillStyle=g;c.fillRect(SX,0,SZ,SZ);
+ // grid rings pulse on beat
+ c.strokeStyle=`rgba(255,255,255,${.05+.08*bp*bp})`;c.lineWidth=1;
+ for(let i=1;i<8;i++){c.beginPath();c.arc(640,340,i*55+bp*8*(post?2:1),0,7);c.stroke();}
+ // drop burst particles
+ if(post){for(let i=0;i<60;i++){const a=i*2.399+t*.3,r=(i*37+(t-DROP)*160*(1+i%3))%460;c.fillStyle=`rgba(${cc},${.5*(1-r/460)})`;c.fillRect(640+Math.cos(a)*r-2,340+Math.sin(a)*r-2,4,4);}}
+ // morph shape
+ const A=cache[Math.max(0,st.k-1)],B=cache[st.k],p=st.p;
+ const scale=150*(1+.06*bp*bp*(post?2:1)),rot=t*.15+(st.k*.3)*p;
+ const lift=-18*Math.max(0,1-st.lt/0.6)*(st.k>0?1:0);
+ const cr=Math.cos(rot),sr=Math.sin(rot);
+ for(let L=2;L>=0;L--){
+  c.beginPath();
+  for(let i=0;i<=N;i++){const j=i%N;const w=(L?Math.sin(i*.2+t*4)*.02*L:0);const x=(A[j][0]+(B[j][0]-A[j][0])*p)*(1+w),y=(A[j][1]+(B[j][1]-A[j][1])*p)*(1+w);
+   const X=640+(x*cr-y*sr)*scale*(1+L*.12),Y=340+lift+(x*sr+y*cr)*scale*(1+L*.12);i?c.lineTo(X,Y):c.moveTo(X,Y);}
+  c.closePath();
+  if(L){c.strokeStyle=`rgba(${cc},${.3/L})`;c.lineWidth=2;c.stroke();}
+  else{const sg=c.createLinearGradient(500,200,780,480);sg.addColorStop(0,`rgb(${cc})`);sg.addColorStop(1,`rgba(${cc},.45)`);c.fillStyle=sg;c.shadowColor=`rgb(${cc})`;c.shadowBlur=post?40:20;c.fill();c.shadowBlur=0;}
+ }
+ // label
+ c.font='700 30px Helvetica,Arial,sans-serif';c.textAlign='center';c.fillStyle='#fff';
+ const lp=spring(st.lt/0.7);c.globalAlpha=clamp(lp,0,1);
+ c.fillText(SHAPES[st.k][0],640,580+(1-lp)*20);c.globalAlpha=1;
+ c.font='500 14px Helvetica,Arial,sans-serif';c.fillStyle='rgba(255,255,255,.55)';
+ c.textAlign='left';c.fillText(`${BPM} BPM · MESURE ${bar+1}`,SX+24,34);
+ c.textAlign='right';c.fillText(post?'DROP ●':`DROP DANS ${Math.ceil(DROP-t)}s`,SX+SZ-24,34);
+ c.textAlign='center';c.fillText(`ÉTAT ${st.k+1}/10`,640,610);
+ // buttons
+ for(let i=0;i<10;i++){const[bx,by]=btn(i);const on=i===st.k;const s=on?1+.15*Math.max(0,1-st.lt/0.4):1;
+  c.beginPath();c.arc(bx,by,14*s,0,7);c.fillStyle=on?`rgb(${PAL[i]})`:'rgba(255,255,255,.12)';c.fill();
+  c.strokeStyle=`rgba(${PAL[i]},.8)`;c.lineWidth=2;c.stroke();}
+ // beat bar
+ c.fillStyle=`rgba(${cc},.8)`;c.fillRect(SX,SZ-4,SZ*(t/window.DUR),4);
+ // cursor
+ const cu=cursorAt(t);
+ if(cu.press>0){c.beginPath();c.arc(cu.x,cu.y,10+28*(1-cu.press),0,7);c.strokeStyle=`rgba(255,255,255,${cu.press*.8})`;c.lineWidth=2;c.stroke();}
+ c.save();c.translate(cu.x,cu.y);const ps=1-.15*cu.press;c.scale(ps,ps);
+ c.beginPath();c.moveTo(0,0);c.lineTo(0,26);c.lineTo(7,20);c.lineTo(12,31);c.lineTo(17,29);c.lineTo(12,18);c.lineTo(21,18);c.closePath();
+ c.fillStyle='#fff';c.shadowColor='rgba(0,0,0,.6)';c.shadowBlur=8;c.fill();c.shadowBlur=0;c.strokeStyle='#000';c.lineWidth=1.5;c.stroke();c.restore();
+ c.restore();
+ // flash on drop
+ if(t>=DROP&&t<DROP+.4){c.fillStyle=`rgba(255,255,255,${(1-(t-DROP)/.4)*.7})`;c.fillRect(SX,0,SZ,SZ);}
+}
+const start=performance.now();
+function frame(now){
+ const t=((now-start)/1000+T0)%window.DUR;
+ // 4 subframes blended (motion blur, shutter = 1 frame at 60fps)
+ const SUB=4,fd=1/60;
+ for(let i=0;i<SUB;i++){
+  const ts=Math.max(0,t-fd*i/SUB);
+  scene(o,ts);
+  ctx.globalAlpha=1/(i+1);ctx.drawImage(off,0,0);
+ }
+ ctx.globalAlpha=1;
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></body></html>

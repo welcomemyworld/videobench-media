@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Showreel</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#s{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+canvas{display:block}
+</style></head><body>
+<div id="s"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+window.DUR=20;
+const W=1280,H=720,c=document.getElementById('c'),x=c.getContext('2d'),st=document.getElementById('s');
+function fit(){const k=Math.min(innerWidth/W,innerHeight/H);st.style.transform=`scale(${k}) translate(-50%,-50%)`;}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t')||0)||0,t0=performance.now();
+const TAU=Math.PI*2,cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),ease=v=>v<.5?4*v*v*v:1-Math.pow(-2*v+2,3)/2;
+const eo=v=>1-Math.pow(1-cl(v),4);
+const hsl=(h,s,l,a=1)=>`hsla(${h%360},${s}%,${l}%,${a})`;
+function txt(s,X,Y,sz,col,al=1,sp=0,wt=900){x.save();x.globalAlpha=al;x.font=`${wt} ${sz}px Helvetica,Arial,sans-serif`;x.textAlign='center';x.textBaseline='middle';x.fillStyle=col;
+ if(sp){const w=[...s].map(ch=>x.measureText(ch).width+sp);let tot=w.reduce((a,b)=>a+b,0)-sp,px=X-tot/2;[...s].forEach((ch,i)=>{x.fillText(ch,px+w[i]/2-sp/2,Y);px+=w[i];});}else x.fillText(s,X,Y);x.restore();}
+// Scene 1: tunnel of rings (0-5)
+function tunnel(t,lt){
+ x.fillStyle='#000';x.fillRect(0,0,W,H);
+ x.save();x.translate(W/2+Math.sin(t*.7)*60,H/2+Math.cos(t*.9)*40);
+ for(let i=40;i>0;i--){const z=((i-lt*6)%40+40)%40+.01,r=2000/z,rot=t*.5+z*.15;
+  x.save();x.rotate(rot);x.strokeStyle=hsl(t*80+z*12,100,60,cl(1-z/40)*1);x.lineWidth=Math.max(1,30/z);
+  x.beginPath();const n=6;for(let k=0;k<=n;k++){const a=k/n*TAU;x.lineTo(Math.cos(a)*r,Math.sin(a)*r);}x.stroke();x.restore();}
+ x.restore();}
+// Scene 2: moire concentric (5-10)
+function moire(t,lt){
+ x.fillStyle=hsl(t*40,80,8);x.fillRect(0,0,W,H);x.lineWidth=7;
+ const cs=[[W/2+Math.sin(t*1.3)*220,H/2+Math.cos(t)*120,0],[W/2-Math.sin(t*1.1)*220,H/2-Math.cos(t*1.2)*120,180]];
+ x.globalCompositeOperation='lighter';
+ for(const[cx,cy,ho]of cs){x.strokeStyle=hsl(t*60+ho,100,55,.8);for(let r=(lt*60)%18;r<900;r+=18){x.beginPath();x.arc(cx,cy,r,0,TAU);x.stroke();}}
+ x.globalCompositeOperation='source-over';}
+// Scene 3: kaleidoscope petals (10-15)
+function kaleido(t,lt){
+ x.fillStyle='rgba(0,0,0,.25)';x.fillRect(0,0,W,H);
+ x.save();x.translate(W/2,H/2);const seg=12;
+ for(let s=0;s<seg;s++){x.save();x.rotate(s/seg*TAU+t*.3);if(s%2)x.scale(1,-1);
+  for(let j=0;j<14;j++){const d=40+j*28+Math.sin(t*3+j*.6)*20,sz=8+j*2.2*(1+.5*Math.sin(t*2+j));
+   x.fillStyle=hsl(t*90+j*25,100,60,.85);x.beginPath();x.ellipse(d,Math.sin(t*2+j)*30,sz*1.8,sz*.5,t+j*.3,0,TAU);x.fill();}
+  x.restore();}
+ x.restore();}
+// Scene 4: spiral particles + logo (15-20)
+function spiral(t,lt){
+ x.fillStyle='rgba(0,0,0,.18)';x.fillRect(0,0,W,H);
+ x.save();x.translate(W/2,H/2);x.globalCompositeOperation='lighter';
+ for(let i=0;i<700;i++){const a=i*2.39996+t*(1.2-lt*.15),r=Math.sqrt(i)*22*(1-eo(lt/4.5)*.55)+Math.sin(t*4+i*.1)*6;
+  x.fillStyle=hsl(i*.6+t*120,100,60,.8);x.fillRect(Math.cos(a)*r-2,Math.sin(a)*r-2,4,4);}
+ x.globalCompositeOperation='source-over';x.restore();}
+const scenes=[tunnel,moire,kaleido,spiral];
+const labels=[["01","DEPTH"],["02","INTERFERENCE"],["03","SYMMETRY"],["04","ORBIT"]];
+function frame(){
+ const t=((performance.now()-t0)/1000+off)%DUR,si=Math.min(3,Math.floor(t/5)),lt=t-si*5;
+ scenes[si](t,lt);
+ // transition wipe: expanding circle flash
+ if(lt<.6&&t>1){const p=eo(lt/.6);x.fillStyle=hsl(t*100,100,70,1-p);x.beginPath();x.arc(W/2,H/2,p*900,0,TAU);x.fill();}
+ if(lt>4.6&&si<3){const p=ease((lt-4.6)/.4);x.save();x.translate(W/2,H/2);x.rotate(p*1.5);for(let k=0;k<8;k++){x.fillStyle=hsl(t*100+k*45,100,55);x.beginPath();x.moveTo(0,0);x.arc(0,0,900,k/8*TAU,(k/8+p/8)*TAU);x.fill();}x.restore();}
+ // labels
+ const la=cl(lt*3-.6)*cl((4.5-lt)*3);
+ txt(labels[si][0],90,640,44,'#fff',la,0,900);
+ txt(labels[si][1],90+eo(lt-.2)*0,680,14,'#fff',la*.8,6,700);
+ x.fillStyle='rgba(255,255,255,.8)';x.fillRect(60,610,eo(lt*1.2)*60*la,2);
+ // intro title
+ if(t<4.5){const a=cl(t*2-.3)*cl((4.3-t)*2.5),s=1+t*.04;x.save();x.translate(W/2,H/2);x.scale(s,s);
+  txt('MOTION',3,-28,120,hsl(t*90,100,60),a*.6,20);txt('MOTION',-3,-28,120,hsl(t*90+180,100,60),a*.6,20);txt('MOTION',0,-28,120,'#fff',a,20);
+  txt('— SHOWREEL 2025 —',0,60,18,'#fff',a*.9,10,600);x.restore();}
+ // outro
+ if(si==3&&lt>1.2){const a=eo((lt-1.2)/1)*cl((5-lt)*4),gl=Math.sin(t*30)*4*cl(1-(lt-1.2));
+  txt('HYPNOTIC',gl+4,H/2-10,110,hsl(t*120,100,60),a*.7,24);txt('HYPNOTIC',-gl-4,H/2-10,110,hsl(t*120+180,100,60),a*.7,24);txt('HYPNOTIC',0,H/2-10,110,'#fff',a,24);
+  txt('DESIGNED IN MOTION',0+W/2-W/2+W/2,H/2+70,18,'#fff',a*.9,12,600);}
+ // frame chrome
+ x.fillStyle='#000';x.fillRect(0,0,W,40);x.fillRect(0,H-20,W,20);
+ x.fillStyle='rgba(255,255,255,.6)';x.font='600 12px Helvetica,Arial';x.textAlign='left';x.textBaseline='middle';x.fillText('REEL / '+t.toFixed(2).padStart(5,'0'),24,20);
+ x.textAlign='right';x.fillText('● REC',W-24,20);
+ x.fillStyle=hsl(t*100,100,60);x.fillRect(0,H-4,W*t/DUR,4);
+ // vignette
+ const g=x.createRadialGradient(W/2,H/2,200,W/2,H/2,800);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,0,0,.6)');x.fillStyle=g;x.fillRect(0,0,W,H);
+ requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>

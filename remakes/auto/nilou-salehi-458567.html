@@ -1,0 +1,33 @@
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000;height:100%;overflow:hidden}canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+window.DUR=36;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px'}
+fit();addEventListener('resize',fit);
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t')||0)||0,t0=performance.now();
+const E=v=>v<0?0:v>1?1:v*v*(3-2*v);
+function rr(X,Y,w,h,r){x.beginPath();x.roundRect(X,Y,w,h,r)}
+function txt(s,X,Y,sz,col,a,al){x.globalAlpha=a;x.fillStyle=col;x.font=(sz>30?'700 ':'500 ')+sz+'px system-ui,sans-serif';x.textAlign=al||'center';x.fillText(s,X,Y);x.globalAlpha=1}
+const scenes=[
+{a:0,b:6,t:'Your work, simplified.',s:'A quick tour of how the product works'},
+{a:6,b:13,t:'1. Connect your data',s:'Link your sources in a few clicks — no code needed'},
+{a:13,b:20,t:'2. Build your workflow',s:'Drag blocks onto the canvas and connect the steps'},
+{a:20,b:27,t:'3. Watch the insights flow',s:'Live dashboards update automatically as data arrives'},
+{a:27,b:36,t:'Start building today',s:'Connect. Build. Grow.'}];
+function win(p,f){const y=300+(1-p)*40;x.globalAlpha=p;x.fillStyle='#0f1424';rr(240,y-110,800,380,18);x.fill();x.strokeStyle='#2b3560';x.stroke();x.fillStyle='#1a2140';rr(240,y-110,800,36,18);x.fill();['#ff5f57','#febc2e','#28c840'].forEach((k,i)=>{x.fillStyle=k;x.beginPath();x.arc(264+i*20,y-92,6,0,7);x.fill()});x.save();x.translate(240,y-74);f();x.restore();x.globalAlpha=1}
+function draw(t){
+x.fillStyle='#070a14';x.fillRect(0,0,1280,720);
+for(let i=0;i<40;i++){const px=(i*197+t*12*(1+i%3))%1300-10,py=(i*83)%720;x.fillStyle='rgba(90,120,255,.12)';x.beginPath();x.arc(px,py,2+i%4,0,7);x.fill()}
+const sc=scenes.find(s=>t>=s.a&&t<s.b)||scenes[4],l=t-sc.a,d=sc.b-sc.a,a=E(l/.8)*E((d-l)/.6),i=scenes.indexOf(sc);
+const ty=i==0||i==4?330:110;
+txt(sc.t,640,ty,i==0||i==4?64:42,'#fff',a);txt(sc.s,640,ty+(i==0||i==4?55:40),24,'#9fb0e0',a);
+if(i==0||i==4){const g=E(l/1);x.globalAlpha=a;x.strokeStyle='#6c8cff';x.lineWidth=6;x.beginPath();x.arc(640,200,40,-Math.PI/2,-Math.PI/2+g*6.283);x.stroke();x.fillStyle='#6c8cff';x.beginPath();x.arc(640,200,14*g,0,7);x.fill();x.lineWidth=1;
+if(i==4){x.fillStyle='#6c8cff';rr(540,450,200,56,28);x.fill();txt('Get started →',640,486,22,'#fff',a)}x.globalAlpha=1;return}
+win(a,()=>{
+if(i==1){['Database','Spreadsheet','CRM','Cloud storage'].forEach((n,k)=>{const on=l>1+k*1.1,yy=30+k*72;x.fillStyle='#1d2648';rr(40,yy,720,58,10);x.fill();txt(n,70,yy+36,20,'#dfe6ff',1,'left');x.fillStyle=on?'#28c840':'#3a4570';rr(620,yy+14,110,30,15);x.fill();txt(on?'✓ Connected':'Connect',675,yy+35,15,'#fff',1)})}
+if(i==2){const n=['Import','Clean','Enrich','Report'];n.forEach((s,k)=>{const p=E((l-.5-k*.9)/.6),bx=40+k*190,by=120;if(k>0&&p>0){x.strokeStyle='#6c8cff';x.lineWidth=3;x.beginPath();x.moveTo(bx-50,by+35);x.lineTo(bx-50+50*p,by+35);x.stroke();x.lineWidth=1}x.globalAlpha=a*p;x.fillStyle='#2a3a80';rr(bx,by-(1-p)*60,140,70,12);x.fill();txt(s,bx+70,by+42-(1-p)*60,20,'#fff',a*p);x.globalAlpha=a});const cx=40+Math.min(3,Math.floor((l-.5)/.9))*190+90;x.fillStyle='#fff';x.beginPath();x.moveTo(cx,215);x.lineTo(cx+12,240);x.lineTo(cx+3,236);x.fill()}
+if(i==3){for(let k=0;k<8;k++){const h=(60+50*Math.sin(k*1.7+l*1.5)+40)*E(l/1.5);x.fillStyle=k%2?'#6c8cff':'#8fe3c7';rr(40+k*50,280-h,34,h,6);x.fill()}x.strokeStyle='#febc2e';x.lineWidth=3;x.beginPath();for(let k=0;k<=60;k++){const px=470+k*5,py=200-40*Math.sin(k*.2+l)-k*1.2;k?x.lineTo(px,py):x.moveTo(px,py)}x.stroke();x.lineWidth=1;txt('+'+Math.floor(24*E(l/3))+'% growth',620,60,28,'#8fe3c7',a)}
+});
+for(let k=0;k<5;k++){x.fillStyle=k==i?'#6c8cff':'#2b3560';x.beginPath();x.arc(600+k*20,690,5,0,7);x.fill()}
+}
+function f(){const t=((performance.now()-t0)/1000+off)%DUR;draw(t);requestAnimationFrame(f)}f();
+</script></body></html>

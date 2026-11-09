@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The World in Marbles — 2024</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000}
+body{display:flex;align-items:center;justify-content:center}
+#stage{position:relative;width:1280px;height:720px;flex:none;transform-origin:center}
+canvas{display:block;width:1280px;height:720px}
+#sound{position:absolute;right:48px;top:34px;border:1px solid #384451;background:#111923;color:#bdc9d7;border-radius:18px;padding:8px 13px;font:11px Arial,sans-serif;letter-spacing:1px;cursor:pointer}
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c" width="1280" height="720"></canvas><button id="sound">◖ SOUND · ENABLE</button></div>
+<script>
+"use strict";
+window.DUR=52;
+const canvas=document.getElementById("c"),ctx=canvas.getContext("2d"),stage=document.getElementById("stage");
+function resize(){stage.style.transform=`scale(${Math.min(innerWidth/1280,innerHeight/720)})`}
+addEventListener("resize",resize);resize();
+
+/* UN World Population Prospects 2024 mid-year estimates, in millions.
+   Integer display allocations are normalized to the requested 8,144 pieces.
+   A minimum-one rule keeps sub-million countries visible; this is disclosed
+   on screen rather than claiming these integer allocations are exact census counts. */
+const raw=`
+India|1450.936|AS
+China|1419.321|AS
+United States|345.427|NA
+Indonesia|283.488|AS
+Pakistan|251.269|AS
+Nigeria|232.679|AF
+Brazil|211.999|SA
+Bangladesh|173.562|AS
+Russia|144.820|EU
+Ethiopia|132.060|AF
+Mexico|130.861|NA
+Japan|123.753|AS
+Egypt|116.538|AF
+Philippines|115.844|AS
+DR Congo|109.276|AF
+Vietnam|100.988|AS
+Iran|91.568|AS
+Türkiye|87.474|AS
+Germany|84.552|EU
+Thailand|71.668|AS
+United Kingdom|69.138|EU
+Tanzania|68.560|AF
+France|66.549|EU
+South Africa|64.007|AF
+Italy|59.343|EU
+Kenya|56.433|AF
+Myanmar|54.500|AS
+Colombia|52.886|SA
+South Korea|51.718|AS
+Sudan|50.449|AF
+Uganda|50.015|AF
+Spain|47.911|EU
+Algeria|46.814|AF
+Iraq|46.042|AS
+Argentina|45.696|SA
+Afghanistan|42.647|AS
+Yemen|40.583|AS
+Canada|39.742|NA
+Poland|38.539|EU
+Morocco|38.081|AF
+Angola|37.886|AF
+Ukraine|37.860|EU
+Uzbekistan|36.362|AS
+Malaysia|35.558|AS
+Mozambique|34.632|AF
+Ghana|34.427|AF
+Peru|34.218|SA
+Saudi Arabia|33.963|AS
+Madagascar|31.965|AF
+Côte d’Ivoire|31.934|AF
+Nepal|29.651|AS
+Cameroon|29.124|AF
+Venezuela|28.406|SA
+Niger|27.032|AF
+Australia|26.713|OC
+North Korea|26.499|AS
+Syria|24.673|AS
+Mali|24.479|AF
+Burkina Faso|23.549|AF
+Taiwan|23.214|AS
+Sri Lanka|23.104|AS
+Malawi|21.655|AF
+Zambia|21.315|AF
+Kazakhstan|20.593|AS
+Chad|20.299|AF
+Chile|19.765|SA
+Romania|19.015|EU
+Somalia|19.009|AF
+Senegal|18.502|AF
+Guatemala|18.407|NA
+Netherlands|18.229|EU
+Ecuador|18.135|SA
+Cambodia|17.639|AS
+Zimbabwe|16.634|AF
+Guinea|14.857|AF
+Benin|14.463|AF
+Rwanda|14.257|AF
+Burundi|14.048|AF
+Bolivia|12.413|SA
+Tunisia|12.277|AF
+South Sudan|11.943|AF
+Haiti|11.773|NA
+Belgium|11.739|EU
+Jordan|11.553|AS
+Dominican Republic|11.428|NA
+United Arab Emirates|11.027|AS
+Cuba|10.980|NA
+Honduras|10.826|NA
+Czechia|10.736|EU
+Sweden|10.607|EU
+Tajikistan|10.591|AS
+Portugal|10.425|EU
+Papua New Guinea|10.389|OC
+Azerbaijan|10.337|AS
+Greece|10.048|EU
+Hungary|9.676|EU
+Togo|9.515|AF
+Israel|9.387|AS
+Austria|9.121|EU
+Belarus|9.057|EU
+Switzerland|8.922|EU
+Sierra Leone|8.642|AF
+Laos|7.770|AS
+Turkmenistan|7.494|AS
+Libya|7.381|AF
+Kyrgyzstan|7.186|AS
+Paraguay|6.929|SA
+Nicaragua|6.917|NA
+Bulgaria|6.758|EU
+Serbia|6.736|EU
+El Salvador|6.339|NA
+Republic of Congo|6.333|AF
+Denmark|5.977|EU
+Singapore|5.832|AS
+Lebanon|5.806|AS
+Finland|5.617|EU
+Liberia|5.613|AF
+Norway|5.577|EU
+Slovakia|5.507|EU
+Palestine|5.495|AS
+Central African Republic|5.331|AF
+Oman|5.282|AS
+Ireland|5.255|EU
+New Zealand|5.213|OC
+Mauritania|5.169|AF
+Costa Rica|5.130|NA
+Kuwait|4.935|AS
+Panama|4.515|NA
+Croatia|3.875|EU
+Georgia|3.808|AS
+Eritrea|3.536|AF
+Mongolia|3.476|AS
+Uruguay|3.387|SA
+Bosnia and Herzegovina|3.164|EU
+Qatar|3.048|AS
+Moldova|3.035|EU
+Namibia|3.030|AF
+Armenia|2.974|AS
+Lithuania|2.859|EU
+Jamaica|2.839|NA
+Albania|2.792|EU
+Gambia|2.759|AF
+Gabon|2.539|AF
+Botswana|2.521|AF
+Lesotho|2.337|AF
+Guinea-Bissau|2.202|AF
+Slovenia|2.119|EU
+Equatorial Guinea|1.893|AF
+Latvia|1.872|EU
+North Macedonia|1.823|EU
+Kosovo|1.668|EU
+Bahrain|1.607|AS
+Trinidad and Tobago|1.508|NA
+Timor-Leste|1.401|AS
+Estonia|1.360|EU
+Cyprus|1.358|EU
+Mauritius|1.271|AF
+Eswatini|1.243|AF
+Djibouti|1.169|AF
+Fiji|0.929|OC
+Comoros|0.867|AF
+Guyana|0.831|SA
+Solomon Islands|0.819|OC
+Bhutan|0.792|AS
+Luxembourg|0.674|EU
+Montenegro|0.638|EU
+Suriname|0.634|SA
+Malta|0.540|EU
+Maldives|0.528|AS
+Cabo Verde|0.525|AF
+Brunei|0.463|AS
+Belize|0.417|NA
+Bahamas|0.401|NA
+Iceland|0.393|EU
+Vanuatu|0.328|OC
+Barbados|0.282|NA
+São Tomé and Príncipe|0.235|AF
+Samoa|0.218|OC
+Saint Lucia|0.180|NA
+Kiribati|0.135|OC
+Seychelles|0.130|AF
+Grenada|0.117|NA
+Micronesia|0.113|OC
+Tonga|0.104|OC
+Saint Vincent and the Grenadines|0.101|NA
+Antigua and Barbuda|0.094|NA
+Andorra|0.082|EU
+Dominica|0.066|NA
+Saint Kitts and Nevis|0.047|NA
+Marshall Islands|0.038|OC
+Liechtenstein|0.040|EU
+Monaco|0.039|EU
+San Marino|0.034|EU
+Palau|0.018|OC
+Nauru|0.012|OC
+Tuvalu|0.010|OC
+Holy See|0.0005|EU`;
+const regions={AS:{name:"Asia",h:23,c:"#ffab69"},AF:{name:"Africa",h:46,c:"#eaca69"},EU:{name:"Europe",h:218,c:"#91aeff"},NA:{name:"N. America",h:176,c:"#70dbcf"},SA:{name:"S. America",h:337,c:"#ec90b5"},OC:{name:"Oceania",h:277,c:"#c6a0ff"}};
+const countries=raw.trim().split("\n").map((s,i)=>{let [name,p,r]=s.split("|");return {name,p:+p,r,id:i}}).sort((a,b)=>b.p-a.p);
+const TOTAL=8144,sum=countries.reduce((s,c)=>s+c.p,0);
+let low=0,high=TOTAL/sum;
+for(let k=0;k<60;k++){let m=(low+high)/2,n=countries.reduce((s,c)=>s+Math.max(1,c.p*m),0);if(n>TOTAL)high=m;else low=m}
+const scale=(low+high)/2;
+countries.forEach(c=>{c.quota=Math.max(1,c.p*scale);c.n=Math.floor(c.quota)});
+let remaining=TOTAL-countries.reduce((s,c)=>s+c.n,0);
+[...countries].sort((a,b)=>(b.quota-b.n)-(a.quota-a.n)).slice(0,remaining).forEach(c=>c.n++);
+let cursor=3.0,index=0;
+countries.forEach(c=>{
+ c.start=cursor;c.duration=.082+22*c.n/TOTAL;c.end=cursor+c.duration;
+ c.first=index;index+=c.n;cursor=c.end;
+ const hue=regions[c.r].h+((c.id*37)%23-11);
+ c.color=`hsl(${hue} 76% 66%)`;
+ c.sprite=document.createElement("canvas");c.sprite.width=c.sprite.height=20;
+ const g=c.sprite.getContext("2d"),gr=g.createRadialGradient(7,5,0,10,10,8);
+ gr.addColorStop(0,"#fff9ed");gr.addColorStop(.17,`hsl(${hue} 80% 85%)`);gr.addColorStop(.42,c.color);gr.addColorStop(.82,`hsl(${hue} 65% 39%)`);gr.addColorStop(1,`hsl(${hue} 63% 18%)`);
+ g.fillStyle=gr;g.beginPath();g.arc(10,10,8,0,Math.PI*2);g.fill();
+ g.strokeStyle="rgba(255,255,255,.35)";g.lineWidth=.5;g.stroke();
+});
+const endDrop=cursor;
+const events=[];
+countries.forEach(c=>{for(let i=0;i<c.n;i++)events.push({time:c.start+(i+.5)*c.duration/c.n,c})});
+const pile=document.createElement("canvas");pile.width=1280;pile.height=720;
+const pg=pile.getContext("2d");
+const R=3.18,STEP=6.46,COLS=181,LEFT=55,GROUND=635,DT=1/120;
+let lanes=[],active=[],balls=[],fx=[],emit=0,landed=0,simTime=0,contacts=0,energy=0,lastClink=-10,currentCountry=0;
+let ac=null,master=null,audioEnabled=false,soundFrame=0;
+const button=document.getElementById("sound");
+function setupAudio(){
+ if(!ac){const A=window.AudioContext||window.webkitAudioContext;if(!A)return;ac=new A();master=ac.createGain();master.gain.value=.19;master.connect(ac.destination)}
+}
+function audioToggle(){
+ setupAudio();if(!ac)return;
+ audioEnabled=!audioEnabled;
+ if(audioEnabled)ac.resume();
+ button.textContent=audioEnabled?"◖ SOUND · ON":"◖ SOUND · OFF";
+}
+button.addEventListener("click",audioToggle);
+canvas.addEventListener("pointerdown",()=>{if(!audioEnabled)audioToggle()});
+function clink(ball,speed){
+ if(!audioEnabled||!ac||ac.state!=="running"||soundFrame>=5||simTime-lastClink<.011)return;
+ soundFrame++;lastClink=simTime;
+ const now=ac.currentTime,amp=Math.min(.12,.024+speed*.00016),f=1250+((ball.id*173+contacts*31)%1900);
+ const gain=ac.createGain();gain.gain.setValueAtTime(amp,now);gain.gain.exponentialRampToValueAtTime(.0001,now+.12);gain.connect(master);
+ [1,2.71,4.03].forEach((m,i)=>{
+ const o=ac.createOscillator(),g=ac.createGain();o.type="sine";o.frequency.setValueAtTime(f*m,now);o.frequency.exponentialRampToValueAtTime(f*m*.985,now+.09);
+ g.gain.value=[1,.27,.09][i];o.connect(g);g.connect(gain);o.start(now);o.stop(now+.125);
+ });
+}
+function reset(){
+ lanes=Array(COLS).fill(null);active=[];balls=[];fx=[];emit=0;landed=0;simTime=0;contacts=0;energy=0;currentCountry=0;lastClink=-10;
+ pg.clearRect(0,0,1280,720);
+}
+function spawn(e){
+ const id=emit-1,row=Math.floor(id/COLS),col=((id%COLS)*73+row*41)%COLS;
+ const under=lanes[col],b={id,c:e.c,x:LEFT+col*STEP,y:279-(id%7)*1.8,v:25+(id*19%65),under,settled:false,bounces:0};
+ lanes[col]=b;balls.push(b);active.push(b);
+}
+function step(audible){
+ simTime+=DT;
+ while(emit<events.length&&events[emit].time<=simTime){const e=events[emit++];spawn(e)}
+ for(let i=0;i<active.length;i++){
+  const b=active[i];b.v+=1160*DT;b.y+=b.v*DT;
+  const floor=b.under?b.under.y-R*2:GROUND-R;
+  const supportV=b.under&&!b.under.settled?b.under.v:0;
+  if(b.y>=floor){
+   const speed=Math.max(0,b.v-supportV);b.y=floor;
+   b.v=supportV-speed*.27;b.bounces++;contacts++;
+   if(speed>32){
+    energy=Math.min(1,energy+speed*.000025);
+    if(fx.length<230)fx.push({x:b.x,y:b.y+R,t:simTime,p:Math.min(1,speed/700),color:b.c.color});
+    if(audible)clink(b,speed);
+   }
+   if((!b.under||b.under.settled)&&speed<40){
+    b.settled=true;b.v=0;landed++;
+    pg.drawImage(b.c.sprite,b.x-R-1,b.y-R-1,2*R+2,2*R+2);
+   }
+  }
+ }
+ active=active.filter(b=>!b.settled);
+ fx=fx.filter(f=>simTime-f.t<.32);
+ energy*=.975;
+ while(currentCountry<countries.length-1&&simTime>=countries[currentCountry].end)currentCountry++;
+}
+reset();
+
+function text(str,x,y,size,color="#e6eef8",weight=400,align="left"){
+ ctx.font=`${weight} ${size}px Arial, sans-serif`;ctx.fillStyle=color;ctx.textAlign=align;ctx.fillText(str,x,y);
+}
+function line(x1,y1,x2,y2,c="#26313e"){ctx.strokeStyle=c;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke()}
+function roundRect(x,y,w,h,r,fill,stroke){
+ ctx.beginPath();ctx.roundRect(x,y,w,h,r);if(fill){ctx.fillStyle=fill;ctx.fill()}if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.stroke()}
+}
+function fmt(n){return n.toLocaleString("en-US")}
+function pop(p){return p>=1?`${p.toFixed(p>=100?1:2)} million`:`${fmt(Math.round(p*1e6))} people`}
+function drawGlobe(x,y,r,t){
+ ctx.save();ctx.translate(x,y);ctx.strokeStyle="#30404e";ctx.lineWidth=1;
+ ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.stroke();
+ for(let j=-2;j<=2;j++){ctx.beginPath();ctx.ellipse(0,j*r*.28,r*Math.sqrt(1-j*j*.0784),r*.12,0,0,Math.PI*2);ctx.stroke()}
+ for(let j=0;j<5;j++){ctx.beginPath();ctx.ellipse(0,0,Math.max(2,Math.abs(Math.cos(t*.13+j*.63))*r),r,0,0,Math.PI*2);ctx.stroke()}
+ ctx.fillStyle="#70dbcf";ctx.beginPath();ctx.arc(Math.sin(t*.3)*r*.75,-r*.35,2,0,7);ctx.fill();ctx.restore();
+}
+function draw(t){
+ ctx.clearRect(0,0,1280,720);
+ const bg=ctx.createLinearGradient(0,0,0,720);bg.addColorStop(0,"#101822");bg.addColorStop(1,"#060b12");
+ ctx.fillStyle=bg;ctx.fillRect(0,0,1280,720);
+ const glow=ctx.createRadialGradient(640,410,10,640,410,640);glow.addColorStop(0,"#152637");glow.addColorStop(1,"rgba(5,10,16,0)");ctx.fillStyle=glow;ctx.fillRect(0,90,1280,580);
+
+ text("EARTH / 2024",48,48,12,"#7f95ac",700);
+ text("The world, in marbles.",48,90,35,"#edf3fa",700);
+ text("1 marble = 1 million people",50,118,15,"#9babbd");
+ line(48,139,1232,139);
+
+ const finishing=t>endDrop;
+ const intro=t<3;
+ text("MARBLES RELEASED",48,168,11,"#91a5b9",700);
+ text(fmt(emit),46,229,62,"#f1f6ff",700);
+ text("/ 8,144",248,225,25,"#73899f");
+ const progress=emit/TOTAL;
+ roundRect(49,245,326,4,2,"#283341");
+ if(progress>0)roundRect(49,245,326*progress,4,2,"#c4e0f4");
+
+ const c=countries[currentCountry],local=Math.max(0,Math.min(c.n,emit-c.first));
+ roundRect(420,157,420,97,10,"#111e2b","#293b4b");
+ ctx.fillStyle=finishing?"#74d9c2":intro?"#7a90a5":c.color;ctx.beginPath();ctx.arc(441,178,3.5,0,7);ctx.fill();
+ text(finishing?"ALL POPULATIONS REPRESENTED":intro?"READY TO RELEASE":"NOW DROPPING",455,182,10,"#8fa7bd",700);
+ let label=finishing?"One planet. Billions of lives.":intro?"A population-scale experiment":c.name;
+ const labelSize=label.length>29?20:25;
+ text(label,438,216,labelSize,"#edf3fc",700);
+ text(finishing?`${countries.length} country / area entries`:intro?"Gravity on. Each impact creates a clink.":`2024 estimate: ${pop(c.p)}`,439,239,12,"#9db0c4");
+ if(!intro&&!finishing)text(`${fmt(local)} / ${fmt(c.n)}`,823,180,11,c.color,700,"right");
+
+ drawGlobe(892,207,32,t);
+ text(finishing?"RELEASE COMPLETE":intro?"COMING UP":"NEXT IN LINE",946,169,10,"#8097ae",700);
+ if(finishing){
+  text("8,144 marbles",946,195,18,"#dceaf7",700);
+  text("A whole world in one frame.",946,219,12,"#96a9bb");
+  text("Every clink = a contact event",946,242,11,"#70cbbd");
+ }else{
+  for(let j=1;j<=3;j++){
+   const q=countries[Math.min(countries.length-1,currentCountry+(intro?j-1:j))];
+   ctx.fillStyle=q.color;ctx.beginPath();ctx.arc(950,186+j*19,2.5,0,7);ctx.fill();
+   let name=q.name.length>23?q.name.slice(0,22)+"…":q.name;
+   text(name,960,190+j*19,12,"#b6c7d8");
+   text(fmt(q.n),1231,190+j*19,12,"#71879d",400,"right");
+  }
+ }
+ text("POPULATION CHAMBER",49,282,10,"#8da3b9",700);
+ text("g  1,160 px/s²    ·    restitution  0.27",1230,282,10,"#647b91",400,"right");
+
+ roundRect(47,296,1187,346,9,"rgba(4,10,17,.7)","#344657");
+ ctx.save();ctx.beginPath();ctx.roundRect(49,298,1183,342,8);ctx.clip();
+ for(let x=64;x<1230;x+=32)line(x,299,x,637,"rgba(133,166,192,.035)");
+ for(let y=316;y<638;y+=32)line(49,y,1230,y,"rgba(133,166,192,.035)");
+ const halo=ctx.createLinearGradient(0,298,0,390);halo.addColorStop(0,"rgba(115,192,236,.09)");halo.addColorStop(1,"rgba(115,192,236,0)");
+ ctx.fillStyle=halo;ctx.fillRect(49,298,1183,100);
+ ctx.drawImage(pile,0,0);
+ for(const b of active){
+  if(b.y<295)continue;
+  if(b.v>160){
+   ctx.strokeStyle=b.c.color;ctx.globalAlpha=.18;ctx.lineWidth=1.1;
+   ctx.beginPath();ctx.moveTo(b.x,b.y-R);ctx.lineTo(b.x,b.y-R-Math.min(20,b.v*.015));ctx.stroke();ctx.globalAlpha=1;
+  }
+  ctx.drawImage(b.c.sprite,b.x-R-1,b.y-R-1,R*2+2,R*2+2);
+ }
+ for(const f of fx){
+  const age=(simTime-f.t)/.32;
+  ctx.globalAlpha=(1-age)*.7*f.p;ctx.strokeStyle=f.color;ctx.lineWidth=.8;
+  ctx.beginPath();ctx.ellipse(f.x,f.y,2+age*12,1+age*4,0,0,7);ctx.stroke();
+ }
+ ctx.globalAlpha=1;
+ if(intro){
+  const a=Math.min(1,t/.8)*Math.min(1,(3-t)/.5);
+  ctx.globalAlpha=a;
+  text("8,144",640,442,74,"#ecf5ff",700,"center");
+  text("MARBLES. ONE WORLD.",640,475,14,"#9bb5ca",700,"center");
+  text("Watch every country join the pile.",640,507,15,"#708aa2",400,"center");
+  ctx.globalAlpha=1;
+ }
+ if(t>endDrop+2){
+  let a=Math.min(1,(t-endDrop-2)/1.2);
+  ctx.globalAlpha=a;
+  roundRect(457,300,366,34,17,"rgba(9,20,30,.91)","#486375");
+  text("8,144 MILLION-PERSON MARBLE UNITS",640,322,11,"#d9eaf6",700,"center");
+  ctx.globalAlpha=1;
+ }
+ ctx.restore();
+
+ line(56,638,1226,638,"#566e81");
+ const shine=ctx.createLinearGradient(50,0,1230,0);shine.addColorStop(0,"rgba(105,200,218,0)");shine.addColorStop(.5,`rgba(147,220,236,${.13+energy*.6})`);shine.addColorStop(1,"rgba(105,200,218,0)");ctx.fillStyle=shine;ctx.fillRect(50,637,1180,2);
+ text("COLOR KEY",49,667,9,"#647d93",700);
+ let lx=128;
+ for(const k of Object.keys(regions)){
+  const r=regions[k];ctx.fillStyle=r.c;ctx.beginPath();ctx.arc(lx,663,3,0,7);ctx.fill();
+  text(r.name,lx+10,667,11,"#a4b5c6");lx+=k==="NA"||k==="SA"?110:91;
+ }
+ ctx.fillStyle=energy>.1?"#8fe9d2":"#577a77";ctx.beginPath();ctx.arc(915,663,3,0,7);ctx.fill();
+ text("COLLISION EVENTS",927,667,9,"#7e96aa",700);
+ text(fmt(contacts),1231,668,12,"#b8d6e5",700,"right");
+ text("Source: UN WPP 2024 estimates · country / area populations",49,695,10,"#637b90");
+ text("Whole-marble rounding · sub-million entries receive 1 · total normalized to 8,144",1232,695,10,"#637b90",400,"right");
+}
+const params=new URLSearchParams(location.search);
+let offset=Number(params.get("t"))||0;offset=((offset%window.DUR)+window.DUR)%window.DUR;
+let origin=null,previous=-1;
+function frame(now){
+ if(origin===null)origin=now;
+ const t=((now-origin)/1000+offset)%window.DUR;
+ if(t<previous)reset();
+ const target=Math.floor(t/DT)*DT;
+ soundFrame=0;
+ const seek=target-simTime>.15;
+ while(simTime+DT<=target+.0000001)step(!seek);
+ draw(t);previous=t;requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

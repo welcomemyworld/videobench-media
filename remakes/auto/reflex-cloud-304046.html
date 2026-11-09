@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>reflex. inc — reel</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#c{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:#000}
+</style></head><body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=15;
+const W=1280,H=720,cv=document.getElementById('c'),x=cv.getContext('2d');
+function fit(){const s=Math.min(innerWidth/W,innerHeight/H);cv.style.width=W*s+'px';cv.style.height=H*s+'px'}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),off=parseFloat(q.get('t')||0)||0,t0=performance.now();
+const BEAT=0.5,F='"Helvetica Neue",Helvetica,Arial,sans-serif';
+const C={acid:'#d4ff00',hot:'#ff2d55',blue:'#2a5cff',ink:'#0a0a0f',paper:'#f2efe8',cyan:'#00e5ff'};
+const ease=v=>1-Math.pow(1-Math.min(Math.max(v,0),1),4);
+const eio=v=>{v=Math.min(Math.max(v,0),1);return v<.5?8*v*v*v*v:1-Math.pow(-2*v+2,4)/2};
+const cl=(v,a,b)=>Math.max(a,Math.min(b,v));
+function txt(s,X,Y,size,col,wt='900',al='center',sp=0){x.font=`${wt} ${size}px ${F}`;x.fillStyle=col;x.textAlign=al;x.textBaseline='middle';if(x.letterSpacing!==undefined)x.letterSpacing=sp+'px';x.fillText(s,X,Y);if(x.letterSpacing!==undefined)x.letterSpacing='0px'}
+function bg(c){x.fillStyle=c;x.fillRect(-50,-50,W+100,H+100)}
+function grain(t){x.globalAlpha=.06;for(let i=0;i<300;i++){const r=Math.sin(i*91.3+t*60)*43758.5;const a=r-Math.floor(r);const b=(Math.sin(i*12.9+t*77)*9631.1)%1;x.fillStyle=i%2?'#fff':'#000';x.fillRect(a*W,Math.abs(b)*H,2,2)}x.globalAlpha=1}
+
+// Scene 0: hook 0-1.5
+function s0(t){
+  const flash=t<.08;bg(flash?'#fff':C.ink);
+  const k=ease(t/.25);
+  // shockwave
+  for(let i=0;i<3;i++){const r=ease((t-i*.06)/.7)*900;x.strokeStyle=[C.acid,C.hot,C.cyan][i];x.lineWidth=30*(1-ease((t-i*.06)/.7));x.beginPath();x.arc(W/2,H/2,Math.max(r,1),0,7);x.stroke()}
+  const sc=3-2*k+.05*Math.exp(-(t%BEAT)*10);
+  x.save();x.translate(W/2,H/2);x.scale(sc,sc);x.rotate((1-k)*-.3);
+  txt('REFLEX.',8,6,190,C.hot);txt('REFLEX.',-6,-4,190,C.cyan);txt('REFLEX.',0,0,190,flash?C.ink:C.paper);
+  x.restore();
+  if(t>.75){const w=ease((t-.75)/.3)*W;x.fillStyle=C.acid;x.fillRect(0,H/2+110,w,10)}
+  if(t>1.25){const w=ease((t-1.25)/.25)*W;x.fillStyle=C.acid;x.fillRect(W-w,0,w,H)}
+}
+// Scene 1: kinetic type 1.5-4.5
+const words=[['WE','DON\u2019T'],['JUST'],['MOVE.'],['WE'],['REACT.'],['FASTER.']];
+const pal=[[C.acid,C.ink],[C.ink,C.acid],[C.hot,C.paper],[C.blue,C.paper],[C.paper,C.ink],[C.ink,C.hot]];
+function s1(t){
+  const i=Math.min(5,Math.floor(t/BEAT)),lt=t-i*BEAT,p=pal[i];bg(p[0]);
+  const k=ease(lt/.18);
+  // background ghost type
+  x.globalAlpha=.08;for(let r=0;r<6;r++){txt(words[i].join(' '),((r%2?1:-1)*t*300+W*2)%(W*2)-W/2,r*130+40,140,p[1],'900','left')}x.globalAlpha=1;
+  x.save();x.translate(W/2,H/2);
+  if(i%2){x.rotate((1-k)*.5);x.scale(.4+.6*k,.4+.6*k)}else{x.translate(0,(1-k)*300)}
+  const ws=words[i];ws.forEach((w,j)=>txt(w,0,(j-(ws.length-1)/2)*200,i==5?240:220,p[1],'900','center',-6));
+  x.restore();
+  x.fillStyle=p[1];x.fillRect(60,H-70,(t/3)*(W-120),4);
+  txt('0'+(i+1)+' / 06',60,60,22,p[1],'700','left',4);
+}
+// Scene 2: shape play 4.5-7.5
+function s2(t){
+  bg(C.ink);const b=Math.floor(t/BEAT),lt=t%BEAT,pulse=Math.exp(-lt*9);
+  const cols=[C.acid,C.hot,C.cyan,C.blue,C.paper];
+  x.save();x.translate(W/2,H/2);x.rotate(eio(t/3)*Math.PI/2);
+  const N=9,s=110;
+  for(let gy=-4;gy<=4;gy++)for(let gx=-6;gx<=6;gx++){
+    const d=Math.hypot(gx,gy),ph=t*4-d*.6;
+    const m=(Math.sin(ph)+1)/2;
+    const sz=(20+38*m)*(1+.4*pulse*(d<3+b%4));
+    x.save();x.translate(gx*s*.62,gy*s*.62);x.rotate(ph+b*Math.PI/4);
+    x.fillStyle=cols[(gx+gy+b+40)%5];
+    const rr=sz/2*(b%2?m:1-m);
+    x.beginPath();x.roundRect(-sz/2,-sz/2,sz,sz,Math.max(0,rr));x.fill();x.restore();
+  }
+  x.restore();
+  // center mask block with word
+  const k=ease((t-.2)/.4);const ww=560*k;
+  x.fillStyle=C.paper;x.fillRect(W/2-ww/2,H/2-80,ww,160);
+  x.save();x.beginPath();x.rect(W/2-ww/2,H/2-80,ww,160);x.clip();
+  const ws=['SHAPE','FORM','RHYTHM','PLAY','SHAPE','FORM'];txt(ws[b%6],W/2,H/2+4,130,C.ink,'900','center',-4);x.restore();
+  if(t>2.7){const w=ease((t-2.7)/.3);x.fillStyle=C.blue;x.beginPath();x.arc(W/2,H/2,w*900,0,7);x.fill()}
+}
+// Scene 3: camera tunnel 7.5-10.5
+function s3(t){
+  bg(C.blue);const b=Math.floor(t/BEAT),pulse=Math.exp(-(t%BEAT)*8);
+  const cx=W/2+Math.sin(t*1.7)*120,cy=H/2+Math.cos(t*1.3)*60;
+  x.save();x.translate(W/2,H/2);x.rotate(Math.sin(t*.9)*.35+t*.3);x.translate(-W/2,-H/2);
+  const sp=t*6;
+  for(let i=30;i>=0;i--){
+    const z=i-(sp%1),zz=z+.2;if(zz<=0)continue;const r=420/zz;
+    const id=i+Math.floor(sp);
+    x.lineWidth=Math.max(1,60/zz);
+    x.strokeStyle=id%4==0?C.acid:id%4==2?C.hot:'rgba(255,255,255,'+cl(1-z/30,0,1)*.6+')';
+    const px=W/2+(cx-W/2)*(1-1/zz),py=H/2+(cy-H/2)*(1-1/zz);
+    x.save();x.translate(px,py);x.rotate(id*.2);
+    if(id%3==0){x.strokeRect(-r,-r,r*2,r*2)}else{x.beginPath();x.arc(0,0,r,0,7);x.stroke()}
+    x.restore();
+  }
+  x.restore();
+  const s=1+pulse*.12;x.save();x.translate(W/2,H/2);x.scale(s,s);
+  const lab=['DEPTH','SPEED','FOCUS','IMPACT','SCALE','REFLEX.'][Math.min(5,b)];
+  txt(lab,6,6,150,C.ink);txt(lab,0,0,150,C.paper);x.restore();
+  txt('CAMERA \u00B7 3D \u00B7 MOTION',W/2,H-80,22,C.paper,'700','center',8);
+}
+// Scene 4: colour shift stripes 10.5-12.75
+function s4(t){
+  const cols=[C.hot,C.acid,C.cyan,C.blue,C.paper,C.ink];
+  const n=12;
+  for(let i=0;i<n;i++){
+    const d=ease((t-i*.04)/.5);const hh=H/n;
+    x.fillStyle=cols[(i+Math.floor(t/BEAT*2))%6];
+    x.fillRect(i%2?W-W*d:0,i*hh,W*d,hh+1);
+  }
+  const k=ease((t-.5)/.4);
+  x.fillStyle=C.ink;x.fillRect(0,H/2-130,W*k,260);
+  const ls=['MOTION','BRANDING','TITLES','IDENTITY'];const j=Math.floor(cl((t-.5)/.4,0,3.9));
+  x.save();x.beginPath();x.rect(0,H/2-130,W*k,260);x.clip();
+  txt(ls[j],W/2,H/2-20,150,[C.acid,C.hot,C.cyan,C.paper][j],'900','center',-4);
+  txt('— WE BUILD BRANDS THAT MOVE —',W/2,H/2+90,24,C.paper,'700','center',8);x.restore();
+  if(t>1.9){const w=ease((t-1.9)/.35);x.fillStyle=C.paper;x.fillRect(0,0,W,H*w/2);x.fillRect(0,H-H*w/2,W,H)}
+}
+// Scene 5: final 12.75-15
+function s5(t){
+  bg(C.paper);
+  const k=ease(t/.5);
+  // logo mark: reflex chevron
+  x.save();x.translate(W/2-300,H/2-10);x.rotate((1-k)*-Math.PI);x.scale(k,k);
+  x.fillStyle=C.ink;x.beginPath();x.roundRect(-55,-55,110,110,22);x.fill();
+  x.strokeStyle=C.acid;x.lineWidth=16;x.lineCap='round';x.lineJoin='round';
+  x.beginPath();x.moveTo(-18,-28);x.lineTo(14,0);x.lineTo(-18,28);x.stroke();
+  x.fillStyle=C.hot;x.beginPath();x.arc(26,28,9,0,7);x.fill();
+  x.restore();
+  const tk=ease((t-.2)/.5);
+  x.save();x.beginPath();x.rect(W/2-220,H/2-110,700,170);x.clip();
+  x.translate(0,(1-tk)*170);
+  txt('reflex',W/2-225,H/2-10,150,C.ink,'900','left',-6);
+  x.font=`900 150px ${F}`;const mw=x.measureText('reflex').width-36;
+  txt('.',W/2-225+mw+40,H/2-10,150,C.hot,'900','left');
+  x.restore();
+  const ik=ease((t-.6)/.4);x.globalAlpha=ik;
+  txt('INC',W/2+300,H/2-60,28,C.ink,'800','left',10);
+  x.fillStyle=C.ink;x.fillRect(W/2-220,H/2+80,560*ease((t-.7)/.5),3);
+  txt('MOTION THAT MOVES FIRST.',W/2-220,H/2+120,24,C.ink,'700','left',8);
+  x.globalAlpha=ease((t-1.1)/.4);
+  txt('reflex.inc',W/2+340,H/2+120,22,C.blue,'700','right',2);
+  x.globalAlpha=1;
+  if(t>2.05){x.fillStyle='#000';x.globalAlpha=ease((t-2.05)/.2);x.fillRect(0,0,W,H);x.globalAlpha=1}
+}
+const scenes=[[0,1.5,s0],[1.5,4.5,s1],[4.5,7.5,s2],[7.5,10.5,s3],[10.5,12.75,s4],[12.75,15,s5]];
+function frame(){
+  const T=((performance.now()-t0)/1000+off)%DUR;
+  x.setTransform(1,0,0,1,0,0);
+  const bp=Math.exp(-(T%BEAT)*14);const sh=T<12.75?bp*6:0;
+  x.translate((Math.random()-.5)*sh,(Math.random()-.5)*sh);
+  for(const [a,b,f] of scenes)if(T>=a&&T<b){f(T-a);break}
+  x.setTransform(1,0,0,1,0,0);grain(T);
+  // cut flash on scene changes
+  for(const [a] of scenes){const d=T-a;if(d>=0&&d<.05&&a>0){x.fillStyle='rgba(255,255,255,.5)';x.fillRect(0,0,W,H)}}
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></body></html>

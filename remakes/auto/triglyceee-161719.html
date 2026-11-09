@@ -1,0 +1,36 @@
+<html><head><meta charset="utf-8"><style>body{margin:0;background:#000;overflow:hidden}canvas{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}</style></head><body><canvas id="c" width="1280" height="720"></canvas><script>
+window.DUR=56;
+const c=document.getElementById('c'),x=c.getContext('2d');
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720);c.style.width=1280*s+'px';c.style.height=720*s+'px'}fit();onresize=fit;
+const off=parseFloat(new URLSearchParams(location.search).get('t'))||0,t0=performance.now()-off*1000;
+const E=[
+[1956,"L'indépendance","2 mars 1956 : fin du protectorat français. Mohammed V, retour d'exil, incarne la nation."],
+[1961,"Hassan II","Mort de Mohammed V. Son fils Hassan II monte sur le trône."],
+[1962,"Première Constitution","Monarchie constitutionnelle adoptée par référendum ; le multipartisme est reconnu."],
+[1965,"État d'exception","Émeutes de Casablanca, disparition de Mehdi Ben Barka, parlement suspendu."],
+[1971,"Années de plomb","Tentatives de coup d'État (1971, 1972) ; répression et opposition muselée."],
+[1975,"La Marche verte","350 000 volontaires vers le Sahara : consensus national autour du roi."],
+[1998,"L'alternance","Abderrahmane Youssoufi (USFP), opposant historique, devient Premier ministre."],
+[1999,"Mohammed VI","Avènement du nouveau roi, porteur d'un discours d'ouverture."],
+[2004,"Réformes & mémoire","Moudawana (Code de la famille) et Instance Équité et Réconciliation."],
+[2011,"Mouvement du 20 Février","Printemps arabe ; nouvelle Constitution élargissant les pouvoirs du chef du gouvernement."],
+[2011,"Le PJD au pouvoir","Victoire islamiste modérée : Benkirane puis El Othmani (2017) dirigent le gouvernement."],
+[2021,"Nouvelle donne","Le RNI d'Aziz Akhannouch remporte les élections ; recul net du PJD."],
+[2024,"Aujourd'hui","Monarchie exécutive, pluralisme partisan, défis sociaux et Nouveau modèle de développement."]];
+const IN=4,PER=3.6;
+function star(cx,cy,r,col,a){x.save();x.translate(cx,cy);x.strokeStyle=col;x.lineWidth=r*.12;x.globalAlpha=a;x.beginPath();for(let i=0;i<=5;i++){const g=-Math.PI/2+i*4*Math.PI/5;x.lineTo(Math.cos(g)*r,Math.sin(g)*r)}x.stroke();x.restore()}
+function wrap(s,X,Y,w,lh){let l='',y=Y;for(const m of s.split(' ')){if(x.measureText(l+m).width>w&&l){x.fillText(l,X,y);l='';y+=lh}l+=m+' '}x.fillText(l,X,y)}
+function bg(t){const g=x.createLinearGradient(0,0,0,720);g.addColorStop(0,'#2a0508');g.addColorStop(1,'#080101');x.fillStyle=g;x.fillRect(0,0,1280,720);
+x.globalAlpha=.06;x.strokeStyle='#e8c070';x.lineWidth=1;for(let i=0;i<14;i++)for(let j=0;j<8;j++){x.save();x.translate(i*100+((t*6)%100),j*100);x.rotate(Math.PI/4);x.strokeRect(-25,-25,50,50);x.restore()}x.globalAlpha=1}
+function f(){let t=((performance.now()-t0)/1000)%DUR;bg(t);x.textAlign='center';
+if(t<IN){const a=Math.min(1,t,IN-t);star(640,250,90,'#1a8a3a',a);x.globalAlpha=a;x.fillStyle='#f3e2b8';x.font='bold 58px Georgia';x.fillText('Le Maroc politique',640,420);x.font='28px Georgia';x.fillStyle='#d9a24a';x.fillText("De l'indépendance à nos jours · 1956 – 2024",640,470);x.globalAlpha=1}
+else if(t<IN+E.length*PER){const k=Math.floor((t-IN)/PER),lt=(t-IN)%PER,e=E[k],a=Math.min(1,lt*2,(PER-lt)*2);
+// timeline
+const p=(t-IN)/(E.length*PER);x.strokeStyle='#5a2a1a';x.lineWidth=4;x.beginPath();x.moveTo(100,620);x.lineTo(1180,620);x.stroke();x.strokeStyle='#d9a24a';x.beginPath();x.moveTo(100,620);x.lineTo(100+1080*p,620);x.stroke();
+E.forEach((v,i)=>{const X=100+1080*(v[0]-1956)/68;x.fillStyle=i<=k?'#d9a24a':'#5a2a1a';x.beginPath();x.arc(X,620,i==k?9:5,0,7);x.fill()});
+x.font='18px Georgia';x.fillStyle='#b88';x.fillText('1956',100,655);x.fillText('2024',1180,655);
+star(640,200,60+lt*4,'#1a8a3a',a*.8);x.globalAlpha=a;x.fillStyle='#c1272d';x.font='bold 120px Georgia';x.fillText(e[0],640,240+(1-a)*20);
+x.fillStyle='#f3e2b8';x.font='bold 46px Georgia';x.fillText(e[1],640,340);x.fillStyle='#e8d6b0';x.font='28px Georgia';wrap(e[2],640,410,900,40);x.globalAlpha=1}
+else{const lt=t-IN-E.length*PER,a=Math.min(1,lt,DUR-t);x.globalAlpha=a;star(640,260,100,'#1a8a3a',1);x.fillStyle='#f3e2b8';x.font='bold 44px Georgia';x.fillText('Près de 70 ans de vie politique',640,430);x.font='28px Georgia';x.fillStyle='#d9a24a';x.fillText('entre continuité monarchique et ouverture démocratique',640,480);x.globalAlpha=1}
+requestAnimationFrame(f)}f();
+</script></body></html>

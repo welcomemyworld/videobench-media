@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh"><head><meta charset="utf-8"><title>技术栈</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#s{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}</style></head>
+<body><canvas id="s" width="1280" height="720"></canvas>
+<script>
+window.DUR=32;
+const c=document.getElementById('s'),x=c.getContext('2d');
+function fit(){const k=Math.min(innerWidth/1280,innerHeight/720);c.style.transform=`scale(${k}) translate(-50%,-50%)`;c.style.transformOrigin='0 0';c.style.left='50%';c.style.top='50%';c.style.transform=`translate(-50%,-50%) scale(${k})`;c.style.transformOrigin='center';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),T0=parseFloat(q.get('t')||0);let st=null;
+const F='"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif',M='Menlo,Consolas,monospace';
+const cl=v=>Math.max(0,Math.min(1,v)),ez=v=>{v=cl(v);return 1-Math.pow(1-v,3)};
+const stars=[...Array(140)].map((_,i)=>({x:(i*733)%1280,y:(i*397)%720,r:(i%3)*.5+.4,p:i}));
+function txt(s,X,Y,sz,col,al,font,align){x.globalAlpha=al;x.fillStyle=col;x.font=sz+'px '+(font||F);x.textAlign=align||'center';x.fillText(s,X,Y);x.globalAlpha=1}
+function typed(s,t,sp){return s.slice(0,Math.floor(cl(t)*s.length*(sp||1)))}
+function box(X,Y,w,h,col,al,title,sub,icon){
+ x.globalAlpha=al;x.fillStyle='rgba(20,24,40,.85)';x.strokeStyle=col;x.lineWidth=2;
+ x.beginPath();x.roundRect(X-w/2,Y-h/2,w,h,16);x.fill();x.stroke();
+ x.shadowColor=col;x.shadowBlur=20;x.stroke();x.shadowBlur=0;x.globalAlpha=1;
+ txt(icon,X,Y-28,34,col,al);txt(title,X,Y+14,26,'#fff',al);txt(sub,X,Y+44,15,'#9ab',al);
+}
+const items=[
+['画面','Remotion 4.0.528','用 React 组件逐帧描述视频','#61dafb'],
+['框架','React 18 + TypeScript','JSX 声明画面，类型检查保稳定','#7aa2ff'],
+['运行时','Node.js + Chromium','无头浏览器逐帧截图渲染','#8bd17c'],
+['配乐','Python 3 · NumPy','程序化合成旋律，写出 WAV','#ffd43b'],
+['合成','ffmpeg','Remotion 调用：H.264 视频 + AAC 音轨','#ff6b6b'],
+['成片','MP4 · 1920×1080','画面与配乐对齐，一次导出','#c792ea']];
+function frame(now){
+ if(st===null)st=now;let t=((now-st)/1000+T0)%DUR;
+ x.fillStyle='#05060c';x.fillRect(0,0,1280,720);
+ const g=x.createRadialGradient(640,360,50,640,360,800);g.addColorStop(0,'rgba(60,70,140,.25)');g.addColorStop(1,'rgba(0,0,0,0)');x.fillStyle=g;x.fillRect(0,0,1280,720);
+ for(const s of stars){x.globalAlpha=.3+.3*Math.sin(t*2+s.p);x.fillStyle='#fff';x.fillRect((s.x-t*8*s.r+1280)%1280,s.y,s.r,s.r)}x.globalAlpha=1;
+ // scene 1: title 0-6
+ if(t<7){const a=cl(t/1)*cl((7-t)/0.8);
+  txt('所有技术栈',640,280,72,'#fff',a);
+  txt(typed('—— 让 Opus 5.5 自己列出来！',t-1.2,1.5),640,350,32,'#61dafb',a);
+  const l=typed('> opus --list-stack',t-3,1.2);txt(l+(Math.floor(t*2)%2?'▍':''),640,450,24,'#8f8',a,M);}
+ // scene 2: pipeline 7-16
+ if(t>=6.5&&t<16.5){const a=cl((t-6.5)/.6)*cl((16.5-t)/.6);
+  txt('制作流水线',640,110,40,'#fff',a);
+  const B=[[240,'#61dafb','Remotion','负责画面','▶'],[640,'#ffd43b','Python','负责配乐','♪'],[1040,'#ff6b6b','ffmpeg','合成成片','⚙']];
+  B.forEach((b,i)=>{const e=ez((t-7.5-i*1.2)/.8);box(b[0],330+(1-e)*40,240,150,b[1],a*e,b[2],b[3],b[4])});
+  [[360,520],[760,920]].forEach((p,i)=>{const e=ez((t-9-i*1.2)/1);x.globalAlpha=a;x.strokeStyle='#ccd';x.lineWidth=3;x.setLineDash([8,8]);x.lineDashOffset=-t*30;
+   x.beginPath();x.moveTo(p[0],330);x.lineTo(p[0]+(p[1]-p[0])*e,330);x.stroke();x.setLineDash([]);x.globalAlpha=1});
+  const e=ez((t-11.5)/1);txt('Remotion 调用 ffmpeg，把画面与配乐合成为最终影片',640,520,24,'#dde',a*e);
+  // waveform
+  x.globalAlpha=a*e;x.strokeStyle='#ffd43b';x.lineWidth=2;x.beginPath();
+  for(let i=0;i<=400;i++){const X=440+i,Y=600+Math.sin(i*.08+t*6)*Math.sin(i*.013+t)*22;i?x.lineTo(X,Y):x.moveTo(X,Y)}x.stroke();x.globalAlpha=1;}
+ // scene 3: list 16-28
+ if(t>=16&&t<28.5){const a=cl((t-16)/.6)*cl((28.5-t)/.6);
+  txt('Opus 5.5 列出的技术栈',640,80,36,'#fff',a);
+  items.forEach((it,i)=>{const lt=t-17-i*1.6,e=ez(lt/.6);if(lt<0)return;const Y=150+i*88;
+   x.globalAlpha=a*e;x.fillStyle='rgba(255,255,255,.05)';x.beginPath();x.roundRect(180+(1-e)*60,Y-34,920,72,12);x.fill();
+   x.fillStyle=it[3];x.fillRect(180+(1-e)*60,Y-34,6,72);x.globalAlpha=1;
+   txt(it[0],250,Y+8,24,it[3],a*e);
+   txt(typed(it[1],lt-.2,2),320,Y-2,28,'#fff',a*e,M,'left');
+   txt(typed(it[2],lt-.6,1.5),320,Y+26,17,'#9ab',a*e,F,'left');});}
+ // scene 4: outro
+ if(t>=28){const a=cl((t-28)/.8)*cl((DUR-t)/.6);
+  const p=cl((t-28.4)/2.5);
+  txt('成片导出中',640,300,44,'#fff',a);
+  x.globalAlpha=a;x.fillStyle='#223';x.fillRect(340,350,600,14);
+  const gg=x.createLinearGradient(340,0,940,0);gg.addColorStop(0,'#61dafb');gg.addColorStop(.5,'#ffd43b');gg.addColorStop(1,'#ff6b6b');
+  x.fillStyle=gg;x.fillRect(340,350,600*ez(p),14);x.globalAlpha=1;
+  txt(p<1?Math.floor(ez(p)*100)+'%':'✓ final.mp4 已完成',640,410,24,p<1?'#9ab':'#8f8',a,M);
+  txt('Remotion × Python × ffmpeg',640,480,22,'#778',a);}
+ requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script></body></html>

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>UNFINISHED 未完</title>
+<style>html,body{margin:0;background:#000;height:100%;overflow:hidden}
+canvas{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%)}</style></head>
+<body><canvas id="c" width="1280" height="720"></canvas>
+<script>
+window.DUR=60;
+const C=document.getElementById('c'),X=C.getContext('2d'),W=1280,H=720;
+function fit(){const s=Math.min(innerWidth/W,innerHeight/H);C.style.width=W*s+'px';C.style.height=H*s+'px'}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),OFF=parseFloat(q.get('t'))||0;let T0=null;
+function R(s){return()=>{s=(s*16807)%2147483647;return(s-1)/2147483646}}
+const cl=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),ss=(a,b,v)=>{v=cl((v-a)/(b-a));return v*v*(3-2*v)};
+// paper
+const P=document.createElement('canvas');P.width=W;P.height=H;{const p=P.getContext('2d'),r=R(7);
+p.fillStyle='#ece3cf';p.fillRect(0,0,W,H);
+for(let i=0;i<9000;i++){p.fillStyle=`rgba(${120+r()*60|0},${100+r()*40|0},70,${r()*.05})`;p.fillRect(r()*W,r()*H,r()*3+1,r()*30+1)}
+const g=p.createRadialGradient(W/2,H/2,200,W/2,H/2,800);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(60,40,20,.35)');p.fillStyle=g;p.fillRect(0,0,W,H)}
+// mountain ridges
+function ridge(seed,n,base,amp){const r=R(seed),pts=[];let h=0;for(let i=0;i<=n;i++){h=h*.6+(r()-.5)*amp;pts.push(base-Math.abs(h)-amp*.4*Math.sin(i*.7+seed))}return pts}
+const RG=[ridge(3,80,430,160),ridge(11,80,500,120),ridge(23,80,580,80)];
+function mount(i,cam,par,rev,a){const pts=RG[i],step=60,y0=[430,500,580][i];X.save();
+X.beginPath();X.rect(0,0,W*rev,H);X.clip();
+X.beginPath();X.moveTo(-200,H);for(let k=0;k<pts.length;k++){const x=k*step-((cam*par)%(step*40))-200;X.lineTo(x,pts[k])}X.lineTo(W+400,H);X.closePath();
+const g=X.createLinearGradient(0,y0-200,0,y0+150);g.addColorStop(0,`rgba(20,18,16,${a})`);g.addColorStop(1,'rgba(20,18,16,0)');X.fillStyle=g;X.fill();X.restore()}
+// brush stroke
+function brush(pts,w,p,col='16,14,12',a=.9){const N=pts.length-1,m=Math.floor(p*N*8),r=R(99);
+for(let i=0;i<m;i++){const u=i/(N*8),k=Math.min(N-1,Math.floor(u*N)),f=u*N-k,x=pts[k][0]+(pts[k+1][0]-pts[k][0])*f,y=pts[k][1]+(pts[k+1][1]-pts[k][1])*f,ww=w*(.35+Math.sin(Math.PI*cl(u*1.1))*.8);
+X.fillStyle=`rgba(${col},${a*(.5+r()*.5)})`;X.beginPath();X.ellipse(x+(r()-.5)*3,y+(r()-.5)*3,ww,ww*.7,u*3,0,7);X.fill()}}
+// ronin
+function ronin(x,y,s,ph,pose,ink,dir=1,a=1){X.save();X.translate(x,y);X.scale(s*dir,s);X.globalAlpha=a;const c=`rgba(${ink},${ink-2},${ink-4},.95)`;
+X.fillStyle=c;X.strokeStyle=c;X.lineCap='round';const sw=Math.sin(ph);
+X.lineWidth=9;X.beginPath();X.moveTo(-4,-40);X.lineTo(-4+sw*14,0);X.moveTo(4,-40);X.lineTo(4-sw*14,0);X.stroke();
+X.beginPath();X.moveTo(-14,-95);X.quadraticCurveTo(-26,-50,-22-sw*4,-30);X.lineTo(24+sw*6,-28);X.quadraticCurveTo(22,-60,14,-95);X.fill();
+X.beginPath();X.arc(0,-104,9,0,7);X.fill();
+X.beginPath();X.moveTo(-34,-104);X.quadraticCurveTo(0,-136,34,-104);X.quadraticCurveTo(0,-112,-34,-104);X.fill();
+X.lineWidth=3;X.beginPath();
+if(pose==='slash'){X.moveTo(10,-80);X.lineTo(80,-110)}else if(pose==='draw'){X.moveTo(-10,-60);X.lineTo(50,-70)}else{X.moveTo(-26,-48);X.lineTo(30,-64)}
+X.stroke();X.lineWidth=7;X.beginPath();X.moveTo(-10,-85);X.lineTo(pose==='walk'?-18-sw*8:20,-58);X.stroke();
+X.restore()}
+// particles
+const pr=R(42),RAIN=[...Array(260)].map(()=>[pr()*W,pr()*H,.6+pr()]),PET=[...Array(70)].map(()=>[pr()*W,pr()*H,pr()*6,pr()]);
+const ENS=[...Array(4)].map((_,i)=>({x:720+i*120,y:610,d:3.0+i*1.6}));
+function text(s,x,y,sz,a,col='#161210',font='serif'){X.globalAlpha=a;X.fillStyle=col;X.font=`${sz}px ${font}`;X.textAlign='center';X.fillText(s,x,y);X.globalAlpha=1}
+function seal(x,y,a){X.globalAlpha=a;X.fillStyle='#a8261c';X.fillRect(x,y,58,58);X.fillStyle='#ece3cf';X.font='bold 22px serif';X.textAlign='center';X.fillText('未',x+29,y+26);X.fillText('完',x+29,y+50);X.globalAlpha=1}
+function frame(now){if(T0===null)T0=now;const t=((now-T0)/1000+OFF)%DUR;
+X.setTransform(1,0,0,1,0,0);X.drawImage(P,0,0);
+// shake
+const sh=(t>32&&t<44)?Math.max(0,Math.sin(t*9)-.85)*30:0;X.translate((Math.random()-.5)*sh,(Math.random()-.5)*sh);
+const cam=t<20?0:t<44?(t-20)*90:2160+(t-44)*20;
+const rev=ss(1,12,t);
+// moon
+if(t>4){X.globalAlpha=ss(4,9,t)*(t>20&&t<44?.4:1);X.fillStyle='rgba(168,38,28,.75)';X.beginPath();X.arc(960,170,70,0,7);X.fill();X.globalAlpha=1}
+mount(0,cam,.15,rev,.35);mount(1,cam,.35,ss(3,14,t),.5);mount(2,cam,.7,ss(5,16,t),.7);
+// ground stroke
+brush([[-20,620],[400,612],[800,622],[1300,615]],10,ss(6,12,t),'16,14,12',.7);
+// bamboo
+for(let i=0;i<6;i++){const bx=((i*260-cam*1.3)%1560+1560)%1560-140,p=ss(7+i*.3,10+i*.3,t);
+brush([[bx,720],[bx+6,420],[bx+14,120]],5,p,'20,22,18',.8);
+for(let k=0;k<4;k++){const ly=200+k*80,dx=k%2?1:-1;brush([[bx+10,ly],[bx+10+dx*40,ly+20],[bx+10+dx*80,ly+10]],4,p,'20,22,18',.7)}}
+// title
+if(t<10){const a=ss(0,1.5,t)*(1-ss(8,10,t));brush([[560,230],[600,260],[590,330]],10,ss(.5,3,t));text('未完',640,360,120,a);text('UNFINISHED — The Unfinished Ronin',640,430,28,a*.8)}
+// ronin
+let rx,pose='walk',ph=t*7;
+if(t<20){rx=-80+ss(8,20,t)*560}else if(t<32){rx=480}else if(t<44){rx=480+Math.sin((t-32)*1.3)*90;pose=(t*2%1)<.35?'slash':'draw';ph=0}else{rx=560;pose='stand';ph=0}
+if(t>8)ronin(rx,620,1.3,ph,pose,22,1,ss(8,9,t));
+// enemies
+if(t>22&&t<46)ENS.forEach((e,i)=>{const lt=t-22,cut=12+i*2.5,ex=e.x-ss(0,10,lt)*220;
+if(lt<cut)ronin(ex,e.y,1.25,lt*6,'draw',70,-1,ss(i*.8,i*.8+2,lt)*.85);
+else{const d=lt-cut;for(let k=0;k<26;k++){const r=R(i*50+k);X.fillStyle=`rgba(20,16,14,${.7*(1-cl(d/3))})`;X.beginPath();X.arc(ex+(r()-.5)*40+(r()-.5)*d*160,e.y-60+(r()-.5)*60+d*d*40*r(),2+r()*10,0,7);X.fill()}
+// slash stroke
+brush([[ex-70,e.y-130],[ex,e.y-70],[ex+70,e.y-10]],7,ss(0,.25,d),'168,38,28',.85*(1-ss(.5,2,d)))}});
+// rain
+if(t>20&&t<46){const a=ss(20,23,t)*(1-ss(43,46,t));X.strokeStyle=`rgba(20,18,16,${.35*a})`;X.lineWidth=1.2;X.beginPath();
+RAIN.forEach(r=>{const y=(r[1]+t*900*r[2])%H,x=(r[0]-y*.2+W)%W;X.moveTo(x,y);X.lineTo(x-6,y+24)});X.stroke()}
+// petals
+if(t>44){const a=ss(44,47,t);PET.forEach(p=>{const y=(p[1]+t*40)%H,x=(p[0]+Math.sin(t+p[2])*40-t*30%W+W)%W;
+X.fillStyle=`rgba(190,70,80,${.6*a})`;X.beginPath();X.ellipse(x,y,5,3,t+p[2],0,7);X.fill()})}
+// captions
+if(t>12&&t<19)text('A path drawn one stroke at a time.',640,90,30,ss(12,13,t)*(1-ss(18,19,t)));
+if(t>23&&t<29)text('Ink remembers every blade.',640,90,30,ss(23,24,t)*(1-ss(28,29,t)));
+if(t>46&&t<53)text('The storm passes. The painting does not end.',640,90,30,ss(46,47,t)*(1-ss(52,53,t)));
+// enso unfinished
+if(t>52){const p=ss(53,58,t)*.88,pts=[];for(let i=0;i<=40;i++){const a=-1.9+i/40*Math.PI*2;pts.push([640+Math.cos(a)*190,330+Math.sin(a)*190])}
+X.fillStyle=`rgba(236,227,207,${ss(52,54,t)*.6})`;X.fillRect(0,0,W,H);brush(pts,18,p);
+text('未完',640,355,72,ss(56,58,t));text('UNFINISHED',640,570,26,ss(57,58.5,t));seal(860,450,ss(57.5,58.5,t))}
+X.setTransform(1,0,0,1,0,0);X.fillStyle=`rgba(0,0,0,${1-ss(0,.8,t)+ss(59.2,60,t)})`;X.fillRect(0,0,W,H);
+requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>

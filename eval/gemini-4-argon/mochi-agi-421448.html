@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>終電のホーム - ElevenLabs v4 Horror Showcase</title>
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #000; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #stage {
+    width: 1280px; height: 720px;
+    max-width: 100vw; max-height: 100vh;
+    aspect-ratio: 16 / 9;
+    box-shadow: 0 0 60px rgba(0,0,0,0.9);
+  }
+</style>
+</head>
+<body>
+<canvas id="stage" width="1280" height="720"></canvas>
+<script>
+const canvas = document.getElementById('stage');
+const ctx = canvas.getContext('2d');
+const W = 1280, H = 720;
+
+window.DUR = 32;
+const urlParams = new URLSearchParams(window.location.search);
+const tOffset = parseFloat(urlParams.get('t') || '0');
+
+const SERIF = '"Shippori Mincho B1", "Yu Mincho", "Hiragino Mincho ProN", "MS PMincho", serif';
+const SANS  = '"Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif';
+const MONO  = '"JetBrains Mono", "Consolas", monospace';
+
+// Deterministic PRNG
+function hash(n) {
+  let x = Math.sin(n * 127.1 + 311.7) * 43758.5453123;
+  return x - Math.floor(x);
+}
+
+// Dust motes
+const dusts = Array.from({length: 65}, (_, i) => ({
+  x: hash(i * 3) * W,
+  y: hash(i * 3 + 1) * H,
+  z: 0.25 + hash(i * 3 + 2) * 0.75,
+  r: 0.7 + hash(i * 7) * 1.8
+}));
+
+// Pre-rendered film grain pattern
+const noiseCanvas = document.createElement('canvas');
+noiseCanvas.width = 160; noiseCanvas.height = 160;
+const nctx = noiseCanvas.getContext('2d');
+const nimg = nctx.createImageData(160, 160);
+for (let i = 0; i < nimg.data.length; i += 4) {
+  const v = Math.floor(hash(i) * 255);
+  nimg.data[i] = v; nimg.data[i+1] = v; nimg.data[i+2] = v; nimg.data[i+3] = 20;
+}
+nctx.putImageData(nimg, 0, 0);
+
+// 9 Stills metadata
+const SHOTS = [
+  { id: 1, t0: 0.0,  t1: 3.1,  title: 'STILL #01 : 午前0時42分・終電後のホーム' },
+  { id: 2, t0: 3.1,  t1: 6.2,  title: 'STILL #02 : 黄色い点字ブロックの先に立つ背中' },
+  { id: 3, t0: 6.2,  t1: 9.2,  title: 'STILL #03 : 蛍光灯の明滅と遠ざかる背中' },
+  { id: 4, t0: 9.2,  t1: 12.6, title: 'STILL #04 : 濡れた黒髪と白い首筋' },
+  { id: 5, t0: 12.6, t1: 16.0, title: 'STILL #05 : マクロ・唇の端のわずかな笑み' },
+  { id: 6, t0: 16.0, t1: 19.2, title: 'STILL #06 : 非常停止ボタンと歪む空間' },
+  { id: 7, t0: 19.2, t1: 22.5, title: 'STILL #07 : 肩越しの黒い線路・近づく影' },
+  { id: 8, t0: 22.5, t1: 25.6, title: 'STILL #08 : 耳元の吐息・唇のクローズアップ' },
+  { id: 9, t0: 25.6, t1: 27.6, title: 'STILL #09 : 無人のホーム・残された気配' }
+];
+
+// Dialogue & Acting tags timeline
+const SUBS = [
+  { speaker: 'M', t0: 0.6,  t1: 3.0,  shake: 0.0, tag: '[nervous]',
+    text: 'あの……すみません、終電……もう出ちゃいました？',
+    raw:  'あの…終電、もう出ちゃいました？' },
+  { speaker: 'W', t0: 3.3,  t1: 6.1,  shake: 0.0, tag: '[whispering]',
+    text: '……まだ、来ますよ',
+    raw:  'まだ来ますよ' },
+  { speaker: 'M', t0: 6.4,  t1: 9.0,  shake: 0.15, tag: '[confused, breathing]',
+    text: 'え……でも電光掲示板、もう消えてますけど……',
+    raw:  'え…でも掲示板消えてますよ' },
+  { speaker: 'W', t0: 9.4,  t1: 12.4, shake: 0.0, tag: '[laughs softly] [whispering]',
+    text: '……ふふ……音が、するでしょう……？',
+    raw:  'ふふ、音がするでしょう？' },
+  { speaker: 'M', t0: 12.8, t1: 15.8, shake: 0.45, tag: '[voice trembling]',
+    text: 'なに、その声……あなた、顔……なんでずっと後ろ向いて……',
+    raw:  'なにその声…なんで後ろ向いて…' },
+  { speaker: 'W', t0: 16.2, t1: 19.0, shake: 0.0, tag: '[sighs] [low breathy whisper]',
+    text: '……線路の、下から……ずっと……',
+    raw:  '線路の下から、ずっと' },
+  { speaker: 'M', t0: 19.4, t1: 22.3, shake: 1.0, tag: '[screaming in panic]',
+    text: '近づくな！！　うわあああああっ！！',
+    raw:  '近づくな！うわあああっ！' },
+  { speaker: 'W', t0: 22.7, t1: 26.8, shake: 0.0, tag: '[whispering close to mic]',
+    text: '……つぎは、あなたの番……',
+    raw:  'つぎは、あなたの番' }
+];
+
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+// Draw Woman's Back (Strictly no face, only dark hair, neck nape, dark coat)
+function drawWomanBack(x, y, scale, t, headTilt = 0) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+
+  // Coat / Shoulders
+  const coatG = ctx.createLinearGradient(0, -40, 0, 320);
+  coatG.addColorStop(0, '#12171a');
+  coatG.addColorStop(1, '#050709');
+  ctx.fillStyle = coatG;
+  ctx.beginPath();
+  ctx.moveTo(-115, 320);
+  ctx.quadraticCurveTo(-105, 60, -78, 25);
+  ctx.quadraticCurveTo(0, 8, 78, 25);
+  ctx.quadraticCurveTo(105, 60, 115, 320);
+  ctx.closePath();
+  ctx.fill();
+
+  // Subtle rim light on shoulders
+  ctx.strokeStyle = 'rgba(130, 210, 200, 0.22)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-102, 180);
+  ctx.quadraticCurveTo(-96, 55, -75, 25);
+  ctx.moveTo(75, 25);
+  ctx.quadraticCurveTo(96, 55, 102, 180);
+  ctx.stroke();
+
+  // Pale neck nape (slightly visible between hair strands)
+  ctx.save();
+  ctx.rotate(headTilt);
+  ctx.fillStyle = '#8b9997';
+  ctx.fillRect(-16, -24, 32, 52);
+  ctx.fillStyle = 'rgba(10,16,18,0.65)';
+  ctx.fillRect(-5, -24, 10, 52); // spine shadow
+
+  // Back of head & long damp black hair
+  const hairG = ctx.createRadialGradient(0, -75, 10, 0, -50, 140);
+  hairG.addColorStop(0, '#111619');
+  hairG.addColorStop(0.5, '#070a0c');
+  hairG.addColorStop(1, '#020304');
+  ctx.fillStyle = hairG;
+  ctx.beginPath();
+  ctx.arc(0, -75, 58, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Long hair strands draping down the back
+  for (let i = -18; i <= 18; i++) {
+    const sway = Math.sin(t * 1.4 + i * 0.5) * 4;
+    const sx = i * 3.1;
+    const len = 135 + hash(i + 50) * 65 - Math.abs(i) * 2.2;
+    ctx.strokeStyle = (i % 4 === 0) ? 'rgba(120, 180, 175, 0.12)' : '#050709';
+    ctx.lineWidth = 3.2;
+    ctx.beginPath();
+    ctx.moveTo(sx * 0.85, -95);
+    ctx.bezierCurveTo(sx * 1.05, -20, sx * 1.15 + sway * 0.5, 45, sx * 1.25 + sway, len);
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.restore();
+}
+
+// Draw Macro Lips (Strictly lower face from nose bridge shadow down, no eyes)
+function drawMacroLips(x, y, scale, t, smile = 0, open = 0) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(scale, scale);
+
+  // Lower jaw & pale skin
+  const skinG = ctx.createRadialGradient(0, 10, 20, 0, 0, 250);
+  skinG.addColorStop(0, '#9ba8a6');
+  skinG.addColorStop(0.55, '#596666');
+  skinG.addColorStop(0.85, '#1b2426');
+  skinG.addColorStop(1, '#040708');
+  ctx.fillStyle = skinG;
+  ctx.beginPath();
+  ctx.moveTo(-210, -180);
+  ctx.quadraticCurveTo(-185, 65, -95, 165);
+  ctx.quadraticCurveTo(0, 215, 95, 165);
+  ctx.quadraticCurveTo(185, 65, 210, -180);
+  ctx.closePath();
+  ctx.fill();
+
+  // Heavy top shadow (concealing upper face completely)
+  const topShad = ctx.createLinearGradient(0, -185, 0, -25);
+  topShad.addColorStop(0, '#020405');
+  topShad.addColorStop(0.65, 'rgba(3,6,8,0.92)');
+  topShad.addColorStop(1, 'rgba(3,6,8,0)');
+  ctx.fillStyle = topShad;
+  ctx.fillRect(-230, -190, 460, 175);
+
+  // Philtrum (dimple above lips)
+  ctx.fillStyle = 'rgba(20, 30, 32, 0.35)';
+  ctx.beginPath();
+  ctx.moveTo(-12, -55);
+  ctx.quadraticCurveTo(0, -45, 12, -55);
+  ctx.lineTo(16, -12);
+  ctx.quadraticCurveTo(0, -4, -16, -12);
+  ctx.closePath();
+  ctx.fill();
+
+  const cy = -18 * smile; // corner lift
+  const gap = 16 * open;  // mouth parting
+
+  // Dark mouth interior
+  ctx.fillStyle = '#050204';
+  ctx.beginPath();
+  ctx.moveTo(-88, cy);
+  ctx.quadraticCurveTo(0, 4 - gap * 0.3, 88, cy);
+  ctx.quadraticCurveTo(0, 12 + gap * 1.4, -88, cy);
+  ctx.closePath();
+  ctx.fill();
+
+  // Upper lip
+  const upG = ctx.createLinearGradient(0, -26, 0, 8);
+  upG.addColorStop(0, '#3e1e26');
+  upG.addColorStop(1, '#1d0b10');
+  ctx.fillStyle = upG;
+  ctx.beginPath();
+  ctx.moveTo(-90, cy);
+  ctx.quadraticCurveTo(-45, -24, -14, -18);
+  ctx.quadraticCurveTo(0, -9, 14, -18);
+  ctx.quadraticCurveTo(45, -24, 90, cy);
+  ctx.quadraticCurveTo(40, 4 - gap * 0.25, 0, 2 - gap * 0.25);
+  ctx.quadraticCurveTo(-40, 4 - gap * 0.25, -90, cy);
+  ctx.closePath();
+  ctx.fill();
+
+  // Lower lip
+  const lowG = ctx.createLinearGradient(0, 0, 0, 48 + gap);
+  lowG.addColorStop(0, '#2a1118');
+  lowG.addColorStop(0.45, '#542630');
+  lowG.addColorStop(1, '#1c0c10');
+  ctx.fillStyle = lowG;
+  ctx.beginPath();
+  ctx.moveTo(-90, cy);
+  ctx.quadraticCurveTo(0, 10 + gap * 1.2, 90, cy);
+  ctx.quadraticCurveTo(52, 46 + gap * 1.3, 0, 48 + gap * 1.3);
+  ctx.quadraticCurveTo(-52, 46 + gap * 1.3, -90, cy);
+  ctx.closePath();
+  ctx.fill();
+
+  // Glossy specular highlights on lower lip
+  ctx.strokeStyle = 'rgba(215, 240, 240, 0.38)';
+  ctx.lineWidth = 2.8;
+  ctx.beginPath();
+  ctx.moveTo(-34, 22 + gap * 0.85);
+  ctx.quadraticCurveTo(0, 29 + gap * 0.85, 34, 22 + gap * 0.85);
+  ctx.stroke();
+
+  // Cold breath mist puffing out when speaking
+  if (open > 0.05) {
+    const mistAlpha = open * 0.22;
+    const mistG = ctx.createRadialGradient(20 + Math.sin(t * 2) * 20, 35, 5, 40, 60, 160);
+    mistG.addColorStop(0, `rgba(180, 225, 225, ${mistAlpha})`);
+    mistG.addColorStop(1, 'rgba(180, 225, 225, 0)');
+    ctx.fillStyle = mistG;
+    ctx.beginPath();
+    ctx.arc(40, 55, 160, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Stray wet hair strands across cheek/chin
+  ctx.strokeStyle = '#05080a';
+  ctx.lineWidth = 3.5;
+  for (let i = 0; i < 6; i++) {
+    const side = i < 3 ? -1 : 1;
+    const ox = side * (120 + (i % 3) * 28);
+    ctx.beginPath();
+    ctx.moveTo(ox, -180);
+    ctx.bezierCurveTo(ox - side * 30, -30, ox - side * 55, 80, ox - side * 20, 220);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+// Render 2.5D Parallax Station Platform Scene for Shots 1..9
+function renderScene(shotId, localP, t, uiMode) {
+  // Base dark teal atmosphere
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#03080a');
+  bg.addColorStop(0.55, '#08181b');
+  bg.addColorStop(1, '#020506');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  // Camera movement (Three.js depth parallax simulation)
+  const camX = (localP - 0.5) * (shotId % 2 === 0 ? -46 : 46);
+  const camY = (localP - 0.5) * 18;
+  const zoom = 1.0 + localP * (shotId === 6 || shotId === 7 ? 0.22 : 0.11);
+  const roll = (shotId === 6) ? (localP - 0.3) * 0.08 : (shotId === 7 ? Math.sin(t * 18) * 0.012 : 0);
+
+  // Fluorescent flicker
+  const flicker = (Math.sin(t * 37) * Math.sin(t * 13) > 0.78) ? 0.35 : 1.0;
+
+  ctx.save();
+  ctx.translate(W / 2, H / 2);
+  ctx.rotate(roll);
+  ctx.scale(zoom, zoom);
+  ctx.translate(-W / 2, -H / 2);
+
+  // --- LAYER 0: Far background (Depth 0.2) ---
+  ctx.save();
+  ctx.translate(camX * 0.2, camY * 0.2);
+
+  // Tunnel wall tiles
+  ctx.strokeStyle = 'rgba(40, 85, 90, 0.12)';
+  ctx.lineWidth = 1;
+  for (let gx = -100; gx < W + 100; gx += 48) {
+    ctx.beginPath(); ctx.moveTo(gx, 80); ctx.lineTo(gx, 520); ctx.stroke();
+  }
+  for (let gy = 80; gy < 520; gy += 28) {
+    ctx.beginPath(); ctx.moveTo(-100, gy); ctx.lineTo(W + 100, gy); ctx.stroke();
+  }
+
+  // Ceiling perspective beams & fluorescent tubes
+  for (let i = 0; i < 5; i++) {
+    const ly = 70 + i * 32;
+    const lw = 280 - i * 38;
+    const lx = W * 0.5 - lw * 0.5 + (i - 2) * 65;
+    const glow = ctx.createRadialGradient(lx + lw/2, ly, 4, lx + lw/2, ly, lw * 0.9);
+    glow.addColorStop(0, `rgba(175, 245, 235, ${0.28 * flicker})`);
+    glow.addColorStop(1, 'rgba(20, 70, 70, 0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(lx - lw, ly - 60, lw * 3, 140);
+
+    ctx.fillStyle = `rgba(215, 255, 250, ${0.85 * flicker})`;
+    ctx.fillRect(lx, ly, lw, 5);
+  }
+  ctx.restore();
+
+  // --- LAYER 1: Midground Platform & Pillars (Depth 0.55) ---
+  ctx.save();
+  ctx.translate(camX * 0.55, camY * 0.55);
+
+  if (shotId !== 5 && shotId !== 8) {
+    // Platform floor & yellow tactile paving blocks
+    const floorG = ctx.createLinearGradient(0, 440, 0, H + 80);
+    floorG.addColorStop(0, '#0a1619');
+    floorG.addColorStop(1, '#04090b');
+    ctx.fillStyle = floorG;
+    ctx.beginPath();
+    ctx.moveTo(-120, 460);
+    ctx.lineTo(W + 120, 440);
+    ctx.lineTo(W + 120, H + 100);
+    ctx.lineTo(-120, H + 100);
+    ctx.closePath();
+    ctx.fill();
+
+    // Yellow tactile line (点字ブロック)
+    ctx.save();
+    ctx.fillStyle = `rgba(195, 155, 30, ${0.55 * flicker})`;
+    ctx.beginPath();
+    ctx.moveTo(140, H + 60);
+    ctx.lineTo(485, 445);
+    ctx.lineTo(512, 445);
+    ctx.lineTo(215, H + 60);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // Dark railway tracks on the left
+    ctx.fillStyle = '#020405';
+    ctx.beginPath();
+    ctx.moveTo(-120, 450);
+    ctx.lineTo(445, 445);
+    ctx.lineTo(95, H + 60);
+    ctx.lineTo(-120, H + 60);
+    ctx.closePath();
+    ctx.fill();
+
+    // Steel rails glinting
+    ctx.strokeStyle = 'rgba(110, 160, 165, 0.25)';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(-40, H + 40); ctx.lineTo(395, 445);
+    ctx.moveTo(45, H + 40);  ctx.lineTo(430, 445);
+    ctx.stroke();
+
+    // Station Pillars
+    const pillars = [240, 690, 1060];
+    pillars.forEach((px, idx) => {
+      const pw = 54 + idx * 12;
+      ctx.fillStyle = '#091316';
+      ctx.fillRect(px, 60, pw, 430);
+      ctx.fillStyle = 'rgba(130, 200, 195, 0.1)';
+      ctx.fillRect(px + pw - 4, 60, 4, 430);
+      if (idx === 1 || shotId === 6) {
+        // Emergency stop button box
+        ctx.fillStyle = '#182224';
+        ctx.fillRect(px + 12, 260, 30, 48);
+        const blink = (Math.sin(t * 10) > 0) ? 1 : 0.35;
+        ctx.fillStyle = `rgba(255, 35, 35, ${blink})`;
+        ctx.beginPath();
+        ctx.arc(px + 27, 284, 7, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+
+    // Departed Last Train LED Board (turned off / glitching)
+    ctx.fillStyle = '#050809';
+    ctx.strokeStyle = '#1b2b2e';
+    ctx.lineWidth = 2;
+    ctx.fillRect(460, 115, 290, 68);
+    ctx.strokeRect(460, 115, 290, 68);
+    if (shotId <= 3) {
+      ctx.font = `600 18px ${SANS}`;
+      ctx.fillStyle = `rgba(255, 70, 40, ${0.75 * flicker})`;
+      ctx.fillText('本日の運行は終了しました', 485, 155);
+    }
+  }
+  ctx.restore();
+
+  // --- LAYER 2: Foreground Subject (Depth 1.0 - 1.35) ---
+  ctx.save();
+  ctx.translate(camX * 1.15, camY * 1.15);
+
+  if (shotId === 1) {
+    // Distant small silhouette of woman's back
+    drawWomanBack(525, 385, 0.38, t);
+  } else if (shotId === 2) {
+    // Medium shot of woman's back near yellow line
+    drawWomanBack(580, 350, 0.78, t);
+  } else if (shotId === 3) {
+    // Slightly closer, head tilting unnaturally
+    drawWomanBack(640, 340, 0.95, t, 0.08);
+  } else if (shotId === 4) {
+    // Close-up of back of head & damp hair & pale nape
+    drawWomanBack(640, 420, 1.85, t, -0.06);
+  } else if (shotId === 5) {
+    // Macro shot #1: Lower face & lips smiling softly
+    const smile = clamp((localP - 0.15) * 1.3, 0, 1);
+    const talk = (Math.sin(t * 14) * 0.5 + 0.5) * 0.35;
+    drawMacroLips(640, 360, 1.55, t, smile, talk);
+  } else if (shotId === 6) {
+    // Dutch angle panic shot: Woman's back much closer, shadowy tendrils
+    drawWomanBack(590, 355, 1.3, t, 0.14);
+  } else if (shotId === 7) {
+    // Over-the-shoulder right next to the man, dark tracks ahead
+    drawWomanBack(480, 390, 2.25, t, -0.12);
+  } else if (shotId === 8) {
+    // Extreme macro shot #2: Lips right against the mic whispering
+    const talk = (Math.sin(t * 11) * 0.5 + 0.5) * 0.65;
+    drawMacroLips(640, 345, 2.15, t, 0.85, talk);
+  } else if (shotId === 9) {
+    // Empty platform, only lingering cold mist where she stood
+    const g = ctx.createRadialGradient(580, 380, 10, 580, 380, 180);
+    g.addColorStop(0, 'rgba(160, 220, 220, 0.16)');
+    g.addColorStop(1, 'rgba(160, 220, 220, 0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(580, 380, 180, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+
+  // --- LAYER 3: Three.js Depth Wireframe & Dust Particles (Depth 1.4) ---
+  ctx.save();
+  ctx.translate(camX * 1.4, camY * 1.4);
+
+  // Subtle 2.5D depth-mesh overlay during technical breakdown or transitions
+  const meshAlpha = uiMode ? 0.28 : (localP < 0.12 ? (0.12 - localP) * 1.6 : 0);
+  if (meshAlpha > 0.01) {
+    ctx.strokeStyle = `rgba(80, 230, 210, ${meshAlpha})`;
+    ctx.lineWidth = 1;
+    for (let y = 140; y <= 600; y += 46) {
+      ctx.beginPath();
+      for (let x = 120; x <= 1160; x += 46) {
+        const dz = Math.sin(x * 0.01 + t * 2) * 12;
+        if (x === 120) ctx.moveTo(x, y + dz);
+        else ctx.lineTo(x, y + dz);
+      }
+      ctx.stroke();
+    }
+  }
+
+  // Floating dust motes
+  dusts.forEach(d => {
+    const dx = (d.x + t * 12 * d.z) % W;
+    const dy = (d.y + Math.sin(t + d.x) * 15) % H;
+    ctx.fillStyle = `rgba(185, 235, 230, ${0.15 + d.z * 0.2})`;
+    ctx.beginPath();
+    ctx.arc(dx, dy, d.r, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
+
+  ctx.restore(); // end camera transform
+
+  // Cinematic Vignette
+  const vig = ctx.createRadialGradient(W/2, H/2, H*0.28, W/2, H/2, W*0.65);
+  vig.addColorStop(0, 'rgba(0,0,0,0)');
+  vig.addColorStop(1, 'rgba(0,0,0,0.88)');
+  ctx.fillStyle = vig;
+  ctx.fillRect(0, 0, W, H);
+}
+
+// Draw Subtitles: Woman = Vertical Mincho 1 char at whisper speed; Man = Horizontal Mincho shaking when screaming
+function renderSubtitles(t) {
+  const active = SUBS.find(s => t >= s.t0 && t <= s.t1);
+  if (!active) return;
+
+  const progress = clamp((t - active.t0) / (active.t1 - active.t0), 0, 1);
+
+  if (active.speaker === 'W') {
+    // Woman: Vertical writing (縦書き), top-right, 1 character at a time at whisper speed
+    const chars = Array.from(active.text);
+    const revealDuration = (active.t1 - active.t0) * 0.78;
+    const charFloat = ((t - active.t0) / revealDuration) * chars.length;
+    const visibleCount = Math.min(chars.length, Math.floor(charFloat) + 1);
+
+    const startX = 1105;
+    const startY = 125;
+    const lineStep = 34;
+
+    // Subtle dark backing for readability
+    const backG = ctx.createRadialGradient(startX, startY + 180, 10, startX, startY + 180, 220);
+    backG.addColorStop(0, 'rgba(0, 0, 0, 0.72)');
+    backG.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = backG;
+    ctx.fillRect(startX - 120, startY - 40, 240, 460);
+
+    ctx.save();
+    ctx.font = `600 28px ${SERIF}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    for (let i = 0; i < visibleCount; i++) {
+      const ch = chars[i];
+      const charAlpha = (i === visibleCount - 1) ? clamp(charFloat - i, 0.15, 1) : 1;
+      const breathDrift = Math.sin(t * 2.5 + i * 0.7) * 1.8;
+      const cx = startX + breathDrift;
+      const cy = startY + i * lineStep;
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      // Rotate prolonged sound mark or ellipsis for vertical Japanese typography
+      if (ch === '…' || ch === 'ー' || ch === '・') {
+        ctx.rotate(Math.PI / 2);
+      }
+      ctx.shadowColor = 'rgba(160, 240, 235, 0.65)';
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = `rgba(232, 245, 245, ${charAlpha * 0.94})`;
+      ctx.fillText(ch, 0, 0);
+      ctx.restore();
+    }
+    ctx.restore();
+
+  } else {
+    // Man: Horizontal writing (横書き), bottom center, trembles violently as shake increases
+    const chars = Array.from(active.text);
+    const amp = active.shake * 13.5; // up to 13.5px shake when screaming
+
+    // Bottom gradient backing
+    const subG = ctx.createLinearGradient(0, H - 150, 0, H);
+    subG.addColorStop(0, 'rgba(0,0,0,0)');
+    subG.addColorStop(1, 'rgba(0,0,0,0.82)');
+    ctx.fillStyle = subG;
+    ctx.fillRect(0, H - 150, W, 150);
+
+    ctx.save();
+    const fontSize = active.shake > 0.6 ? 34 : 28;
+    ctx.font = `600 ${fontSize}px ${SERIF}`;
+    ctx.textBaseline = 'middle';
+
+    // Measure total width for centering
+    const charWidths = chars.map(c => ctx.measureText(c).width);
+    const totalW = charWidths.reduce((a, b) => a + b, 0);
+    let curX = (W - totalW) / 2;
+    const baseY = H - 72;
+
+    chars.forEach((ch, idx) => {
+      const jx = (hash(idx * 19 + Math.floor(t * 48)) - 0.5) * 2 * amp;
+      const jy = (hash(idx * 37 + Math.floor(t * 48)) - 0.5) * 2 * amp;
+
+      ctx.save();
+      ctx.translate(curX + charWidths[idx] / 2 + jx, baseY + jy);
+      if (active.shake > 0.5) {
+        ctx.rotate((hash(idx * 11 + Math.floor(t * 40)) - 0.5) * 0.18 * active.shake);
+        ctx.shadowColor = 'rgba(255, 45, 45, 0.8)';
+        ctx.shadowBlur = 14;
+        ctx.fillStyle = '#fff0f0';
+      } else {
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.95)';
+        ctx.shadowBlur = 8;
+        ctx.fillStyle = '#e8ecec';
+      }
+      ctx.textAlign = 'center';
+      ctx.fillText(ch, 0, 0);
+      ctx.restore();
+
+      curX += charWidths[idx];
+    });
+    ctx.restore();
+  }
+}
+
+// Top-left HUD: ElevenLabs v4 Single-Pass Dialogue & Director Adjustments
+function renderDirectorHUD(t, shot) {
+  const active = SUBS.find(s => t >= s.t0 && t <= s.t1);
+
+  ctx.save();
+  // Glassmorphic HUD card
+  ctx.fillStyle = 'rgba(6, 12, 15, 0.82)';
+  ctx.strokeStyle = 'rgba(90, 180, 175, 0.35)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(28, 24, 540, 176, 8);
+  ctx.fill();
+  ctx.stroke();
+
+  // Header badge
+  ctx.fillStyle = '#143336';
+  ctx.beginPath();
+  ctx.roundRect(42, 36, 238, 24, 4);
+  ctx.fill();
+  ctx.font = `700 12px ${MONO}`;
+  ctx.fillStyle = '#68f0df';
+  ctx.fillText('ElevenLabs v4 • 2人の掛け合い1回生成', 52, 52);
+
+  // Current Still & 2.5D Depth indicator
+  ctx.font = `600 12px ${SANS}`;
+  ctx.fillStyle = '#9ab8b8';
+  ctx.fillText(shot ? shot.title : 'STILL #09 : 余韻', 292, 52);
+
+  // Before -> After prompt comparison
+  ctx.font = `500 12px ${SANS}`;
+  ctx.fillStyle = '#758a8a';
+  ctx.fillText('初期生成 (怖くない): 台詞のみ / stability 0.50', 44, 80);
+
+  // Strike-through line on initial setting
+  ctx.strokeStyle = 'rgba(255, 90, 90, 0.6)';
+  ctx.beginPath(); ctx.moveTo(44, 76); ctx.lineTo(310, 76); ctx.stroke();
+
+  // Updated horror tuning
+  ctx.fillStyle = '#e2f4f2';
+  ctx.fillText('改善設定: 英語で演技指示を追加 / stability 0.5 → 0.3 / 息の多い低い声(3人比較)', 44, 102);
+
+  // Stability slider visualization (0.5 -> 0.3 animated)
+  const stabX = 44, stabY = 114, stabW = 190;
+  ctx.fillStyle = '#1c2c2e';
+  ctx.fillRect(stabX, stabY, stabW, 6);
+  const pulse = 0.30 + (active && active.speaker === 'M' && active.shake > 0.5 ? -0.05 : 0);
+  ctx.fillStyle = '#ff5a5a';
+  ctx.fillRect(stabX, stabY, stabW * pulse, 6);
+  // Ghost marker at 0.5
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.fillRect(stabX + stabW * 0.5, stabY - 3, 2, 12);
+  ctx.font = `600 11px ${MONO}`;
+  ctx.fillStyle = '#ff8888';
+  ctx.fillText('stability: 0.30 (0.50→0.30)', stabX + stabW + 10, stabY + 7);
+
+  // Active Prompt Tag & Dual Waveform
+  const tagText = active ? `${active.speaker === 'W' ? '女(小声・低音)' : '男'} : ${active.tag} "${active.raw}"` : '環境音 (終電後のホーム・蛍光灯ノイズ)';
+  ctx.font = `600 13px ${MONO}`;
+  ctx.fillStyle = active && active.speaker === 'W' ? '#80ffe8' : (active ? '#ffb870' : '#7f9999');
+  ctx.fillText(tagText, 44, 146);
+
+  // Audio waveform bars
+  const waveY = 175;
+  for (let i = 0; i < 64; i++) {
+    const wx = 44 + i * 7.8;
+    let amp = 3;
+    if (active) {
+      const base = active.speaker === 'W' ? 8 : (12 + active.shake * 18);
+      amp = 2 + Math.abs(Math.sin(t * 24 + i * 0.65) * Math.cos(t * 9 - i * 0.3)) * base;
+    } else {
+      amp = 2 + Math.sin(t * 8 + i) * 1.5;
+    }
+    ctx.fillStyle = active && active.speaker === 'W' ? 'rgba(110, 245, 225, 0.85)' : (active && active.shake > 0.5 ? '#ff4444' : '#58b8c8');
+    ctx.fillRect(wx, waveY - amp / 2, 4.5, amp);
+  }
+
+  // 9-Still progress strip at bottom of HUD
+  for (let s = 1; s <= 9; s++) {
+    const bx = 385 + (s - 1) * 18;
+    const isCur = shot && shot.id === s;
+    ctx.fillStyle = isCur ? '#68f0df' : 'rgba(120, 170, 170, 0.25)';
+    ctx.fillRect(bx, 112, 14, 8);
+  }
+  ctx.font = `500 10px ${MONO}`;
+  ctx.fillStyle = '#8cb0b0';
+  ctx.fillText('静止画9枚 + Three.js奥行き (動画AIなし)', 385, 132);
+
+  ctx.restore();
+}
+
+// Ending Production Pipeline & Tool Breakdown Card (27.2s - 32.0s)
+function renderToolBreakdown(t) {
+  const p = clamp((t - 27.0) / 0.8, 0, 1);
+  if (p <= 0) return;
+
+  ctx.save();
+  ctx.fillStyle = `rgba(3, 7, 9, ${0.92 * p})`;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.globalAlpha = p;
+
+  // Title header
+  ctx.font = `600 28px ${SERIF}`;
+  ctx.fillStyle = '#e8f4f2';
+  ctx.fillText('終電のホーム — 制作パイプラインと演出仕様', 76, 68);
+
+  ctx.font = `500 14px ${SANS}`;
+  ctx.fillStyle = '#7ec8c0';
+  ctx.fillText('動画生成AIなし・静止画9枚の奥行きパララックスと ElevenLabs v4 掛け合い音声による短編ホラー', 76, 98);
+
+  // Left Column: 9 Stills Grid Thumbnail Preview
+  ctx.fillStyle = 'rgba(12, 24, 28, 0.85)';
+  ctx.strokeStyle = 'rgba(90, 180, 175, 0.35)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(76, 122, 440, 530, 8);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.font = `600 15px ${SANS}`;
+  ctx.fillStyle = '#d0ecea';
+  ctx.fillText('■ 演出ポイント（声・画・字幕の設計）', 98, 154);
+
+  const rules = [
+    ['声の生成', 'ElevenLabs v4 で男女2人の掛け合いを1回で生成'],
+    ['演技の改善', '台詞途中に [whispering] [laughs softly] 等を英語で指示'],
+    ['パラメータ', 'stability 0.5 → 0.3 に下げて感情の揺らぎと恐怖感を増幅'],
+    ['女の声質', '3人を聞き比べ、息の多い低い声を選択（最後まで小声）'],
+    ['視覚制限', '女は顔を一切出さず「背中」と「唇のアップ」のみで構成'],
+    ['字幕仕様', 'しっぽり明朝 B1 / 女＝縦書き1字ずつ / 男＝横書きで叫ぶほど震える']
+  ];
+
+  rules.forEach((r, i) => {
+    const ry = 188 + i * 44;
+    ctx.fillStyle = 'rgba(40, 95, 95, 0.35)';
+    ctx.beginPath(); ctx.roundRect(98, ry - 16, 86, 24, 4); ctx.fill();
+    ctx.font = `600 12px ${SANS}`;
+    ctx.fillStyle = '#78f0e0';
+    ctx.fillText(r[0], 108, ry);
+
+    ctx.font = `400 13px ${SANS}`;
+    ctx.fillStyle = '#dce8e8';
+    ctx.fillText(r[1], 196, ry);
+  });
+
+  // Mini 3x3 grid representing the 9 Codex stills + depth map
+  ctx.font = `600 13px ${MONO}`;
+  ctx.fillStyle = '#8ab8b8';
+  ctx.fillText('CODEX 9 STILLS × THREE.JS Z-DEPTH PARALLAX', 98, 468);
+  for (let i = 0; i < 9; i++) {
+    const gx = 98 + (i % 3) * 134;
+    const gy = 482 + Math.floor(i / 3) * 52;
+    ctx.fillStyle = '#081317';
+    ctx.strokeStyle = 'rgba(100, 210, 200, 0.4)';
+    ctx.fillRect(gx, gy, 122, 42);
+    ctx.strokeRect(gx, gy, 122, 42);
+    ctx.font = `600 11px ${MONO}`;
+    ctx.fillStyle = '#68e8d8';
+    ctx.fillText(`STILL #0${i+1}`, gx + 10, gy + 18);
+    ctx.font = `400 10px ${SANS}`;
+    ctx.fillStyle = '#8aa8a8';
+    ctx.fillText(i === 4 || i === 7 ? '唇マクロ + Depth' : '背中・ホーム + Depth', gx + 10, gy + 34);
+  }
+
+  // Right Column: 7 Tools Used
+  const tools = [
+    ['Claude Code (Opus 5.5)', '企画、演出、動きと字幕のコード、仕上がりのチェック'],
+    ['ElevenLabs v4', '2人の声の掛け合い（1回生成）と、ホームの環境音'],
+    ['Codex の画像生成', '終電後のホーム・背中・唇の静止画 9枚'],
+    ['Three.js', '静止画9枚に奥行き(Depth)をつけてカメラを動かす'],
+    ['しっぽり明朝 B1', '字幕の書体（女：縦書き小声速さ / 男：横書き振動）'],
+    ['Playwright', 'ヘッドレスブラウザで1コマずつフレーム書き出し'],
+    ['ffmpeg', '連番フレームと音声を結合し MP4 動画を書き出し']
+  ];
+
+  ctx.fillStyle = 'rgba(12, 24, 28, 0.85)';
+  ctx.strokeStyle = 'rgba(90, 180, 175, 0.35)';
+  ctx.beginPath();
+  ctx.roundRect(540, 122, 664, 530, 8);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.font = `600 15px ${SANS}`;
+  ctx.fillStyle = '#d0ecea';
+  ctx.fillText('■ 使用ツール一覧', 566, 154);
+
+  tools.forEach((tl, idx) => {
+    const ty = 182 + idx * 66;
+    const cardAppear = clamp((t - 27.2 - idx * 0.12) * 3, 0, 1);
+    ctx.save();
+    ctx.globalAlpha = p * cardAppear;
+    ctx.fillStyle = 'rgba(20, 42, 46, 0.65)';
+    ctx.strokeStyle = 'rgba(100, 210, 200, 0.28)';
+    ctx.beginPath();
+    ctx.roundRect(566, ty, 612, 52, 6);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.font = `700 15px ${SANS}`;
+    ctx.fillStyle = '#72f2e2';
+    ctx.fillText(tl[0], 586, ty + 22);
+
+    ctx.font = `400 14px ${SANS}`;
+    ctx.fillStyle = '#e0efef';
+    ctx.fillText(tl[1], 586, ty + 42);
+    ctx.restore();
+  });
+
+  ctx.restore();
+}
+
+function render(now) {
+  const t = ((now / 1000) + tOffset) % window.DUR;
+
+  // Find active shot
+  const shot = SHOTS.find(s => t >= s.t0 && t < s.t1) || SHOTS[SHOTS.length - 1];
+  const localP = clamp((t - shot.t0) / (shot.t1 - shot.t0), 0, 1);
+
+  // Render 2.5D Parallax Horror Scene
+  renderScene(shot.id, localP, t, t > 26.8);
+
+  // Render Vertical/Horizontal Mincho Subtitles
+  renderSubtitles(t);
+
+  // Render Top-Left Director & ElevenLabs v4 HUD
+  if (t < 27.4) {
+    renderDirectorHUD(t, shot);
+  }
+
+  // Render Tool Breakdown Finale Card
+  if (t >= 27.0) {
+    renderToolBreakdown(t);
+  }
+
+  // Film Grain Overlay
+  ctx.save();
+  ctx.globalCompositeOperation = 'overlay';
+  const ox = Math.floor(hash(Math.floor(t * 30)) * 80);
+  const oy = Math.floor(hash(Math.floor(t * 30) + 1) * 80);
+  const pat = ctx.createPattern(noiseCanvas, 'repeat');
+  ctx.fillStyle = pat;
+  ctx.translate(-ox, -oy);
+  ctx.fillRect(0, 0, W + 160, H + 160);
+  ctx.restore();
+
+  requestAnimationFrame(render);
+}
+
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

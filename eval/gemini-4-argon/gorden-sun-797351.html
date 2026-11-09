@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>3D节奏弹跳球 - Blender风纯WebGL渲染</title>
+<style>
+  * { box-sizing: border-box; user-select: none; }
+  body {
+    margin: 0;
+    background: #000;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100vw;
+    height: 100vh;
+    font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  #stage {
+    position: relative;
+    width: 1280px;
+    height: 720px;
+    background: #0a0a0f;
+    overflow: hidden;
+    box-shadow: 0 0 40px rgba(0,0,0,0.9);
+    transform-origin: center center;
+  }
+  canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1280px;
+    height: 720px;
+    display: block;
+  }
+  #hud { pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="gl" width="1280" height="720"></canvas>
+  <canvas id="hud" width="1280" height="720"></canvas>
+</div>
+<script>
+// ==================== 时间与全局配置 ====================
+window.DUR = 24.0;
+const params = new URLSearchParams(location.search);
+const TIME_OFFSET = parseFloat(params.get('t') || '0');
+
+function resizeStage() {
+  const st = document.getElementById('stage');
+  const scale = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+  st.style.transform = `scale(${scale})`;
+}
+window.addEventListener('resize', resizeStage);
+resizeStage();
+
+// ==================== 经典纯音乐曲谱与幽默弹幕生成 ====================
+// 三幕经典名曲：
+// 0 - 8s: 《致爱丽丝》(Für Elise) - 莫兰迪高级灰/薄荷绿 (Blender Cycles极简室内风)
+// 8 - 16s: 《土耳其进行曲》(Turkish March) - 孟菲斯明黄/珊瑚红 (游乐场木琴机械风)
+// 16 - 24s: 《山魔王的宫殿》(In the Hall of the Mountain King) - 赛博霓虹紫/激光青 (暗黑蹦迪暴走风)
+
+const N = {
+  B3:246.9, C4:261.6, Cs4:277.2, D4:293.7, Ds4:311.1, E4:329.6, F4:349.2, Fs4:370.0, G4:392.0, Gs4:415.3, A4:440.0, As4:466.2, B4:493.9,
+  C5:523.3, Cs5:554.4, D5:587.3, Ds5:622.3, E5:659.3, F5:698.5, Fs5:740.0, G5:784.0, A5:880.0
+};
+
+const rawScore = [
+  // --- Scene 0: 致爱丽丝 (0.0s - 8.0s) ---
+  [0.0, N.E5, 0, "优雅入场~"], [0.4, N.Ds5, 1, "Q弹软糯"], [0.8, N.E5, 0, ""], [1.2, N.Ds5, 1, "卡点舒适"],
+  [1.6, N.E5, 0, ""], [2.0, N.B4, 2, "漂亮转身!"], [2.4, N.D5, 1, ""], [2.8, N.C5, 0, "稳住别浪"],
+  [3.2, N.A4, 3, "噗叽! 压扁了"],
+  [4.0, N.C4, 1, "低音下潜"], [4.4, N.E4, 0, ""], [4.8, N.A4, 2, "渐入佳境"], [5.2, N.B4, 1, ""],
+  [6.0, N.E4, 0, ""], [6.4, N.Gs4, 2, "丝滑连跳"], [6.8, N.B4, 1, "准备换曲!"], [7.2, N.C5, 4, "优雅谢幕~"],
+
+  // --- Scene 1: 土耳其进行曲 (8.0s - 16.0s) ---
+  [8.0, N.B4, 2, "画风突变!!"], [8.25, N.A4, 1, ""], [8.5, N.Gs4, 0, "手速加快"], [8.75, N.A4, 1, ""],
+  [9.0, N.C5, 5, "鸭子: 嘎?!"],
+  [9.75, N.D5, 2, "踩扁黄鸭"], [10.0, N.C5, 1, ""], [10.25, N.B4, 0, ""], [10.5, N.C5, 1, "鬼畜弹跳"],
+  [10.75, N.E5, 4, "起飞咯!"],
+  [11.5, N.F5, 2, ""], [11.75, N.E5, 1, "根本停不下来"], [12.0, N.Ds5, 0, ""], [12.25, N.E5, 1, ""],
+  [12.5, N.B5||987.8, 3, "超级高音!"], [12.75, N.A5, 2, ""], [13.0, N.Gs5||830.6, 1, "球要转晕了@_@"], [13.25, N.A5, 2, ""],
+  [13.5, N.B5||987.8, 5, "鸭子又挨揍!"], [13.75, N.A5, 1, ""], [14.0, N.Gs5||830.6, 0, ""], [14.25, N.A5, 2, ""],
+  [14.5, N.C5*2, 4, "物理引擎燃烧中!"], [15.1, N.A5, 2, "喘口气..."], [15.5, N.C5*2, 3, "前方高能预警!"],
+
+  // --- Scene 2: 山魔王的宫殿 (16.0s - 24.0s) ---
+  [16.0, N.B3, 6, "暗黑模式启动!"], [16.3, N.Cs4, 1, ""], [16.6, N.D4, 2, "鬼祟的步伐..."], [16.9, N.E4, 1, ""],
+  [17.2, N.Fs4, 6, "蹦迪开始!"], [17.5, N.D4, 2, ""], [17.8, N.Fs4, 4, "全员发光!"],
+  [18.4, N.F4, 6, "叮咚!"], [18.7, N.Cs4, 1, ""], [19.0, N.F4, 3, "显卡在咆哮"],
+  [19.6, N.E4, 6, ""], [19.9, N.C4, 1, ""], [20.2, N.E4, 5, "嘎嘎乱跳!"],
+  [20.7, N.B4, 2, "疯狂加速!!"], [20.9, N.Cs5, 1, ""], [21.1, N.D5, 6, "残影出现!"], [21.3, N.E5, 2, ""],
+  [21.5, N.Fs5, 4, "光污染警告!"], [21.7, N.D5, 1, ""], [21.9, N.Fs5, 5, ""], [22.1, N.G5, 6, "超越光速!!"],
+  [22.3, N.Ds5, 2, ""], [22.5, N.G5, 3, "要裂开了!!"], [22.7, N.Fs5, 6, "终极蓄力..."],
+  [23.2, N.B4, 7, "BOOM! 完美落地!"]
+];
+
+// 构建3D空间路径与物件坐标
+// 0:圆柱琴键, 1:方砖箱子, 2:弹簧跳板, 3:搞笑马桶搋子, 4:甜甜圈Torus, 5:无辜小黄鸭, 6:赛博六棱柱, 7:大魔王终点皇冠台
+const beats = [];
+for (let i = 0; i < rawScore.length; i++) {
+  const [t, freq, kind, msg] = rawScore[i];
+  const scene = t < 8.0 ? 0 : (t < 16.0 ? 1 : 2);
+  // 螺旋向下的3D路径但保持镜头易追踪
+  const angle = i * 0.55;
+  const x = Math.sin(angle) * 3.2 + Math.cos(i * 1.3) * 1.1;
+  const y = -i * 2.1;
+  const z = -i * 2.8 + Math.cos(angle) * 1.2;
+  beats.push({
+    index: i, t, freq, kind, msg, scene,
+    pos: [x, y, z],
+    hitTime: -999
+  });
+}
+
+// ==================== WebAudio 经典合成器 (可选自动发声) ====================
+let audioCtx = null;
+let lastPlayedIdx = -1;
+function initAudio() {
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) audioCtx = new AC();
+  }
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+}
+window.addEventListener('pointerdown', initAudio);
+
+function triggerSynth(beat) {
+  if (!audioCtx || audioCtx.state !== 'running') return;
+  const now = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = beat.scene === 0 ? 'triangle' : (beat.scene === 1 ? 'square' : 'sawtooth');
+  osc.frequency.setValueAtTime(beat.freq, now);
+  if (beat.kind === 5) { // 鸭子叫声滑音
+    osc.frequency.exponentialRampToValueAtTime(beat.freq * 0.6, now + 0.18);
+  }
+  gain.gain.setValueAtTime(0.18, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start(now);
+  osc.stop(now + 0.36);
+}
+
+// ==================== 轻量级 Three.js 风格 WebGL 3D 引擎 ====================
+const glCanvas = document.getElementById('gl');
+const gl = glCanvas.getContext('webgl', { preserveDrawingBuffer: true, antialias: true });
+const hudCanvas = document.getElementById('hud');
+const ctx = hudCanvas.getContext('2d');
+
+const VS_SRC = `
+  attribute vec3 aPos;
+  attribute vec3 aNorm;
+  uniform mat4 uProj;
+  uniform mat4 uView;
+  uniform mat4 uModel;
+  varying vec3 vNorm;
+  varying vec3 vWorldPos;
+  void main() {
+    vec4 wp = uModel * vec4(aPos, 1.0);
+    vWorldPos = wp.xyz;
+    vNorm = mat3(uModel) * aNorm;
+    gl_Position = uProj * uView * wp;
+  }
+`;
+
+const FS_SRC = `
+  precision highp float;
+  varying vec3 vNorm;
+  varying vec3 vWorldPos;
+  uniform vec3 uBaseColor;
+  uniform vec3 uEmitColor;
+  uniform float uRoughness;
+  uniform vec3 uCamPos;
+  uniform vec3 uBallPos;
+  uniform vec3 uBallGlow;
+  uniform vec3 uFogColor;
+  uniform vec3 uKeyLightDir;
+  uniform vec3 uFillLightColor;
+
+  void main() {
+    vec3 N = normalize(vNorm);
+    vec3 V = normalize(uCamPos - vWorldPos);
+    
+    // 主平行光 (Blender Three-Point Light)
+    vec3 L1 = normalize(uKeyLightDir);
+    float diff1 = max(dot(N, L1), 0.0);
+    vec3 H1 = normalize(L1 + V);
+    float shininess = mix(128.0, 8.0, uRoughness);
+    float spec1 = pow(max(dot(N, H1), 0.0), shininess) * (1.0 - uRoughness * 0.7);
+
+    // 半球环境光与背光轮廓 (Rim Light)
+    float hemi = N.y * 0.5 + 0.5;
+    vec3 ambient = mix(uFogColor * 0.5, uFillLightColor, hemi) * 0.55;
+    float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0) * 0.45;
+
+    // 来自发光下坠球体的动态点光源照明
+    vec3 toBall = uBallPos - vWorldPos;
+    float dist = length(toBall);
+    vec3 L2 = toBall / (dist + 0.001);
+    float atten = 1.0 / (1.0 + 0.12 * dist + 0.04 * dist * dist);
+    float diff2 = max(dot(N, L2), 0.0) * atten;
+    vec3 H2 = normalize(L2 + V);
+    float spec2 = pow(max(dot(N, H2), 0.0), 48.0) * atten;
+
+    vec3 color = uBaseColor * (ambient + diff1 * 0.85) + vec3(1.0, 0.98, 0.95) * spec1 * 0.5;
+    color += (uBaseColor * diff2 + spec2 * 0.7) * uBallGlow * 2.2;
+    color += uFillLightColor * rim;
+    color += uEmitColor;
+
+    // 距离指数雾化
+    float camDist = length(uCamPos - vWorldPos);
+    float fogFactor = clamp(exp(-pow(camDist * 0.022, 2.0)), 0.0, 1.0);
+    color = mix(uFogColor, color, fogFactor);
+
+    // ACES 电影感色调映射
+    color = (color * (2.51 * color + 0.03)) / (color * (2.43 * color + 0.59) + 0.14);
+    color = pow(clamp(color, 0.0, 1.0), vec3(1.0 / 2.2));
+    gl_FragColor = vec4(color, 1.0);
+  }
+`;
+
+function compileShader(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  return s;
+}
+const prog = gl.createProgram();
+gl.attachShader(prog, compileShader(gl.VERTEX_SHADER, VS_SRC));
+gl.attachShader(prog, compileShader(gl.FRAGMENT_SHADER, FS_SRC));
+gl.linkProgram(prog);
+gl.useProgram(prog);
+
+const aPos = gl.getAttribLocation(prog, 'aPos');
+const aNorm = gl.getAttribLocation(prog, 'aNorm');
+const U = {};
+['uProj','uView','uModel','uBaseColor','uEmitColor','uRoughness','uCamPos','uBallPos','uBallGlow','uFogColor','uKeyLightDir','uFillLightColor'].forEach(n => {
+  U[n] = gl.getUniformLocation(prog, n);
+});
+
+// ==================== 程序化3D几何体生成 (Sphere, Box, Cylinder, Torus) ====================
+function createMesh(positions, normals, indices) {
+  const vbo = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+  const nbo = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, nbo);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(normals), gl.STATIC_DRAW);
+  const ibo = gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+  return { vbo, nbo, ibo, count: indices.length };
+}
+
+function makeSphere(lat = 24, lon = 32) {
+  const pos = [], norm = [], idx = [];
+  for (let i = 0; i <= lat; i++) {
+    const th = i * Math.PI / lat;
+    const st = Math.sin(th), ct = Math.cos(th);
+    for (let j = 0; j <= lon; j++) {
+      const ph = j * 2 * Math.PI / lon;
+      const x = st * Math.cos(ph), y = ct, z = st * Math.sin(ph);
+      pos.push(x, y, z); norm.push(x, y, z);
+    }
+  }
+  for (let i = 0; i < lat; i++) {
+    for (let j = 0; j < lon; j++) {
+      const a = i * (lon + 1) + j, b = a + lon + 1;
+      idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+  }
+  return createMesh(pos, norm, idx);
+}
+
+function makeCylinder(seg = 24, rTop = 1, rBot = 1) {
+  const pos = [], norm = [], idx = [];
+  // 侧面
+  for (let i = 0; i <= 1; i++) {
+    const y = i === 0 ? -1 : 1;
+    const r = i === 0 ? rBot : rTop;
+    for (let j = 0; j <= seg; j++) {
+      const a = (j / seg) * Math.PI * 2;
+      const c = Math.cos(a), s = Math.sin(a);
+      pos.push(c * r, y, s * r);
+      norm.push(c, 0, s);
+    }
+  }
+  for (let j = 0; j < seg; j++) {
+    const a = j, b = j + seg + 1;
+    idx.push(a, a + 1, b, b, a + 1, b + 1);
+  }
+  // 顶盖和底盖
+  const addCap = (y, ny, r) => {
+    const centerIdx = pos.length / 3;
+    pos.push(0, y, 0); norm.push(0, ny, 0);
+    for (let j = 0; j <= seg; j++) {
+      const a = (j / seg) * Math.PI * 2;
+      pos.push(Math.cos(a) * r, y, Math.sin(a) * r);
+      norm.push(0, ny, 0);
+    }
+    for (let j = 0; j < seg; j++) {
+      if (ny > 0) idx.push(centerIdx, centerIdx + j + 2, centerIdx + j + 1);
+      else idx.push(centerIdx, centerIdx + j + 1, centerIdx + j + 2);
+    }
+  };
+  addCap(1, 1, rTop);
+  addCap(-1, -1, rBot);
+  return createMesh(pos, norm, idx);
+}
+
+function makeTorus(R = 0.75, r = 0.32, segR = 28, segr = 16) {
+  const pos = [], norm = [], idx = [];
+  for (let i = 0; i <= segR; i++) {
+    const u = (i / segR) * Math.PI * 2;
+    const cu = Math.cos(u), su = Math.sin(u);
+    for (let j = 0; j <= segr; j++) {
+      const v = (j / segr) * Math.PI * 2;
+      const cv = Math.cos(v), sv = Math.sin(v);
+      const x = (R + r * cv) * cu;
+      const y = r * sv;
+      const z = (R + r * cv) * su;
+      pos.push(x, y, z);
+      norm.push(cv * cu, sv, cv * su);
+    }
+  }
+  for (let i = 0; i < segR; i++) {
+    for (let j = 0; j < segr; j++) {
+      const a = i * (segr + 1) + j, b = a + segr + 1;
+      idx.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+  }
+  return createMesh(pos, norm, idx);
+}
+
+function makeBox() {
+  const faces = [
+    [[0,1,0], [[-1,1,-1],[-1,1,1],[1,1,1],[1,1,-1]]],
+    [[0,-1,0], [[-1,-1,1],[-1,-1,-1],[1,-1,-1],[1,-1,1]]],
+    [[0,0,1], [[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]]],
+    [[0,0,-1], [[1,-1,-1],[-1,-1,-1],[-1,1,-1],[1,1,-1]]],
+    [[1,0,0], [[1,-1,1],[1,-1,-1],[1,1,-1],[1,1,1]]],
+    [[-1,0,0], [[-1,-1,-1],[-1,-1,1],[-1,1,1],[-1,1,-1]]]
+  ];
+  const pos = [], norm = [], idx = [];
+  faces.forEach(([n, verts], f) => {
+    verts.forEach(v => { pos.push(...v); norm.push(...n); });
+    const o = f * 4;
+    idx.push(o, o+1, o+2, o, o+2, o+3);
+  });
+  return createMesh(pos, norm, idx);
+}
+
+const MESHES = {
+  sphere: makeSphere(24, 32),
+  cyl: makeCylinder(28, 1, 1),
+  hex: makeCylinder(6, 1, 1),
+  cone: makeCylinder(20, 0.2, 1.1),
+  torus: makeTorus(0.75, 0.32, 28, 16),
+  box: makeBox()
+};
+
+// ==================== 矩阵数学库 ====================
+function mat4Perspective(fov, aspect, near, far) {
+  const f = 1.0 / Math.tan(fov / 2), nf = 1 / (near - far);
+  return new Float32Array([
+    f / aspect, 0, 0, 0,
+    0, f, 0, 0,
+    0, 0, (far + near) * nf, -1,
+    0, 0, (2 * far * near) * nf, 0
+  ]);
+}
+
+function mat4LookAt(eye, target, up) {
+  let zx = eye[0] - target[0], zy = eye[1] - target[1], zz = eye[2] - target[2];
+  let len = Math.hypot(zx, zy, zz) || 1; zx /= len; zy /= len; zz /= len;
+  let xx = up[1]*zz - up[2]*zy, xy = up[2]*zx - up[0]*zz, xz = up[0]*zy - up[1]*zx;
+  len = Math.hypot(xx, xy, xz) || 1; xx /= len; xy /= len; xz /= len;
+  let yx = zy*xz - zz*xy, yy = zz*xx - zx*xz, yz = zx*xy - zy*xx;
+  return new Float32Array([
+    xx, yx, zx, 0,
+    xy, yy, zy, 0,
+    xz, yz, zz, 0,
+    -(xx*eye[0] + xy*eye[1] + xz*eye[2]),
+    -(yx*eye[0] + yy*eye[1] + yz*eye[2]),
+    -(zx*eye[0] + zy*eye[1] + zz*eye[2]),
+    1
+  ]);
+}
+
+function mat4Compose(pos, scale, rotY = 0, rotX = 0, rotZ = 0) {
+  const cy = Math.cos(rotY), sy = Math.sin(rotY);
+  const cx = Math.cos(rotX), sx = Math.sin(rotX);
+  const cz = Math.cos(rotZ), sz = Math.sin(rotZ);
+  const sx_ = scale[0], sy_ = scale[1], sz_ = scale[2];
+  return new Float32Array([
+    (cy*cz + sy*sx*sz)*sx_, (cz*sy*sx - cy*sz)*sx_, (cx*sy)*sx_, 0,
+    (cx*sz)*sy_,            (cx*cz)*sy_,            (-sx)*sy_,   0,
+    (cy*sx*sz - cz*sy)*sz_, (sy*sz + cy*cz*sx)*sz_, (cx*cy)*sz_, 0,
+    pos[0],                 pos[1],                 pos[2],      1
+  ]);
+}
+
+function drawMesh(mesh, modelMat, baseCol, emitCol, roughness = 0.25) {
+  gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vbo);
+  gl.enableVertexAttribArray(aPos);
+  gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, mesh.nbo);
+  gl.enableVertexAttribArray(aNorm);
+  gl.vertexAttribPointer(aNorm, 3, gl.FLOAT, false, 0, 0);
+
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ibo);
+  gl.uniformMatrix4fv(U.uModel, false, modelMat);
+  gl.uniform3fv(U.uBaseColor, baseCol);
+  gl.uniform3fv(U.uEmitColor, emitCol);
+  gl.uniform1f(U.uRoughness, roughness);
+  gl.drawElements(gl.TRIANGLES, mesh.count, gl.UNSIGNED_SHORT, 0);
+}
+
+// ==================== 场景主题色板 (3大音乐主题无缝切换) ====================
+const THEMES = [
+  {
+    name: "SCENE 01 · 极简石膏音乐盒 (Blender Cycles风)",
+    song: "贝多芬 - 《致爱丽丝》 Für Elise",
+    bpm: "75 BPM · 优雅慢板",
+    fog: [0.11, 0.14, 0.19],
+    fill: [0.45, 0.65, 0.85],
+    ballGlow: [0.2, 0.95, 0.85],
+    palette: [[0.92,0.52,0.55], [0.45,0.82,0.75], [0.95,0.82,0.48], [0.65,0.62,0.92]]
+  },
+  {
+    name: "SCENE 02 · 孟菲斯玩具工厂 (糖果塑料材质)",
+    song: "莫扎特 - 《土耳其进行曲》 Turkish March",
+    bpm: "120 BPM · 欢快鬼畜",
+    fog: [0.19, 0.11, 0.22],
+    fill: [0.95, 0.65, 0.35],
+    ballGlow: [1.0, 0.75, 0.15],
+    palette: [[1.0,0.35,0.45], [1.0,0.8,0.15], [0.25,0.75,0.98], [0.45,0.92,0.45]]
+  },
+  {
+    name: "SCENE 03 · 赛博霓虹深渊 (Eevee 辉光暴走模式)",
+    song: "格里格 - 《山魔王的宫殿》 Mountain King",
+    bpm: "150 BPM · 狂暴加速",
+    fog: [0.04, 0.02, 0.09],
+    fill: [0.65, 0.15, 0.95],
+    ballGlow: [1.0, 0.15, 0.75],
+    palette: [[0.95,0.1,0.65], [0.1,0.95,0.95], [0.55,0.15,1.0], [1.0,0.45,0.05]]
+  }
+];
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+function lerpVec3(a, b, t) { return [lerp(a[0],b[0],t), lerp(a[1],b[1],t), lerp(a[2],b[2],t)]; }
+
+// 背景漂浮几何粒子装饰
+const bgFloaters = [];
+for (let i = 0; i < 65; i++) {
+  bgFloaters.push({
+    x: (Math.random() - 0.5) * 30,
+    y: -i * 1.9 + 4,
+    z: -i * 2.5 - 6 + (Math.random() - 0.5) * 14,
+    scale: 0.35 + Math.random() * 0.75,
+    type: i % 3,
+    speed: 0.6 + Math.random() * 1.5,
+    phase: Math.random() * 6.28
+  });
+}
+
+// 球体残影队列与2D弹出幽默文字
+const trailHistory = [];
+const floatingTexts = [];
+const shockwaves = [];
+
+// ==================== 主渲染循环 ====================
+const projMat = mat4Perspective(50 * Math.PI / 180, 1280 / 720, 0.1, 120.0);
+let smoothCamPos = [0, 3, 10];
+let smoothLookAt = [0, 0, 0];
+let prevLoopTime = -1;
+
+function render(nowMs) {
+  const t = ((nowMs * 0.001) + TIME_OFFSET) % window.DUR;
+  if (t < prevLoopTime) {
+    // 循环重置状态
+    beats.forEach(b => b.hitTime = -999);
+    floatingTexts.length = 0;
+    shockwaves.length = 0;
+    trailHistory.length = 0;
+    lastPlayedIdx = -1;
+  }
+  prevLoopTime = t;
+
+  // 当前所处音乐场景 (0, 1, 2) 与平滑过渡
+  const sceneIdx = t < 8.0 ? 0 : (t < 16.0 ? 1 : 2);
+  const theme = THEMES[sceneIdx];
+
+  // 计算球体当前所在的节拍区间 [k, k+1]
+  let k = 0;
+  while (k < beats.length - 1 && beats[k + 1].t <= t) k++;
+  const b0 = beats[k];
+  const b1 = beats[Math.min(k + 1, beats.length - 1)];
+
+  // 触发物件点亮、合成音效与幽默弹幕
+  if (t >= b0.t && b0.hitTime < 0) {
+    b0.hitTime = t;
+    if (lastPlayedIdx !== k) {
+      lastPlayedIdx = k;
+      triggerSynth(b0);
+    }
+    shockwaves.push({ pos: [...b0.pos], birth: t, col: theme.ballGlow });
+    if (b0.msg) {
+      floatingTexts.push({
+        text: b0.msg,
+        worldPos: [b0.pos[0], b0.pos[1] + 1.4, b0.pos[2]],
+        birth: t,
+        scene: sceneIdx
+      });
+    }
+  }
+
+  // 计算3D球体精确物理抛物线坐标与挤压拉伸 (Squash & Stretch)
+  let ballPos = [...b0.pos];
+  let ballScale = [0.68, 0.68, 0.68];
+  let ballRotX = t * 4.0, ballRotZ = 0;
+
+  if (b0 !== b1) {
+    const dt = b1.t - b0.t;
+    const u = Math.max(0, Math.min(1, (t - b0.t) / dt));
+    const bx = lerp(b0.pos[0], b1.pos[0], u);
+    const bz = lerp(b0.pos[2], b1.pos[2], u);
+    // 抛物线弹跳高度与下落重力加速度
+    const arcHeight = Math.min(3.6, Math.max(1.3, dt * 4.5));
+    const by = lerp(b0.pos[1], b1.pos[1], u) + 4.0 * u * (1.0 - u) * arcHeight + 0.68;
+    ballPos = [bx, by, bz];
+
+    // 接触瞬间Q弹压扁，腾空瞬间纵向拉伸
+    const distToHit = Math.min(t - b0.t, b1.t - t);
+    if (distToHit < 0.085) {
+      const sq = 1.0 - (distToHit / 0.085);
+      const sy = 1.0 - sq * 0.48;
+      const sxz = 1.0 + sq * 0.34;
+      ballScale = [0.68 * sxz, 0.68 * sy, 0.68 * sxz];
+    } else {
+      const vy = (1.0 - 2.0 * u) * arcHeight;
+      const stretch = Math.min(0.28, Math.abs(vy) * 0.07);
+      ballScale = [0.68 * (1 - stretch * 0.4), 0.68 * (1 + stretch), 0.68 * (1 - stretch * 0.4)];
+    }
+    ballRotZ = -(b1.pos[0] - b0.pos[0]) * 0.35;
+  } else {
+    ballPos[1] += 0.68 + Math.abs(Math.sin((t - b0.t) * 10)) * 0.4;
+  }
+
+  // 记录球体运动轨迹残影
+  trailHistory.unshift({ pos: [...ballPos], t });
+  if (trailHistory.length > 14) trailHistory.pop();
+
+  // 摄像机平滑运镜 + 卡点微震动
+  const timeSinceHit = t - b0.hitTime;
+  const shake = timeSinceHit >= 0 && timeSinceHit < 0.15 ? Math.sin(timeSinceHit * 90) * (0.15 - timeSinceHit) * (sceneIdx === 2 ? 1.8 : 0.8) : 0;
+  const camAngle = Math.sin(t * 0.45) * 0.35;
+  const targetCam = [
+    ballPos[0] * 0.55 + Math.sin(camAngle) * 7.5 + shake,
+    ballPos[1] + 3.4 + shake * 0.6,
+    ballPos[2] + 8.6
+  ];
+  const targetLook = [ballPos[0] * 0.75, ballPos[1] - 0.8, ballPos[2] - 1.5];
+  smoothCamPos = lerpVec3(smoothCamPos, targetCam, 0.14);
+  smoothLookAt = lerpVec3(smoothLookAt, targetLook, 0.18);
+
+  const viewMat = mat4LookAt(smoothCamPos, smoothLookAt, [0, 1, 0]);
+
+  // WebGL 渲染状态设置
+  gl.viewport(0, 0, 1280, 720);
+  gl.clearColor(theme.fog[0], theme.fog[1], theme.fog[2], 1.0);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST);
+  gl.enable(gl.CULL_FACE);
+
+  gl.uniformMatrix4fv(U.uProj, false, projMat);
+  gl.uniformMatrix4fv(U.uView, false, viewMat);
+  gl.uniform3fv(U.uCamPos, smoothCamPos);
+  gl.uniform3fv(U.uBallPos, ballPos);
+  gl.uniform3fv(U.uBallGlow, theme.ballGlow);
+  gl.uniform3fv(U.uFogColor, theme.fog);
+  gl.uniform3fv(U.uKeyLightDir, [0.45, 0.85, 0.55]);
+  gl.uniform3fv(U.uFillLightColor, theme.fill);
+
+  // 1. 绘制背景漂浮氛围几何体 (随音乐节拍律动)
+  const beatPulse = Math.max(0, 1.0 - (t - b0.hitTime) * 4.0);
+  for (let i = 0; i < bgFloaters.length; i++) {
+    const f = bgFloaters[i];
+    if (Math.abs(f.y - ballPos[1]) > 28) continue;
+    const s = f.scale * (1.0 + beatPulse * 0.22);
+    const ry = t * f.speed + f.phase;
+    const rx = t * 0.7 + f.phase;
+    const col = theme.palette[i % theme.palette.length];
+    const emit = sceneIdx === 2 ? [col[0]*0.25, col[1]*0.25, col[2]*0.25] : [0,0,0];
+    const m = f.type === 0 ? MESHES.box : (f.type === 1 ? MESHES.torus : MESHES.hex);
+    drawMesh(m, mat4Compose([f.x, f.y, f.z], [s, s, s], ry, rx, 0), col, emit, 0.45);
+  }
+
+  // 2. 绘制所有卡点3D物件平台 (被球击中时强烈点亮发光 + 弹性下陷动画)
+  for (let i = 0; i < beats.length; i++) {
+    const b = beats[i];
+    if (Math.abs(b.pos[1] - ballPos[1]) > 26) continue;
+
+    const age = t - b.hitTime;
+    const isHit = b.hitTime >= 0 && age >= 0;
+    const glow = isHit ? Math.exp(-age * 2.4) : 0.0;
+    // 被撞击时的弹簧下陷与回弹振荡
+    const depression = isHit && age < 0.6 ? Math.sin(age * 26) * Math.exp(-age * 7.0) * 0.42 : 0.0;
+
+    const baseCol = theme.palette[i % theme.palette.length];
+    const emitCol = isHit
+      ? [
+          baseCol[0] * (0.45 + glow * 1.4) + glow * 0.4,
+          baseCol[1] * (0.45 + glow * 1.4) + glow * 0.4,
+          baseCol[2] * (0.45 + glow * 1.4) + glow * 0.4
+        ]
+      : [baseCol[0] * 0.05, baseCol[1] * 0.05, baseCol[2] * 0.05];
+
+    const px = b.pos[0], py = b.pos[1] - depression, pz = b.pos[2];
+
+    if (b.kind === 0) {
+      // 经典圆盘音乐琴键 + 底部金属托架
+      drawMesh(MESHES.cyl, mat4Compose([px, py - 0.25, pz], [1.25, 0.25, 1.25], 0, 0, 0), baseCol, emitCol, 0.18);
+      drawMesh(MESHES.cyl, mat4Compose([px, py - 0.62, pz], [1.35, 0.1, 1.35], 0, 0, 0), [0.2, 0.22, 0.28], [0,0,0], 0.5);
+    } else if (b.kind === 1) {
+      // 倒角感双层节奏方砖
+      drawMesh(MESHES.box, mat4Compose([px, py - 0.3, pz], [1.15, 0.28, 1.15], i * 0.4, 0, 0), baseCol, emitCol, 0.22);
+      drawMesh(MESHES.box, mat4Compose([px, py - 0.65, pz], [0.85, 0.15, 0.85], i * 0.4, 0, 0), [0.9,0.9,0.95], emitCol, 0.3);
+    } else if (b.kind === 2) {
+      // 弹簧跳板 (上下两层加中间伸缩圈)
+      const springSquash = Math.max(0.12, 0.35 - depression * 0.6);
+      drawMesh(MESHES.cyl, mat4Compose([px, py - 0.12, pz], [1.2, 0.12, 1.2], 0, 0, 0), baseCol, emitCol, 0.15);
+      drawMesh(MESHES.torus, mat4Compose([px, py - 0.38, pz], [0.8, springSquash * 2.0, 0.8], t * 3, 0, 0), [0.9, 0.9, 0.95], emitCol, 0.1);
+    } else if (b.kind === 3) {
+      // 幽默物件：巨型红胶马桶搋子 (被踩扁时柄会晃动)
+      const wobble = isHit ? Math.sin(age * 30) * Math.exp(-age * 5) * 0.35 : 0;
+      drawMesh(MESHES.cone, mat4Compose([px, py - 0.25, pz], [1.15, 0.28, 1.15], 0, 0, 0), [0.92, 0.22, 0.25], emitCol, 0.35);
+      drawMesh(MESHES.cyl, mat4Compose([px + 0.7, py + 0.5, pz], [0.12, 0.75, 0.12], 0, 0, -0.35 + wobble), [0.75, 0.52, 0.32], [0,0,0], 0.6);
+    } else if (b.kind === 4) {
+      // 幽默物件：糖霜甜甜圈 Torus
+      drawMesh(MESHES.torus, mat4Compose([px, py - 0.22, pz], [1.25, 0.95, 1.25], t * 1.2, 0.15, 0), [0.98, 0.45, 0.72], emitCol, 0.2);
+    } else if (b.kind === 5) {
+      // 幽默物件：无辜大黄鸭 (挨踩时扁成饼，嘴巴张开)
+      const duckSquash = isHit && age < 0.4 ? Math.max(0.35, 1.0 - Math.sin(age * Math.PI / 0.4) * 0.65) : 1.0;
+      const yellow = [1.0, 0.84, 0.1];
+      const duckEmit = isHit ? [glow * 1.1, glow * 0.85, glow * 0.1] : [0.05, 0.04, 0];
+      // 鸭身
+      drawMesh(MESHES.sphere, mat4Compose([px, py - 0.35, pz], [1.25 / Math.sqrt(duckSquash), 0.55 * duckSquash, 1.05], 0.4, 0, 0), yellow, duckEmit, 0.2);
+      // 鸭头
+      drawMesh(MESHES.sphere, mat4Compose([px + 0.75, py + 0.15 * duckSquash, pz + 0.25], [0.52, 0.48 * duckSquash, 0.52], 0, 0, 0), yellow, duckEmit, 0.2);
+      // 橙色鸭嘴
+      drawMesh(MESHES.box, mat4Compose([px + 1.22, py + 0.12 * duckSquash, pz + 0.35], [0.28, 0.12, 0.22], 0.3, 0, 0), [1.0, 0.38, 0.05], duckEmit, 0.3);
+    } else {
+      // 赛博六棱柱水晶能量台
+      drawMesh(MESHES.hex, mat4Compose([px, py - 0.45, pz], [1.25, 0.45, 1.25], i * 0.5 + t * 0.5, 0, 0), baseCol, emitCol, 0.12);
+      if (isHit) {
+        // 点亮时升起外围能量环
+        const ringS = 1.3 + (1.0 - glow) * 1.4;
+        drawMesh(MESHES.torus, mat4Compose([px, py - 0.1, pz], [ringS, 0.18 * glow, ringS], 0, 0, 0), [1,1,1], emitCol, 0.1);
+      }
+    }
+  }
+
+  // 3. 绘制撞击扩散光波环
+  for (let i = shockwaves.length - 1; i >= 0; i--) {
+    const sw = shockwaves[i];
+    const age = t - sw.birth;
+    if (age > 0.65 || age < 0) { shockwaves.splice(i, 1); continue; }
+    const p = age / 0.65;
+    const rad = 1.1 + p * 2.4;
+    const thick = (1.0 - p) * 0.22;
+    const emit = [sw.col[0] * (1 - p) * 1.5, sw.col[1] * (1 - p) * 1.5, sw.col[2] * (1 - p) * 1.5];
+    drawMesh(MESHES.torus, mat4Compose([sw.pos[0], sw.pos[1] - 0.08, sw.pos[2]], [rad, thick, rad], 0, 0, 0), [1,1,1], emit, 0.1);
+  }
+
+  // 4. 绘制球体运动残影与主角3D发光球体
+  for (let i = 1; i < trailHistory.length; i += 2) {
+    const tr = trailHistory[i];
+    const ratio = 1.0 - i / trailHistory.length;
+    const s = 0.45 * ratio;
+    const emit = [theme.ballGlow[0] * ratio * 0.6, theme.ballGlow[1] * ratio * 0.6, theme.ballGlow[2] * ratio * 0.6];
+    drawMesh(MESHES.sphere, mat4Compose(tr.pos, [s, s, s], 0, 0, 0), theme.ballGlow, emit, 0.2);
+  }
+
+  // 主角球体：高光陶瓷材质 + 内部律动自发光 + 搞怪大眼睛环绕
+  const ballModel = mat4Compose(ballPos, ballScale, 0, ballRotX, ballRotZ);
+  const pulseGlow = 0.65 + beatPulse * 0.85;
+  drawMesh(
+    MESHES.sphere,
+    ballModel,
+    [0.98, 0.98, 1.0],
+    [theme.ballGlow[0] * pulseGlow, theme.ballGlow[1] * pulseGlow, theme.ballGlow[2] * pulseGlow],
+    0.08
+  );
+
+  // 给主角球体画一对呆萌的3D立体的“卡姿兰大眼睛”(看向镜头方向)
+  const eyeY = ballPos[1] + 0.12;
+  const eyeZ = ballPos[2] + 0.56;
+  const pupilShift = Math.sin(t * 8.0) * 0.05;
+  drawMesh(MESHES.sphere, mat4Compose([ballPos[0] - 0.22, eyeY, eyeZ], [0.16, 0.19, 0.1], 0, 0, 0), [1,1,1], [0.8,0.8,0.8], 0.1);
+  drawMesh(MESHES.sphere, mat4Compose([ballPos[0] + 0.22, eyeY, eyeZ], [0.16, 0.19, 0.1], 0, 0, 0), [1,1,1], [0.8,0.8,0.8], 0.1);
+  drawMesh(MESHES.sphere, mat4Compose([ballPos[0] - 0.22 + pupilShift, eyeY - 0.02, eyeZ + 0.08], [0.08, 0.09, 0.06], 0, 0, 0), [0.05,0.05,0.05], [0,0,0], 0.1);
+  drawMesh(MESHES.sphere, mat4Compose([ballPos[0] + 0.22 + pupilShift, eyeY - 0.02, eyeZ + 0.08], [0.08, 0.09, 0.06], 0, 0, 0), [0.05,0.05,0.05], [0,0,0], 0.1);
+
+  // ==================== 2D 影视级 HUD 与幽默拟声弹幕绘制 ====================
+  ctx.clearRect(0, 0, 1280, 720);
+
+  // 辅助函数：将3D世界坐标投影到1280x720屏幕坐标
+  function projectToScreen(wp) {
+    const vx = viewMat[0]*wp[0] + viewMat[4]*wp[1] + viewMat[8]*wp[2] + viewMat[12];
+    const vy = viewMat[1]*wp[0] + viewMat[5]*wp[1] + viewMat[9]*wp[2] + viewMat[13];
+    const vz = viewMat[2]*wp[0] + viewMat[6]*wp[1] + viewMat[10]*wp[2] + viewMat[14];
+    if (vz >= -0.2) return null;
+    const cx = (projMat[0] * vx) / (-vz);
+    const cy = (projMat[5] * vy) / (-vz);
+    return [(cx * 0.5 + 0.5) * 1280, (0.5 - cy * 0.5) * 720];
+  }
+
+  // 绘制3D物件上方弹出的幽默卡点短语
+  ctx.textAlign = 'center';
+  for (let i = floatingTexts.length - 1; i >= 0; i--) {
+    const ft = floatingTexts[i];
+    const age = t - ft.birth;
+    if (age > 1.15 || age < 0) { floatingTexts.splice(i, 1); continue; }
+    const sp = projectToScreen([ft.worldPos[0], ft.worldPos[1] + age * 1.4, ft.worldPos[2]]);
+    if (!sp) continue;
+    const alpha = age < 0.15 ? age / 0.15 : Math.max(0, 1.0 - (age - 0.15) / 1.0);
+    const scalePop = age < 0.12 ? 0.6 + (age / 0.12) * 0.6 : 1.05;
+
+    ctx.save();
+    ctx.translate(Math.max(140, Math.min(1140, sp[0])), Math.max(90, Math.min(620, sp[1])));
+    ctx.scale(scalePop, scalePop);
+    ctx.font = 'bold 26px "PingFang SC", "Microsoft YaHei", sans-serif';
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = `rgba(10, 10, 22, ${alpha * 0.9})`;
+    ctx.strokeText(ft.text, 0, 0);
+    ctx.fillStyle = ft.scene === 2 ? `rgba(120, 255, 255, ${alpha})` : `rgba(255, 240, 130, ${alpha})`;
+    ctx.fillText(ft.text, 0, 0);
+    ctx.restore();
+  }
+
+  // 顶部唱片机与Blender渲染器风格状态栏
+  ctx.save();
+  ctx.fillStyle = 'rgba(12, 14, 24, 0.76)';
+  ctx.strokeStyle = `rgba(${Math.round(theme.ballGlow[0]*255)}, ${Math.round(theme.ballGlow[1]*255)}, ${Math.round(theme.ballGlow[2]*255)}, 0.65)`;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(32, 24, 520, 86, 14);
+  ctx.fill();
+  ctx.stroke();
+
+  // 旋转黑胶唱片图标
+  ctx.save();
+  ctx.translate(75, 67);
+  ctx.rotate(t * 3.5);
+  ctx.beginPath();
+  ctx.arc(0, 0, 26, 0, Math.PI * 2);
+  ctx.fillStyle = '#181820';
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#555';
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(0, 0, 10, 0, Math.PI * 2);
+  ctx.fillStyle = `rgb(${Math.round(theme.ballGlow[0]*255)}, ${Math.round(theme.ballGlow[1]*255)}, ${Math.round(theme.ballGlow[2]*255)})`;
+  ctx.fill();
+  ctx.restore();
+
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#9be8ff';
+  ctx.font = 'bold 14px "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.fillText(theme.name, 116, 50);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 21px "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.fillText(`♪ ${theme.song}`, 116, 78);
+
+  ctx.fillStyle = '#ffd479';
+  ctx.font = '13px "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.fillText(`${theme.bpm}  |  连击 COMBO x${k + 1}`, 116, 98);
+
+  // 右上角音频频谱律动条与场景切换进度
+  ctx.fillStyle = 'rgba(12, 14, 24, 0.76)';
+  ctx.beginPath();
+  ctx.roundRect(960, 24, 288, 72, 14);
+  ctx.fill();
+  ctx.stroke();
+
+  const barCount = 18;
+  for (let i = 0; i < barCount; i++) {
+    const wave = Math.abs(Math.sin(t * 12 + i * 0.7)) * (0.35 + beatPulse * 0.65);
+    const bh = 8 + wave * 38;
+    const bx = 980 + i * 14;
+    ctx.fillStyle = `rgb(${Math.round(theme.ballGlow[0]*255)}, ${Math.round(theme.ballGlow[1]*255)}, ${Math.round(theme.ballGlow[2]*255)})`;
+    ctx.fillRect(bx, 82 - bh, 9, bh);
+  }
+
+  // 场景切换转场闪白提示 (8.0s 与 16.0s 切歌瞬间)
+  const transDist = Math.min(Math.abs(t - 8.0), Math.abs(t - 16.0));
+  if (transDist < 0.35) {
+    const flash = (1.0 - transDist / 0.35) * 0.45;
+    ctx.fillStyle = `rgba(255, 255, 255, ${flash})`;
+    ctx.fillRect(0, 0, 1280, 720);
+  }
+
+  // 底部三段名曲章节时间轴
+  const barW = 1216, barX = 32, barY = 684;
+  ctx.fillStyle = 'rgba(255,255,255,0.16)';
+  ctx.fillRect(barX, barY, barW, 8);
+  ctx.fillStyle = `rgb(${Math.round(theme.ballGlow[0]*255)}, ${Math.round(theme.ballGlow[1]*255)}, ${Math.round(theme.ballGlow[2]*255)})`;
+  ctx.fillRect(barX, barY, barW * (t / window.DUR), 8);
+
+  ctx.font = '13px "PingFang SC", "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = sceneIdx === 0 ? '#fff' : 'rgba(255,255,255,0.45)';
+  ctx.fillText('00:00 致爱丽丝 (极简室内)', barX, barY - 8);
+  ctx.fillStyle = sceneIdx === 1 ? '#fff' : 'rgba(255,255,255,0.45)';
+  ctx.fillText('00:08 土耳其进行曲 (小黄鸭游乐场)', barX + barW * 0.333, barY - 8);
+  ctx.fillStyle = sceneIdx === 2 ? '#fff' : 'rgba(255,255,255,0.45)';
+  ctx.fillText('00:16 山魔王的宫殿 (赛博霓虹蹦迪)', barX + barW * 0.666, barY - 8);
+  ctx.restore();
+
+  requestAnimationFrame(render);
+}
+
+requestAnimationFrame(render);
+</script>
+</body>
+</html>

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Promo</title>
+<style>
+html,body{margin:0;background:#000;height:100%;overflow:hidden}
+#s{position:absolute;left:50%;top:50%;width:1280px;height:720px;transform-origin:0 0}
+canvas{display:block}
+</style></head><body>
+<div id="s"><canvas id="c" width="1280" height="720"></canvas></div>
+<script>
+window.DUR=60;
+const c=document.getElementById('c'),x=c.getContext('2d'),S=document.getElementById('s');
+function fit(){const k=Math.min(innerWidth/1280,innerHeight/720);S.style.transform=`scale(${k}) translate(-50%,-50%)`;S.style.left='50%';S.style.top='50%';S.style.transformOrigin='0 0';S.style.transform=`translate(-50%,-50%) scale(${k})`;S.style.transformOrigin='center';}
+addEventListener('resize',fit);fit();
+const q=new URLSearchParams(location.search),T0=parseFloat(q.get('t')||0),st=performance.now();
+const ease=t=>t<0?0:t>1?1:t*t*(3-2*t),cl=(v,a,b)=>Math.max(a,Math.min(b,v));
+const F='"Segoe UI",Helvetica,Arial,sans-serif',M='Menlo,Consolas,monospace';
+const P=[];for(let i=0;i<90;i++)P.push([Math.random()*1280,Math.random()*720,Math.random()*1.5+.3,Math.random()]);
+function bg(t,h){const g=x.createRadialGradient(640+Math.sin(t*.2)*200,360,50,640,360,900);g.addColorStop(0,`hsl(${h},70%,14%)`);g.addColorStop(1,'#04050a');x.fillStyle=g;x.fillRect(0,0,1280,720);
+for(const p of P){const y=(p[1]-t*12*p[2])%720;x.fillStyle=`rgba(150,200,255,${.15+.3*p[3]})`;x.beginPath();x.arc(p[0],(y+720)%720,p[2],0,7);x.fill();}}
+function txt(s,X,Y,sz,a,col,w,font){x.globalAlpha=cl(a,0,1);x.fillStyle=col||'#fff';x.font=`${w||600} ${sz}px ${font||F}`;x.textAlign='center';x.textBaseline='middle';x.fillText(s,X,Y);x.globalAlpha=1;}
+function fade(t,a,b){return ease((t-a)/.8)*ease((b-t)/.8);}
+function rr(X,Y,W,H,r){x.beginPath();x.roundRect(X,Y,W,H,r);}
+function logo(X,Y,s,t){x.save();x.translate(X,Y);x.scale(s,s);x.rotate(t*.3);for(let i=0;i<3;i++){x.rotate(Math.PI*2/3);const g=x.createLinearGradient(0,-60,0,0);g.addColorStop(0,'#6cf');g.addColorStop(1,'#a6f');x.fillStyle=g;x.beginPath();x.moveTo(0,-62);x.lineTo(22,-14);x.lineTo(0,0);x.lineTo(-22,-14);x.closePath();x.fill();}x.restore();}
+const code=['import { forge } from "forge";','','const app = forge({','  deploy: "global",','  scale: "auto",','  observe: true,','});','','await app.ship();  // ✓ live in 4.2s'];
+const feats=[['⚡','Instant Deploys','Push to live in seconds'],['🌐','Global Edge','300+ regions, zero config'],['🔒','Secure by Default','Encryption everywhere']];
+function frame(){let t=((performance.now()-st)/1000+T0)%DUR;
+bg(t,220+t*1.5);
+// Scene 1: intro
+if(t<9){const a=fade(t,0,9);logo(640,300,ease(t/1.5)*1.2,t);txt('FORGE',640,430,90,a*ease((t-1)/1),'#fff',800);txt('Build. Ship. Scale.',640,500,30,a*ease((t-2)/1),'#9cf',400);}
+// Scene 2: code
+else if(t<21){const a=fade(t,9,21),lt=t-9.8;x.globalAlpha=a;rr(240,150,800,420,16);x.fillStyle='rgba(10,14,28,.92)';x.fill();x.strokeStyle='#345';x.stroke();
+['#f56','#fb3','#3c6'].forEach((cc,i)=>{x.fillStyle=cc;x.beginPath();x.arc(270+i*22,175,6,0,7);x.fill();});
+let n=Math.floor(lt*16);x.font=`22px ${M}`;x.textAlign='left';x.textBaseline='middle';
+code.forEach((l,i)=>{const s=l.slice(0,cl(n,0,l.length));n-=l.length+3;x.fillStyle=l.includes('//')&&s.length>20?'#7f7':l.startsWith('import')?'#c9f':'#dde';x.fillText(s,280,225+i*36);});
+if(Math.floor(t*2)%2){x.fillStyle='#6cf';x.fillRect(280,540,12,22);}x.globalAlpha=1;
+txt('Ship your app in a few lines of code',640,90,36,a,'#fff',700);}
+// Scene 3: features
+else if(t<33){const a=fade(t,21,33);txt('Everything you need. Nothing you don\u2019t.',640,120,40,a,'#fff',700);
+feats.forEach((f,i)=>{const e=ease((t-21.5-i*.6)/.8)*a;x.globalAlpha=e;const X=160+i*340,Y=230+(1-e)*60;rr(X,Y,300,300,20);x.fillStyle='rgba(255,255,255,.06)';x.fill();x.strokeStyle='rgba(120,180,255,.4)';x.stroke();x.globalAlpha=1;
+txt(f[0],X+150,Y+90,64,e);txt(f[1],X+150,Y+180,28,e,'#fff',700);txt(f[2],X+150,Y+225,19,e,'#9ab',400);});}
+// Scene 4: dashboard
+else if(t<45){const a=fade(t,33,45),p=ease((t-34)/5);txt('Real-time insight into every request',640,100,38,a,'#fff',700);
+x.globalAlpha=a;rr(190,160,900,440,18);x.fillStyle='rgba(10,14,28,.9)';x.fill();x.strokeStyle='#345';x.stroke();
+x.strokeStyle='rgba(255,255,255,.07)';for(let i=0;i<6;i++){x.beginPath();x.moveTo(230,220+i*60);x.lineTo(1050,220+i*60);x.stroke();}
+x.beginPath();const N=80;for(let i=0;i<=N*p;i++){const X=230+i*820/N,Y=530-(i/N)*230-Math.sin(i*.4+t*2)*18-Math.sin(i*.13)*25;i?x.lineTo(X,Y):x.moveTo(X,Y);}
+x.strokeStyle='#6cf';x.lineWidth=4;x.shadowColor='#6cf';x.shadowBlur=15;x.stroke();x.shadowBlur=0;x.lineWidth=1;x.globalAlpha=1;
+txt('Requests / sec',330,195,18,a,'#9ab',500);txt((Math.floor(p*48000)).toLocaleString(),960,195,26,a,'#7f7',700);}
+// Scene 5: stats
+else if(t<53){const a=fade(t,45,53),p=ease((t-45.5)/2.5);txt('Trusted by teams who move fast',640,170,40,a,'#fff',700);
+[[99.99,'% uptime',2],[10*p|0,'x faster builds',0],[(5000*p|0).toLocaleString(),'+ teams',-1]].forEach((s,i)=>{const X=280+i*360;const v=s[2]>0?(s[0]*p).toFixed(2):s[0];txt(v+'',X,350,80,a*ease((t-45.5-i*.4)/.6),'#6cf',800);txt(s[1].replace(/^[%+x]\s?/,m=>m),X,430,24,a,'#bcd',400);});}
+// Scene 6: CTA
+else{const a=fade(t,53,60.9);logo(640,250,1,t);txt('Start building with Forge',640,400,52,a*ease((t-53.5)/.8),'#fff',800);
+const e=a*ease((t-54.5)/.8),pl=1+Math.sin(t*4)*.03;x.save();x.translate(640,500);x.scale(pl,pl);x.globalAlpha=e;rr(-150,-32,300,64,32);const g=x.createLinearGradient(-150,0,150,0);g.addColorStop(0,'#6cf');g.addColorStop(1,'#a6f');x.fillStyle=g;x.fill();x.restore();txt('Get started free',640,500,24,e,'#fff',700);txt('forge.dev',640,590,20,e,'#9ab',400);}
+// blackout at loop edges
+const fb=Math.max(1-t/.6,(t-(DUR-.6))/.6,0);if(fb>0){x.fillStyle=`rgba(0,0,0,${fb})`;x.fillRect(0,0,1280,720);}
+requestAnimationFrame(frame);}
+requestAnimationFrame(frame);
+</script></body></html>
